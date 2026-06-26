@@ -212,12 +212,39 @@ class ChannelHealthMonitor:
             len(recent_restarts) + 1,
             self._max_restarts_per_hour,
         )
+
+        # Operator-visible incident block. Silent on non-TTY so log files
+        # don't get cluttered with the styled output (the warning above
+        # already lands there for grep).
+        try:
+            from navig.core import narrator
+            narrator.blank()
+            narrator.phase(f"Channel {name!r} went stale", icon="warn")
+            narrator.metrics([
+                ("last_event_s_ago", f"{idle_s:.0f}"),
+                ("stale_threshold_s", str(self._stale_threshold_s)),
+                ("restart_attempt", f"{len(recent_restarts) + 1}/{self._max_restarts_per_hour}"),
+            ])
+            narrator.step("restarting channel ...", icon="gear")
+        except Exception:  # noqa: BLE001
+            pass
+
         state.restart_timestamps.append(epoch_now)
         state.last_restart_cycle = self._cycle
 
         try:
             await self._restart_fn(name)
+            try:
+                from navig.core import narrator as _n
+                _n.verdict(f"Channel {name!r} restart issued.", icon="check")
+            except Exception:  # noqa: BLE001
+                pass
         except Exception as exc:  # noqa: BLE001
             _log.error(
                 "ChannelHealthMonitor: restart of channel %r failed: %r", name, exc
             )
+            try:
+                from navig.core import narrator as _n
+                _n.verdict(f"Restart failed: {exc!r}", icon="cross")
+            except Exception:  # noqa: BLE001
+                pass

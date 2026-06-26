@@ -30,8 +30,29 @@ logger = get_debug_logger()
 
 
 def register(app, gateway):
+    app.router.add_get("/", _root_handler(gateway))
     app.router.add_get("/health", _health(gateway))
+    app.router.add_get("/health/services", _health_services(gateway))
     app.router.add_get("/status", _status(gateway))
+
+    # Memory curation — built-in review page + localhost data API (no SPA needed).
+    # Same handlers as the deck-auth /api/deck/memory/* mount; here they're gateway
+    # -level so the /memory/review page can call them on 127.0.0.1 without a token.
+    from navig.gateway.deck.routes.memory import (
+        handle_memory_approve,
+        handle_memory_export,
+        handle_memory_import,
+        handle_memory_pending,
+        handle_memory_reject,
+        handle_memory_review_page,
+    )
+
+    app.router.add_get("/memory/review", handle_memory_review_page)
+    app.router.add_get("/api/memory/facts/pending", handle_memory_pending)
+    app.router.add_post("/api/memory/facts/{fact_id}/approve", handle_memory_approve)
+    app.router.add_post("/api/memory/facts/{fact_id}/reject", handle_memory_reject)
+    app.router.add_get("/api/memory/facts/export", handle_memory_export)
+    app.router.add_post("/api/memory/facts/import", handle_memory_import)
     app.router.add_post("/shutdown", _shutdown(gateway))
     app.router.add_post("/message", _message(gateway))
     app.router.add_post("/event", _event(gateway))
@@ -39,9 +60,82 @@ def register(app, gateway):
     app.router.add_get("/ws", _websocket(gateway))
 
 
+def _root_handler(gw):
+    """Default `/` handler.
+
+    Serves the Deck SPA's ``index.html`` directly at the root path when its
+    static bundle is available. The Deck build uses no ``basePath``, so root is
+    its natural mount (its JS/CSS are already served from ``/_next/``). When the
+    Deck isn't built/enabled, falls back to a tiny info page so the operator
+    knows the daemon is alive and what's actually mounted.
+    """
+    async def h(_r):
+        # Serve the Deck SPA at "/" when its static bundle exists.
+        try:
+            from navig.gateway.deck.routes.static_assets import _find_deck_static_dir
+
+            static_dir = _find_deck_static_dir()
+            if static_dir is not None:
+                return web.FileResponse(static_dir / "index.html")
+        except Exception:
+            # Never let a serving hiccup crash "/": fall through to the info page.
+            pass
+        # Deck not mounted (no bot token, etc.) — show a one-pager so
+        # the operator knows the daemon is alive and what URLs work.
+        html = (
+            "<!doctype html><meta charset='utf-8'>"
+            "<title>NAVIG Gateway</title>"
+            "<style>body{font:14px/1.5 system-ui,sans-serif;max-width:560px;"
+            "margin:48px auto;padding:0 24px;color:#222}"
+            "code{background:#f3f3f3;padding:2px 6px;border-radius:3px}"
+            "h1{font-size:18px;margin:0 0 16px}a{color:#0066cc}</style>"
+            "<h1>NAVIG Gateway — online</h1>"
+            "<p>The daemon is running. The Deck UI is not currently mounted "
+            "(no Telegram bot token configured, or <code>deck.enabled</code> "
+            "is false).</p>"
+            "<p>Useful endpoints:</p>"
+            "<ul>"
+            "<li><a href='/health'>/health</a> — liveness</li>"
+            "<li><a href='/status'>/status</a> — runtime status</li>"
+            "<li><a href='/heartbeat/history?limit=5'>/heartbeat/history</a> — recent checks</li>"
+            "</ul>"
+            "<p>Run <code>navig init</code> if you haven't configured the Deck yet.</p>"
+        )
+        return web.Response(text=html, content_type="text/html")
+    return h
+
+
 def _health(gw):
     async def h(r):
         return json_ok({"status": "ok", "timestamp": datetime.now().isoformat()})
+
+    return h
+
+
+def _health_services(gw):
+    """Per-subsystem health snapshot (cloud manager, scheduler, heartbeat, …).
+
+    Makes silent subsystem failures observable — e.g. a dead cloudflared tunnel
+    shows ``cloud_manager: down`` while the gateway itself stays up.
+    """
+    async def h(r):
+        registry = getattr(gw, "service_registry", None)
+        snap = registry.snapshot() if registry is not None else {"status": "unknown", "services": {}}
+        # Verifier observability — enabled state + recent adversarial verdicts.
+        try:
+            from navig.agent.verifier import get_recent_verdicts, get_verifier
+
+            recent = get_recent_verdicts(limit=10)
+            snap["verifier"] = {
+                "enabled": get_verifier().enabled,
+                "recent_count": len(recent),
+                "recent_blocks": sum(1 for v in recent if not v.get("safe", True)),
+                "recent": recent,
+            }
+        except Exception:  # noqa: BLE001
+            pass
+        snap["timestamp"] = datetime.now().isoformat()
+        return json_ok(snap)
 
     return h
 

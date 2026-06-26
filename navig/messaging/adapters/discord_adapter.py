@@ -29,6 +29,7 @@ from navig.messaging.adapter import (
     ResolvedTarget,
     Thread,
 )
+from navig.messaging.attachments import attachment_bytes as _attachment_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,8 @@ class DiscordMessagingAdapter:
             if channel is None:
                 return DeliveryReceipt.failure(f"Discord channel {thread_id} not found")
 
-            msg = await channel.send(text)
+            files = await self._build_files(attachments) if attachments else None
+            msg = await channel.send(content=text or None, files=files or None)
             return DeliveryReceipt.success(
                 message_id=str(msg.id),
                 status=DeliveryStatus.SENT,
@@ -104,6 +106,20 @@ class DiscordMessagingAdapter:
         except Exception as exc:
             logger.error("discord_send_failed | channel=%s | error=%s", thread_id, exc)
             return DeliveryReceipt.failure(str(exc))
+
+    async def _build_files(self, attachments: list[dict[str, Any]]) -> list:
+        """Turn attachment descriptors into ``discord.File`` objects."""
+        import io
+
+        import discord  # type: ignore[import]
+
+        files = []
+        for att in attachments:
+            data = await _attachment_bytes(att, getattr(self, "_session", None))
+            if data is None:
+                continue
+            files.append(discord.File(io.BytesIO(data), filename=att.get("filename") or "file"))
+        return files
 
     # ── Resolve ───────────────────────────────────────────────
 

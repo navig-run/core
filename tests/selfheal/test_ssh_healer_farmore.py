@@ -268,14 +268,15 @@ class TestFallbackGitClone:
         # (just verify no exception raised and dest created)
 
     def test_clone_failure_raises_exit(self, tmp_path):
-        import click
+        import typer  # farmore raises typer.Exit; typer 0.26 vendors its own click,
+        # so the raised type is typer.Exit — NOT the system click.exceptions.Exit (R9-20).
         dest = tmp_path / "repos"
         with patch("navig.commands.farmore.subprocess.run", return_value=self._make_failure_result()):
             with patch("navig.commands.farmore.ch") as mock_ch:
                 mock_ch.warning = MagicMock()
                 mock_ch.info = MagicMock()
                 mock_ch.error = MagicMock()
-                with pytest.raises(click.exceptions.Exit):
+                with pytest.raises(typer.Exit):
                     _fallback_git_clone("https://github.com/owner/repo.git", str(dest))
 
     def test_updates_existing_repo(self, tmp_path):

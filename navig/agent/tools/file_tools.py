@@ -29,6 +29,28 @@ _MAX_WRITE_CHARS = 50_000
 _MAX_DIR_ENTRIES = 200
 
 
+def _active_cwd() -> Path:
+    """The active workshop's working directory (gateway-safe via the session
+    ContextVar; falls back to the process cwd)."""
+    try:
+        from navig.spaces.active import get_active_working_dir  # noqa: PLC0415
+
+        return get_active_working_dir()
+    except Exception:  # noqa: BLE001
+        return Path(os.getcwd())
+
+
+def _workshop_path(raw_path: str | None) -> Path:
+    """Resolve a tool path against the active workshop: absolute paths as-is,
+    relative (or empty) paths against the active working directory — so an
+    agent's relative reads/writes land inside the space, not the repo root."""
+    base = _active_cwd()
+    if not raw_path:
+        return base
+    p = Path(raw_path).expanduser()
+    return p if p.is_absolute() else (base / p)
+
+
 class ReadFileTool(BaseTool):
     """Read a local file and return its contents as a string."""
 
@@ -75,7 +97,7 @@ class ReadFileTool(BaseTool):
         if not raw_path:
             return ToolResult(name=self.name, success=False, error="'path' arg is required")
 
-        path = Path(raw_path).expanduser()
+        path = _workshop_path(raw_path)
         if not path.exists():
             return ToolResult(
                 name=self.name,
@@ -179,7 +201,7 @@ class WriteFileTool(BaseTool):
                 elapsed_ms=(time.monotonic() - t0) * 1000,
             )
 
-        path = Path(raw_path).expanduser()
+        path = _workshop_path(raw_path)
         encoding = args.get("encoding") or "utf-8"
         mode = "a" if args.get("append") else "w"
 
@@ -251,8 +273,7 @@ class ListFilesTool(BaseTool):
         on_status: StatusCallback | None = None,
     ) -> ToolResult:
         t0 = time.monotonic()
-        raw_path = args.get("path") or os.getcwd()
-        path = Path(raw_path).expanduser()
+        path = _workshop_path(args.get("path"))
 
         if not path.exists():
             return ToolResult(

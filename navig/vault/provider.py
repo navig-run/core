@@ -142,6 +142,32 @@ PROVIDERS: dict[str, dict] = {
         "key_field": "password",
         "env": "PLANETSCALE_PASSWORD",
     },
+    # ── Search / research / enrichment ────────────────────────────────────────
+    "tavily": {
+        "label": "Tavily Search",
+        "key_field": "api_key",
+        "env": "TAVILY_API_KEY",
+    },
+    "serpapi": {
+        "label": "SerpAPI",
+        "key_field": "api_key",
+        "env": "SERPAPI_API_KEY",
+    },
+    "brave": {
+        "label": "Brave Search",
+        "key_field": "api_key",
+        "env": "BRAVE_API_KEY",
+    },
+    "hunter": {
+        "label": "Hunter.io",
+        "key_field": "api_key",
+        "env": "HUNTER_API_KEY",
+    },
+    "apollo": {
+        "label": "Apollo.io",
+        "key_field": "api_key",
+        "env": "APOLLO_API_KEY",
+    },
 }
 
 

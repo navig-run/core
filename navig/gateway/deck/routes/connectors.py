@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 
 
 def _get_registry_and_auth():
+    from navig.connectors.auth_manager import ConnectorAuthManager
     from navig.connectors.bootstrap import ensure_connectors_loaded
     from navig.connectors.registry import get_connector_registry
-    from navig.connectors.auth_manager import ConnectorAuthManager
 
     ensure_connectors_loaded()
     return get_connector_registry(), ConnectorAuthManager()
@@ -68,6 +68,7 @@ def _build_connector_list(registry, auth_mgr) -> list[dict]:
             "status": "connected" if connected else info.get("status", "disconnected"),
             "tier": "native",
             "requires_oauth": getattr(manifest, "requires_oauth", True) if manifest else True,
+            "auth_mode": getattr(manifest, "auth_mode", "oauth") if manifest else "oauth",
             "can_search": info.get("can_search", False),
             "can_fetch": info.get("can_fetch", False),
             "can_act": info.get("can_act", False),
@@ -266,10 +267,10 @@ async def handle_deck_connectors_health(request: "web.Request") -> "web.Response
         return web.json_response({"ok": False, "error": "connector_id required"}, status=400)
 
     try:
+        from navig.connectors.auth_manager import ConnectorAuthManager
+        from navig.connectors.bootstrap import ensure_connectors_loaded
         from navig.connectors.errors import ConnectorNotFoundError
         from navig.connectors.registry import get_connector_registry
-        from navig.connectors.bootstrap import ensure_connectors_loaded
-        from navig.connectors.auth_manager import ConnectorAuthManager
 
         ensure_connectors_loaded()
         registry = get_connector_registry()
@@ -292,6 +293,101 @@ async def handle_deck_connectors_health(request: "web.Request") -> "web.Response
     except Exception as exc:
         logger.error("Health check error for %s: %s", connector_id, exc)
         return web.json_response({"ok": False, "message": str(exc)}, status=500)
+
+
+# ── Drive a connector (search / fetch / act) — powers in-app UIs ────────────
+
+async def _resolve_connector(connector_id: str):
+    """Load a connector and hydrate its vault token. Returns (connector, None)
+    or (None, web.Response) on error/not-connected."""
+    from navig.connectors.auth_manager import ConnectorAuthManager
+    from navig.connectors.bootstrap import ensure_connectors_loaded
+    from navig.connectors.errors import ConnectorNotFoundError
+    from navig.connectors.registry import get_connector_registry
+
+    ensure_connectors_loaded()
+    try:
+        obj = get_connector_registry().get(connector_id)
+    except ConnectorNotFoundError:
+        return None, web.json_response({"ok": False, "error": f"Connector '{connector_id}' not found"}, status=404)
+    connector = obj() if isinstance(obj, type) else obj
+    if connector is None:
+        return None, web.json_response({"ok": False, "error": "connector unavailable"}, status=500)
+    if getattr(connector.manifest, "requires_oauth", True):
+        if not await ConnectorAuthManager().inject_token(connector):
+            return None, web.json_response({"ok": False, "error": "Not connected"}, status=402)
+    return connector, None
+
+
+async def handle_deck_connectors_search(request: "web.Request") -> "web.Response":
+    connector_id = request.match_info.get("connector_id", "")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    query = str(body.get("query", "")).strip()
+    limit = int(body.get("limit", 20) or 20)
+    try:
+        connector, err = await _resolve_connector(connector_id)
+        if err is not None:
+            return err
+        results = await connector.search(query, limit=limit)
+        return web.json_response({"ok": True, "data": {"results": [r.to_dict() for r in results]}})
+    except Exception as exc:
+        logger.exception("connector search failed for %s", connector_id)
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+
+
+async def handle_deck_connectors_fetch(request: "web.Request") -> "web.Response":
+    connector_id = request.match_info.get("connector_id", "")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    resource_id = str(body.get("resource_id", "")).strip()
+    if not resource_id:
+        return web.json_response({"ok": False, "error": "resource_id required"}, status=400)
+    try:
+        connector, err = await _resolve_connector(connector_id)
+        if err is not None:
+            return err
+        res = await connector.fetch(resource_id)
+        return web.json_response({"ok": True, "data": {"resource": res.to_dict() if res else None}})
+    except Exception as exc:
+        logger.exception("connector fetch failed for %s", connector_id)
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+
+
+async def handle_deck_connectors_act(request: "web.Request") -> "web.Response":
+    connector_id = request.match_info.get("connector_id", "")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    try:
+        from navig.connectors.types import Action, ActionType
+
+        try:
+            action_type = ActionType(str(body.get("action_type", "")))
+        except ValueError:
+            return web.json_response(
+                {"ok": False, "error": f"unknown action_type; valid: {[a.value for a in ActionType]}"},
+                status=400,
+            )
+        connector, err = await _resolve_connector(connector_id)
+        if err is not None:
+            return err
+        action = Action(
+            action_type=action_type,
+            connector_id=connector_id,
+            resource_id=body.get("resource_id"),
+            params=body.get("params") or {},
+        )
+        result = await connector.act(action)
+        return web.json_response({"ok": True, "data": result.to_dict()})
+    except Exception as exc:
+        logger.exception("connector act failed for %s", connector_id)
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
 
 
 # ── MCP server management (Tier 3) ──────────────────────────────────────────

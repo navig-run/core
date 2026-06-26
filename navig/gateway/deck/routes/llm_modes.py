@@ -38,13 +38,14 @@ def _get_provider_key_status() -> dict:
                 break
         if not has_key and vault:
             try:
-                creds = vault.list_credentials()
-                for c in creds:
-                    if c.get("provider") == provider and c.get("enabled", True):
-                        has_key = True
-                        break
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+                # `list_creds` returns CredentialInfo dataclass objects (NOT dicts).
+                # We pass `provider=` so the vault filters server-side, then check
+                # the `.enabled` attribute.
+                creds = vault.list_creds(provider=provider, enabled_only=True)
+                if creds:
+                    has_key = True
+            except Exception as _vault_exc:  # noqa: BLE001
+                logger.debug("Vault probe for %r failed: %s", provider, _vault_exc)
         if provider == "ollama":
             has_key = True
         status[provider] = has_key

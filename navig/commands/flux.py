@@ -22,6 +22,8 @@ import socket
 
 import typer
 
+from navig._daemon_defaults import _GATEWAY_PORT
+
 try:
     import httpx
 
@@ -50,7 +52,7 @@ def _flux_callback(ctx: typer.Context) -> None:
         smart_launch("flux", flux_app)
 
 
-_GW = "http://127.0.0.1:8789"
+_GW = f"http://127.0.0.1:{_GATEWAY_PORT}"
 _FLUX_READ_TIMEOUT: int = 5   # Fast reads / deletes against the local mesh daemon
 _FLUX_WRITE_TIMEOUT: int = 10  # Mutations (POST) may take longer
 
@@ -286,7 +288,7 @@ def install(
     peer: str | None = typer.Argument(None, help="Target node_id / hostname (for --push)"),
 ) -> None:
     """Show one-liner install commands, or push the install to a peer (--push)."""
-    src = gateway or f"http://{_lan_ip()}:8789"
+    src = gateway or f"http://{_lan_ip()}:{_GATEWAY_PORT}"
 
     if push:
         if not peer:

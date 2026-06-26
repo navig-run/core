@@ -30,6 +30,7 @@ try:
 except ImportError as _exc:
     raise RuntimeError("aiohttp is required for gateway routes (pip install aiohttp)") from _exc
 
+from navig._daemon_defaults import _GATEWAY_PORT
 from navig.debug_logger import get_debug_logger
 
 logger = get_debug_logger()
@@ -128,10 +129,10 @@ def _get_my_url(gw: NavigGateway) -> str:
     """Best guess at this machine's reachable gateway URL from other LAN machines."""
     try:
         ip = gw.config.get("gateway", {}).get("host") or _lan_ip()
-        port = gw.config.get("gateway", {}).get("port", 8789)
+        port = gw.config.get("gateway", {}).get("port", _GATEWAY_PORT)
         return f"http://{ip}:{port}"
     except Exception:
-        return "http://localhost:8789"
+        return f"http://localhost:{_GATEWAY_PORT}"
 
 
 def _lan_ip() -> str:
@@ -252,7 +253,7 @@ def _ps1_oneliner(gateway_url: str, mesh_token: str) -> str:
         Start-Sleep 3; \
         Invoke-RestMethod -Method Post -Uri "$NAVIG_GATEWAY/mesh/ping" \
           -ContentType 'application/json' \
-          -Body (@{{gateway_url="http://localhost:8789"}}|ConvertTo-Json) | Out-Null; \
+          -Body (@{{gateway_url="http://localhost:{_GATEWAY_PORT}"}}|ConvertTo-Json) | Out-Null; \
         Write-Host '✓ NAVIG joined the mesh!' -ForegroundColor Green\
     """
     ).replace("\n", "")

@@ -192,6 +192,7 @@ def extract_rules(
                     source_conversation_id=source_conversation_id,
                     source_platform=source_platform,
                     tags=_auto_tags(content, category),
+                    approved=None,  # proposed — awaits user review
                 )
             )
 
@@ -217,6 +218,7 @@ def extract_rules(
                         source_conversation_id=source_conversation_id,
                         source_platform=source_platform,
                         tags=["problem_solution"] + _auto_tags(content, "technical"),
+                        approved=None,  # proposed — awaits user review
                     )
                 )
 
@@ -412,6 +414,7 @@ def _parse_llm_facts(
                 tags=tags,
                 source_conversation_id=source_conversation_id,
                 source_platform=source_platform,
+                approved=None,  # proposed — awaits user review
             )
         )
 

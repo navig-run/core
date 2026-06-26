@@ -16,6 +16,7 @@ import logging
 import os
 from pathlib import Path
 
+from navig._daemon_defaults import _GATEWAY_PORT
 from navig.core.yaml_io import atomic_write_text
 from navig.platform import paths
 
@@ -25,7 +26,7 @@ DAEMON_CONFIG = NAVIG_HOME / "daemon" / "config.json"
 DEFAULT_DAEMON_CONFIG = {
     "telegram_bot": True,
     "gateway": False,
-    "gateway_port": 8789,
+    "gateway_port": _GATEWAY_PORT,
     "scheduler": False,
     "health_port": 0,
     "engagement": True,
@@ -171,7 +172,7 @@ def main() -> None:
         )
 
     if _as_bool(cfg.get("gateway", False), False):
-        daemon.add_gateway(port=_as_int(cfg.get("gateway_port", 8789), 8789))
+        daemon.add_gateway(port=_as_int(cfg.get("gateway_port", _GATEWAY_PORT), _GATEWAY_PORT))
 
     if _as_bool(cfg.get("scheduler", False), False):
         daemon.add_scheduler()

@@ -152,7 +152,9 @@ def require_active_host(options: dict, cfg: ConfigManager) -> str:  # type: igno
 
         host_name = require_active_host(options, config_manager)
     """
-    host_name: str | None = options.get("host") or cfg.get_active_host()
+    raw_host = options.get("host") or cfg.get_active_host()
+    # get_active_host may return a bare str or a (host, source) tuple.
+    host_name: str | None = raw_host[0] if isinstance(raw_host, tuple) else raw_host
     if host_name:
         return host_name
 
@@ -229,9 +231,11 @@ def require_active_server(
 
         server_name = require_active_server(options, config_manager)
     """
-    server_name: str | None = (
+    raw_server = (
         options.get("app") or options.get("host") or options.get("server") or cfg.get_active_server()
     )
+    # Unwrap potential (value, source) tuple from ConfigSingleton delegation.
+    server_name: str | None = raw_server[0] if isinstance(raw_server, tuple) else raw_server
     if server_name:
         return server_name
 
@@ -307,7 +311,9 @@ def require_active_app(
 
         app_name = require_active_app(options, config_manager)
     """
-    app_name: str | None = options.get("app") or cfg.get_active_app()
+    raw_app = options.get("app") or cfg.get_active_app()
+    # Unwrap potential (value, source) tuple from ConfigSingleton delegation.
+    app_name: str | None = raw_app[0] if isinstance(raw_app, tuple) else raw_app
     if app_name:
         return app_name
 

@@ -26,9 +26,13 @@ from navig._llm_defaults import _DEFAULT_MAX_TOKENS
 logger = logging.getLogger(__name__)
 
 # ── Model constants ──────────────────────────────────────────
-ORCHESTRATOR_MODEL = "groq/llama-3.3-70b-versatile"
-WORKER_MODEL_FAST = "groq/llama-3.3-70b-versatile"
-WORKER_MODEL_SMART = "anthropic/claude-sonnet-4-20250514"
+# Current models. Workers run as full ReAct children via run_agentic, so these are
+# the *intent*; the actual model is resolved by run_agentic's tier routing (which,
+# with an Anthropic key present, prefers Opus 4.8 for the big tier). Prompt caching +
+# effort (shipped separately) make a fleet of specialists affordable.
+ORCHESTRATOR_MODEL = "claude-haiku-4-5"
+WORKER_MODEL_FAST = "claude-haiku-4-5"
+WORKER_MODEL_SMART = "claude-opus-4-8"
 WORKER_MODEL_DEFAULT = WORKER_MODEL_SMART
 
 # ── Caps ─────────────────────────────────────────────────────
@@ -132,17 +136,21 @@ class CoordinatorAgent:
 
     # ── Public API ───────────────────────────────────────────
 
-    async def orchestrate(self, user_request: str) -> str:
+    async def orchestrate(
+        self, user_request: str, preset_specs: list[WorkerSpec] | None = None
+    ) -> str:
         """Run the full plan→execute→synthesise lifecycle.
 
-        Returns a human-readable summary of all worker outcomes.
+        *preset_specs*: when provided (e.g. by the formation bridge), the planning
+        phase is skipped and these specialists are used directly. Returns a
+        human-readable summary of all worker outcomes.
         """
         # Reset state for a fresh run
         self._workers = {}
         self._results = {}
 
-        # Phase 1: Plan
-        specs = await self._plan_work(user_request)
+        # Phase 1: Plan (or use injected formation specialists)
+        specs = preset_specs if preset_specs else await self._plan_work(user_request)
 
         # Cap at MAX_WORKERS
         specs = specs[: self.MAX_WORKERS]
@@ -311,34 +319,67 @@ class CoordinatorAgent:
         model: str,
         timeout: int,
     ) -> str:
-        """Run a single-turn worker conversation and return the output text."""
-        tool_section = f"\nAvailable tools: {tools}" if tools else ""
-        context_section = f"\nContext:\n{context}" if context else ""
+        """Run a worker as a real ReAct child agent and return its final answer.
 
-        system_msg = (
-            "You are a focused worker agent. Complete the assigned task "
-            "concisely and accurately."
-            f"{tool_section}{context_section}"
-        )
-        messages = [
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": task},
-        ]
+        Each worker is a scoped ``ConversationalAgent.run_agentic`` child (full
+        tool-using loop), not a single-turn LLM call — the same proven path
+        DelegateTool uses. Guards copied from DelegateTool: bounded iteration budget,
+        toolset scoping, and **no delegation/coordinator toolset** so a worker can't
+        recursively spawn another coordinator (depth is capped at 1 here).
+        """
+        from navig.agent.conv import ConversationalAgent
 
-        result = await asyncio.to_thread(
-            self._call_worker_model, messages, model, timeout
+        # Map the planner's model hint to a routing tier. run_agentic resolves the
+        # concrete model (Opus 4.8 for "big" when an Anthropic key is present).
+        tier = "big" if str(model) in ("smart", WORKER_MODEL_SMART) else "small"
+
+        # Scope tools. tools_allowed are toolset names (e.g. "research", "code"); never
+        # hand a child "delegation"/"full" so it cannot re-enter the coordinator.
+        unsafe = {"delegation", "full", "coordinator"}
+        scoped = [t for t in (tools or []) if t not in unsafe]
+        toolset: str | list[str] = scoped or "core"
+
+        prompt = task if not context else f"Context:\n{context}\n\nTask:\n{task}"
+        # Bounded budget — keep specialists cheap; the parent's loop does the heavy lift.
+        budget = max(4, min(15, getattr(self, "_worker_iterations", 12)))
+
+        child = ConversationalAgent()
+        try:
+            child._user_identity = (self.session_context or {}).get("user_identity", {})
+        except Exception:  # noqa: BLE001
+            pass
+        return await asyncio.wait_for(
+            child.run_agentic(
+                message=prompt,
+                max_iterations=budget,
+                toolset=toolset,
+                tier_override=tier,
+                cost_tracker=getattr(self, "cost_tracker", None),
+            ),
+            timeout=timeout,
         )
-        return result.content
 
     # ── Phase 3: Synthesis ───────────────────────────────────
 
     async def _synthesize_results(self, original_request: str) -> str:
-        """Use cheap model to produce a summary of all worker outcomes."""
+        """Use cheap model to produce a summary of all worker outcomes.
+
+        When the adversarial verifier is enabled, each completed specialist's output
+        is fact-checked *before* it's merged, so the coordinator returns a **verified**
+        synthesis rather than a blind concatenation. Flagged outputs are labelled so the
+        synthesizer (and the user) can weigh them appropriately.
+        """
+        verdicts = await self._verify_worker_outputs(original_request)
+
         parts: list[str] = []
         for wid, res in self._results.items():
             status = "✓" if res.state == WorkerState.COMPLETED else "✗"
             text = res.output[:2000] if res.output else (res.error or "no output")
-            parts.append(f"### Worker {wid} [{status}]\n{text}")
+            flag = ""
+            v = verdicts.get(wid)
+            if v is not None and not v.safe:
+                flag = f" ⚠ UNVERIFIED ({v.reason})"
+            parts.append(f"### Worker {wid} [{status}]{flag}\n{text}")
         results_text = "\n\n".join(parts)
 
         prompt = (
@@ -363,6 +404,37 @@ class CoordinatorAgent:
                 mark = "✓" if res.state == WorkerState.COMPLETED else "✗"
                 lines.append(f"  {mark} {wid}: {res.output[:200] if res.output else res.error or 'no output'}")
             return "\n".join(lines)
+
+    async def _verify_worker_outputs(self, original_request: str) -> dict[str, Any]:
+        """Adversarially fact-check completed worker outputs. Returns {worker_id: Verdict}.
+
+        No-op (empty dict) when the verifier is disabled. Best-effort and concurrent.
+        """
+        try:
+            from navig.agent.verifier import get_verifier
+
+            verifier = get_verifier()
+            if not verifier.enabled:
+                return {}
+        except Exception:  # noqa: BLE001
+            return {}
+
+        completed = [
+            (wid, res)
+            for wid, res in self._results.items()
+            if res.state == WorkerState.COMPLETED and res.output
+        ]
+        if not completed:
+            return {}
+
+        async def _check(wid: str, output: str):
+            try:
+                return wid, await verifier.verify_claim(output[:2000], context=original_request)
+            except Exception:  # noqa: BLE001
+                return wid, None
+
+        results = await asyncio.gather(*[_check(wid, res.output) for wid, res in completed])
+        return {wid: v for wid, v in results if v is not None}
 
     # ── LLM call helpers ─────────────────────────────────────
 

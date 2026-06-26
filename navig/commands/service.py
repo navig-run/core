@@ -216,6 +216,64 @@ def service_install(
 # =========================================================================
 # start (foreground or signal running daemon)
 # =========================================================================
+
+def _tail_service_logs() -> None:
+    """Tail daemon.log and debug.log simultaneously until Ctrl+C."""
+    import threading
+    import time
+
+    from pathlib import Path
+
+    log_dir = _log_dir()
+    home_navig = Path.home() / ".navig"
+
+    files = {
+        "daemon ": log_dir / "daemon.log",
+        "gateway": home_navig / "debug.log",
+    }
+
+    # Wait up to 5 s for at least one log file to appear
+    for _ in range(25):
+        if any(p.exists() for p in files.values()):
+            break
+        time.sleep(0.2)
+
+    ch.info("Streaming logs (Ctrl+C to stop)...")
+    ch.dim("  " + "  |  ".join(f"{label}: {path}" for label, path in files.items()))
+    ch.console.print()
+
+    stop_event = threading.Event()
+
+    def _follow(label: str, path: Path) -> None:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch(exist_ok=True)
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                fh.seek(0, 2)  # start at end — only new lines
+                while not stop_event.is_set():
+                    line = fh.readline()
+                    if line:
+                        print(f"[{label}] {line.rstrip()}", flush=True)
+                    else:
+                        time.sleep(0.25)
+        except Exception:
+            pass
+
+    threads = [
+        threading.Thread(target=_follow, args=(label, path), daemon=True)
+        for label, path in files.items()
+    ]
+    for t in threads:
+        t.start()
+
+    try:
+        while True:
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        stop_event.set()
+        ch.dim("Log streaming stopped.")
+
+
 @service_app.command("start")
 def service_start(
     foreground: bool = typer.Option(
@@ -223,6 +281,12 @@ def service_start(
         "--foreground",
         "-f",
         help="Run in foreground (blocks terminal)",
+    ),
+    logs: bool = typer.Option(
+        False,
+        "--logs",
+        "-l",
+        help="Stream daemon + gateway logs to stdout after starting (Ctrl+C to stop tailing)",
     ),
 ):
     """
@@ -234,6 +298,7 @@ def service_start(
     Examples:
         navig service start
         navig service start --foreground
+        navig service start --logs
     """
     from navig.daemon.supervisor import NavigDaemon
 
@@ -332,6 +397,9 @@ def service_start(
         else:
             ch.error("Daemon failed to start. Check logs: navig service logs")
             raise typer.Exit(1)
+
+    if logs:
+        _tail_service_logs()
 
 
 # =========================================================================
@@ -507,6 +575,58 @@ def service_restart():
 # status
 # =========================================================================
 @service_app.command("status")
+def reachability_summary() -> dict[str, str]:
+    """How this brain is reached + where to open the deck — a single source of
+    truth shared by ``navig service status`` and the onboarding final dashboard.
+
+    Pure config read (no daemon import), so it's safe to call from onboarding.
+    Mirrors ``cloud/manager.py`` mode resolution: lighthouse > direct > tunnel,
+    falling back to local-only when ``cloud.enabled`` is false.
+
+    Returns ``mode``, ``reach_url`` (the public edge, or the local gateway when
+    local-only), ``gateway_url`` (always the loopback Deck API/UI), and
+    ``deck_url`` (where to open the deck — the deployed deck if set, else the
+    reachable edge, else the local gateway).
+    """
+    try:
+        from navig.gateway_client import gateway_cli_defaults
+
+        port = gateway_cli_defaults()[0]
+    except Exception:  # noqa: BLE001
+        port = 8789
+    lighthouse = public = deck_public = ""
+    enabled = True
+    try:
+        from navig.config import get_config_manager
+
+        gc = get_config_manager().global_config or {}
+        cloud = gc.get("cloud", {}) if isinstance(gc, dict) else {}
+        deck = gc.get("deck", {}) if isinstance(gc, dict) else {}
+        lighthouse = str(cloud.get("lighthouse_url") or "").strip().rstrip("/")
+        public = str(cloud.get("public_url") or "").strip().rstrip("/")
+        enabled = bool(cloud.get("enabled", True))
+        deck_public = str((deck or {}).get("public_url") or "").strip().rstrip("/")
+    except Exception:  # noqa: BLE001
+        pass
+    mode = (
+        "lighthouse" if lighthouse
+        else "direct" if public
+        else ("tunnel" if enabled else "local-only")
+    )
+    gateway_url = f"http://127.0.0.1:{port}"
+    reach_url = lighthouse or public or gateway_url
+    # The deck opens at: a separately-deployed deck (Cloudflare Pages) if set,
+    # else the reachable edge (the gateway serves the prebuilt SPA), else local.
+    deck_url = deck_public or reach_url
+    return {
+        "mode": mode,
+        "reach_url": reach_url,
+        "gateway_url": gateway_url,
+        "deck_url": deck_url,
+        "gateway_port": str(port),
+    }
+
+
 def service_status(
     json_output: bool = typer.Option(False, "--json", help="JSON output"),
 ):
@@ -543,6 +663,17 @@ def service_status(
     ch.console.print()
     for line in detail.split("\n"):
         ch.console.print(f"  {line}")
+
+    # Reachability + how to open the deck (P4) — answer "what's running / what next".
+    s = reachability_summary()
+    ch.console.print()
+    ch.console.print(f"  Gateway:      {s['gateway_url']}  (the Deck API + UI)")
+    ch.console.print(f"  Reachability: {s['mode']}  ({s['reach_url']})")
+    ch.console.print(f"  Deck URL:     {s['deck_url']}")
+    ch.console.print(f"  Open the deck: [bold]navig deck open[/bold]   (or browse the URL above)")
+    if not running:
+        ch.console.print("  Start it:      [bold]navig service start[/bold]")
+    ch.console.print(f"  Change reach:  navig cloud direct <url> | navig lighthouse deploy")
     ch.console.print()
 
 

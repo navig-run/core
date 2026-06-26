@@ -128,18 +128,34 @@ def detect_transcription_backend() -> TranscriptionBackend:
 
 
 def _resolve_key(*names: str) -> str | None:
-    """Try vault then environment variables, return first hit."""
-    # Vault
+    """Try the vault (by provider) then environment variables; return first hit.
+
+    Keys added via ``navig vault set <provider> <key>`` live under the provider,
+    resolved by the vault's canonical ``get_api_key`` — not a literal
+    ``provider/api-key`` label. ``/`` names are treated as ``provider/data_key``;
+    plain names are env vars.
+    """
     try:
         from navig.vault import get_vault
 
         vault = get_vault()
         for name in names:
-            if "/" in name:  # vault-style label
-                val = vault.get_secret(name)
-                if val:
-                    return val
-    except (ImportError, AttributeError, RuntimeError, KeyError) as exc:
+            if "/" in name:  # provider/data_key style label
+                provider = name.split("/", 1)[0]
+                try:
+                    key = vault.get_api_key(provider)
+                    if key:
+                        return str(key)
+                except Exception:  # noqa: BLE001
+                    pass
+                for label in (provider, f"{provider}/api_key", name):
+                    try:
+                        s = vault.get_secret(label)
+                        if s:
+                            return str(s)
+                    except Exception:  # noqa: BLE001 — KeyError on missing label is expected
+                        continue
+    except Exception as exc:  # noqa: BLE001
         logger.debug("Voice key vault lookup failed: %s", exc)
     # Env vars
     for name in names:

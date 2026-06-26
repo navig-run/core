@@ -1,7 +1,7 @@
 """Batch endpoint for the Deck API.
 
-Collapses a screen's many GET reads into a single HTTP round-trip. The Deck
-runs over a cloudflared tunnel from deck.navig.run, so each individual call
+Collapses a screen's many GET reads into a single HTTP round-trip. The Relay
+runs over a cloudflared tunnel from relay.navig.run, so each individual call
 pays the full tunnel RTT plus the browser's ~6-connection HTTP/1.1 cap. A
 batch lets a section load (status + ops + settings + monitor + …) cost one
 request and one connection.
@@ -34,6 +34,19 @@ _MAX_REQUESTS = 24
 
 async def handle_deck_batch(request: "web.Request") -> "web.Response":
     """POST /api/deck/batch  — body: {"requests": ["/api/deck/status", ...]}"""
+    # aiohttp permanently disables clone() on a request once its body has been
+    # read — but we BOTH read the JSON body (for the path list) AND need to
+    # clone a fresh sub-request per path below. So capture a cloneable template
+    # UP FRONT, before the read. The template's own content is never read, so
+    # it stays cloneable for every sub-path. (Cloning after request.json()
+    # raised "Cannot clone request after reading its content" and failed every
+    # sub-request.)
+    template = None
+    try:
+        template = request.clone()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("batch: could not pre-clone request template: %r", exc)
+
     try:
         body = await request.json()
     except Exception:
@@ -47,6 +60,10 @@ async def handle_deck_batch(request: "web.Request") -> "web.Response":
         )
 
     deck_user_id = request.get("deck_user_id")
+    # Clone sub-requests from the pre-read template; fall back to the original
+    # only if the template couldn't be captured (then clone() may still fail
+    # and the per-path try/except records it cleanly).
+    base = template if template is not None else request
 
     async def _one(path: object) -> dict:
         if (
@@ -58,7 +75,7 @@ async def handle_deck_batch(request: "web.Request") -> "web.Response":
         try:
             # NB: clone() preserves the outer method (POST) — force GET so the
             # router resolves the read route instead of "Method Not Allowed".
-            sub = request.clone(method="GET", rel_url=path)
+            sub = base.clone(method="GET", rel_url=path)
             # Carry the authenticated user through to handlers that read it
             # (middleware doesn't run on a manually-dispatched sub-request).
             if deck_user_id is not None:

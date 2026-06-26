@@ -41,7 +41,7 @@ import logging
 import tempfile
 import time
 import wave
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -163,7 +163,7 @@ class StreamingSTT:
         audio_queue: asyncio.Queue[bytes | None],
         *,
         is_voice: bool = True,
-    ) -> AsyncIterator[StreamingSTTResult]:
+    ) -> AsyncGenerator[StreamingSTTResult, None]:
         """
         Async generator that yields STT results from the audio stream.
 
@@ -194,15 +194,14 @@ class StreamingSTT:
                     )
                     # buffered was populated during the Deepgram attempt
 
-        # Drain remaining queue into buffer
+        # Drain remaining queue into buffer, blocking until the None sentinel.
+        # Using get_nowait() only captures audio already queued at this instant;
+        # audio arriving later would be silently dropped.
         while True:
-            try:
-                chunk = audio_queue.get_nowait()
-                if chunk is None:
-                    break
-                buffered.append(chunk)
-            except asyncio.QueueEmpty:
+            chunk = await audio_queue.get()
+            if chunk is None:
                 break
+            buffered.append(chunk)
 
         # Fallback: file-based STT on the buffered audio
         if buffered:
@@ -227,7 +226,7 @@ class StreamingSTT:
         fallback without re-reading the microphone.
         """
         try:
-            import websockets  # noqa: F401
+            import websockets as _ws  # noqa: F401  (availability check)
         except ImportError as exc:
             raise RuntimeError(
                 "websockets library required for streaming STT. "
@@ -394,7 +393,11 @@ class StreamingSTT:
                 logger.error("STT fallback failed: %s", result.error)
                 return None
 
-            latency_ms = (time.monotonic() - (self._start_time or time.monotonic())) * 1000
+            latency_ms: float | None = None
+            if self._start_time is not None:
+                latency_ms = (time.monotonic() - self._start_time) * 1000
+            else:
+                logger.debug("_start_time not set; latency not available for fallback result")
             return StreamingSTTResult(
                 transcript=result.text or "",
                 is_final=True,
@@ -443,14 +446,17 @@ class StreamingSTT:
             logger.warning("Vault key resolution error: %s", exc)
         return None
 
-    def _get_openai_key(self) -> str | None:
-        """Resolve OpenAI API key exclusively from Vault."""
-        try:
-            from navig.vault import get_vault
+    async def transcribe_chunks(
+        self,
+        chunks: list[bytes],
+        *,
+        is_voice: bool = True,
+    ) -> StreamingSTTResult | None:
+        """Public entry point to transcribe pre-buffered PCM chunks via fallback STT.
 
-            return get_vault().get_secret(self.config.openai_vault_label)
-        except Exception:
-            return None
+        Preferred over calling the private ``_fallback`` directly.
+        """
+        return await self._fallback(chunks, is_voice=is_voice)
 
 
 # ---------------------------------------------------------------------------
@@ -481,8 +487,8 @@ async def transcribe_session_audio(
         return None
 
     stt = StreamingSTT(config=config)
-    # Use fallback directly since audio is already buffered
-    result = await stt._fallback(session.audio_chunks, is_voice=False)
+    # Use the public transcribe_chunks() API rather than the private _fallback().
+    result = await stt.transcribe_chunks(session.audio_chunks, is_voice=False)
     if result and result.transcript:
         return result.transcript
     return None

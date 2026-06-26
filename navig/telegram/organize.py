@@ -76,6 +76,74 @@ async def rename(chat, title: str, *, confirm: bool = False) -> dict:
     return {"renamed": True, "chat": ent.id, "new_title": title}
 
 
+async def rename_many(specs: list[dict], *, confirm: bool = False,
+                      delay: float = 2.0, max_wait: float = 1200.0,
+                      max_flood_retries: int = 8, progress=None) -> list[dict]:
+    """Rename many chats in one client session, flood-safe for unattended runs.
+
+    ``specs`` = ``[{"chat": id|@user, "title": str}]``. Reuses one connection, sleeps
+    ``delay`` s between edits, and on ``FloodWaitError`` waits the requested time and
+    retries — up to ``max_flood_retries`` times per chat, skipping any single wait
+    longer than ``max_wait`` s. ``progress(dict)`` is called after each chat (for live
+    logging). Dry-run unless ``confirm``. Returns ``{chat, title, status}`` per spec,
+    status ∈ dry_run|renamed|error.
+    """
+    import asyncio
+
+    from telethon.errors import FloodWaitError
+    from telethon.tl.functions.channels import EditTitleRequest
+    from telethon.tl.functions.messages import EditChatTitleRequest
+    from telethon.tl.types import Chat as _TLChat
+
+    if not confirm:
+        return [{"chat": s["chat"], "title": s["title"], "status": "dry_run"} for s in specs]
+
+    async def _edit(client, ent, title):
+        # Branch by real type so the true error surfaces (don't mask admin errors
+        # by blindly retrying the basic-group API on a channel/megagroup).
+        if isinstance(ent, _TLChat):  # legacy basic group
+            await client(EditChatTitleRequest(chat_id=ent.id, title=title))
+        else:  # Channel — broadcast or megagroup
+            await client(EditTitleRequest(channel=ent, title=title))
+
+    def _emit(ev: dict) -> None:
+        # A logging/encoding error in the caller must never abort the run.
+        if progress:
+            try:
+                progress(ev)
+            except Exception:  # noqa: BLE001
+                pass
+
+    out: list[dict] = []
+    async with UserClient() as c:
+        await c.get_dialogs()  # warm the entity cache so id refs resolve
+        for i, s in enumerate(specs):
+            chat, title = s["chat"], s["title"]
+            result = {"chat": chat, "title": title, "status": "error", "error": "unknown"}
+            for _ in range(max_flood_retries + 1):
+                try:
+                    ent = await c.get_entity(chat)
+                    await _edit(c, ent, title)
+                    result = {"chat": chat, "title": title, "status": "renamed"}
+                    break
+                except FloodWaitError as fw:
+                    if fw.seconds > max_wait:
+                        result = {"chat": chat, "title": title, "status": "error",
+                                  "error": f"flood {fw.seconds}s > max_wait"}
+                        break
+                    logger.warning("flood wait %ss on rename %s", fw.seconds, chat)
+                    _emit({"chat": chat, "status": "flood_wait", "seconds": fw.seconds})
+                    await asyncio.sleep(fw.seconds + 1)
+                except Exception as exc:  # noqa: BLE001 — e.g. not admin / no change_info
+                    result = {"chat": chat, "title": title, "status": "error", "error": str(exc)}
+                    break
+            out.append(result)
+            _emit(result)
+            if delay and i < len(specs) - 1:
+                await asyncio.sleep(delay)
+    return out
+
+
 async def links(chat, *, limit: int | None = 500) -> dict:
     """Scan a chat's recent messages and return a deduped link index
     (tiktok / youtube / telegram / url)."""

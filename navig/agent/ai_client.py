@@ -283,7 +283,13 @@ class AIClient:
                     continue
                 key = _resolve_provider_api_key(pid)
                 if key:
-                    logger.info("Provider detected via registry sweep: %s", pid)
+                    # This is the default provider candidate. The hybrid
+                    # router's small/big/coder slots may pin different
+                    # providers per tier (see llm_router.resolve_llm and
+                    # the fast-chat override). For "Hey" the chat path
+                    # routes via xAI/Groq/Cerebras when available, NOT
+                    # via this candidate.
+                    logger.info("Default provider candidate: %s (chat may use a faster slot)", pid)
                     return pid
 
             # ② Fall through to remaining registry entries (alphabetic by insertion).
@@ -297,7 +303,13 @@ class AIClient:
                     continue
                 key = _resolve_provider_api_key(pid)
                 if key:
-                    logger.info("Provider detected via registry sweep: %s", pid)
+                    # This is the default provider candidate. The hybrid
+                    # router's small/big/coder slots may pin different
+                    # providers per tier (see llm_router.resolve_llm and
+                    # the fast-chat override). For "Hey" the chat path
+                    # routes via xAI/Groq/Cerebras when available, NOT
+                    # via this candidate.
+                    logger.info("Default provider candidate: %s (chat may use a faster slot)", pid)
                     return pid
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical

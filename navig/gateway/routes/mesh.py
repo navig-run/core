@@ -90,8 +90,51 @@ def _ping(gw: NavigGateway):
     return h
 
 
+def _is_safe_mesh_url(url: str) -> bool:
+    """Mesh is LAN-only by design — block SSRF to public hosts / cloud metadata.
+
+    Requires http(s) and that the host (resolving hostnames) maps only to private
+    or loopback addresses. Rejects public IPs and link-local (169.254.169.254
+    metadata is link-local, which Python counts as private, so exclude it explicitly).
+    """
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    def _ip_ok(ip_str: str) -> bool:
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            return False
+        return (ip.is_private or ip.is_loopback) and not ip.is_link_local
+
+    try:
+        parsed = urlparse(url)
+    except Exception:  # noqa: BLE001
+        return False
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return False
+    host = parsed.hostname
+    try:
+        ipaddress.ip_address(host)
+        return _ip_ok(host)  # IP literal
+    except ValueError:
+        pass
+    # Hostname → resolve; EVERY resolved address must be LAN/loopback (blocks
+    # public domains and cloud-metadata names). Unresolvable → reject (can't verify).
+    try:
+        infos = socket.getaddrinfo(host, parsed.port or 80, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return False
+    addrs = {info[4][0] for info in infos}
+    return bool(addrs) and all(_ip_ok(a) for a in addrs)
+
+
 async def _bootstrap_peer(url: str, gw: NavigGateway) -> dict | None:
     """Fetch /health then /mesh/peers from a manually-specified peer URL."""
+    if not _is_safe_mesh_url(url):
+        logger.warning("[mesh.routes] Rejected non-LAN bootstrap URL (SSRF guard): %s", url)
+        return None
     try:
         import time
 

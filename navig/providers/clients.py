@@ -429,6 +429,11 @@ class OpenAIClient(BaseProviderClient):
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
             "stream": True,
+            # Ask OpenAI-compatible backends (incl. xAI/grok) to emit a final
+            # usage chunk. Without this, SSE returns no usage at all and every
+            # streamed turn records 0 tokens / $0.00. The stream loop already
+            # captures chunk.usage when present.
+            "stream_options": {"include_usage": True},
         }
 
         if request.tools:
@@ -497,6 +502,31 @@ class OpenAIClient(BaseProviderClient):
 class AnthropicClient(BaseProviderClient):
     """Client for Anthropic Claude API."""
 
+    @staticmethod
+    def _apply_cache_control(
+        system_content: Any, messages: list[dict]
+    ) -> Any:
+        """Inject Anthropic prompt-cache markers on system + first 2 user messages.
+
+        Prompt caching is GA (no beta header). A breakpoint on the system block
+        caches tools+system together (render order is tools → system → messages),
+        which is the bulk of a ReAct turn's frozen prefix. Mutates *messages* in
+        place and returns the (possibly rewrapped) system content. Shared by
+        ``complete()`` and ``complete_stream()`` so streamed turns cache too.
+        """
+        if system_content is not None and isinstance(system_content, str):
+            system_content = [
+                {"type": "text", "text": system_content, "cache_control": {"type": "ephemeral"}}
+            ]
+        user_count = 0
+        for msg in messages:
+            if msg["role"] == "user" and user_count < 2 and isinstance(msg["content"], str):
+                msg["content"] = [
+                    {"type": "text", "text": msg["content"], "cache_control": {"type": "ephemeral"}}
+                ]
+                user_count += 1
+        return system_content
+
     def _build_headers(self) -> dict[str, str]:
         """Build Anthropic-specific headers."""
         headers = {
@@ -525,17 +555,7 @@ class AnthropicClient(BaseProviderClient):
 
         # F-12: inject Anthropic prompt-caching markers on system + first 2 user messages
         if request.cache_control:
-            if system_content is not None:
-                system_content = [
-                    {"type": "text", "text": system_content, "cache_control": {"type": "ephemeral"}}
-                ]  # type: ignore[assignment]
-            user_count = 0
-            for msg in messages:
-                if msg["role"] == "user" and user_count < 2:
-                    msg["content"] = [
-                        {"type": "text", "text": msg["content"], "cache_control": {"type": "ephemeral"}}
-                    ]
-                    user_count += 1
+            system_content = self._apply_cache_control(system_content, messages)
 
         # Build request body
         body: dict[str, Any] = {
@@ -559,6 +579,13 @@ class AnthropicClient(BaseProviderClient):
 
         if request.stop:
             body["stop_sequences"] = request.stop
+
+        # Provider-specific params (adaptive thinking, output_config.effort, …).
+        # These are top-level fields on the Anthropic Messages body, so a shallow
+        # merge is correct. NOTE: never inject temperature/top_p/budget_tokens for
+        # Opus 4.8/4.7 — they 400. The effort layer emits only thinking/output_config.
+        if request.extra_body:
+            body.update(request.extra_body)
 
         try:
             response = await client.post(
@@ -624,6 +651,10 @@ class AnthropicClient(BaseProviderClient):
             else:
                 messages.append({"role": m.role, "content": m.content})
 
+        # Same cache marker injection as complete() — streamed turns cache too.
+        if request.cache_control:
+            system_content = self._apply_cache_control(system_content, messages)
+
         body: dict[str, Any] = {
             "model": request.model,
             "messages": messages,
@@ -646,6 +677,9 @@ class AnthropicClient(BaseProviderClient):
 
         if request.stop:
             body["stop_sequences"] = request.stop
+
+        if request.extra_body:
+            body.update(request.extra_body)
 
         try:
             async with client.stream(

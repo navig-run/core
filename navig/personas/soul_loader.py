@@ -74,6 +74,13 @@ def load_soul(
         if space_soul:
             return space_soul
 
+    # 2b. Active folder-space SOUL.md — the workshop's own identity, resolved from
+    #     the working directory (covers folder-spaces that live outside ~/.navig).
+    if cwd is not None:
+        ws_soul = _try_read(Path(cwd) / ".navig" / "SOUL.md")
+        if ws_soul:
+            return ws_soul
+
     # 3. Workspace IDENTITY.md — modular identity file (RFC #37, Phase 1)
     #    Checked before the legacy SOUL.md to allow file-driven identity without
     #    replacing the full SOUL.md monolith. Fully additive: existing SOUL.md

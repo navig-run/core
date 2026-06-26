@@ -4,7 +4,11 @@ Remote Operations
 Execute commands through secure encrypted channels.
 """
 
+import base64
+import hashlib
 import os
+import shlex
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -100,6 +104,10 @@ class RemoteOperations:
 
         # Add other SSH options
         ssh_args.extend(["-o", "ConnectTimeout=10"])
+        # BatchMode=yes prevents interactive prompts (host-key confirmation,
+        # password) from blocking indefinitely when stdin is closed or
+        # redirected — critical for background/agent-spawned deploys.
+        ssh_args.extend(["-o", "BatchMode=yes"])
 
         # Add port if not default
         if server_config.get("port", 22) != 22:
@@ -167,31 +175,66 @@ class RemoteOperations:
         except subprocess.TimeoutExpired as _exc:
             raise RuntimeError(f"Local command timed out after {_SSH_TIMEOUT}s") from _exc
 
+    def _ssh_base_args(self, server_config: dict[str, Any]) -> list[str]:
+        """SSH argv up to ``user@host`` (no command) — mirrors execute_command's
+        connection posture so exec-channel transfers behave identically."""
+        if server_config.get("trust_new_host"):
+            opts = ["-o", "StrictHostKeyChecking=accept-new"]
+        else:
+            opts = ["-o", "StrictHostKeyChecking=yes"]
+        args = [_resolve_ssh_bin(), *opts, "-o", "ConnectTimeout=10", "-o", "BatchMode=yes"]
+        if server_config.get("port", 22) != 22:
+            args.extend(["-p", str(server_config["port"])])
+        if server_config.get("ssh_key"):
+            args.extend(["-i", server_config["ssh_key"]])
+        user, host = _require_server_identity(server_config)
+        args.append(f"{user}@{host}")
+        return args
+
     def upload_file(
         self, local_path: Path, remote_path: str, server_config: dict[str, Any]
     ) -> bool:
-        """Upload file to remote server via SCP."""
-        scp_bin = _resolve_scp_bin()
-        scp_args = [scp_bin]
+        """Upload a file to the remote host.
 
-        # Match the StrictHostKeyChecking posture used in execute_command().
+        Transport order (``NAVIG_TRANSFER_MODE`` = auto | scp | exec, default
+        auto): try SCP, and on any failure fall back to the SSH **exec channel**
+        (base64 over stdin). This keeps transfers working on servers where SCP is
+        broken but ``ssh`` exec works. Local hosts copy directly.
+        """
+        if is_local_host(server_config):
+            try:
+                shutil.copyfile(str(local_path), remote_path)
+                return True
+            except OSError:
+                return False
+
+        mode = os.environ.get("NAVIG_TRANSFER_MODE", "auto").strip().lower()
+        if mode != "exec":
+            try:
+                if self._scp_upload(local_path, remote_path, server_config):
+                    return True
+            except Exception:  # noqa: BLE001 — scp failure → fall back to exec
+                pass
+            if mode == "scp":
+                return False
+        return self._exec_upload(local_path, remote_path, server_config)
+
+    def _scp_upload(
+        self, local_path: Path, remote_path: str, server_config: dict[str, Any]
+    ) -> bool:
+        """Upload via the scp binary (the fast native path)."""
+        scp_args = [_resolve_scp_bin()]
         if server_config.get("trust_new_host"):
             scp_args.extend(["-o", "StrictHostKeyChecking=accept-new"])
         else:
             scp_args.extend(["-o", "StrictHostKeyChecking=yes"])
-
-        # Add other SSH options
         if server_config.get("port", 22) != 22:
             scp_args.extend(["-P", str(server_config["port"])])
-
         if server_config.get("ssh_key"):
             scp_args.extend(["-i", server_config["ssh_key"]])
-
-        # Source and destination
         user, host = _require_server_identity(server_config)
         scp_args.append(str(local_path))
         scp_args.append(f"{user}@{host}:{remote_path}")
-
         try:
             result = subprocess.run(scp_args, timeout=_SSH_TIMEOUT)
         except subprocess.TimeoutExpired as _exc:
@@ -201,31 +244,128 @@ class RemoteOperations:
             ) from _exc
         return result.returncode == 0
 
+    def _exec_upload(
+        self, local_path: Path, remote_path: str, server_config: dict[str, Any]
+    ) -> bool:
+        """Upload over the SSH exec channel: base64 the bytes locally, pipe them
+        to ``base64 -d > <path>`` on the remote via stdin (unbounded, so no argv
+        length limit), then verify the SHA-256 round-trips."""
+        try:
+            data = Path(local_path).read_bytes()
+        except OSError:
+            return False
+        payload = base64.b64encode(data)
+        rq = shlex.quote(remote_path)
+        # base64 -d (coreutils) is universal; fall back to `base64 -D` (BSD) form
+        # is unnecessary because GNU also accepts -d. Decode straight to the file.
+        args = self._ssh_base_args(server_config) + [f"base64 -d > {rq}"]
+        try:
+            result = subprocess.run(
+                args, input=payload, capture_output=True, timeout=_SSH_TIMEOUT
+            )
+        except subprocess.TimeoutExpired as _exc:
+            raise RuntimeError(
+                f"Exec-channel upload timed out after {_SSH_TIMEOUT}s."
+            ) from _exc
+        if result.returncode != 0:
+            return False
+        # Integrity check — confirm the remote bytes match (best-effort).
+        want = hashlib.sha256(data).hexdigest()
+        verify = self.execute_command(
+            f"sha256sum {rq} 2>/dev/null || shasum -a 256 {rq} 2>/dev/null", server_config
+        )
+        got = (verify.stdout or "").split()
+        if got and got[0] != want:
+            return False
+        return True
+
+    def execute_command_parallel(
+        self,
+        command: str,
+        host_names: list[str],
+        timeout: int = 30,
+        max_workers: int = 10,
+    ) -> list[dict]:
+        """Run command on multiple hosts concurrently.
+
+        Returns list of dicts: {host, stdout, stderr, returncode, latency_ms, error}.
+        Never raises — errors are captured per-host so one failure does not abort the rest.
+        """
+        import time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def _run_one(host_name: str) -> dict:
+            t0 = time.monotonic()
+            try:
+                host_config = self.config.load_host_config(host_name)
+                result = self.execute_command(command, host_config)
+                return {
+                    "host": host_name,
+                    "stdout": result.stdout or "",
+                    "stderr": result.stderr or "",
+                    "returncode": result.returncode,
+                    "latency_ms": int((time.monotonic() - t0) * 1000),
+                    "error": None,
+                }
+            except Exception as exc:
+                return {
+                    "host": host_name,
+                    "stdout": "",
+                    "stderr": "",
+                    "returncode": -1,
+                    "latency_ms": int((time.monotonic() - t0) * 1000),
+                    "error": str(exc),
+                }
+
+        if not host_names:
+            return []
+        results: list[dict] = []
+        effective_workers = min(max_workers, len(host_names))
+        with ThreadPoolExecutor(max_workers=effective_workers) as pool:
+            futures = {pool.submit(_run_one, h): h for h in host_names}
+            for fut in as_completed(futures):
+                results.append(fut.result())
+        return results
+
     def download_file(
         self, remote_path: str, local_path: Path, server_config: dict[str, Any]
     ) -> bool:
-        """Download file from remote server via SCP."""
-        scp_bin = _resolve_scp_bin()
-        scp_args = [scp_bin]
+        """Download a file from the remote host. Same transport order as
+        upload_file (``NAVIG_TRANSFER_MODE``): SCP, falling back to the SSH exec
+        channel (base64 over stdout) when SCP fails."""
+        if is_local_host(server_config):
+            try:
+                shutil.copyfile(remote_path, str(local_path))
+                return True
+            except OSError:
+                return False
 
-        # Match the StrictHostKeyChecking posture used in execute_command().
+        mode = os.environ.get("NAVIG_TRANSFER_MODE", "auto").strip().lower()
+        if mode != "exec":
+            try:
+                if self._scp_download(remote_path, local_path, server_config):
+                    return True
+            except Exception:  # noqa: BLE001 — scp failure → fall back to exec
+                pass
+            if mode == "scp":
+                return False
+        return self._exec_download(remote_path, local_path, server_config)
+
+    def _scp_download(
+        self, remote_path: str, local_path: Path, server_config: dict[str, Any]
+    ) -> bool:
+        scp_args = [_resolve_scp_bin()]
         if server_config.get("trust_new_host"):
             scp_args.extend(["-o", "StrictHostKeyChecking=accept-new"])
         else:
             scp_args.extend(["-o", "StrictHostKeyChecking=yes"])
-
-        # Add other SSH options
         if server_config.get("port", 22) != 22:
             scp_args.extend(["-P", str(server_config["port"])])
-
         if server_config.get("ssh_key"):
             scp_args.extend(["-i", server_config["ssh_key"]])
-
-        # Source and destination
         user, host = _require_server_identity(server_config)
         scp_args.append(f"{user}@{host}:{remote_path}")
         scp_args.append(str(local_path))
-
         try:
             result = subprocess.run(scp_args, timeout=_SSH_TIMEOUT)
         except subprocess.TimeoutExpired as _exc:
@@ -234,3 +374,22 @@ class RemoteOperations:
                 f"host '{host}' is unreachable."
             ) from _exc
         return result.returncode == 0
+
+    def _exec_download(
+        self, remote_path: str, local_path: Path, server_config: dict[str, Any]
+    ) -> bool:
+        """Download over the SSH exec channel: ``base64 <path>`` on the remote,
+        capture stdout, decode locally."""
+        rq = shlex.quote(remote_path)
+        result = self.execute_command(f"base64 {rq}", server_config)
+        if result.returncode != 0:
+            return False
+        try:
+            raw = base64.b64decode((result.stdout or "").encode("ascii", "ignore"))
+        except ValueError:  # binascii.Error subclasses ValueError
+            return False
+        try:
+            Path(local_path).write_bytes(raw)
+        except OSError:
+            return False
+        return True

@@ -2,11 +2,12 @@
 import typer
 
 from navig.console_helper import get_console
+from navig.spaces.contracts import CANONICAL_SPACES
 
 spaces_context_app = typer.Typer(help="Switch between personal, workspace, and studio contexts", no_args_is_help=False)
 console = get_console()
 
-_VALID_SPACES = ("personal", "workspace", "studio", "focus")
+_VALID_SPACES = CANONICAL_SPACES
 
 
 @spaces_context_app.callback(invoke_without_command=True)

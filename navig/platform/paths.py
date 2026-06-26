@@ -217,7 +217,8 @@ def global_config_path() -> Path:
     """
     new_path = config_dir() / "config" / "config.yaml"
     legacy = config_dir() / "config.yaml"
-    return legacy if not new_path.exists() and legacy.exists() else new_path
+    new_exists = new_path.exists()
+    return legacy if not new_exists and legacy.exists() else new_path
 
 
 def msg_trace_path() -> Path:
@@ -364,13 +365,12 @@ def _warn(msg: str) -> None:
 def is_directory_accessible(directory: Path) -> bool:
     """Return ``True`` if *directory* exists and can be listed.
 
-    Creates the directory if it does not yet exist (fresh installs).
+    This is a **read-only** check — it does not create the directory.
+    Use :func:`ensure_dirs` or explicit ``mkdir`` calls to create directories.
     """
     try:
-        if not directory.exists():
-            directory.mkdir(parents=True, exist_ok=True)
         if directory.is_dir():
-            # A single iterdir() is cheaper than list(iterdir()) for large dirs.
+            # A single next(iterdir()) is cheaper than list(iterdir()) for large dirs.
             next(directory.iterdir(), None)
             return True
     except (PermissionError, OSError) as exc:

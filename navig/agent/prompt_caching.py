@@ -57,19 +57,26 @@ EXTENDED_CACHE_BETA_HEADER: str = "prompt-caching-2024-07-31"
 # Public API
 # ─────────────────────────────────────────────────────────────
 
-# Models that support Anthropic prompt caching
+# Models that support Anthropic prompt caching. Caching is GA — no beta header is
+# sent on the messages path (the EXTENDED_CACHE_BETA_HEADER constant above is
+# retained only for back-compat and is intentionally unused by AnthropicClient).
 _CACHEABLE_MODELS: frozenset[str] = frozenset(
     {
+        # Current models
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5",
+        # Legacy (still active / pinnable)
         "claude-opus-4-5",
         "claude-opus-4",
         "claude-sonnet-4-5",
         "claude-sonnet-4",
         "claude-3-5-sonnet-20241022",
-        "claude-3-5-sonnet-20241020",
         "claude-3-5-haiku-20241022",
         "claude-3-opus-20240229",
         "claude-3-haiku-20240307",
-        "claude-3-sonnet-20240229",
     }
 )
 

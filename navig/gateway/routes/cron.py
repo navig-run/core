@@ -40,7 +40,7 @@ def _list(gw):
         if auth is not None:
             return auth
         cs, err = _svc_or_503(gw)
-        if err:
+        if err is not None:
             return err
         try:
             jobs = cs.list_jobs()
@@ -63,7 +63,7 @@ def _add(gw):
         if auth is not None:
             return auth
         cs, err = _svc_or_503(gw)
-        if err:
+        if err is not None:
             return err
         try:
             data = await r.json()
@@ -97,7 +97,7 @@ def _get(gw):
         if auth is not None:
             return auth
         cs, err = _svc_or_503(gw)
-        if err:
+        if err is not None:
             return err
         try:
             job = cs.get_job(r.match_info["job_id"])
@@ -122,7 +122,7 @@ def _delete(gw):
         if auth is not None:
             return auth
         cs, err = _svc_or_503(gw)
-        if err:
+        if err is not None:
             return err
         try:
             ok = cs.remove_job(r.match_info["job_id"])
@@ -147,7 +147,7 @@ def _enable(gw):
         if auth is not None:
             return auth
         cs, err = _svc_or_503(gw)
-        if err:
+        if err is not None:
             return err
         try:
             ok = cs.enable_job(r.match_info["job_id"])
@@ -172,7 +172,7 @@ def _disable(gw):
         if auth is not None:
             return auth
         cs, err = _svc_or_503(gw)
-        if err:
+        if err is not None:
             return err
         try:
             ok = cs.disable_job(r.match_info["job_id"])
@@ -197,7 +197,7 @@ def _run(gw):
         if auth is not None:
             return auth
         cs, err = _svc_or_503(gw)
-        if err:
+        if err is not None:
             return err
         try:
             result = await cs.run_job_now(r.match_info["job_id"])

@@ -32,9 +32,7 @@ from navig.agent.remediation import (
 from navig.commands.doctor import (
     _check,
     _count_yaml_files,
-    _find_browser_agent,
     _gateway_reachable,
-    check_browser_agent,
     check_cache_dir,
     check_config,
     check_env_keys,
@@ -338,25 +336,8 @@ class TestCountYamlFiles:
         assert errors == 0
 
 
-# ===========================================================================
-# doctor._find_browser_agent
-# ===========================================================================
-
-
-class TestFindBrowserAgent:
-    def test_returns_path_when_found_in_path(self, tmp_path):
-        fake = tmp_path / "navig-browser-agent"
-        fake.write_text("#!/bin/sh")
-        with patch("shutil.which", return_value=str(fake)):
-            with patch.object(Path, "exists", return_value=False):
-                result = _find_browser_agent()
-        assert result == fake
-
-    def test_returns_none_when_not_found(self):
-        with patch("shutil.which", return_value=None):
-            with patch.object(Path, "exists", return_value=False):
-                result = _find_browser_agent()
-        assert result is None
+# (R9) The browser-agent doctor checks (_find_browser_agent / check_browser_agent)
+# were removed from navig.commands.doctor; their tests are deleted accordingly.
 
 
 # ===========================================================================
@@ -591,25 +572,6 @@ class TestCheckEnvKeys:
                 env_copy = {k: v for k, v in os.environ.items() if k not in env}
                 with patch.dict(os.environ, env_copy, clear=True):
                     results = check_env_keys()
-        _, ok, _ = results[0]
-        assert ok is False
-
-
-# ===========================================================================
-# doctor.check_browser_agent
-# ===========================================================================
-
-
-class TestCheckBrowserAgent:
-    def test_found_returns_ok(self):
-        with patch("navig.commands.doctor._find_browser_agent", return_value=Path("/fake/agent")):
-            results = check_browser_agent()
-        _, ok, _ = results[0]
-        assert ok is True
-
-    def test_not_found_returns_failure(self):
-        with patch("navig.commands.doctor._find_browser_agent", return_value=None):
-            results = check_browser_agent()
         _, ok, _ = results[0]
         assert ok is False
 

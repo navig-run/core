@@ -41,8 +41,9 @@ ATOMIC_REPLACE_BACKOFF_BASE_SECONDS = _ATOMIC_REPLACE_BACKOFF_BASE
 # Shadow Execution Logging
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Resolved once at import time; callers never pay the config_dir() cost again.
-_PERF_DIR: Path = config_dir() / "perf"
+def _perf_dir() -> Path:
+    """Return the perf-log directory, resolved lazily so env overrides apply."""
+    return config_dir() / "perf"
 
 
 def log_shadow_anomaly(log_name: str, event: str, data: dict[str, Any]) -> None:
@@ -60,8 +61,9 @@ def log_shadow_anomaly(log_name: str, event: str, data: dict[str, Any]) -> None:
         Never raises — logging failures must never affect the calling code path.
     """
     try:
-        _PERF_DIR.mkdir(parents=True, exist_ok=True)
-        log_file = _PERF_DIR / f"{log_name}.jsonl"
+        perf_dir = _perf_dir()
+        perf_dir.mkdir(parents=True, exist_ok=True)
+        log_file = perf_dir / f"{log_name}.jsonl"
         entry = {"ts": time.time(), "event": event, "data": data}
         with log_file.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry) + "\n")
@@ -170,8 +172,10 @@ def atomic_write_text(
             suffix=".navig~",
         )
         tmp_path: Path | None = Path(tmp_name)
+        fd_open = False
         try:
             with os.fdopen(fd, "w", encoding=encoding) as fh:
+                fd_open = True  # fd is now owned by the context manager
                 fh.write(content)
                 fh.flush()
                 os.fsync(fh.fileno())
@@ -180,11 +184,18 @@ def atomic_write_text(
         except PermissionError as exc:
             # Windows: transient lock by antivirus / backup agent.
             last_exc = exc
-            tmp_path.unlink(missing_ok=True)
-            tmp_path = None
-            backoff = _ATOMIC_REPLACE_BACKOFF_BASE * (2 ** attempt)
-            time.sleep(backoff)
+            if tmp_path is not None:
+                tmp_path.unlink(missing_ok=True)
+                tmp_path = None
+            if attempt < _ATOMIC_REPLACE_RETRIES - 1:
+                backoff = _ATOMIC_REPLACE_BACKOFF_BASE * (2 ** attempt)
+                time.sleep(backoff)
         except Exception:
+            if not fd_open:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
             if tmp_path is not None:
                 tmp_path.unlink(missing_ok=True)
             raise
@@ -206,7 +217,8 @@ def _atomic_replace(src: Path, dst: Path) -> None:
             os.replace(src, dst)
             return
         except PermissionError:
-            if attempt == _ATOMIC_REPLACE_RETRIES - 1 or sys.platform != "win32":
+            is_last = attempt == _ATOMIC_REPLACE_RETRIES - 1
+            if is_last or sys.platform != "win32":
                 raise
             time.sleep(_ATOMIC_REPLACE_BACKOFF_BASE * (attempt + 1))
 
@@ -261,9 +273,12 @@ def load_yaml_with_lines(path: Path | str) -> YamlDocument:
     """Load YAML and return a :class:`YamlDocument` with key → line-number mapping.
 
     Uses PyYAML's composed-node API so line numbers are captured without an
-    extra dependency.  Empty files return ``data=None`` at line 1.
+    extra dependency.  Empty or missing files return ``data=None`` at line 1.
     """
-    text = Path(path).read_text(encoding="utf-8")
+    p = Path(path)
+    if not p.is_file():
+        return YamlDocument(data=None, line_map={(): 1})
+    text = p.read_text(encoding="utf-8")
     node = yaml.compose(text, Loader=yaml.SafeLoader)
     if node is None:
         return YamlDocument(data=None, line_map={(): 1})

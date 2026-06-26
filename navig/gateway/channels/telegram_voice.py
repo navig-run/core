@@ -180,17 +180,37 @@ class TelegramVoiceMixin:
 
     @staticmethod
     def _resolve_api_key(env_vars: list[str], vault_key: str) -> str | None:
-        """Try *env_vars* in order, then vault.  Returns the first non-empty value."""
+        """Try *env_vars* in order, then the vault by PROVIDER.  First non-empty wins.
+
+        Keys added via ``navig vault set <provider> <key>`` live under the provider
+        (resolved by ``get_api_key``), not a literal ``provider/api-key`` label — so
+        resolve through ``get_api_key`` first, with explicit-label fallbacks.
+        """
         for var in env_vars:
             val = os.environ.get(var, "")
             if val:
                 return val
+        provider = vault_key.split("/", 1)[0]
         try:
             from navig.vault import get_vault as _gv2
 
-            return _gv2().get_secret(vault_key) or None
-        except Exception:
-            return None
+            v = _gv2()
+            try:
+                key = v.get_api_key(provider)
+                if key:
+                    return str(key)
+            except Exception:  # noqa: BLE001
+                pass
+            for label in (provider, f"{provider}/api_key", vault_key):
+                try:
+                    s = v.get_secret(label)
+                    if s:
+                        return str(s)
+                except Exception:  # noqa: BLE001
+                    continue
+        except Exception:  # noqa: BLE001
+            pass
+        return None
 
     async def _get_file_path(self, file_id: str) -> str:
         """Resolve a Telegram ``file_id`` into its downloadable file path."""
@@ -280,9 +300,9 @@ class TelegramVoiceMixin:
             await self.send_message(
                 chat_id,
                 "🎙️ <b>Voice transcription not configured.</b>\n\n"
-                "Add any of the following to <code>~/.navig/.env</code> and restart:\n"
-                "• <code>DEEPGRAM_KEY=&lt;key&gt;</code> — blazing fast, recommended\n"
-                "• <code>OPENAI_API_KEY=&lt;key&gt;</code> — Whisper API fallback\n"
+                "Add a speech-to-text key to your vault, then restart:\n"
+                "• <code>navig vault set deepgram &lt;key&gt;</code> — blazing fast, recommended\n"
+                "• <code>navig vault set openai &lt;key&gt;</code> — Whisper API fallback\n"
                 "• <code>pip install openai-whisper</code> — offline, no key needed",
                 parse_mode="HTML",
             )
@@ -554,7 +574,11 @@ class TelegramVoiceMixin:
             tts = _TTS(_TTSConfig(provider=_TTSProvider.GOOGLE_CLOUD))
             tts_result = await tts.synthesize(tts_text)
             if not tts_result.success:
-                logger.warning("TTS synthesis failed (non-fatal): %s", tts_result.error)
+                err = str(tts_result.error or "")
+                if "not installed" in err or "no credentials" in err.lower() or "no api key" in err.lower():
+                    logger.debug("TTS synthesis skipped (no provider configured): %s", err)
+                else:
+                    logger.warning("TTS synthesis failed (non-fatal): %s", err)
                 return False
 
             audio_data: bytes | None = tts_result.audio_data

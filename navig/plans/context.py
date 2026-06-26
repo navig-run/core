@@ -41,6 +41,27 @@ from navig.platform import paths
 logger = logging.getLogger(__name__)
 
 
+def _truncate(text: str, limit: int) -> str:
+    text = (text or "").strip()
+    return text if len(text) <= limit else text[:limit].rstrip() + " …"
+
+
+def _extract_md_section(text: str, heading: str) -> str:
+    """Return the body under a ``## Heading`` up to the next ``## `` (exclusive)."""
+    lines = text.splitlines()
+    out: list[str] = []
+    capturing = False
+    for line in lines:
+        if line.strip() == heading:
+            capturing = True
+            continue
+        if capturing:
+            if line.startswith("## "):
+                break
+            out.append(line)
+    return "\n".join(out).strip()
+
+
 # ─────────────────────────────────────────────────────────────
 # PlanContext
 # ─────────────────────────────────────────────────────────────
@@ -83,6 +104,8 @@ class PlanContext:
         space_name = self._resolve_space_name(space)
         space_path = self._resolve_space_path(space_name, errors)
 
+        # current_phase + dev_plan are quick local file reads; do them
+        # eagerly so we can derive phase_title for the wiki search.
         current_phase = self._safe_source_call(
             "current_phase",
             self._read_current_phase,
@@ -95,39 +118,69 @@ class PlanContext:
             errors,
             space_path,
         )
-
         phase_title = self._extract_phase_title(current_phase) or space_name
-        wiki = self._safe_source_call(
-            "wiki",
-            self._search_wiki,
-            errors,
-            phase_title,
-            space_name,
-        )
-        docs = self._safe_source_call("docs", self._find_docs, errors, space_path)
-        inbox_unread = self._safe_source_call(
-            "inbox_unread",
-            self._count_inbox_unread,
-            errors,
-            space_path,
-        )
 
-        mcp_resources: list[dict[str, str]] | None
-        if self.mcp_enabled:
-            mcp_resources = self._safe_source_call(
-                "mcp_resources",
-                self._gather_mcp_resources,
+        # Slow / network-bound sources — wiki search + MCP resources can
+        # block up to 2s each; docs + inbox are local but disk-bound. Run
+        # them concurrently so total wall time = max(any one source)
+        # instead of sum. On the warm path this saves 5+ seconds off the
+        # first-message latency that the bot user perceives as "typing
+        # forever".
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+
+        with _TPE(max_workers=4) as ex:
+            f_wiki = ex.submit(
+                self._safe_source_call,
+                "wiki",
+                self._search_wiki,
                 errors,
+                phase_title,
                 space_name,
             )
-        else:
-            mcp_resources = None
+            f_docs = ex.submit(
+                self._safe_source_call,
+                "docs",
+                self._find_docs,
+                errors,
+                space_path,
+            )
+            f_inbox = ex.submit(
+                self._safe_source_call,
+                "inbox_unread",
+                self._count_inbox_unread,
+                errors,
+                space_path,
+            )
+            f_project_docs = ex.submit(
+                self._safe_source_call,
+                "project_docs",
+                self._read_project_docs,
+                errors,
+                space_path,
+            )
+            if self.mcp_enabled:
+                f_mcp = ex.submit(
+                    self._safe_source_call,
+                    "mcp_resources",
+                    self._gather_mcp_resources,
+                    errors,
+                    space_name,
+                )
+            else:
+                f_mcp = None
+
+            wiki = f_wiki.result()
+            docs = f_docs.result()
+            inbox_unread = f_inbox.result()
+            project_docs = f_project_docs.result()
+            mcp_resources = f_mcp.result() if f_mcp is not None else None
 
         return {
             "current_phase": current_phase,
             "dev_plan": dev_plan,
             "wiki": wiki,
             "docs": docs,
+            "project_docs": project_docs,
             "inbox_unread": inbox_unread,
             "mcp_resources": mcp_resources,
             "errors": errors,
@@ -223,6 +276,39 @@ class PlanContext:
             return results[:200]
         except Exception:
             raise
+
+    def _read_project_docs(self, space_path: Path) -> dict[str, str] | None:
+        """Read the *bodies* of VISION/ROADMAP + the deferred/after-mvp plan
+        sections so context adapts to the current project — and so promoted inbox
+        bullets (which land in these files) flow back into the LLM system prompt.
+
+        Each value is capped to keep the prompt lean. Space dir wins; otherwise
+        the project root / ``.navig/plans``.
+        """
+        out: dict[str, str] = {}
+        cap = 1500
+        for key, fname in (("vision", "VISION.md"), ("roadmap", "ROADMAP.md")):
+            for cand in (
+                space_path / fname,
+                self.cwd / fname,
+                self.cwd / ".navig" / "plans" / fname,
+            ):
+                if cand.is_file():
+                    txt = (_safe_read(cand) or "").strip()
+                    if txt:
+                        out[key] = txt[:cap]
+                    break
+        for cand in (space_path / "DEV_PLAN.md", self.cwd / ".navig" / "plans" / "DEV_PLAN.md"):
+            if cand.is_file():
+                dev = _safe_read(cand) or ""
+                deferred = _extract_md_section(dev, "## Deferred / Later")
+                after = _extract_md_section(dev, "## After MVP")
+                if deferred:
+                    out["deferred"] = deferred[:cap]
+                if after:
+                    out["after_mvp"] = after[:cap]
+                break
+        return out or None
 
     def _count_inbox_unread(self, space_path: Path) -> int:
         """Count unprocessed ``.md`` files in ``.navig/inbox/``."""
@@ -389,6 +475,21 @@ class PlanContext:
                 f"{total_count} total tasks "
                 f"({completion:.0f}% complete)"
             )
+
+        # Vision & roadmap (incl. promoted inbox items) — adapts to current project
+        pdocs = snapshot.get("project_docs") or {}
+        if pdocs:
+            vr: list[str] = ["## Vision & Roadmap"]
+            if pdocs.get("vision"):
+                vr.append(f"**Vision**\n{_truncate(pdocs['vision'], 600)}")
+            if pdocs.get("roadmap"):
+                vr.append(f"**Roadmap**\n{_truncate(pdocs['roadmap'], 800)}")
+            if pdocs.get("after_mvp"):
+                vr.append(f"**After MVP**\n{_truncate(pdocs['after_mvp'], 400)}")
+            if pdocs.get("deferred"):
+                vr.append(f"**Deferred / Later**\n{_truncate(pdocs['deferred'], 400)}")
+            if len(vr) > 1:
+                parts.append("\n\n".join(vr))
 
         # Wiki hits
         wiki = snapshot.get("wiki", [])

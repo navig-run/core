@@ -1,5 +1,22 @@
 """Status and core settings handlers for the Deck API."""
 
+import time
+
+# Module-level start time — cross-platform uptime (no systemctl needed)
+_START_TS = time.monotonic()
+
+
+def _fmt_uptime(seconds: float) -> str:
+    s = int(seconds)
+    h, rem = divmod(s, 3600)
+    m, sec = divmod(rem, 60)
+    if h:
+        return f"{h}h {m}m"
+    if m:
+        return f"{m}m {sec}s"
+    return f"{sec}s"
+
+
 try:
     from aiohttp import web
 except ImportError:
@@ -41,7 +58,7 @@ async def handle_deck_status(request: "web.Request") -> "web.Response":
                 "tasks_pending": tasks_pending,
                 "errors": 0,
                 "current_mode": "work",
-                "uptime": "unknown",
+                "uptime": _fmt_uptime(time.monotonic() - _START_TS),
                 "task_queue_status": task_status,
             },
         )
@@ -67,28 +84,7 @@ async def handle_deck_status(request: "web.Request") -> "web.Response":
         "sleeping": "quiet mode active",
     }
 
-    uptime = "unknown"
-    try:
-        import subprocess
-
-        result = subprocess.run(
-            ["systemctl", "show", "navig-daemon", "--property=ActiveEnterTimestamp"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        if result.returncode == 0:
-            ts_str = result.stdout.strip().split("=", 1)[-1]
-            if ts_str and ts_str != "n/a":
-                from datetime import datetime
-
-                started = datetime.strptime(ts_str.strip(), "%a %Y-%m-%d %H:%M:%S %Z")
-                delta = datetime.now() - started
-                hours = int(delta.total_seconds() // 3600)
-                mins = int((delta.total_seconds() % 3600) // 60)
-                uptime = f"{hours}h {mins}m"
-    except Exception:  # noqa: BLE001
-        pass  # best-effort; failure is non-critical
+    uptime = _fmt_uptime(time.monotonic() - _START_TS)
 
     return web.json_response(
         {

@@ -1672,3 +1672,334 @@ def store_bridges(
             "✓" if b.active else "✗",
         )
     console.print(table)
+
+
+# ============================================================================
+# navig matrix bridge — mautrix bridge lifecycle management
+# ============================================================================
+
+_BRIDGE_META: dict[str, dict] = {
+    "telegram": {
+        "label": "Telegram (personal account)",
+        "container": "navig-bridge-telegram",
+        "image": "dock.mau.dev/mautrix/telegram:latest",
+        "port": 29317,
+        "setup_hint": (
+            "After setup, run:\n"
+            "  navig matrix bridge login telegram\n"
+            "Then follow the prompts to enter your phone number."
+        ),
+    },
+    "whatsapp": {
+        "label": "WhatsApp",
+        "container": "navig-bridge-whatsapp",
+        "image": "dock.mau.dev/mautrix/whatsapp:latest",
+        "port": 29318,
+        "setup_hint": (
+            "After setup, send '!wa login' to the WhatsApp bridge bot room,\n"
+            "then scan the QR code with your WhatsApp ▸ Linked devices."
+        ),
+    },
+    "messenger": {
+        "label": "Facebook Messenger + Instagram DMs",
+        "container": "navig-bridge-meta",
+        "image": "dock.mau.dev/mautrix/meta:latest",
+        "port": 29319,
+        "setup_hint": (
+            "After setup, send '!meta login' to the Meta bridge bot room,\n"
+            "then follow the cookie-based login flow."
+        ),
+    },
+}
+
+_VALID_BRIDGES = list(_BRIDGE_META.keys())
+
+bridge_app = typer.Typer(
+    name="bridge",
+    help="Manage mautrix bridges (Telegram personal, WhatsApp, Messenger).",
+    no_args_is_help=True,
+)
+matrix_app.add_typer(bridge_app, name="bridge")
+
+
+def _docker_available() -> bool:
+    import shutil
+    return shutil.which("docker") is not None
+
+
+def get_bridge_statuses() -> dict[str, bool]:
+    """Return ``{bridge_key: is_running}`` for all registered mautrix bridges.
+
+    Uses a single ``docker ps`` call (instead of N ``docker inspect`` calls) to
+    minimise subprocess overhead when called from the onboarding flow.
+    """
+    import subprocess
+
+    if not _docker_available():
+        return {key: False for key in _BRIDGE_META}
+
+    # One call to get all running container names
+    try:
+        result = subprocess.run(
+            ["docker", "ps", "--format", "{{.Names}}"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+        running_names: set[str] = set(result.stdout.strip().splitlines())
+    except Exception:
+        running_names = set()
+
+    return {
+        key: meta["container"] in running_names
+        for key, meta in _BRIDGE_META.items()
+    }
+
+
+def deploy_bridge_stack(compose_path: "Path | None" = None) -> tuple[bool, str]:
+    """Pull images and start all bridge containers via docker compose.
+
+    Args:
+        compose_path: Path to the docker-compose.yml.  Defaults to the
+            ``deploy/synapse/`` directory inside the navig-core repo.
+
+    Returns:
+        ``(success, message)`` tuple.  *success* is ``True`` when
+        ``docker compose up -d`` exits 0.
+    """
+    import pathlib
+    import subprocess
+
+    if compose_path is None:
+        compose_path = (
+            pathlib.Path(__file__).parent.parent.parent
+            / "deploy"
+            / "synapse"
+            / "docker-compose.yml"
+        )
+
+    if not pathlib.Path(compose_path).exists():
+        return False, f"docker-compose.yml not found at {compose_path}"
+
+    if not _docker_available():
+        return False, "Docker not found. Install Docker: https://docs.docker.com/get-docker/"
+
+    result = subprocess.run(
+        ["docker", "compose", "-f", str(compose_path), "up", "-d"],
+        capture_output=False,
+    )
+    if result.returncode != 0:
+        return False, "docker compose up failed — see output above."
+    return True, "Bridges deployed successfully."
+
+
+def _container_state(name: str) -> str:
+    """Return container state string or 'not found'."""
+    import subprocess
+    if not _docker_available():
+        return "docker_missing"
+    try:
+        result = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.Status}}", name],
+            capture_output=True, text=True, timeout=5,
+        )
+        state = result.stdout.strip()
+        return state if state else "not_found"
+    except Exception:
+        return "error"
+
+
+@bridge_app.command("status")
+def bridge_status():
+    """Show running state of all mautrix bridges."""
+    table = Table(title="mautrix Bridge Status")
+    table.add_column("Bridge", style="cyan")
+    table.add_column("Container", style="dim")
+    table.add_column("State", style="yellow")
+    table.add_column("Port", style="dim")
+
+    for key, meta in _BRIDGE_META.items():
+        state = _container_state(meta["container"])
+        state_fmt = {
+            "running": "[green]running[/]",
+            "exited": "[red]exited[/]",
+            "created": "[yellow]created (not started)[/]",
+            "not_found": "[dim]not deployed[/]",
+            "docker_missing": "[red]docker not found[/]",
+        }.get(state, f"[dim]{state}[/]")
+        table.add_row(meta["label"], meta["container"], state_fmt, str(meta["port"]))
+
+    console.print(table)
+    console.print()
+    console.print("[dim]To deploy: navig matrix bridge deploy[/]")
+    console.print("[dim]To connect: navig matrix bridge setup <name>[/]")
+
+
+@bridge_app.command("deploy")
+def bridge_deploy(
+    synapse_host: Annotated[str, typer.Option("--host", "-h", help="Synapse homeserver URL")] = "",
+    matrix_user: Annotated[str, typer.Option("--user", "-u", help="Your Matrix user ID")] = "",
+):
+    """
+    Pull and start all mautrix bridge containers via Docker.
+
+    Reads homeserver URL and Matrix user from NAVIG config if not supplied.
+    Run once after the VPS installer has finished.
+    """
+    import subprocess
+
+    cfg = _get_config()
+    hs_url = synapse_host or cfg.get("homeserver_url", "")
+    m_user = matrix_user or cfg.get("user_id", "")
+
+    if not hs_url:
+        hs_url = typer.prompt("Synapse homeserver URL (e.g. https://matrix.yourdomain.com)")
+    if not m_user:
+        m_user = typer.prompt("Your Matrix user ID (e.g. @you:yourdomain.com)")
+
+    if not _docker_available():
+        console.print("[red]Docker is not installed or not on PATH.[/]")
+        raise typer.Exit(1)
+
+    # Find deploy dir
+    import pathlib
+    deploy_dir = pathlib.Path(__file__).parent.parent.parent / "deploy" / "synapse"
+    if not deploy_dir.exists():
+        console.print(f"[red]Deploy dir not found: {deploy_dir}[/]")
+        console.print("[dim]Run from the navig-core repo root, or deploy to VPS first.[/]")
+        raise typer.Exit(1)
+
+    env_file = deploy_dir / ".env"
+    if not env_file.exists():
+        console.print(f"[yellow]⚠[/]  .env not found at {env_file}")
+        console.print("[dim]Run the VPS installer first: bash scripts/install_vps_synapse_bridges.sh[/]")
+        raise typer.Exit(1)
+
+    console.print("[cyan]Pulling bridge images…[/]")
+    for key, meta in _BRIDGE_META.items():
+        console.print(f"  pulling {meta['image']}…")
+        subprocess.run(["docker", "pull", meta["image"]], check=False)
+
+    console.print("[cyan]Starting bridges via docker compose…[/]")
+    result = subprocess.run(
+        ["docker", "compose", "--env-file", str(env_file), "-f",
+         str(deploy_dir / "docker-compose.yml"), "up", "-d"],
+        cwd=str(deploy_dir),
+    )
+    if result.returncode != 0:
+        console.print("[red]docker compose up failed — check logs above.[/]")
+        raise typer.Exit(1)
+
+    console.print()
+    console.print("[green]✓[/] Bridges deployed. Check status:")
+    console.print("  navig matrix bridge status")
+    console.print()
+    console.print("[cyan]Next step — connect each bridge to your accounts:[/]")
+    for key in _BRIDGE_META:
+        console.print(f"  navig matrix bridge setup {key}")
+
+
+@bridge_app.command("setup")
+def bridge_setup(
+    name: Annotated[str, typer.Argument(help=f"Bridge name: {', '.join(_VALID_BRIDGES)}")],
+):
+    """
+    Interactive setup wizard for a mautrix bridge.
+
+    Checks the container is running, then prints the exact steps to
+    connect your personal account (phone number, QR code, cookie login).
+    """
+    name = name.lower()
+    if name not in _BRIDGE_META:
+        console.print(f"[red]Unknown bridge '{name}'.[/] Valid: {', '.join(_VALID_BRIDGES)}")
+        raise typer.Exit(1)
+
+    meta = _BRIDGE_META[name]
+    state = _container_state(meta["container"])
+
+    console.print()
+    console.print(f"[cyan]── {meta['label']} bridge setup ──[/]")
+    console.print()
+
+    if state not in ("running",):
+        console.print(f"[yellow]⚠[/]  Container '{meta['container']}' is not running (state: {state}).")
+        console.print("   Deploy first: [bold]navig matrix bridge deploy[/]")
+        console.print()
+
+    # Print setup instructions
+    console.print("[bold]Setup steps:[/]")
+    console.print()
+
+    if name == "telegram":
+        console.print("  1. Start a chat with your bridge bot in Element or any Matrix client:")
+        console.print("       @telegrambot:your-domain.com")
+        console.print("  2. Send: [bold]!tg login[/]")
+        console.print("  3. Enter your Telegram phone number when prompted.")
+        console.print("  4. Enter the OTP code sent by Telegram.")
+        console.print("  5. All your Telegram contacts and chats will appear as Matrix rooms.")
+        console.print()
+        console.print("  [dim]Or via CLI (if matrix bot is configured):[/]")
+        console.print("  [dim]  navig matrix send @telegrambot:your-domain.com '!tg login'[/]")
+
+    elif name == "whatsapp":
+        console.print("  1. Start a chat with your bridge bot:")
+        console.print("       @whatsappbot:your-domain.com")
+        console.print("  2. Send: [bold]!wa login[/]")
+        console.print("  3. A QR code will appear — scan it with:")
+        console.print("       WhatsApp ▸ Linked Devices ▸ Link a Device")
+        console.print("  4. All WhatsApp contacts and chats will sync as Matrix rooms.")
+        console.print()
+        console.print("  [yellow]Note:[/] The QR code expires in 20s. Be ready to scan immediately.")
+        console.print("  [yellow]Keep the VPS running[/] — the WhatsApp session lives in the bridge container.")
+
+    elif name == "messenger":
+        console.print("  1. Start a chat with your bridge bot:")
+        console.print("       @metabot:your-domain.com")
+        console.print("  2. Send: [bold]!meta login facebook[/]  (or 'instagram')")
+        console.print("  3. Follow the cookie login flow:")
+        console.print("     a. Open Facebook in Chrome")
+        console.print("     b. Open DevTools ▸ Application ▸ Cookies ▸ facebook.com")
+        console.print("     c. Copy the value of the 'c_user' and 'xs' cookies")
+        console.print("     d. Send them to the bridge bot as prompted")
+        console.print("  4. All Messenger threads will sync as Matrix rooms.")
+        console.print()
+        console.print("  [yellow]Note:[/] Meta/Facebook may flag the login. Use a trusted network.")
+
+    console.print()
+    console.print("[dim]──────────────────────────────────────────────────────[/]")
+    console.print(f"[dim]{meta['setup_hint']}[/]")
+    console.print()
+
+
+@bridge_app.command("logs")
+def bridge_logs(
+    name: Annotated[str, typer.Argument(help=f"Bridge name: {', '.join(_VALID_BRIDGES)}")],
+    lines: Annotated[int, typer.Option("--lines", "-n", help="Lines to show")] = 50,
+):
+    """Tail logs from a mautrix bridge container."""
+    import subprocess
+    name = name.lower()
+    if name not in _BRIDGE_META:
+        console.print(f"[red]Unknown bridge '{name}'.[/] Valid: {', '.join(_VALID_BRIDGES)}")
+        raise typer.Exit(1)
+    container = _BRIDGE_META[name]["container"]
+    subprocess.run(["docker", "logs", "--tail", str(lines), "-f", container])
+
+
+@bridge_app.command("restart")
+def bridge_restart(
+    name: Annotated[str, typer.Argument(help=f"Bridge name: {', '.join(_VALID_BRIDGES)}")],
+):
+    """Restart a mautrix bridge container."""
+    import subprocess
+    name = name.lower()
+    if name not in _BRIDGE_META:
+        console.print(f"[red]Unknown bridge '{name}'.[/] Valid: {', '.join(_VALID_BRIDGES)}")
+        raise typer.Exit(1)
+    container = _BRIDGE_META[name]["container"]
+    result = subprocess.run(["docker", "restart", container])
+    if result.returncode == 0:
+        console.print(f"[green]✓[/] Bridge restarted: {container}")
+    else:
+        console.print(f"[red]Failed to restart {container}[/]")
+        raise typer.Exit(1)

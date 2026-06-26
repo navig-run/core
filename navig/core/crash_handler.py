@@ -16,7 +16,7 @@ import os
 import platform
 import sys
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -77,7 +77,7 @@ class CrashHandler:
     def _log_crash_to_file(self, exc: Exception) -> Path | None:
         """Write crash details to a JSON log file. Returns the log path or None."""
         try:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             log_dir = self._get_log_dir()
             log_path = log_dir / f"crash-{now.strftime('%Y%m%d-%H%M%S')}.json"
 
@@ -171,7 +171,7 @@ class CrashHandler:
             log_dir = self._get_log_dir()
             logs = sorted(
                 log_dir.glob("crash-*.json"),
-                key=lambda p: p.stat().st_mtime,
+                key=lambda p: p.stem,
                 reverse=True,
             )
             if not logs:

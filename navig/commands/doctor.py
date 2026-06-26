@@ -2,7 +2,7 @@
 navig doctor — Self-diagnostics (P1-15)
 
 Reports on NAVIG installation health without mutating any state.
-Checks: config, cache, formations, skills, gateway, API keys, browser agent.
+Checks: config, cache, formations, skills, gateway, API keys.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from typing import Any
 
 import typer
 
+from navig._daemon_defaults import _GATEWAY_PORT
 from navig.console_helper import get_console
 from navig.platform.paths import config_dir
 
@@ -89,28 +90,91 @@ def _count_yaml_files(directory: Path) -> tuple[int, int]:
     return total, errors
 
 
-def _find_browser_agent() -> Path | None:
-    """Look for the navig-browser-agent binary."""
-    candidates = [
-        Path(sys.prefix) / "bin" / "navig-browser-agent",
-        Path(sys.prefix) / "Scripts" / "navig-browser-agent.exe",
-        Path(sys.prefix) / "Scripts" / "navig-browser-agent",
-        config_dir() / "bin" / "navig-browser-agent",
-        config_dir() / "bin" / "navig-browser-agent.exe",
-    ]
-    for c in candidates:
-        if c.exists():
-            return c
-    # Try PATH
-    import shutil
+def _runtime_dir() -> Path:
+    """Resolve the isolated runtime root (`~/.navig/runtime`).
 
-    found = shutil.which("navig-browser-agent")
-    return Path(found) if found else None
+    Derives it from ``sys.executable`` when we're actually running inside the
+    managed venv (``<runtime>/venv/(Scripts|bin)/python``); otherwise falls back
+    to the installer's fixed location.
+    """
+    try:
+        exe = Path(sys.executable).resolve()
+        # Match the exact managed layout: <runtime>/venv/(Scripts|bin)/python(.exe)
+        if (
+            exe.parent.name in ("Scripts", "bin")
+            and exe.parents[1].name == "venv"
+            and exe.parents[2].name == "runtime"
+        ):
+            return exe.parents[2]
+    except Exception:  # noqa: BLE001
+        pass  # unexpected interpreter layout; use the default below
+    return Path.home() / ".navig" / "runtime"
+
+
+def _daemon_autostart() -> tuple[bool, str]:
+    """Best-effort: is the daemon registered for OS auto-start? (registered, kind)."""
+    import subprocess
+
+    try:
+        if sys.platform == "win32":
+            r = subprocess.run(
+                ["schtasks", "/query", "/tn", "NAVIG Daemon"],
+                capture_output=True, text=True, timeout=5,
+            )
+            return r.returncode == 0, "Task Scheduler"
+        r = subprocess.run(
+            ["systemctl", "--user", "is-enabled", "navig-agent"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return r.returncode == 0, "systemd"
+    except Exception:  # noqa: BLE001
+        return False, ""  # tool missing/timeout — treat as not registered
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Individual checks
 # ──────────────────────────────────────────────────────────────────────────────
+
+
+def check_runtime() -> list[tuple[str, bool, str]]:
+    """Check the isolated uv-managed runtime: uv, venv, shim/PATH, daemon, skills.
+
+    For dev/editable installs (not running from the managed runtime) the
+    runtime-specific checks are skipped so they don't report false failures.
+    """
+    results: list[tuple[str, bool, str]] = []
+    rt = _runtime_dir()
+    is_win = os.name == "nt"
+    venv_py = rt / "venv" / ("Scripts" if is_win else "bin") / ("python.exe" if is_win else "python")
+
+    try:
+        in_runtime = str(Path(sys.executable).resolve()).startswith(str(rt.resolve()))
+    except Exception:  # noqa: BLE001
+        in_runtime = False
+
+    managed = in_runtime or venv_py.exists()
+    if not managed:
+        results.append(_check("install type", True, f"dev/editable ({sys.executable}) — runtime checks skipped"))
+    else:
+        uv_exe = rt / ("uv.exe" if is_win else "uv")
+        results.append(_check("uv engine", uv_exe.exists(), str(uv_exe) if uv_exe.exists() else "missing from runtime", warn=True))
+        results.append(_check("isolated venv", venv_py.exists(), str(rt / "venv") if venv_py.exists() else "missing", warn=True))
+        results.append(_check("running from runtime", in_runtime, sys.executable, warn=True))
+        shim = Path.home() / ".local" / "bin" / ("navig.cmd" if is_win else "navig")
+        results.append(_check("launcher shim", shim.exists(), str(shim) if shim.exists() else "missing", warn=True))
+        on_path = str(shim.parent) in os.environ.get("PATH", "").split(os.pathsep)
+        results.append(_check("shim dir on PATH", on_path, "" if on_path else "open a new shell / re-run install", warn=True))
+        registered, kind = _daemon_autostart()
+        results.append(_check("daemon auto-start", registered, kind if registered else "not registered — run 'navig service install'", warn=True))
+
+    try:
+        from navig.platform.paths import store_dir
+        skills_dir = store_dir() / "skills"
+    except Exception:  # noqa: BLE001
+        skills_dir = config_dir() / "data" / "store" / "skills"
+    n = sum(1 for _ in skills_dir.glob("*/SKILL.md")) if skills_dir.exists() else 0
+    results.append(_check("installed skills", True, f"{n} in {skills_dir}"))
+    return results
 
 
 def check_config() -> list[tuple[str, bool, str]]:
@@ -194,7 +258,7 @@ def check_storage() -> list[tuple[str, bool, str]]:
     return results
 
 
-def check_sockets(target_port: int = 8789) -> list[tuple[str, bool, str]]:
+def check_sockets(target_port: int = _GATEWAY_PORT) -> list[tuple[str, bool, str]]:
     """Check if critical ports are available or correctly bound."""
     results = []
 
@@ -280,7 +344,7 @@ def check_skills() -> list[tuple[str, bool, str]]:
     return results
 
 
-def check_gateway(port: int = 8789) -> list[tuple[str, bool, str]]:
+def check_gateway(port: int = _GATEWAY_PORT) -> list[tuple[str, bool, str]]:
     """Check if gateway is running on the configured port."""
     results = []
 
@@ -352,24 +416,6 @@ def check_env_keys() -> list[tuple[str, bool, str]]:
     return results
 
 
-def check_browser_agent() -> list[tuple[str, bool, str]]:
-    """Check for navig-browser-agent binary."""
-    results = []
-    found = _find_browser_agent()
-    if found:
-        results.append(_check("navig-browser-agent", True, str(found)))
-    else:
-        results.append(
-            _check(
-                "navig-browser-agent",
-                False,
-                "binary not found (browser automation commands will fail)",
-                warn=True,
-            )
-        )
-    return results
-
-
 def check_python_deps() -> list[tuple[str, bool, str]]:
     """Quick check for key optional dependencies."""
     results = []
@@ -404,7 +450,7 @@ def doctor(
         False, "--verbose", "-v", help="Show all checks, including passing ones"
     ),
     skip_deps: bool = typer.Option(False, "--skip-deps", help="Skip Python dependency checks"),
-    port: int = typer.Option(8789, "--port", help="Gateway port to probe"),
+    port: int = typer.Option(_GATEWAY_PORT, "--port", help="Gateway port to probe"),
 ):
     """Run self-diagnostics on the NAVIG installation."""
 
@@ -420,6 +466,7 @@ def doctor(
 
     sections: list[tuple[str, list[tuple[str, bool, str]]]] = [
         ("Config", check_config()),
+        ("Runtime", check_runtime()),
         ("Storage", check_storage()),
         ("Filesystem", check_cache_dir()),
         ("Network Sockets", check_sockets(port)),
@@ -427,7 +474,6 @@ def doctor(
         ("Skills", check_skills()),
         ("Gateway", check_gateway(port=port)),
         ("API Keys", check_env_keys()),
-        ("Browser Agent", check_browser_agent()),
     ]
 
     if not skip_deps:

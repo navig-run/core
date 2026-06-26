@@ -172,6 +172,7 @@ PROVIDER_BASE_URLS: dict[str, str] = {
     "cohere": "https://api.cohere.ai/v1",
     "together": "https://api.together.xyz/v1",
     "github_models": "https://models.inference.ai.azure.com",
+    "nvidia": "https://integrate.api.nvidia.com/v1",
     "ollama": f"{_OLLAMA_BASE_URL}/v1",
     "llamacpp": f"{_LLAMACPP_BASE_URL}/v1",
     "mcp_bridge": f"ws://127.0.0.1:{BRIDGE_DEFAULT_PORT}",
@@ -986,6 +987,56 @@ def suggest_toolsets(
     return list(MODE_TOOLSET_HINTS.get(mode, ["core"]))
 
 
+# ── Fast-chat override ────────────────────────────────────────────────
+# For mode="small_talk" we prefer a fast inference provider over whatever
+# the static mode config says. The static config is built for general
+# usage (NVIDIA NIM free 8b, OpenRouter, etc.) which is fine for tool
+# work but takes ~15-20s for a 5-word reply on the free tier. When the
+# user has set an API key for a fast provider, route chat replies there
+# so a Telegram "hey" lands in ~500ms instead of ~17s.
+#
+# Order matches the cost/quality tradeoff for small models:
+#   xai       — grok-3-mini, fast and cheap, decent at chat
+#   groq      — llama-3.1-8b on Groq, sub-200ms first token
+#   cerebras  — llama-3.1-8b on Cerebras, sub-200ms first token
+# Anything not in this list falls through to the configured small_talk
+# mode (current behaviour). The override is a no-op if no fast-chat
+# provider key is set, so existing users see no behaviour change.
+
+_FAST_CHAT_PROVIDERS: tuple[tuple[str, str], ...] = (
+    ("xai", "grok-3-mini"),
+    ("groq", "llama-3.1-8b-instant"),
+    ("cerebras", "llama3.1-8b"),
+)
+
+
+def _pick_fast_chat_provider(
+    temperature: float, max_tokens: int,
+) -> ResolvedLLMConfig | None:
+    """Return a fast small-model config if any fast-chat provider has a key.
+
+    Pure precedence walk; first hit wins. Returns None when no fast
+    provider is configured so the caller falls back to the normal
+    `LLMModeRouter.get_config` path.
+    """
+    for provider, model in _FAST_CHAT_PROVIDERS:
+        if _has_api_key(provider):
+            # Visible log so the operator knows chat is routing via the
+            # fast path. Fires once per call; rate is bounded by the
+            # daemon's own message throughput.
+            logger.info("chat fast-path: %s:%s", provider, model)
+            return ResolvedLLMConfig(
+                provider=provider,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                mode="small_talk",
+                resolution_reason=f"fast-chat override → {provider}:{model}",
+                api_key_env=_get_env_var_name(provider),
+            )
+    return None
+
+
 def resolve_llm(
     mode: str | None = None,
     user_input: str | None = None,
@@ -1009,5 +1060,18 @@ def resolve_llm(
         canonical = router.detect_mode(user_input)
     else:
         canonical = "big_tasks"
+
+    # Fast-chat override: only for small_talk, only when uncensored isn't
+    # being explicitly requested. Picks up the first available fast
+    # provider (xAI grok / Groq / Cerebras).
+    if canonical == "small_talk" and not prefer_uncensored:
+        mode_cfg = router.modes.get_mode("small_talk")
+        if mode_cfg is not None:
+            fast = _pick_fast_chat_provider(
+                temperature=mode_cfg.temperature,
+                max_tokens=mode_cfg.max_tokens,
+            )
+            if fast is not None:
+                return fast
 
     return router.get_config(canonical, prefer_uncensored=prefer_uncensored)

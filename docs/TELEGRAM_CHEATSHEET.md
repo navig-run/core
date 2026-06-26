@@ -69,11 +69,11 @@ navig tiktok analyse  <url> [-c N]                   # AI markdown briefing (des
 ```
 > `navig tt …` is a shorthand alias. Country is best-effort — TikTok rarely exposes it.
 
-## 🥔 Farmore (GitHub mirroring — same wrapper pattern)
+## 🐙 GitHub (mirroring — search · backup · clone)
 
 ```bash
-navig farmore search "<query>" -o ./mirrors --limit 50 -y
-navig farmore token set <github-token>
+navig github search "<query>" -o ./mirrors --limit 50 -y
+navig github token set <github-token>
 ```
 
 ---

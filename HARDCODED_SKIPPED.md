@@ -92,14 +92,28 @@ constant would create an artificial dependency between unrelated modules.
 
 ---
 
-## 9. `config_schema.py GatewayConfig.port` vs `defaults.yaml gateway.port`
+## 9. `GatewayConfig.port` vs `defaults.yaml gateway.port` — RESOLVED (2026-06-20)
 
-**Observation:** `navig/config_schema.py` has `port: int = 8765` while
-`config/defaults.yaml` sets `gateway.port: 8789`.  
-**Reason this was not touched:** The mismatch appears to be a pre-existing
-inconsistency unrelated to the literal-extraction task.  Changing either value
-silently would alter runtime behaviour.  A separate investigation/issue is
-needed to decide the canonical value.
+**Original observation:** the pydantic schema (`core/config_schema.py`) and the
+runtime `GatewayConfig` (`gateway/server.py`) both defaulted `gateway.port` to
+**8765**, while `config/defaults.yaml` sets **8789**.
+
+**Resolution:** 8789 is canonical for the gateway (defaults.yaml, all docs,
+every client/probe, the daemon's embedded gateway). The 8765 fallbacks were a
+bug — they made the gateway bind the **daemon-IPC** port (`daemon.port: 8765`),
+so on any install without an explicit `gateway.port` the gateway squatted the
+daemon's port and every 8789-probing client (doctor, deck, flux, mesh) failed
+to reach it. `defaults.yaml` never participates at runtime (`_load_global_config`
+reads only `~/.navig/config.yaml`; the cached path uses `validate=False`), so the
+inline fallback was the *only* default that executed.
+
+The canonical value now lives in **one place**: `navig._daemon_defaults._GATEWAY_PORT`
+(8789), alongside `_DAEMON_PORT` (8765) and `_OAUTH_REDIRECT_PORT` (1455).
+`server.py`, `core/config_schema.py`, and `gateway_client.py` reference it, as do
+the gateway-port fallbacks in `telegram_mesh`, `mesh/registry`, `oauth_redirect`,
+`bridge`, `dashboard`, `doctor`, `flux`, `interactive`, and `lighthouse`. A
+regression guard asserts `_GATEWAY_PORT != _DAEMON_PORT`
+(`tests/gateway/test_gateway_client.py`, `tests/config/test_config_schema.py`).
 
 ---
 

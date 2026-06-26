@@ -36,6 +36,10 @@ _CATEGORY_DEST: dict[str, str] = {
     "hub/changelog": ".navig/wiki/hub/changelog",
     "external/business": ".navig/wiki/external/business",
     "external/marketing": ".navig/wiki/external/marketing",
+    # Promotion tiers (see navig.inbox.promotion) — also valid route destinations.
+    "plan/roadmap": ".navig/wiki/hub/roadmap",
+    "plan/deferred": ".navig/wiki/hub/roadmap/deferred",
+    "plan/after-mvp": ".navig/wiki/hub/roadmap/after-mvp",
     "archive": ".navig/wiki/archive",
     "ignore": "",  # not routed
 }

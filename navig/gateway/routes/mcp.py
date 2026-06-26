@@ -38,7 +38,7 @@ def _clients(gw):
         if auth is not None:
             return auth
         err = _chk(gw)
-        if err:
+        if err is not None:
             return err
         clients = []
         for name, client in gw.mcp_client_manager.clients.items():
@@ -54,7 +54,7 @@ def _tools(gw):
         if auth is not None:
             return auth
         err = _chk(gw)
-        if err:
+        if err is not None:
             return err
         tools = gw.mcp_client_manager.list_tools()
         return json_ok(
@@ -79,7 +79,7 @@ def _call_tool(gw):
         if auth is not None:
             return auth
         err = _chk(gw)
-        if err:
+        if err is not None:
             return err
         try:
             tool_name = r.match_info["tool_name"]
@@ -106,7 +106,7 @@ def _connect(gw):
         if auth is not None:
             return auth
         err = _chk(gw)
-        if err:
+        if err is not None:
             return err
         try:
             data = await r.json()
@@ -142,7 +142,7 @@ def _disconnect(gw):
         if auth is not None:
             return auth
         err = _chk(gw)
-        if err:
+        if err is not None:
             return err
         try:
             data = await r.json()

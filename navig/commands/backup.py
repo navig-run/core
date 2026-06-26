@@ -492,8 +492,15 @@ def backup_hestia(name: str | None, options: dict[str, Any]):
                 local_tar,
             )
 
-            # Extract locally
+            # Extract locally — guard against path traversal (zip-slip): the tar
+            # is produced by / downloaded from a remote server, so a compromised
+            # host could embed `../` members to write outside local_dir (R9).
             with tarfile.open(local_tar, "r:gz") as tar:
+                _dest = local_dir.resolve()
+                for _member in tar.getmembers():
+                    _target = (_dest / _member.name).resolve()
+                    if _target != _dest and _dest not in _target.parents:
+                        raise ValueError(f"Unsafe archive entry: {_member.name}")
                 tar.extractall(local_dir)
 
             # Remove tar file after extraction

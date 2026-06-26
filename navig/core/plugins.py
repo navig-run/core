@@ -754,3 +754,37 @@ def get_plugin(name: str) -> PluginInfo | None:
 def list_plugins() -> list[PluginInfo]:
     """List all plugins."""
     return get_plugin_registry().list_plugins()
+
+
+def load_entry_point_plugins() -> list[str]:
+    """Import + register plugins installed as packages that expose the
+    ``navig.plugins`` entry-point group (e.g. the private ``navig-harbor``).
+
+    This is the seam that lets a separately-installed package extend NAVIG
+    without living inside public core. Each entry point resolves to a module or
+    object; if it exposes a ``register()`` callable we invoke it — that's where a
+    plugin wires its gateway routes (via the ``gateway:register_routes`` hook),
+    CLI commands, etc. Failures are isolated so one bad plugin never blocks boot.
+
+    Returns the names of plugins that registered successfully.
+    """
+    import logging
+    from importlib.metadata import entry_points
+
+    _log = logging.getLogger(__name__)
+    registered: list[str] = []
+    try:
+        eps = entry_points(group="navig.plugins")
+    except TypeError:  # Python <3.10: entry_points() returns a mapping
+        eps = entry_points().get("navig.plugins", [])  # type: ignore[attr-defined]
+    for ep in eps:
+        try:
+            obj = ep.load()
+            reg = getattr(obj, "register", None)
+            if callable(reg):
+                reg()
+            registered.append(ep.name)
+            _log.info("navig plugin loaded: %s", ep.name)
+        except Exception as exc:  # noqa: BLE001 — a plugin must never break boot
+            _log.warning("navig plugin %r failed to load: %s", getattr(ep, "name", "?"), exc)
+    return registered

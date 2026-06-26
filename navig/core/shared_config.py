@@ -245,11 +245,16 @@ class ConfigSingleton:
     def reload(self) -> None:
         """Reload configuration from disk (discard in-memory changes)."""
         with self._lock:
-            # Invalidate ConfigManager's cache so _load() re-reads from disk.
+            # Attempt to invalidate ConfigManager's cache so _load() re-reads
+            # from disk.  Accessing a private attribute is fragile; wrap
+            # defensively so future ConfigManager refactors don't break reload.
             try:
                 from navig.config import get_config_manager  # noqa: PLC0415
                 cm = get_config_manager()
-                cm._global_config_loaded = False
+                if hasattr(cm, "_global_config_loaded"):
+                    cm._global_config_loaded = False
+                elif hasattr(cm, "invalidate"):
+                    cm.invalidate()
             except Exception:
                 pass
             self._load()
@@ -351,7 +356,7 @@ class ConfigSingleton:
     # Plugin Configuration
     # =========================================================================
 
-    def get_plugin_config(self, plugin_name: str, key: str = None, default: Any = None) -> Any:
+    def get_plugin_config(self, plugin_name: str, key: str | None = None, default: Any = None) -> Any:
         """
         Get plugin-specific configuration.
 

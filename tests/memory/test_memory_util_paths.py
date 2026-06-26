@@ -68,7 +68,10 @@ class TestMemoryPaths:
         monkeypatch.setenv("NAVIG_HOME", str(tmp_path))
         import navig.memory.paths as p
         d = p.memory_dir()
-        assert d.exists()
+        # memory_dir() returns the path but does NOT create it (the docstring
+        # avoids import-time fs mutations); the caller creates it.
+        assert d == tmp_path / "memory"
+        d.mkdir(parents=True, exist_ok=True)
         assert d.is_dir()
 
     def test_key_facts_db_path_type(self):

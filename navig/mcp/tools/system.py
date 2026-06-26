@@ -203,12 +203,18 @@ def register(server: Any) -> None:
 
 
 def _tool_list_databases(server: Any, args: dict[str, Any]) -> list[dict[str, Any]]:
-    """List database connections."""
-    databases = server._config.get_databases()
-    return [
-        {"name": name, **{k: v for k, v in config.items() if k != "password"}}
-        for name, config in databases.items()
-    ]
+    """List database connections extracted from host configs."""
+    result = []
+    for host_name in server._config.list_hosts():
+        try:
+            host_cfg = server._config.load_host_config(host_name)
+        except Exception:
+            continue
+        db = host_cfg.get("database")
+        if db and isinstance(db, dict):
+            safe_db = {k: v for k, v in db.items() if "password" not in k.lower()}
+            result.append({"host": host_name, **safe_db})
+    return result
 
 
 def _tool_get_context(server: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -227,7 +233,8 @@ def _tool_get_context(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     }
 
     if include_errors:
-        context["recent_errors"] = context_mgr.get_recent_errors_for_ai(limit=10)
+        error_summary = context_mgr.get_error_summary(hours=24)
+        context["recent_errors"] = error_summary.get("recent_errors", [])
 
     return context
 

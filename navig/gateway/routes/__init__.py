@@ -25,6 +25,7 @@ def register_all_routes(app: web.Application, gateway: NavigGateway) -> None:
         core,
         cron,
         daemon,
+        events,
         heartbeat,
         install,
         llm,
@@ -46,6 +47,7 @@ def register_all_routes(app: web.Application, gateway: NavigGateway) -> None:
         cron,
         approval,
         browser,
+        events,
         llm,
         mcp,
         tasks,
@@ -65,3 +67,16 @@ def register_all_routes(app: web.Application, gateway: NavigGateway) -> None:
         from navig.gateway.routes import telegram_webhook
 
         telegram_webhook.register(app, gateway)
+
+    # Inbound SMS webhook (Twilio/Vonage POST here). Always registered — it is a
+    # no-op until the user points their Messaging Service inbound URL at it.
+    from navig.gateway.routes import sms_webhook
+
+    sms_webhook.register(app, gateway)
+
+    # Inbound Signals ingest (POST /api/ingest/<source>). Always registered — a
+    # 404 until the user creates a source via `navig signals add`. Self-auths via
+    # per-source HMAC; reachable over Lighthouse as /ingest/<tenant>/<source>.
+    from navig.gateway.routes import ingest
+
+    ingest.register(app, gateway)

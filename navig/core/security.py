@@ -49,10 +49,10 @@ DEFAULT_REDACT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # CLI flags: --api-key <value>, --token <value>, etc.
     (
         re.compile(
-            r'--(?:api[-_]?key|token|secret|password|passwd|auth)\s+(["\']?)([^\s"\']+)\1',
+            r'(--(?:api[-_]?key|token|secret|password|passwd|auth))\s+(["\']?)([^\s"\']+)\2',
             re.IGNORECASE,
         ),
-        r"--\1 ***REDACTED***",
+        r"\1 ***REDACTED***",
     ),
     # MySQL short password flag: -p <value>
     (re.compile(r"-p\s+([^\s]+)", re.IGNORECASE), r"-p ***REDACTED***"),
@@ -414,6 +414,11 @@ def validate_command_safety(
         )
 
     return True, None
+
+
+# NOTE: validate_command_safety returns (True, warning) for unknown executables.
+# Callers MUST check the reason string — a non-None reason is a warning, not
+# a block.  Use is_safe_executable() directly if you need a hard allow/deny.
 
 
 # =============================================================================

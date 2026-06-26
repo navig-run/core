@@ -74,8 +74,8 @@ NAVIG ships in two layers with a deliberate split:
 The split is honest: the daemon is open and audit-able; the polished
 GUI is the paid product. Pack owners get the local app forever,
 self-hosted; subscribers add host scale and the hosted cloud relay we
-run on `relay.navig.run`. See [docs/BILLING.md](docs/BILLING.md) for the
-full pricing model.
+run on `relay.navig.run`. See [navig.run/pricing](https://navig.run/pricing)
+for the full pricing model.
 
 **What's free, forever, no matter what**:
 - The entire CLI — unlimited `navig ssh`, unlimited hosts you connect to
@@ -442,7 +442,7 @@ Global config lives in `~/.navig/`. Override with `NAVIG_CONFIG_DIR`.
 
 Project-specific overrides: place a `.navig/` directory at your repository root. Project config takes precedence over global config.
 
-See [`docs/user/CONFIG_SCHEMA.md`](docs/user/CONFIG_SCHEMA.md) and [`docs/user/USAGE_GUIDE.md`](docs/user/USAGE_GUIDE.md).
+See [`docs/user/CONFIG_SCHEMA.md`](docs/user/CONFIG_SCHEMA.md) and [`docs/user/HANDBOOK.md`](docs/user/HANDBOOK.md).
 
 ---
 

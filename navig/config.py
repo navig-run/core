@@ -11,6 +11,8 @@ New Architecture (v2.0):
 """
 
 import logging
+import os
+import pickle
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -30,6 +32,54 @@ from navig.core.yaml_io import atomic_write_yaml as _atomic_write_yaml
 from navig.platform import paths
 
 logger = logging.getLogger(__name__)
+
+
+# ── Hardened pickle loading for the config cache ──────────────────────────────
+# The config cache (~/.navig/.config_cache.pkl) only ever stores plain
+# YAML-parsed data (dict/list/tuple/str/num/bool/None, occasionally datetimes).
+# A stock pickle.load() on a file in a user-writable directory is an RCE sink if
+# another local user can tamper with it. The restricted unpickler below loads the
+# same valid data but refuses any global outside a fixed, data-only allowlist —
+# which is exactly what pickle-based code-execution payloads rely on.
+_SAFE_PICKLE_GLOBALS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("builtins", "dict"),
+        ("builtins", "list"),
+        ("builtins", "tuple"),
+        ("builtins", "set"),
+        ("builtins", "frozenset"),
+        ("builtins", "str"),
+        ("builtins", "bytes"),
+        ("builtins", "bytearray"),
+        ("builtins", "int"),
+        ("builtins", "float"),
+        ("builtins", "bool"),
+        ("builtins", "complex"),
+        ("builtins", "NoneType"),
+        ("datetime", "datetime"),
+        ("datetime", "date"),
+        ("datetime", "time"),
+        ("datetime", "timezone"),
+        ("datetime", "timedelta"),
+        ("collections", "OrderedDict"),
+    }
+)
+
+
+class _RestrictedUnpickler(pickle.Unpickler):
+    """Unpickler that only resolves globals from ``_SAFE_PICKLE_GLOBALS``."""
+
+    def find_class(self, module: str, name: str):  # noqa: ANN206
+        if (module, name) in _SAFE_PICKLE_GLOBALS:
+            return super().find_class(module, name)
+        raise pickle.UnpicklingError(
+            f"Refusing to unpickle disallowed global: {module}.{name}"
+        )
+
+
+def _safe_pickle_load(fileobj) -> Any:  # noqa: ANN001
+    """Load a pickle stream restricted to plain, data-only types."""
+    return _RestrictedUnpickler(fileobj).load()
 
 
 class ConfigManager:
@@ -90,6 +140,7 @@ class ConfigManager:
         self._apps = AppManager(self)
         self._context = ContextManager(self)
         self._execution = ExecutionSettings(self)
+        self._global_config_lock = threading.Lock()  # guards lazy global_config load
 
     def _resolve_paths(self):
         if self._paths_resolved:
@@ -162,15 +213,11 @@ class ConfigManager:
     @property
     def global_config(self) -> dict:
         if not self._global_config_loaded:
-            # Skip Pydantic validation on read-only access —
-            # saves ~285ms by not importing config_schema/pydantic.
-            # Validation happens explicitly via get_global_config(validate=True)
-            # or config commands that modify settings.
-            #
-            # QUANTUM VELOCITY K2: Use binary pickle cache to skip YAML re-parse
-            # (~106ms → <1ms on cache hit). Shadow Execution validates integrity.
-            self._global_config = self._load_global_config_cached()
-            self._global_config_loaded = True
+            with self._global_config_lock:
+                # Double-checked: another thread may have loaded while we waited.
+                if not self._global_config_loaded:
+                    self._global_config = self._load_global_config_cached()
+                    self._global_config_loaded = True
         return self._global_config
 
     @global_config.setter
@@ -275,6 +322,7 @@ class ConfigManager:
                     self.active_host_file = self.cache_dir / "active_host.txt"
                     self.active_app_file = self.cache_dir / "active_app.txt"
                     self.active_server_file = self.cache_dir / "active_server.txt"
+                    self.active_space_file = self.cache_dir / "active_space.txt"
                     self.tunnels_file = self.cache_dir / "tunnels.json"
                     self.db_file = self.base_dir / "navig.db"
                     # Retry with global config (guarded to max 2 recursive calls) — P1-4
@@ -372,12 +420,13 @@ Context provided with each query:
             hostname = "localhost"
 
         # Create local host configuration
+        from datetime import timezone
         local_config = {
             "hostname": hostname,
             "type": "local",
             "os": os_name,
             "description": f"Local machine ({os_name})",
-            "created": datetime.now().isoformat(),
+            "created": datetime.now(timezone.utc).isoformat(),
             "tags": ["local", os_name],
         }
 
@@ -421,8 +470,6 @@ Context provided with each query:
 
         Falls back silently to the slow path on any cache error.
         """
-        import pickle
-
         global_config_file = self.global_config_dir / "config.yaml"
         cache_file = self.global_config_dir / ".config_cache.pkl"
 
@@ -431,7 +478,7 @@ Context provided with each query:
             try:
                 source_mtime = global_config_file.stat().st_mtime
                 with open(cache_file, "rb") as _f:
-                    cached = pickle.load(_f)
+                    cached = _safe_pickle_load(_f)
 
                 if (
                     isinstance(cached, dict)
@@ -509,9 +556,18 @@ Context provided with each query:
                 tmp = cache_file.with_suffix(".tmp")
                 with open(tmp, "wb") as _f:
                     pickle.dump(payload, _f, protocol=pickle.HIGHEST_PROTOCOL)
+                # Restrict to owner read/write before publishing — defense in depth
+                # against another local user tampering with the cache (POSIX only;
+                # a harmless no-op on Windows).
+                try:
+                    os.chmod(tmp, 0o600)
+                except OSError:
+                    pass
                 tmp.replace(cache_file)  # atomic rename
             except Exception:
-                pass  # Cache write failure is non-fatal
+                # Non-fatal: next run just takes the slow path. Log at debug so a
+                # persistently unwritable cache dir is diagnosable.
+                logger.debug("Failed to write config cache", exc_info=True)
 
         return slow_result
 
@@ -921,7 +977,7 @@ Context provided with each query:
 
         _set_active_space(name)
 
-    def set_active_host(self, host_name: str, local: bool = None):
+    def set_active_host(self, host_name: str, local: bool | None = None):
         """Set active host. Delegates to ContextManager."""
         self._context.set_active_host(host_name, local)
 

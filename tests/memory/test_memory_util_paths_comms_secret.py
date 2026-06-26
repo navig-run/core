@@ -89,6 +89,10 @@ class TestMemoryDir:
     def test_creates_directory(self, tmp_path):
         with patch.dict(os.environ, {"NAVIG_HOME": str(tmp_path)}):
             d = memory_dir()
+        # memory_dir() returns the path but does NOT create it (callers mkdir
+        # lazily to avoid import-time fs mutations). Verify path + that mkdir works.
+        assert d == tmp_path / "memory"
+        d.mkdir(parents=True, exist_ok=True)
         assert d.is_dir()
 
     def test_returns_path_type(self, tmp_path):

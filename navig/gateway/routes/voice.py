@@ -253,6 +253,10 @@ def _events(gw):
         from navig.gateway.routes.common import _get_web  # noqa: PLC0415
 
         _web = _get_web()
+        # CORS headers added pre-prepare() because StreamResponse flushes
+        # headers on prepare(), before the middleware can patch them. Uses
+        # the same allowlist as the rest of the gateway via cors_headers_for.
+        from navig.gateway.middleware import cors_headers_for  # noqa: PLC0415
         response = _web.StreamResponse(
             status=200,
             reason="OK",
@@ -260,7 +264,7 @@ def _events(gw):
                 "Content-Type": "text/event-stream",
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "Access-Control-Allow-Origin": "*",
+                **cors_headers_for(r),
             },
         )
         await response.prepare(r)

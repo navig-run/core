@@ -5,8 +5,8 @@ def register(server: Any) -> None:
     """Register memory (key facts) tools."""
     server.tools.update(
         {
-            "memory.key_facts.remember": {
-                "name": "memory.key_facts.remember",
+            "memory_key_facts_remember": {
+                "name": "memory_key_facts_remember",
                 "description": "Store a key fact in persistent memory.",
                 "inputSchema": {
                     "type": "object",
@@ -29,8 +29,8 @@ def register(server: Any) -> None:
                     "required": ["fact"],
                 },
             },
-            "memory.key_facts.forget": {
-                "name": "memory.key_facts.forget",
+            "memory_key_facts_forget": {
+                "name": "memory_key_facts_forget",
                 "description": "Soft-delete a stored key fact by its ID.",
                 "inputSchema": {
                     "type": "object",
@@ -43,8 +43,8 @@ def register(server: Any) -> None:
                     "required": ["fact_id"],
                 },
             },
-            "memory.key_facts.retrieve": {
-                "name": "memory.key_facts.retrieve",
+            "memory_key_facts_retrieve": {
+                "name": "memory_key_facts_retrieve",
                 "description": "Search persistent memory for key facts matching a query.",
                 "inputSchema": {
                     "type": "object",
@@ -59,13 +59,13 @@ def register(server: Any) -> None:
                     "required": ["query"],
                 },
             },
-            "memory.key_facts.stats": {
-                "name": "memory.key_facts.stats",
+            "memory_key_facts_stats": {
+                "name": "memory_key_facts_stats",
                 "description": "Return counts of total, active, deleted, and superseded facts.",
                 "inputSchema": {"type": "object", "properties": {}, "required": []},
             },
-            "memory.key_facts.update": {
-                "name": "memory.key_facts.update",
+            "memory_key_facts_update": {
+                "name": "memory_key_facts_update",
                 "description": "Update the content of an existing key fact by its ID.",
                 "inputSchema": {
                     "type": "object",
@@ -87,11 +87,11 @@ def register(server: Any) -> None:
 
     server._tool_handlers.update(
         {
-            "memory.key_facts.remember": _tool_memory_remember,
-            "memory.key_facts.forget": _tool_memory_forget,
-            "memory.key_facts.retrieve": _tool_memory_retrieve,
-            "memory.key_facts.stats": _tool_memory_stats,
-            "memory.key_facts.update": _tool_memory_update,
+            "memory_key_facts_remember": _tool_memory_remember,
+            "memory_key_facts_forget": _tool_memory_forget,
+            "memory_key_facts_retrieve": _tool_memory_retrieve,
+            "memory_key_facts_stats": _tool_memory_stats,
+            "memory_key_facts_update": _tool_memory_update,
         }
     )
 

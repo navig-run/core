@@ -38,7 +38,7 @@ def _list(gw):
         if auth is not None:
             return auth
         err = _chk(gw)
-        if err:
+        if err is not None:
             return err
         try:
             from navig.tasks import TaskStatus
@@ -65,7 +65,7 @@ def _add(gw):
         if auth is not None:
             return auth
         err = _chk(gw)
-        if err:
+        if err is not None:
             return err
         try:
             from navig.tasks import Task
@@ -107,7 +107,7 @@ def _stats(gw):
         if auth is not None:
             return auth
         err = _chk(gw)
-        if err:
+        if err is not None:
             return err
         stats = gw.task_queue.get_stats()
         if gw.task_worker:
@@ -123,7 +123,7 @@ def _get(gw):
         if auth is not None:
             return auth
         err = _chk(gw)
-        if err:
+        if err is not None:
             return err
         try:
             task_id = r.match_info["task_id"]
@@ -148,7 +148,7 @@ def _cancel(gw):
         if auth is not None:
             return auth
         err = _chk(gw)
-        if err:
+        if err is not None:
             return err
         try:
             task_id = r.match_info["task_id"]

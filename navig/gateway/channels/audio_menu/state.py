@@ -27,6 +27,7 @@ class AudioConfig:
     format: str = "mp3"
     auto: bool = False
     active: bool = False
+    voice_replies_enabled: bool = False
 
 
 def _store_path(user_id: int) -> Path:

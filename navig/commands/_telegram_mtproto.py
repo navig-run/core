@@ -30,6 +30,9 @@ def register(telegram_app: "typer.Typer") -> None:
     history_app = typer.Typer(help="Backfill full Telegram history into the searchable catalog")
     telegram_app.add_typer(history_app, name="history")
 
+    folders_app = typer.Typer(help="Chat folders (dialog filters): list / export / apply a layout")
+    telegram_app.add_typer(folders_app, name="folders")
+
     @telegram_app.command("setup")
     def tg_setup(
         api_id: int = typer.Option(..., "--api-id", prompt="Telegram api_id (my.telegram.org)"),
@@ -214,6 +217,106 @@ def register(telegram_app: "typer.Typer") -> None:
             ch.info(f"DRY-RUN: would rename -> '{title}'. Re-run with --confirm.")
         else:
             ch.success(f"Renamed -> '{title}'")
+
+    @folders_app.command("list")
+    def tg_folders_list(json_out: bool = typer.Option(False, "--json")) -> None:
+        """List your chat folders with their members."""
+        from navig.telegram import folders
+        rows = _run(folders.list_folders())
+        if json_out:
+            ch.raw_print(json.dumps(rows, indent=2, ensure_ascii=False, default=str))
+            return
+        for f in rows:
+            emo = (f.get("emoticon") or "").strip()
+            ch.console.print(f"  [{f['id']:>3}] {emo} {f['title']}  "
+                             f"(include {len(f['include'])}, exclude {len(f['exclude'])})")
+        ch.dim(f"\n{len(rows)} folders")
+
+    @folders_app.command("export")
+    def tg_folders_export(path: str = typer.Argument(..., help="write current folders to this JSON file")) -> None:
+        """Dump current folders to an editable plan file (ids + raw peer ids)."""
+        from navig.telegram import folders
+        rows = _run(folders.list_folders())
+        plan = [{
+            "id": f["id"], "title": f["title"], "emoticon": f.get("emoticon") or "",
+            "flags": f.get("flags") or {},
+            "include": [p["id"] for p in f["include"]],
+            "exclude": [p["id"] for p in f["exclude"]],
+        } for f in rows]
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh, ensure_ascii=False, indent=2)
+        ch.success(f"Exported {len(plan)} folders -> {path}")
+
+    @folders_app.command("apply")
+    def tg_folders_apply(
+        path: str = typer.Argument(..., help="folder plan JSON (list of folder specs)"),
+        confirm: bool = typer.Option(False, "--confirm", help="actually write the folders"),
+        prune: bool = typer.Option(False, "--prune", help="delete existing folders not in the plan"),
+    ) -> None:
+        """Apply a folder layout from a plan file. Dry-run unless --confirm."""
+        from navig.telegram import folders
+        with open(path, encoding="utf-8") as fh:
+            plan = json.load(fh)
+        res = _run(folders.apply_plan(plan, confirm=confirm, prune=prune))
+        for a in res["actions"]:
+            miss = f"  ⚠ {len(a['unresolved'])} unresolved" if a["unresolved"] else ""
+            ch.console.print(f"  {a['op']:<6} [{a['id']:>3}] {a['title']}  "
+                             f"(+{a['include']}/-{a['exclude']}){miss}")
+        if res["deletes"]:
+            ch.console.print(f"  delete folders: {res['deletes']}")
+        if res["dry_run"]:
+            ch.info(f"DRY-RUN: {res['creates']} create, {res['updates']} update, "
+                    f"{len(res['deletes'])} delete. Re-run with --confirm.")
+        else:
+            ch.success(f"Applied: {res['creates']} created, {res['updates']} updated, "
+                       f"{len(res['deletes'])} deleted.")
+
+    @folders_app.command("rename")
+    def tg_folders_rename(
+        path: str = typer.Argument(..., help="JSON list of {id, title, emoticon?} folder renames"),
+        confirm: bool = typer.Option(False, "--confirm", help="actually rename the folders"),
+    ) -> None:
+        """Rename folders (label only, membership untouched). Dry-run unless --confirm."""
+        from navig.telegram import folders
+        with open(path, encoding="utf-8") as fh:
+            renames = json.load(fh)
+        res = _run(folders.rename_folders(renames, confirm=confirm))
+        for ch_ in res["changes"]:
+            emo = (ch_.get("emoticon") or "").strip()
+            ch.console.print(f"  [{ch_['id']:>3}] {emo} '{ch_['from']}'  ->  '{ch_['to']}'")
+        if res["dry_run"]:
+            ch.info(f"DRY-RUN: {res['renamed']} folder(s) would be renamed. Re-run with --confirm.")
+        else:
+            ch.success(f"Renamed {res['renamed']} folder(s).")
+
+    @telegram_app.command("rename-bulk")
+    def tg_rename_bulk(
+        path: str = typer.Argument(..., help="JSON list of {chat, title} rename specs"),
+        confirm: bool = typer.Option(False, "--confirm", help="actually rename"),
+        delay: float = typer.Option(2.0, "--delay", help="seconds between renames (flood-safe)"),
+    ) -> None:
+        """Rename many chats from a plan file, flood-safe (one session, throttled,
+        auto-handles FloodWait). Dry-run unless --confirm. Chats you can't rename
+        (no admin/change_info) are reported as errors and skipped."""
+        from navig.telegram import organize
+        with open(path, encoding="utf-8") as fh:
+            specs = json.load(fh)
+        results = _run(organize.rename_many(specs, confirm=confirm, delay=delay))
+        renamed = skipped = 0
+        for r in results:
+            st = r["status"]
+            if st == "dry_run":
+                ch.console.print(f"  would rename  {r['chat']}  -> '{r['title']}'")
+            elif st == "renamed":
+                renamed += 1
+                ch.console.print(f"  renamed       {r['chat']}  -> '{r['title']}'")
+            else:
+                skipped += 1
+                ch.console.print(f"  skip          {r['chat']}  -> '{r['title']}'  ({r.get('error','')})")
+        if not confirm:
+            ch.info(f"DRY-RUN: {len(results)} rename(s) planned. Re-run with --confirm (--delay {delay}s).")
+        else:
+            ch.success(f"Renamed {renamed}, skipped {skipped}.")
 
     @telegram_app.command("delete")
     def tg_delete(

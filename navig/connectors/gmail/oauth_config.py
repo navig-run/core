@@ -8,6 +8,8 @@ The ``GMAIL_OAUTH_CONFIG`` is registered into the global
 
 from __future__ import annotations
 
+import os
+
 from navig.connectors.google_oauth_constants import (
     GOOGLE_AUTH_URL as _GOOGLE_AUTH_URL,
 )
@@ -17,6 +19,7 @@ from navig.connectors.google_oauth_constants import (
 from navig.connectors.google_oauth_constants import (
     GOOGLE_USERINFO_URL as _GOOGLE_USERINFO_URL,
 )
+from navig.connectors.oauth_redirect import connector_redirect_uri
 from navig.providers.oauth import OAuthProviderConfig
 
 # Gmail-specific scopes
@@ -49,6 +52,16 @@ def build_gmail_oauth_config(
         token_url=_GOOGLE_TOKEN_URL,
         client_id=client_id,
         client_secret=client_secret,
+        redirect_uri=connector_redirect_uri(),
         scopes=GMAIL_SCOPES,
         userinfo_url=_GOOGLE_USERINFO_URL,
     )
+
+
+def get_gmail_oauth_config() -> OAuthProviderConfig | None:
+    """Load Gmail OAuth config from the shared Google credentials in the env.
+    Returns None when unconfigured (registration is then silently skipped)."""
+    client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+    if not client_id:
+        return None
+    return build_gmail_oauth_config(client_id, os.getenv("GOOGLE_CLIENT_SECRET"))

@@ -138,6 +138,36 @@ class TestCompletionRequest:
 
 
 # ─────────────────────────────────────────────────────────────
+# AnthropicClient cache-control injection (smarter/cheaper brain)
+# ─────────────────────────────────────────────────────────────
+
+
+class TestAnthropicCacheControl:
+    def test_apply_cache_control_wraps_system_and_first_two_users(self):
+        from navig.providers.clients import AnthropicClient
+
+        messages = [
+            {"role": "user", "content": "u1"},
+            {"role": "assistant", "content": "a1"},
+            {"role": "user", "content": "u2"},
+            {"role": "user", "content": "u3"},  # third user — not tagged
+        ]
+        system = AnthropicClient._apply_cache_control("SYS", messages)
+        # system rewrapped into a content block carrying cache_control
+        assert isinstance(system, list)
+        assert system[0]["cache_control"] == {"type": "ephemeral"}
+        # first two user turns tagged, third left as a plain string
+        assert messages[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+        assert messages[2]["content"][0]["cache_control"] == {"type": "ephemeral"}
+        assert messages[3]["content"] == "u3"
+
+    def test_apply_cache_control_handles_none_system(self):
+        from navig.providers.clients import AnthropicClient
+
+        assert AnthropicClient._apply_cache_control(None, []) is None
+
+
+# ─────────────────────────────────────────────────────────────
 # ToolCall
 # ─────────────────────────────────────────────────────────────
 

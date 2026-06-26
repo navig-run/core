@@ -181,6 +181,14 @@ def register_coordinator_tools() -> None:
 
         _AGENT_REGISTRY.register(CoordinatorRunTool(), toolset="coordinator")
         _AGENT_REGISTRY.register(CoordinatorStatusTool(), toolset="coordinator")
+        # formation_run lives in the same toolset so it's never handed to the
+        # formation's own sub-agents (no recursive coordination).
+        try:
+            from navig.agent.tools.formation_tools import FormationRunTool
+
+            _AGENT_REGISTRY.register(FormationRunTool(), toolset="coordinator")
+        except ImportError as exc:
+            logger.debug("Formation tool not available (skip): %s", exc)
         logger.debug("Agent coordinator tools registered")
     except ImportError as exc:
         logger.debug("Coordinator tools not available (skip): %s", exc)

@@ -302,7 +302,7 @@ class WikiRAG:
     def __init__(
         self,
         wiki_path: Path,
-        project_indexer: "ProjectIndexer" | None = None,
+        project_indexer: "ProjectIndexer | None" = None,
     ):
         """Initialize Wiki RAG.
 

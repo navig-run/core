@@ -1,6 +1,7 @@
 """Daemon lifecycle and formation endpoints."""
 
 import asyncio
+import re
 import subprocess
 import sys
 
@@ -226,6 +227,16 @@ def _formation_start(gw):
             data = {}
 
         formation_name = data.get("formation", "app_project")
+
+        # The name flows to a CLI subprocess arg; constrain it to a safe slug so a
+        # request can't smuggle path traversal (../) or other surprises into the
+        # CLI's formation lookup. Endpoint is already bearer-authed + localhost.
+        if not isinstance(formation_name, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", formation_name):
+            resp = json_error_response(
+                "Invalid formation name", status=400, details={"formation": "must match [A-Za-z0-9._-]{1,64}"}
+            )
+            resp.headers["Access-Control-Allow-Origin"] = "*"
+            return resp
 
         try:
             subprocess.Popen(

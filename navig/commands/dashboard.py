@@ -106,13 +106,14 @@ TENTACLE_TIPS = [
 # State File Paths
 # ═══════════════════════════════════════════════════════════════
 
+from navig._daemon_defaults import _GATEWAY_PORT
 from navig.platform.paths import config_dir as _config_dir
 
 NAVIG_HOME = _config_dir()
 DAEMON_PID_FILE = NAVIG_HOME / "daemon" / "supervisor.pid"
 DAEMON_STATE_FILE = NAVIG_HOME / "daemon" / "state.json"
 TUNNELS_FILE = NAVIG_HOME / "cache" / "tunnels.json"
-GATEWAY_PORT = 8789
+GATEWAY_PORT = _GATEWAY_PORT
 
 
 # ═══════════════════════════════════════════════════════════════

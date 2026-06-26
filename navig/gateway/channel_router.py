@@ -97,6 +97,8 @@ class ChannelRouter:
         user_id: str,
         message: str,
         metadata: dict[str, Any] | None = None,
+        *,
+        on_partial=None,
     ) -> str:
         """
         Route a message to the appropriate agent.
@@ -150,12 +152,19 @@ class ChannelRouter:
             session_key=session_key,
             message=message,
             metadata=metadata,
+            on_partial=on_partial,
         )
 
         return response
 
     async def _handle_message(
-        self, agent_id: str, session_key: str, message: str, metadata: dict[str, Any]
+        self,
+        agent_id: str,
+        session_key: str,
+        message: str,
+        metadata: dict[str, Any],
+        *,
+        on_partial=None,
     ) -> str:
         """Handle message with NAVIG-aware processing and natural language understanding."""
         msg_lower = message.lower().strip()
@@ -222,7 +231,9 @@ class ChannelRouter:
 
         # Try conversational processing first
         try:
-            response = await agent.chat(message, tier_override=tier_override)
+            response = await agent.chat(
+                message, tier_override=tier_override, on_partial=on_partial,
+            )
             if response:
                 # Persist the text-detected language back to metadata so the
                 # Telegram session store stays in sync and doesn't feed a
@@ -287,6 +298,49 @@ class ChannelRouter:
         if hasattr(self, "_conv_agents"):
             self._conv_agents.clear()
             logger.debug("ConversationalAgent cache flushed")
+
+    async def warmup(self) -> None:
+        """Pre-pay the conversational cold start so the FIRST real message is fast.
+
+        Without this, the first inbound message lazily (a) imports + registers
+        ~45 agent tools, (b) initializes the AI client / hybrid router, and
+        (c) loads SOUL.md — together ~3–5s the user shouldn't wait through (it's
+        why a "tell me a joke" first reply logged ~5s while later ones are
+        snappy). We do that work here, once, in a background thread after boot.
+        Entirely best-effort: any failure just means the old lazy path runs.
+        """
+        import asyncio as _asyncio
+
+        def _blocking_warm() -> None:
+            try:
+                from navig.agent.tools import register_all_tools
+
+                register_all_tools()  # import-bound; the slow part, cached after
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("warmup: tool registration skipped: %s", exc)
+            try:
+                # Creates the AI client (hybrid-router singleton) + loads SOUL
+                # into the shared cache. The throwaway agent is dropped after.
+                agent = self._get_conversational_agent("__warmup__")
+                try:
+                    agent._agentic_tools_registered = True
+                except Exception:  # noqa: BLE001
+                    pass
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("warmup: agent pre-create skipped: %s", exc)
+            finally:
+                try:
+                    self._conv_agents.pop("__warmup__", None)
+                except Exception:  # noqa: BLE001
+                    pass
+
+        try:
+            # Off the event loop — the imports/inits are blocking and must not
+            # stall the gateway run loop or other background tasks.
+            await _asyncio.get_running_loop().run_in_executor(None, _blocking_warm)
+            logger.debug("Conversational warmup complete — first reply will be fast")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("warmup failed (non-fatal): %s", exc)
 
     def _record_engagement_interaction(self, message: str):
         """Record user interaction for proactive engagement state tracking."""

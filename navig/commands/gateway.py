@@ -8,6 +8,7 @@ from typing import Any
 
 import typer
 
+from navig._daemon_defaults import _GATEWAY_PORT
 from navig.lazy_loader import lazy_import
 
 ch = lazy_import("navig.console_helper")
@@ -49,6 +50,70 @@ def _load_gateway_cli_defaults() -> tuple[int, str]:
     return gateway_cli_defaults()
 
 
+def _free_port(port: int) -> None:
+    """Kill any process currently listening on *port* so the gateway can bind to it."""
+    import os
+    import signal
+    import subprocess
+    import sys
+
+    pids: list[int] = []
+    try:
+        import psutil  # type: ignore[import-untyped]
+
+        for conn in psutil.net_connections(kind="inet"):
+            if conn.laddr.port == port and conn.status in ("LISTEN", "ESTABLISHED"):
+                if conn.pid and conn.pid != os.getpid():
+                    pids.append(conn.pid)
+    except Exception:
+        # Fallback: platform-specific subprocess
+        try:
+            if sys.platform == "win32":
+                out = subprocess.check_output(
+                    ["netstat", "-ano"],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                )
+                for line in out.splitlines():
+                    if f":{port} " in line and "LISTENING" in line:
+                        parts = line.split()
+                        try:
+                            pid = int(parts[-1])
+                            if pid != os.getpid():
+                                pids.append(pid)
+                        except ValueError:
+                            pass
+            else:
+                out = subprocess.check_output(
+                    ["lsof", "-ti", f"tcp:{port}"],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                )
+                for p in out.split():
+                    try:
+                        pid = int(p.strip())
+                        if pid != os.getpid():
+                            pids.append(pid)
+                    except ValueError:
+                        pass
+        except Exception:
+            pass
+
+    for pid in set(pids):
+        try:
+            if sys.platform == "win32":
+                subprocess.call(
+                    ["taskkill", "/F", "/PID", str(pid)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                os.kill(pid, signal.SIGKILL)
+            _logger.debug("Freed port %d — killed PID %d", port, pid)
+        except Exception:
+            pass
+
+
 gateway_app = typer.Typer(
     name="gateway",
     help="Manage the autonomous agent gateway",
@@ -70,6 +135,13 @@ def gateway_start(
         help="Host to bind to (default: gateway.host from config, fallback 127.0.0.1)",
     ),
     background: bool = typer.Option(False, "--background", "-b", help="Run in background"),
+    logs: bool = typer.Option(False, "--logs", "-l", help="Stream gateway logs to stdout"),
+    debug: bool = typer.Option(
+        False,
+        "--debug",
+        "-d",
+        help="Raw verbose log stream (no formatted boot story). DEBUG level.",
+    ),
 ):
     """
     Start the autonomous agent gateway server.
@@ -81,10 +153,16 @@ def gateway_start(
     - Cron job scheduling
     - Multi-channel message routing
 
+    By default boot is shown as a clean, formatted "story" (one styled line per
+    subsystem) and the raw INFO log chatter is kept off the console (it still
+    goes to ~/.navig/navig.log). Pass --debug for the old behaviour: the full,
+    unformatted DEBUG log stream with no narrator.
+
     Examples:
         navig gateway start
         navig gateway start --port 9000
         navig gateway start --background
+        navig gateway start --debug      # raw verbose logs, like before
     """
     import asyncio
 
@@ -96,6 +174,50 @@ def gateway_start(
         host = default_host
 
     ch.info(f"Starting NAVIG Gateway on {host}:{port}...")
+    _free_port(port)
+
+    # Boot presentation: formatted narrator story by default, raw logs on --debug.
+    import logging as _logging
+    import os as _os
+
+    from navig.core import narrator as _narrator
+    from navig.core.logging import get_logger as _get_logger
+
+    _get_logger("gateway")  # force root-logger config before we tweak handlers
+    _navig_root = _logging.getLogger("navig")
+    _console_handlers = [
+        _h
+        for _h in _navig_root.handlers
+        if isinstance(_h, _logging.StreamHandler) and not isinstance(_h, _logging.FileHandler)
+    ]
+    if debug:
+        # Old behaviour: narrator off, full DEBUG stream on the console.
+        _os.environ["NAVIG_NO_NARRATOR"] = "1"
+        _navig_root.setLevel(_logging.DEBUG)
+        for _h in _console_handlers:
+            _h.setLevel(_logging.DEBUG)
+        ch.dim("Debug mode: narrator off, full log stream enabled.")
+    elif _narrator.is_active():
+        # Formatted boot on a TTY: hide the INFO preamble now so the styled
+        # boot story stands alone. server.start() restores console verbosity
+        # to INFO after the banner. (Piped/systemd: narrator is silent, so we
+        # leave the full log stream intact.)
+        for _h in _console_handlers:
+            _h.setLevel(_logging.WARNING)
+
+    if logs:
+        import logging as _logging
+        _stream_handler = _logging.StreamHandler()
+        _stream_handler.setLevel(_logging.DEBUG)
+        _stream_handler.setFormatter(
+            _logging.Formatter(  # noqa: E501
+                "%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
+                datefmt="%H:%M:%S",
+            )
+        )
+        _logging.root.setLevel(_logging.DEBUG)
+        _logging.root.addHandler(_stream_handler)
+        ch.dim("Log streaming enabled (all gateway + daemon output).")
 
     try:
         from navig.gateway import GatewayConfig, NavigGateway
@@ -279,7 +401,15 @@ def gateway_status(
 
     # ── Telegram ──────────────────────────────────────────────────────────────
     tg_cfg = raw_cfg.get("telegram", {})
-    tg_token = bool(tg_cfg.get("bot_token"))
+    _tg_token_raw = tg_cfg.get("bot_token") or ""
+    # Also check vault (primary storage when set via `navig vault add telegram`)
+    if not _tg_token_raw:
+        try:
+            from navig.vault.resolver import resolve_secret  # type: ignore[import]
+            _tg_token_raw = resolve_secret("TELEGRAM_BOT_TOKEN") or ""
+        except Exception:  # noqa: BLE001
+            pass
+    tg_token = bool(_tg_token_raw)
     tg_users = len(tg_cfg.get("allowed_users", []))
     tg_groups = len(tg_cfg.get("allowed_groups", []))
     tg_online = False
@@ -288,7 +418,7 @@ def gateway_status(
             import json as _j
             import urllib.request
 
-            tok = tg_cfg["bot_token"]
+            tok = _tg_token_raw
             with urllib.request.urlopen(f"https://api.telegram.org/bot{tok}/getMe", timeout=_GW_REQUEST_TIMEOUT) as r:
                 tg_online = _j.load(r).get("ok", False)
         except Exception:  # noqa: BLE001
@@ -321,7 +451,7 @@ def gateway_status(
     em_online = _port_alive(em_host, em_port) if em_host else False
 
     # ── Daemon/gateway API ────────────────────────────────────────────────────
-    gw_port = int(raw_cfg.get("gateway", {}).get("port") or 8789)
+    gw_port = int(raw_cfg.get("gateway", {}).get("port") or _GATEWAY_PORT)
     gw_live = _http_alive(
         f"http://localhost:{gw_port}/health",
         headers=_gateway_request_headers(),
@@ -931,9 +1061,16 @@ def heartbeat_history(
                 for entry in history:
                     status = "✅" if entry.get("success") else "❌"
                     suppressed = " (OK)" if entry.get("suppressed") else ""
+                    issues_count = int(entry.get("issues_count") or 0)
+                    issue_tag = f" — {issues_count} issue(s)" if issues_count else ""
                     ch.info(
-                        f"  {status} {entry.get('timestamp', '?')}{suppressed} - {entry.get('duration', 0):.1f}s"
+                        f"  {status} {entry.get('timestamp', '?')}{suppressed} - "
+                        f"{entry.get('duration', 0):.1f}s{issue_tag}"
                     )
+                    # When the agent flagged something, dump the actual
+                    # issue lines so the operator sees what's wrong.
+                    for issue in entry.get("issues_found") or []:
+                        ch.info(f"     - {issue}")
             else:
                 ch.info("No heartbeat history")
         else:

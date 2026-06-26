@@ -1,5 +1,7 @@
 """Approval manager for dangerous operations."""
 
+from __future__ import annotations
+
 import asyncio
 import inspect
 import uuid
@@ -234,6 +236,25 @@ class ApprovalManager:
 
         self._pending[request_id] = request
 
+        # Operator-side narrator: approval requests are high-signal moments
+        # (a human needs to look at this). Show a styled block with command +
+        # classification so the operator can react without grepping logs.
+        try:
+            from navig.core import narrator
+            narrator.blank()
+            narrator.phase(f"Approval requested  ({request_id})", icon="shield")
+            narrator.metrics([
+                ("command", command[:80] + ("..." if len(command) > 80 else "")),
+                ("level", level.name if hasattr(level, "name") else str(level)),
+                ("channel", f"{channel}:{user_id}"),
+                ("timeout_s", str(self.policy.timeout_seconds)),
+            ])
+            narrator.step("waiting for response...", icon="radio")
+        except Exception:  # noqa: BLE001
+            # Narrator output is best-effort, but a failure here means the operator
+            # may not see the approval prompt — surface it instead of hiding it.
+            logger.warning("Failed to render approval prompt", exc_info=True)
+
         # Create future for async waiting — get_running_loop() is the correct
         # API inside an async function (get_event_loop is deprecated in 3.10+).
         future = asyncio.get_running_loop().create_future()
@@ -252,6 +273,14 @@ class ApprovalManager:
         try:
             # Wait for response or timeout
             result = await asyncio.wait_for(future, timeout=self.policy.timeout_seconds)
+            try:
+                from navig.core import narrator
+                narrator.verdict(
+                    f"Approval {request_id}: " + ("APPROVED" if result else "DENIED"),
+                    icon=("check" if result else "cross"),
+                )
+            except Exception:  # noqa: BLE001
+                pass
             return result
 
         except asyncio.TimeoutError:
@@ -268,10 +297,23 @@ class ApprovalManager:
                 request_id,
                 "approved" if default_approve else "denied",
             )
+            try:
+                from navig.core import narrator
+                narrator.verdict(
+                    f"Approval {request_id}: TIMEOUT -> " + ("approved" if default_approve else "denied"),
+                    icon="warn",
+                )
+            except Exception:  # noqa: BLE001
+                pass
             return default_approve
 
         except asyncio.CancelledError:
             request.status = ApprovalStatus.DENIED
+            try:
+                from navig.core import narrator
+                narrator.verdict(f"Approval {request_id}: CANCELLED", icon="cross")
+            except Exception:  # noqa: BLE001
+                pass
             return False
 
         finally:
@@ -279,9 +321,15 @@ class ApprovalManager:
             self._pending.pop(request_id, None)
             self._futures.pop(request_id, None)
 
-    async def respond(self, request_id: str, approved: bool) -> bool:
+    async def respond(self, request_id: str, approved: bool, reason: str | None = None) -> bool:
         """
         Respond to an approval request.
+
+        Args:
+            request_id: The pending request to resolve.
+            approved: True to approve, False to deny.
+            reason: Optional human note (e.g. a denial reason from the deck);
+                recorded in the audit log but does not change the boolean result.
 
         Returns True if request was found and responded to.
         """
@@ -297,7 +345,25 @@ class ApprovalManager:
         if future and not future.done():
             future.set_result(approved)
 
-        logger.info("Approval %s: %s", request_id, 'approved' if approved else 'denied')
+        if self._audit_log:
+            try:
+                self._audit_log.record(
+                    actor=f"{request.channel}:{request.user_id}",
+                    action="approval.respond",
+                    policy="allow" if approved else "deny",
+                    status="success",
+                    raw_input=request.command,
+                    metadata={"approved": approved, "reason": reason or ""},
+                )
+            except Exception:  # noqa: BLE001 — audit is best-effort here
+                logger.debug("approval respond audit failed", exc_info=True)
+
+        logger.info(
+            "Approval %s: %s%s",
+            request_id,
+            "approved" if approved else "denied",
+            f" ({reason})" if reason else "",
+        )
         return True
 
     def get_pending(self, channel: str | None = None, user_id: str | None = None) -> list:

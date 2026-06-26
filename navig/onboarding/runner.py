@@ -77,6 +77,7 @@ def run_engine_onboarding(
     jump_to_step: str | None = None,
     show_banner: bool = True,
     respect_skip_env: bool = False,
+    skip_if_configured: bool = True,
     _revisit_depth: int = 0,
 ) -> EngineState | None:
     """Run canonical engine onboarding and return final state, or None if skipped."""
@@ -84,7 +85,10 @@ def run_engine_onboarding(
         return None
 
     navig_dir = config_dir()
-    if not force and (navig_dir / "onboarding.json").exists() and not jump_to_step:
+    # Skip a re-run on an already-configured install unless the caller is forcing a
+    # reconfigure or jumping to a specific step. ``skip_if_configured`` lets callers
+    # opt out of this no-op; it defaults on, preserving prior behaviour.
+    if skip_if_configured and not force and not jump_to_step and (navig_dir / "onboarding.json").exists():
         return None
 
     cfg = EngineConfig(
@@ -148,6 +152,11 @@ def run_engine_onboarding(
             )
         else:
             _con_print("\n  Welcome to NAVIG — running first-time setup.")
+            _con_print(
+                "  [dim]NAVIG = a daemon (the \"brain\") on one machine + a deck (client)\n"
+                "  you open anywhere. Run this setup on the machine that should BE the\n"
+                "  brain — where it acts and stays on (a server, your always-on box).[/dim]"
+            )
             _con_print(
                 "  Set [dim]NAVIG_SKIP_ONBOARDING=1[/dim] to skip automatic setup.\n"
             )
@@ -235,6 +244,25 @@ def _print_verification_dashboard(
         f"  optional={tier_counts.get('optional', 0)}"
     )
 
+    # Brain · Reachability · Deck — answer "where does this run and how do I open
+    # it?" right on the final screen (reuses the `navig service status` summary).
+    try:
+        from navig.commands.service import reachability_summary
+
+        s = reachability_summary()
+        _out("")
+        _out("  [bold]This brain[/bold]" if con else "  This brain")
+        _out("  [dim]──────────[/dim]" if con else "  ──────────")
+        _out(f"  Gateway:      {s['gateway_url']}  (the Deck API + UI)")
+        _out(f"  Reachability: {s['mode']}  ({s['reach_url']})")
+        _out(f"  Deck URL:     {s['deck_url']}")
+        if con:
+            _out("  Open the deck: [bold]navig deck open[/bold]   (or browse the URL above)")
+        else:
+            _out("  Open the deck: navig deck open   (or browse the URL above)")
+    except Exception:  # noqa: BLE001
+        pass
+
     # Show recommended next command if any recommended steps are incomplete
     recommended_unfinished = [
         rec for rec in state.steps
@@ -265,6 +293,8 @@ def _deferred_integration_commands(
         "email": ("navig email setup", "SMTP notifications for workflows and alerts"),
         "social-networks": ("navig social setup", "social network integrations (Twitter/X, etc.)"),
         "telegram-bot": ("navig telegram setup", "receive alerts and run commands via Telegram bot"),
+        "lighthouse": ("navig lighthouse deploy", "always-on access (Telegram/SMS/remote deck) with no tunnel"),
+        "deck-deploy": ("navig miniapp deploy", "publish your own Deck UI / Telegram Mini App to Cloudflare"),
     }
     status_by_id = {rec.id: rec.status for rec in state.steps}
 

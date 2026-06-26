@@ -43,6 +43,15 @@ _URL_TIMEOUT_S = 30.0
 
 CloudStatus = Literal["off", "starting", "online", "error", "stopping"]
 
+# UplinkClient uses "connecting" where CloudManager reports "starting".
+_UPLINK_STATUS_MAP: dict[str, CloudStatus] = {
+    "off": "off",
+    "connecting": "starting",
+    "online": "online",
+    "error": "error",
+    "stopping": "stopping",
+}
+
 
 @dataclass
 class CloudState:
@@ -70,10 +79,16 @@ class CloudManager:
         cloudflared_path: str = "",
         cloudflared_extra_args: list[str] | None = None,
         public_url: str = "",
+        broker_timeout_s: float = 15.0,
+        lighthouse_url: str = "",
+        telegram_handler: Any = None,
+        system_events: Any = None,
+        snapshot_provider: Any = None,
     ):
         self.api_key = api_key
         self.broker_url = broker_url
         self.gateway_port = gateway_port
+        self.broker_timeout_s = max(5.0, float(broker_timeout_s))
         self.heartbeat_interval_s = max(10.0, float(heartbeat_interval_s))
         self.tunnel_label = tunnel_label or socket.gethostname()
         self.cloudflared_path_override = cloudflared_path or ""
@@ -81,7 +96,20 @@ class CloudManager:
         # VPS / direct mode: when public_url is set, skip cloudflared and
         # register THIS URL with the broker. User owns the reverse proxy.
         self.public_url = (public_url or "").strip().rstrip("/")
-        self.mode: str = "direct" if self.public_url else "tunnel"
+        # Lighthouse mode: an outbound WebSocket uplink to a self-hosted
+        # Cloudflare edge. No tunnel, no broker, no inbound port — the brain
+        # dials out and stays connected. Takes precedence over direct/tunnel.
+        self.lighthouse_url = (lighthouse_url or "").strip().rstrip("/")
+        if self.lighthouse_url:
+            self.mode = "lighthouse"
+        elif self.public_url:
+            self.mode = "direct"
+        else:
+            self.mode = "tunnel"
+        # Lighthouse dispatch hooks (only used in lighthouse mode).
+        self._telegram_handler = telegram_handler
+        self._system_events = system_events
+        self._snapshot_provider = snapshot_provider
 
         self._proc: asyncio.subprocess.Process | None = None
         self._scraper_task: asyncio.Task | None = None
@@ -90,6 +118,10 @@ class CloudManager:
         self._url_event: asyncio.Event = asyncio.Event()
         self._stop_requested: bool = False
         self._broker: BrokerClient | None = None
+        self._uplink: Any = None  # UplinkClient in lighthouse mode
+        # Telegram user ids whose broker bind failed (transient timeout); retried
+        # on the heartbeat loop so the Mini App self-heals from "not bound".
+        self._pending_binds: set[int] = set()
         self.state = CloudState()
 
     # ── Public API ───────────────────────────────────────────────────────────
@@ -103,7 +135,7 @@ class CloudManager:
         return self.state.tunnel_url
 
     def snapshot(self) -> dict[str, Any]:
-        return {
+        snap = {
             "status": self.state.status,
             "tunnel_url": self.state.tunnel_url,
             "broker_url": self.broker_url,
@@ -115,6 +147,10 @@ class CloudManager:
             "label": self.tunnel_label,
             "mode": self.mode,
         }
+        if self._uplink is not None:
+            snap["lighthouse"] = self._uplink.snapshot()
+            snap["status"] = _UPLINK_STATUS_MAP.get(self._uplink.status, self.state.status)
+        return snap
 
     async def start(self) -> None:
         if self._proc is not None or self._heartbeat_task is not None:
@@ -128,12 +164,52 @@ class CloudManager:
             )
         self._stop_requested = False
         self.state = CloudState(status="starting", started_at=_now())
-        self._broker = BrokerClient(self.broker_url, self.api_key)
+
+        if self.mode == "lighthouse":
+            # No broker, no cloudflared — the uplink IS the data path.
+            await self._start_lighthouse()
+            return
+
+        self._broker = BrokerClient(self.broker_url, self.api_key, timeout_s=self.broker_timeout_s)
 
         if self.mode == "direct":
             await self._start_direct()
         else:
             await self._start_tunnel()
+
+    async def _start_lighthouse(self) -> None:
+        """Lighthouse mode: open the outbound WebSocket uplink to the user's edge.
+
+        The ``UplinkClient`` owns its own reconnect/backoff loop, so once
+        started we simply track its state. No subprocess, no broker, no inbound
+        port — and replies (bot messages, SMS) go out directly from the brain.
+        """
+        from navig.cloud.uplink import UplinkClient
+        from navig.notify.producers.connectivity import ConnectivityReporter
+
+        # First-party producer: announce edge offline/online (debounced), gated
+        # live by monitors.connectivity.enabled so the deck toggle takes effect
+        # without a reconnect.
+        self._connectivity = ConnectivityReporter(enabled_check=_connectivity_enabled)
+        self._uplink = UplinkClient(
+            lighthouse_url=self.lighthouse_url,
+            api_key=self.api_key,
+            gateway_port=self.gateway_port,
+            telegram_handler=self._telegram_handler,
+            system_events=self._system_events,
+            snapshot_provider=self._snapshot_provider,
+            version=self.tunnel_label,
+            connectivity_listener=self._connectivity.on_status,
+        )
+        try:
+            await self._uplink.start()
+            self.state.tunnel_url = self.lighthouse_url
+            self.state.status = "online"
+            self.state.last_heartbeat_at = _now()
+            logger.info("Cloud online (lighthouse mode): %s", self.lighthouse_url)
+        except Exception as exc:  # noqa: BLE001
+            self._mark_error(str(exc))
+            raise
 
     async def _start_direct(self) -> None:
         """Direct mode: register a user-provided public URL, no cloudflared.
@@ -193,6 +269,16 @@ class CloudManager:
             return
         self.state.status = "stopping"
         self._stop_requested = True
+
+        if self._uplink is not None:
+            try:
+                await self._uplink.stop()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("uplink.stop errored: %r", exc)
+            self._uplink = None
+            self.state = CloudState(status="off")
+            logger.info("Cloud offline.")
+            return
 
         for task in (self._heartbeat_task, self._watchdog_task, self._scraper_task):
             if task is not None and not task.done():
@@ -279,6 +365,20 @@ class CloudManager:
                         if prev is not None:
                             self.state.rotations += 1
                             logger.info("Cloud URL rotated: %s -> %s", prev, new_url)
+                            # Operator narrator: URL rotation is the moment a
+                            # tab open on the old URL will start failing. Make
+                            # it visible so the operator knows to reload.
+                            try:
+                                from navig.core import narrator
+                                narrator.phase("Cloud tunnel URL rotated", icon="wave")
+                                narrator.metrics([
+                                    ("from", prev),
+                                    ("to", new_url),
+                                    ("rotation", str(self.state.rotations)),
+                                ])
+                                narrator.step("re-registering with broker...", icon="radio")
+                            except Exception:  # noqa: BLE001
+                                pass
                             # Push the rotation to the broker immediately so
                             # the open Deck re-resolves within one round-trip.
                             asyncio.create_task(self._register_current_url())
@@ -329,14 +429,52 @@ class CloudManager:
             allowed = get_config_manager().global_config.get("telegram", {}).get("allowed_users") or []
         except Exception:
             return
+        pending: set[int] = set()
         for uid in allowed:
             try:
-                await self._broker.bind_telegram(int(uid))
-                logger.info("Telegram user %s bound to this daemon via broker", uid)
+                uid_int = int(uid)
             except (TypeError, ValueError):
                 continue  # non-numeric id (username) — can't bind by tg id
+            if not await self._try_bind_one(uid_int, attempts=3):
+                pending.add(uid_int)
+        # Anything still unbound is retried on the heartbeat loop.
+        self._pending_binds = pending
+
+    async def _try_bind_one(self, uid: int, *, attempts: int = 1) -> bool:
+        """Bind one Telegram user with exponential backoff. Returns success."""
+        if self._broker is None:
+            return False
+        delay = 1.0
+        for n in range(attempts):
+            try:
+                await self._broker.bind_telegram(uid)
+                logger.info("Telegram user %s bound to this daemon via broker", uid)
+                return True
+            except (TypeError, ValueError):
+                return True  # not bindable by id — treat as resolved, don't retry
             except Exception as exc:  # noqa: BLE001
-                logger.warning("broker.bind_telegram(%s) failed: %r", uid, exc)
+                if n < attempts - 1:
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                else:
+                    logger.warning(
+                        "broker.bind_telegram(%s) failed after %d attempt(s): %r — "
+                        "will retry on heartbeat", uid, attempts, exc,
+                    )
+        return False
+
+    async def _retry_pending_binds(self) -> None:
+        """Re-attempt previously-failed Telegram binds (called from heartbeat)."""
+        if not self._pending_binds or self._broker is None:
+            return
+        still: set[int] = set()
+        for uid in list(self._pending_binds):
+            if not await self._try_bind_one(uid, attempts=1):
+                still.add(uid)
+        resolved = self._pending_binds - still
+        self._pending_binds = still
+        if resolved:
+            logger.info("Resolved %d pending Telegram bind(s) on heartbeat", len(resolved))
 
     async def _heartbeat_loop(self) -> None:
         while not self._stop_requested:
@@ -347,6 +485,8 @@ class CloudManager:
                 try:
                     await self._broker.heartbeat(self.state.tunnel_url)
                     self.state.last_heartbeat_at = _now()
+                    # Self-heal any Telegram binds that timed out earlier.
+                    await self._retry_pending_binds()
                 except BrokerError as exc:
                     if exc.status == 404:
                         # Row missing -- broker forgot us (D1 reset?) -- re-register.
@@ -413,3 +553,13 @@ class CloudManager:
 def _now() -> float:
     import time
     return time.time()
+
+
+def _connectivity_enabled() -> bool:
+    """Live read of monitors.connectivity.enabled (tolerant of raw-string config)."""
+    try:
+        from navig.core import Config
+
+        return Config().get("monitors.connectivity.enabled") in (True, "1", "true", "yes", "True")
+    except Exception:  # noqa: BLE001
+        return False

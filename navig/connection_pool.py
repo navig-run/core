@@ -80,19 +80,28 @@ class SSHConnection:
         Returns:
             Tuple of (success, stdout, stderr)
         """
+        # Update bookkeeping under the lock, but release it before blocking I/O.
+        # Holding the lock during stdout.read() / recv_exit_status() serialises
+        # every thread that tries to reuse this connection, causing multi-minute
+        # stalls when a deploy or long command is in flight.
         with self._lock:
             self.last_used = time.time()
             self.use_count += 1
 
-            try:
-                stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
-                stdout_text = stdout.read().decode("utf-8", errors="ignore").strip()
-                stderr_text = stderr.read().decode("utf-8", errors="ignore").strip()
-                exit_status = stdout.channel.recv_exit_status()
+        try:
+            stdin, stdout, stderr = self.client.exec_command(command, timeout=timeout)
+            # exec_command(timeout=) only sets the banner/auth timeout, NOT the
+            # channel read timeout.  Without this, stdout.read() blocks forever
+            # if the remote process hangs or the network stalls.
+            stdout.channel.settimeout(timeout)
+            stderr.channel.settimeout(timeout)
+            stdout_text = stdout.read().decode("utf-8", errors="ignore").strip()
+            stderr_text = stderr.read().decode("utf-8", errors="ignore").strip()
+            exit_status = stdout.channel.recv_exit_status()
 
-                return (exit_status == 0, stdout_text, stderr_text)
-            except Exception as e:
-                return (False, "", str(e))
+            return (exit_status == 0, stdout_text, stderr_text)
+        except Exception as e:
+            return (False, "", str(e))
 
     def close(self):
         """Close the underlying SSH connection."""

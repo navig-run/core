@@ -184,6 +184,10 @@ class HookRegistry:
         """Re-enable handlers previously suppressed for *event_key*."""
         self._disabled.discard(event_key)
 
+    def is_disabled(self, event_key: str) -> bool:
+        """Return whether handlers for *event_key* are currently suppressed."""
+        return event_key in self._disabled
+
     def get_handlers(self, event_key: str) -> list[HookHandler]:
         """Return handlers for *event_key* in priority order, or ``[]`` if disabled."""
         if event_key in self._disabled:

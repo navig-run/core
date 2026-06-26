@@ -45,11 +45,17 @@ _BUDGET_WARN_PCT: float = 0.70       # inject budget-warning message above this
 _BUDGET_HARD_PCT: float = 0.90       # disable tool_choice above this
 _DISPLAY_TOOLS_LIMIT: int = 20       # max tools listed in system prompt snippet
 _HISTORY_RETAIN_MESSAGES: int = 20   # run_agentic teardown message cap (unused after JSONL fix)
-_AGENTIC_CLIENT_TIMEOUT: float = 120.0  # asyncio-level LLM call timeout (seconds)
+_AGENTIC_CLIENT_TIMEOUT: float = 120.0  # asyncio-level LLM call timeout for tool work
+_AGENTIC_CHAT_TIMEOUT: float = 35.0     # tighter timeout for short chat-feel msgs (small model)
 _AGENTIC_DEFAULT_PROVIDER: str = "openrouter"
 _AGENTIC_DEFAULT_MODEL: str = "openai/gpt-4o"
 _AGENTIC_DEFAULT_TEMP: float = 0.7
 _AGENTIC_DEFAULT_MAXTOK: int = 4_096
+# Tight cap for chat-feel replies. Replies to "hey" / "thanks" are 1-3
+# sentences; allocating 4096 tokens to the output budget makes the model
+# generate longer / slower replies on some providers. 256 still leaves
+# room for a 4-sentence answer.
+_AGENTIC_CHAT_MAXTOK: int = 256
 
 
 class ConversationalAgent:
@@ -279,6 +285,62 @@ class ConversationalAgent:
             # Soul module may not be installed in all deployments; fallback is safe.
             self._focus_mode = "balance"
 
+    def _get_memory_components(self):
+        """Lazily build (FactRetriever, MemoryAutoExtractor) over the shared KeyFactStore.
+
+        The store points at the default ``~/.navig/memory/key_facts.db`` — the same
+        file the MCP ``memory_key_facts_*`` tools use — so facts written by either
+        path are visible to the other. Returns ``(None, None)`` if the memory
+        subsystem is unavailable so callers degrade gracefully.
+        """
+        if getattr(self, "_memory_unavailable", False):
+            return None, None
+        retriever = getattr(self, "_fact_retriever", None)
+        extractor = getattr(self, "_mem_extractor", None)
+        if retriever is not None and extractor is not None:
+            return retriever, extractor
+        try:
+            import asyncio as _asyncio
+
+            from navig.agent.memory_auto_extractor import MemoryAutoExtractor
+            from navig.memory.fact_retriever import FactRetriever
+            from navig.memory.key_facts import KeyFactStore
+
+            store = KeyFactStore()
+
+            async def _extractor_llm(prompt: str, **_kw: Any) -> str:
+                # Cheap tier; run the sync generator off the event loop.
+                from navig.llm_generate import llm_generate
+
+                return await _asyncio.to_thread(
+                    llm_generate, [{"role": "user", "content": prompt}], mode="summarize"
+                )
+
+            self._fact_retriever = FactRetriever(store)
+            self._mem_extractor = MemoryAutoExtractor(store=store, llm_call=_extractor_llm)
+            return self._fact_retriever, self._mem_extractor
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("memory components unavailable: %s", exc)
+            self._memory_unavailable = True
+            return None, None
+
+    def _recall_block(self, message: str) -> str:
+        """Return a '## What I remember' block of facts relevant to *message*.
+
+        Best-effort: empty string on any failure. Kept small (≈400 tokens) so it
+        doesn't dominate the turn or bloat the (volatile) user-turn content.
+        """
+        retriever, _ = self._get_memory_components()
+        if retriever is None:
+            return ""
+        try:
+            result = retriever.retrieve(query=message, max_tokens=400)
+            if result and result.formatted:
+                return f"## What I remember\n{result.formatted}"
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("fact recall skipped: %s", exc)
+        return ""
+
     def _load_user_profile(self) -> str:
         """Return USER.md content (cached after first load), capped to _USER_PROFILE_MAX_CHARS."""
         if not self._user_profile_loaded:
@@ -387,11 +449,18 @@ class ConversationalAgent:
                 return candidate
         return "en"
 
-    def _build_system_prompt(self, user_message: str) -> str:
+    def _build_system_prompt(self, user_message: str, *, minimal: bool = False) -> str:
         code = self._resolve_prompt_language(user_message)
+        lang_instruction = self._lang.build_instruction(code)
+        if minimal:
+            # Slim path for short chat-feel messages: ~250 chars instead
+            # of ~2,900. The user doesn't need the full identity or chat
+            # rules to get a "Hey, what's up?" style reply, and the LLM
+            # round-trip is dramatically faster with less input to read.
+            return self._soul_loader.build_minimal_prompt(lang_instruction=lang_instruction)
         return self._soul_loader.build_system_prompt(
             soul=self._soul_loader.cached_content or "",
-            lang_instruction=self._lang.build_instruction(code),
+            lang_instruction=lang_instruction,
             awareness=self._build_awareness_context(),
         )
 
@@ -402,20 +471,37 @@ class ConversationalAgent:
             return json.dumps(result)
         return "No AI provider configured — run `navig config show` to check your setup."
 
-    async def chat(self, message: str, tier_override: str = "") -> str:
+    async def chat(
+        self, message: str, tier_override: str = "", *, on_partial=None, effort: str = ""
+    ) -> str:
         """Process one user turn end-to-end and return the agent's reply string.
 
-        Sequence:
-          1. Detect language; add user message to history.
-          2. Call ``_get_ai_response`` (routing → AI client).
-          3. Optionally shape the response through the soul's mood profile.
-          4. Strip CJK from Russian responses (anti-bleed guard).
-          5. If the response contains an executable plan, hand off to executor;
-             otherwise append raw response to history and return it.
+        Auto-escalates to the full ReAct loop (``run_agentic``) when tools can
+        be registered, giving the assistant multi-step tool-calling capability.
+        Falls back to single-shot conversational mode when no tools are available
+        (misconfigured env, import failure) so callers never observe a regression.
 
         *tier_override* is forwarded to the routing layer to force a specific
         LLM tier (e.g. ``'large'``).
         """
+        # Lazy-register tools on first call — idempotent after first success.
+        if not self._agentic_tools_registered:
+            try:
+                from navig.agent.tools import register_all_tools
+                register_all_tools()
+                self._agentic_tools_registered = True
+            except Exception as exc:
+                logger.debug("chat(): tool registration skipped: %s", exc)
+
+        # Route through the ReAct loop when tools are available. Forward the
+        # tier so an explicit channel choice (TALK/REASON→small, CODE→coder_big)
+        # drives model selection instead of the message-length heuristic.
+        if self._agentic_tools_registered:
+            return await self.run_agentic(
+                message, on_partial=on_partial, tier_override=tier_override, effort=effort
+            )
+
+        # Fallback: single-shot path (no tools configured / registration failed).
         self._last_user_message, self._tier_override = message, tier_override
         self._history.add("user", message)
         response = await self._get_ai_response(message)
@@ -445,16 +531,33 @@ class ConversationalAgent:
         toolset: str | list[str] = "core",
         cost_tracker=None,
         approval_policy=None,
+        on_partial=None,
+        tier_override: str = "",
+        effort: str = "",
     ) -> str:
         """Native ReAct multi-step tool-calling loop.
+
+        *on_partial* (optional ``Callable[[str], Awaitable[None]]``) gets the
+        running accumulated text after every streamed chunk. When set AND
+        the call routes through ``small_talk`` mode (no tools), the LLM is
+        invoked via ``complete_stream`` and the caller (e.g. the Telegram
+        channel) is free to edit the placeholder message progressively.
+        For agentic tool work the callback is ignored — buffering tool-call
+        deltas while keeping the edit stream coherent is out of scope here.
 
         This is the canonical agentic path for ``conv`` callers and mirrors the
         established behavior while using this class' state model.
         """
         from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+        from navig.agent.effort import (
+            auto_detect_effort, get_thinking_params, resolve_effort,
+        )
+        from navig.agent.prompt_caching import supports_caching
         from navig.agent.tools import register_all_tools
         from navig.agent.usage_tracker import CostTracker, IterationBudget, UsageEvent
-        from navig.providers import CompletionRequest, Message, create_client, get_builtin_provider
+        from navig.providers import (
+            CompletionRequest, CompletionResponse, Message, create_client, get_builtin_provider,
+        )
         from navig.providers.auth import AuthProfileManager
         from navig.providers.clients import ToolDefinition
 
@@ -515,15 +618,41 @@ class ConversationalAgent:
             for schema in raw_schemas
         ]
 
+        # Cheap message shape lookup — used by both the model-tier decision
+        # below AND the plan-context skip further down. Computed once.
+        _stripped_msg = message.strip()
+        _short_chat = len(_stripped_msg) < 80 and len(_stripped_msg.split()) < 12
+
         provider_name = _AGENTIC_DEFAULT_PROVIDER
         model_name = _AGENTIC_DEFAULT_MODEL
         temperature = _AGENTIC_DEFAULT_TEMP
-        max_tokens = _AGENTIC_DEFAULT_MAXTOK
+        # Short messages get the tight chat budget; tool work keeps the
+        # generous default so multi-step ReAct turns aren't truncated.
+        max_tokens = _AGENTIC_CHAT_MAXTOK if _short_chat else _AGENTIC_DEFAULT_MAXTOK
         base_url: str | None = None
+        # Mode selection: short chat-feel messages ("Hey", "thanks", "ok")
+        # use the small (8b) model — fast, no 2-minute timeout. Anything
+        # longer falls through to the coder model where tool use matters.
+        # Without this branch, run_agentic ALWAYS resolves to mode="coding"
+        # → 70b model → free-tier endpoints often hang past 120s on a
+        # 1-word reply, which is the worst possible UX.
+        # An explicit channel tier wins over the length heuristic. Telegram
+        # TALK/REASON set "small"; CODE sets "coder_big". This fixes the trap
+        # where a simple question, padded past the short-chat cutoff (REASON
+        # appends an explore suffix + web context), silently fell into the 480B
+        # CODER model — 40s and thousands of tokens for a one-line answer.
+        _TIER_TO_MODE = {
+            "small": "small_talk",
+            "big": "big_tasks",
+            "coder_big": "coding",
+            "coder": "coding",
+        }
+        _forced_mode = _TIER_TO_MODE.get((tier_override or "").strip())
+        _resolve_mode = _forced_mode or ("small_talk" if _short_chat else "coding")
         try:
             from navig.llm_router import resolve_llm
 
-            resolved = resolve_llm(mode="coding")
+            resolved = resolve_llm(mode=_resolve_mode)
             provider_name = resolved.provider
             model_name = resolved.model
             temperature = resolved.temperature
@@ -531,6 +660,41 @@ class ConversationalAgent:
             base_url = resolved.base_url
         except Exception as exc:
             logger.debug("Exception suppressed: %s", exc)
+
+        # ── Prefer Claude for the brain tiers when an Anthropic key is present ──
+        # Only the heavy tiers (big_tasks/coding) and only when an ANTHROPIC key
+        # actually resolves — keyless users keep the existing OpenRouter chain, so
+        # this never introduces a failing default. Direct anthropic provider is
+        # required for caching + effort/thinking to take effect.
+        if _resolve_mode in ("big_tasks", "coding") and (provider_name or "").lower() != "anthropic":
+            try:
+                _ant_key, _ = AuthProfileManager().resolve_auth("anthropic")
+                if _ant_key:
+                    provider_name = "anthropic"
+                    model_name = "claude-opus-4-8"
+                    base_url = None
+                    logger.debug("brain: switched to anthropic/claude-opus-4-8 (key present)")
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("anthropic brain-preference probe skipped: %s", exc)
+
+        # ── Smarter/cheaper brain: prompt caching + effort/thinking (Anthropic) ──
+        # Caching is GA and harmless for non-Anthropic providers (their clients
+        # ignore the flag), so enable it whenever the model is known-cacheable.
+        _cache_on = supports_caching(model_name)
+        # Effort: explicit override → that; short chat → LOW (cheapest, no thinking);
+        # else auto-detect from the message. Only the direct Anthropic provider
+        # honours these params, so gate extra_body on provider == "anthropic".
+        _effort_extra: dict | None = None
+        try:
+            if _short_chat:
+                from navig.agent.effort import EffortLevel
+                _effort_level = EffortLevel.LOW
+            else:
+                _effort_level = resolve_effort(effort) if effort else auto_detect_effort(message)
+            if (provider_name or "").lower() == "anthropic":
+                _effort_extra = get_thinking_params(_effort_level, provider="anthropic") or None
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("effort resolution skipped: %s", exc)
 
         try:
             provider_cfg = get_builtin_provider(provider_name)
@@ -546,16 +710,30 @@ class ConversationalAgent:
                 )
             auth_mgr = AuthProfileManager()
             api_key, _ = auth_mgr.resolve_auth(provider_name)
-            client = create_client(provider_cfg, api_key=api_key, timeout=_AGENTIC_CLIENT_TIMEOUT)
+            # Chat-feel messages get a tight 35s timeout (small model, no
+            # tools). Real tool-using work keeps the 120s budget. The user
+            # sees a fast error on "hey" instead of staring at 3 typing
+            # indicators for 2 minutes.
+            _client_timeout = _AGENTIC_CHAT_TIMEOUT if _short_chat else _AGENTIC_CLIENT_TIMEOUT
+            client = create_client(provider_cfg, api_key=api_key, timeout=_client_timeout)
         except Exception as exc:
             logger.error("run_agentic: could not create LLM client: %s", exc)
             return f"Couldn't connect to the LLM provider ({provider_name}): {exc}"
 
         self._last_user_message = message
-        system_prompt = self._build_system_prompt(message)
+        # For short chat-feel messages, build the slim ~250-char prompt
+        # (no SOUL identity block, no chat rules, no awareness context).
+        # This is the single biggest token-cost win for cold replies.
+        system_prompt = self._build_system_prompt(message, minimal=_short_chat)
 
-        if plan_block := self._get_plan_context_block():
-            system_prompt += "\n\n" + plan_block
+        # Skip plan-context injection on short chat-feel messages (mirror
+        # the same guard in _get_ai_response). For "hey", "thanks", "ok"
+        # the wiki search + docs scan run on the warm path otherwise; this
+        # cuts ~5s+ off the first reply in a new session.
+        # _short_chat was computed earlier alongside the model-tier decision.
+        if not _short_chat:
+            if plan_block := self._get_plan_context_block():
+                system_prompt += "\n\n" + plan_block
 
         toolset_names = _AGENT_REGISTRY.available_names(toolsets=toolsets)
         if toolset_names:
@@ -565,6 +743,15 @@ class ConversationalAgent:
                 f"You have access to the following tools: {displayed}.\n"
                 "Use them step-by-step to fulfill the user's request, then give a final reply."
             )
+
+        # Deeper memory (read path): pull facts relevant to this message and
+        # prepend them to the *user turn* (not the cached system block — facts are
+        # query-specific, so injecting them into `system` would invalidate the
+        # tools+system cache every turn). Skipped on short chat for latency.
+        _user_content = message
+        if not _short_chat:
+            if recall := self._recall_block(message):
+                _user_content = f"{recall}\n\n{message}"
 
         history_messages = list(self.conversation_history)
         working_messages: list[Message] = [
@@ -578,7 +765,7 @@ class ConversationalAgent:
                 )
                 for history_message in history_messages
             ],
-            Message(role="user", content=message),
+            Message(role="user", content=_user_content),
         ]
 
         final_response = ""
@@ -639,6 +826,34 @@ class ConversationalAgent:
             except Exception as exc:
                 logger.debug("Exception suppressed: %s", exc)
 
+            # Provable trust: adversarially verify DESTRUCTIVE tool calls before they
+            # run (read-only tools skip — no latency cost on the common path). Returns
+            # the verdict as the tool result so the agent can adapt instead of executing
+            # an unsafe action. Best-effort; the verifier no-ops when disabled.
+            try:
+                from navig.tools.approval import DESTRUCTIVE_TOOLS
+
+                if tool_call_item.name in DESTRUCTIVE_TOOLS:
+                    from navig.agent.verifier import get_verifier
+
+                    verifier = get_verifier()
+                    if verifier.enabled:
+                        verdict = await verifier.verify_tool_call(
+                            tool_call_item.name, args, rationale="agentic"
+                        )
+                        if not verdict.safe:
+                            logger.warning(
+                                "Tool %s blocked by verifier: %s",
+                                tool_call_item.name,
+                                verdict.reason,
+                            )
+                            return (
+                                tool_call_item.id,
+                                f"[Verification blocked: {verdict.reason}]",
+                            )
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("tool verification skipped: %s", exc)
+
             try:
                 from navig.agent.speculative import get_speculative_executor
 
@@ -658,6 +873,117 @@ class ConversationalAgent:
         async def _sem_dispatch(tool_call_item):
             async with sem:
                 return await _dispatch_single(tool_call_item)
+
+        # Resilient fast fallback: if the resolved model hangs (timeout) or
+        # errors, recover the turn ONCE on the fast small model instead of
+        # losing the reply. Critical when the configured big/coder tiers point
+        # at slow or unreachable endpoints (e.g. a 70B that read-times-out).
+        _fell_back = False
+
+        async def _fast_retry(on_partial_cb) -> "CompletionResponse | None":
+            """Retry the current turn on the fast small model. Returns a
+            CompletionResponse, or None when no DISTINCT fast model exists or
+            the retry also fails. On success it re-points model/provider so
+            usage records under the model that actually answered."""
+            nonlocal model_name, provider_name
+            try:
+                from navig.llm_router import resolve_llm as _resolve_llm
+
+                fb = _resolve_llm(mode="small_talk")
+            except Exception as _exc:  # noqa: BLE001
+                logger.debug("fast-retry: resolve_llm failed: %s", _exc)
+                return None
+            if not fb or not getattr(fb, "provider", None) or not getattr(fb, "model", None):
+                return None
+            if fb.provider == provider_name and fb.model == model_name:
+                return None  # don't retry the same model with itself
+
+            fb_cfg = get_builtin_provider(fb.provider)
+            if fb_cfg is None:
+                from navig.llm_router import PROVIDER_BASE_URLS
+                from navig.providers.types import ModelApi, ProviderConfig
+
+                fb_cfg = ProviderConfig(
+                    name=fb.provider,
+                    base_url=(
+                        getattr(fb, "base_url", "")
+                        or PROVIDER_BASE_URLS.get(fb.provider, "https://openrouter.ai/api/v1")
+                    ),
+                    api=ModelApi.OPENAI_COMPLETIONS,
+                )
+            try:
+                fb_key, _ = AuthProfileManager().resolve_auth(fb.provider)
+                fb_client = create_client(
+                    fb_cfg, api_key=fb_key, timeout=_AGENTIC_CHAT_TIMEOUT
+                )
+            except Exception as _exc:  # noqa: BLE001
+                logger.debug("fast-retry: client create failed: %s", _exc)
+                return None
+
+            # No tools on the fallback — the goal is a fast, clean answer.
+            # Cache the (frozen) prefix when the fallback model supports it; no
+            # thinking/effort on the fast path (it's the cheap recovery model).
+            fb_request = CompletionRequest(
+                messages=working_messages,
+                model=fb.model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                cache_control=supports_caching(fb.model),
+            )
+            logger.warning(
+                "run_agentic: falling back to fast model %s:%s after %s:%s failed",
+                fb.provider, fb.model, provider_name, model_name,
+            )
+            try:
+                if on_partial_cb is not None and hasattr(fb_client, "complete_stream"):
+                    _acc: list[str] = []
+                    _fin: str | None = None
+                    _usg: dict | None = None
+                    _mdl: str | None = None
+
+                    async def _drive_fb() -> None:
+                        nonlocal _fin, _usg, _mdl
+                        async for ch in fb_client.complete_stream(fb_request):
+                            d = getattr(ch, "delta", None)
+                            if d:
+                                _acc.append(d)
+                                try:
+                                    await on_partial_cb("".join(_acc))
+                                except Exception:  # noqa: BLE001
+                                    pass
+                            if getattr(ch, "finish_reason", None):
+                                _fin = ch.finish_reason
+                            if getattr(ch, "usage", None):
+                                _usg = ch.usage
+                            if getattr(ch, "model", None):
+                                _mdl = ch.model
+
+                    await asyncio.wait_for(_drive_fb(), timeout=_AGENTIC_CHAT_TIMEOUT)
+                    result = CompletionResponse(
+                        content="".join(_acc) or None,
+                        tool_calls=None,
+                        finish_reason=_fin,
+                        usage=_usg,
+                        model=_mdl or fb.model,
+                        provider=fb.provider,
+                    )
+                else:
+                    result = await asyncio.wait_for(
+                        fb_client.complete(fb_request), timeout=_AGENTIC_CHAT_TIMEOUT
+                    )
+            except Exception as _exc:  # noqa: BLE001
+                logger.warning("run_agentic: fast fallback also failed: %s", _exc)
+                return None
+            finally:
+                _close = getattr(fb_client, "close", None)
+                if callable(_close):
+                    try:
+                        await _close()
+                    except Exception:  # noqa: BLE001
+                        pass
+            # Record cost under the model that actually answered.
+            provider_name, model_name = fb.provider, fb.model
+            return result
 
         while not budget.is_exhausted():
             turn += 1
@@ -710,28 +1036,106 @@ class ConversationalAgent:
                 max_tokens=max_tokens,
                 tools=tool_defs if (tool_choice != "none" and tool_defs) else None,
                 tool_choice=tool_choice if tool_choice != "none" else None,
+                cache_control=_cache_on,
+                extra_body=_effort_extra,
             )
 
+            # Streaming path: only enabled when the caller passed an
+            # on_partial callback AND this is a chat-feel turn (no tool
+            # use). For agentic tool turns we stick to the blocking
+            # `complete()` path because tool_call deltas can't be cleanly
+            # surfaced as plain text mid-stream. The accumulated text is
+            # passed to on_partial each chunk; the caller (Telegram) is
+            # expected to debounce edit calls itself.
+            _can_stream = (
+                on_partial is not None
+                and _short_chat
+                and hasattr(client, "complete_stream")
+            )
             try:
-                response = await asyncio.wait_for(
-                    client.complete(request), timeout=_AGENTIC_CLIENT_TIMEOUT
-                )
+                if _can_stream:
+                    _accum: list[str] = []
+                    _final_finish: str | None = None
+                    _final_usage: dict | None = None
+                    _final_model: str | None = None
+
+                    async def _drive_stream() -> None:
+                        nonlocal _final_finish, _final_usage, _final_model
+                        async for chunk in client.complete_stream(request):
+                            delta = getattr(chunk, "delta", None)
+                            if delta:
+                                _accum.append(delta)
+                                try:
+                                    await on_partial("".join(_accum))
+                                except Exception as exc:  # noqa: BLE001
+                                    logger.debug(
+                                        "on_partial callback raised %r; continuing",
+                                        exc,
+                                    )
+                            if getattr(chunk, "finish_reason", None):
+                                _final_finish = chunk.finish_reason
+                            if getattr(chunk, "usage", None):
+                                _final_usage = chunk.usage
+                            if getattr(chunk, "model", None):
+                                _final_model = chunk.model
+
+                    await asyncio.wait_for(_drive_stream(), timeout=_client_timeout)
+                    # Synthesise a CompletionResponse so the rest of the
+                    # loop (usage tracking, history append, finish_reason
+                    # handling) keeps working unchanged.
+                    response = CompletionResponse(
+                        content="".join(_accum) or None,
+                        tool_calls=None,
+                        finish_reason=_final_finish,
+                        usage=_final_usage,
+                        model=_final_model or model_name,
+                        provider=provider_name,
+                    )
+                else:
+                    response = await asyncio.wait_for(
+                        client.complete(request), timeout=_client_timeout
+                    )
             except asyncio.TimeoutError:
                 logger.error(
                     "run_agentic: LLM timed out on turn %d (%.0fs)",
-                    turn, _AGENTIC_CLIENT_TIMEOUT,
+                    turn, _client_timeout,
                 )
-                final_response = (
-                    f"LLM timed out after {_AGENTIC_CLIENT_TIMEOUT:.0f}s — "
-                    "provider may be unavailable."
-                )
-                break
+                _fb = None if _fell_back else await _fast_retry(on_partial)
+                if _fb is not None:
+                    _fell_back = True
+                    response = _fb
+                else:
+                    final_response = (
+                        f"LLM timed out after {_client_timeout:.0f}s — "
+                        "provider may be unavailable."
+                    )
+                    break
             except Exception as exc:
                 logger.error("run_agentic: LLM call failed on turn %d: %s", turn, exc)
-                final_response = f"Error during agentic execution (turn {turn}): {exc}"
-                break
+                _fb = None if _fell_back else await _fast_retry(on_partial)
+                if _fb is not None:
+                    _fell_back = True
+                    response = _fb
+                else:
+                    final_response = f"Error during agentic execution (turn {turn}): {exc}"
+                    break
 
-            usage = response.usage or {}
+            usage = dict(response.usage or {})
+            # Some streaming backends omit usage even with include_usage set.
+            # Fall back to a char-based estimate so a streamed turn never reads
+            # as a silent $0.00 — approximate cost beats blind cost.
+            if not usage.get("prompt_tokens") or not usage.get("completion_tokens"):
+                try:
+                    from navig.core.tokens import estimate_tokens
+
+                    if not usage.get("prompt_tokens"):
+                        usage["prompt_tokens"] = estimate_tokens(
+                            "\n".join(m.content or "" for m in working_messages)
+                        )
+                    if not usage.get("completion_tokens"):
+                        usage["completion_tokens"] = estimate_tokens(response.content or "")
+                except Exception:  # noqa: BLE001
+                    pass  # estimate is best-effort; never block the turn
             try:
                 tracker.record(
                     UsageEvent(
@@ -740,8 +1144,13 @@ class ConversationalAgent:
                         provider=provider_name,
                         prompt_tokens=usage.get("prompt_tokens", 0),
                         completion_tokens=usage.get("completion_tokens", 0),
-                        cache_read_tokens=usage.get("cache_read_input_tokens", 0),
-                        cache_write_tokens=usage.get("cache_creation_input_tokens", 0),
+                        # Cache tokens live on CompletionResponse attributes, not
+                        # in the usage dict — read them directly (usage.get(...)
+                        # always returned 0 here, hiding cache savings).
+                        cache_read_tokens=getattr(response, "cache_read_input_tokens", 0)
+                        or usage.get("cache_read_input_tokens", 0),
+                        cache_write_tokens=getattr(response, "cache_creation_input_tokens", 0)
+                        or usage.get("cache_creation_input_tokens", 0),
                     )
                 )
             except Exception as exc:
@@ -825,6 +1234,22 @@ class ConversationalAgent:
         # Previously the setter path was used which bypassed JSONL persistence entirely.
         self._history.add("user", message)
         self._history.add("assistant", final_response)
+
+        # Deeper memory (write path): feed the turn to the auto-extractor and let
+        # it persist durable facts in the background. Fire-and-forget so it never
+        # blocks the reply; extraction only fires every N turns internally.
+        try:
+            _, _extractor = self._get_memory_components()
+            if _extractor is not None:
+                _extractor.record_turn("user", message)
+                _extractor.record_turn("assistant", final_response)
+                _task = asyncio.create_task(_extractor.maybe_extract())
+                # Swallow background errors so an extraction failure never surfaces.
+                _task.add_done_callback(
+                    lambda t: t.exception() if not t.cancelled() else None
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("memory auto-extract scheduling skipped: %s", exc)
 
         try:
             from navig.agent.speculative import get_speculative_executor, reset_speculative_executor
@@ -921,14 +1346,23 @@ class ConversationalAgent:
         except Exception as exc:  # noqa: BLE001
             logger.debug("is_available probe failed (%s)", exc)
 
-        system_prompt = self._build_system_prompt(message)
+        # Compute message shape once. Used to pick a slim or full system
+        # prompt AND to skip plan-context injection on chat-feel turns.
+        # The wiki search + docs scan + inbox crawl all run on the warm
+        # path otherwise; for "ok", "thanks", "so far so good" they're
+        # pure latency with no value to the reply.
+        _stripped = message.strip()
+        _is_short_chat = len(_stripped) < 80 and len(_stripped.split()) < 12
+
+        system_prompt = self._build_system_prompt(message, minimal=_is_short_chat)
         msgs = [
             {"role": "system", "content": system_prompt},
             *self._history.get_messages(),
         ]
         # ── Lazy plan context injection (deduped through _get_plan_context_block) ──
-        if plan_block := self._get_plan_context_block():
-            msgs[0]["content"] += "\n\n" + plan_block
+        if not _is_short_chat:
+            if plan_block := self._get_plan_context_block():
+                msgs[0]["content"] += "\n\n" + plan_block
         # Inject any remaining context entries (other than plan_context, handled above).
         other_ctx = {k: v for k, v in self.context.items() if k != "plan_context"}
         if other_ctx:

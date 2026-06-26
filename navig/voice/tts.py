@@ -179,6 +179,39 @@ class TTS:
     # Main API
     # =========================================================================
 
+    @staticmethod
+    def _resolve_api_key(provider: str, *env_vars: str) -> str | None:
+        """Resolve a provider API key from the vault (by provider) then env vars.
+
+        Keys added with ``navig vault set <provider> <key>`` live under the provider
+        (``get_api_key``), not env. TTS previously read ``os.environ`` only, so
+        vault-only users got "<KEY> not set" for every provider — this bridges it.
+        """
+        try:
+            from navig.vault import get_vault
+
+            v = get_vault()
+            try:
+                k = v.get_api_key(provider)
+                if k:
+                    return str(k)
+            except Exception:  # noqa: BLE001
+                pass
+            for label in (provider, f"{provider}/api_key"):
+                try:
+                    s = v.get_secret(label)
+                    if s:
+                        return str(s)
+                except Exception:  # noqa: BLE001
+                    continue
+        except Exception:  # noqa: BLE001
+            pass
+        for ev in env_vars:
+            val = os.environ.get(ev)
+            if val:
+                return val
+        return None
+
     async def synthesize(
         self,
         text: str,
@@ -295,7 +328,7 @@ class TTS:
         except ImportError:
             return TTSResult(success=False, error="aiohttp not installed")
 
-        api_key = os.environ.get("OPENAI_API_KEY")
+        api_key = self._resolve_api_key("openai", "OPENAI_API_KEY")
         if not api_key:
             return TTSResult(success=False, error="OPENAI_API_KEY not set")
 
@@ -365,7 +398,7 @@ class TTS:
         except ImportError:
             return TTSResult(success=False, error="aiohttp not installed")
 
-        api_key = os.environ.get("ELEVENLABS_API_KEY") or os.environ.get("XI_API_KEY")
+        api_key = self._resolve_api_key("elevenlabs", "ELEVENLABS_API_KEY", "XI_API_KEY")
         if not api_key:
             return TTSResult(success=False, error="ELEVENLABS_API_KEY not set")
 
@@ -475,7 +508,7 @@ class TTS:
         except ImportError:
             return TTSResult(success=False, error="aiohttp not installed")
 
-        api_key = os.environ.get("GOOGLE_CLOUD_API_KEY") or os.environ.get("GOOGLE_TTS_API_KEY")
+        api_key = self._resolve_api_key("google", "GOOGLE_CLOUD_API_KEY", "GOOGLE_TTS_API_KEY")
         if not api_key:
             return TTSResult(success=False, error="GOOGLE_CLOUD_API_KEY not set")
 
@@ -546,7 +579,7 @@ class TTS:
         except ImportError:
             return TTSResult(success=False, error="aiohttp not installed")
 
-        api_key = os.environ.get("DEEPGRAM_API_KEY")
+        api_key = self._resolve_api_key("deepgram", "DEEPGRAM_API_KEY")
         if not api_key:
             return TTSResult(success=False, error="DEEPGRAM_API_KEY not set")
 

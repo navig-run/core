@@ -52,17 +52,30 @@ class PdfTool(BaseTool):
         if on_status:
             await on_status("reading_pdf", f"Reading PDF from {path}", 50)
 
-        # Placeholder for actual PDF extraction logic
-        # Typically we use PyPDF2, pdfplumber or similar tools here.
-        output = {
-            "text": f"[Extracted content from {path}]",
-            "metadata": {"pages_read": 1},
-        }
+        # Real extraction: pypdf text with PyMuPDF+Tesseract OCR fallback for
+        # scanned PDFs. Shared with the inbox universal extractor so behaviour
+        # stays identical everywhere PDFs are read.
+        import asyncio
+        from pathlib import Path as _Path
+
+        from navig.inbox.extract import _extract_pdf
+
+        try:
+            max_pages = int(args.get("max_pages") or 30)
+        except (TypeError, ValueError):
+            max_pages = 30
+
+        errors: list[str] = []
+        text, meta = await asyncio.to_thread(
+            _extract_pdf, _Path(path), max_pages=max_pages, errors=errors
+        )
+        meta = {"pages_read": meta.get("pages", 0), "ocr_fallback": meta.get("ocr_fallback", False)}
 
         return ToolResult(
             name=self.name,
-            success=True,
-            output=output,
+            success=bool(text) or not errors,
+            output={"text": text, "metadata": meta},
+            error="; ".join(errors) or None,
             elapsed_ms=(time.monotonic() - t0) * 1000,
             status_events=[f"extracted text from {path}"],
         )

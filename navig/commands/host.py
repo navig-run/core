@@ -1272,6 +1272,47 @@ def host_use(
         set_default_host(name, ctx.obj)
 
 
+@host_app.command("deploy")
+def host_deploy(
+    name: str | None = typer.Argument(None, help="Host to install + start NAVIG on (omit to pick)."),
+    public_url: str = typer.Option(
+        "", "--public-url", help="If this host is a VPS with a public URL, also set `cloud direct` to it."
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print the plan; change nothing."),
+):
+    """Install + start NAVIG on a host over SSH — idempotent (upgrades on re-run).
+
+    Runs the same one-liner installer + systemd service the local install uses,
+    then verifies ``navig --version`` on the host. Linux/macOS hosts only.
+    """
+    from navig.remote_deploy import deploy_to_host
+
+    if name is None:
+        hosts = config_manager.list_hosts()
+        if not hosts:
+            ch.error("No hosts configured. Run 'navig host add' first.")
+            raise typer.Exit(1)
+        name = hosts[0] if len(hosts) == 1 else ch.prompt_choice("Deploy NAVIG to which host?", choices=hosts)
+
+    if not dry_run:
+        ch.info(f"Deploying NAVIG to '{name}' — the install can take a few minutes…")
+    result = deploy_to_host(
+        name, public_url=public_url.strip(), dry_run=dry_run, on_progress=lambda m: ch.dim(m)
+    )
+
+    for step in result.steps:
+        mark = "✓" if step.ok else "✗"
+        ch.info(f"  {mark} {step.name}" + (f" — {step.detail}" if step.detail else ""))
+    if result.ok:
+        ch.success(f"NAVIG deployed on '{name}'.", details=result.version or "service started")
+    else:
+        ch.error(
+            f"Deploy to '{name}' did not complete.",
+            details="Fix the failing step above and re-run `navig host deploy`.",
+        )
+        raise typer.Exit(1)
+
+
 @host_app.command("add")
 def host_add(
     ctx: typer.Context,

@@ -310,3 +310,67 @@ def test_multi_edit_skips_incomplete_items() -> None:
     script: str = client.ahk_run.call_args[0][0]
     assert "Click 10, 20" not in script  # incomplete skipped
     assert "SendText 'hello'" in script
+
+
+# ── MCP schema validation (array types must carry 'items') ───────────────────
+
+def _check_array_items(schema: Any, path: str = "") -> list[str]:
+    """Recursively find array-typed schema nodes that are missing 'items'.
+
+    The MCP spec (and VS Code's Copilot validator) require every
+    ``{"type": "array"}`` node to declare an ``items`` sub-schema.
+    """
+    violations: list[str] = []
+    if isinstance(schema, dict):
+        if schema.get("type") == "array" and "items" not in schema:
+            violations.append(path or "<root>")
+        for key, value in schema.items():
+            violations.extend(_check_array_items(value, f"{path}.{key}" if path else key))
+    elif isinstance(schema, list):
+        for idx, item in enumerate(schema):
+            violations.extend(_check_array_items(item, f"{path}[{idx}]"))
+    return violations
+
+
+def test_all_desktop_tool_schemas_have_items_on_arrays() -> None:
+    """Every registered desktop tool schema must not contain bare array types.
+
+    Regression test for GitHub issue: 'tool parameters array type must have
+    items' validation error raised by VS Code Copilot when connecting to the
+    navig MCP server (desktop_multi_edit was missing items on its inner array).
+    """
+    from types import SimpleNamespace as NS
+    import navig.mcp.tools.desktop as desktop_mod
+
+    server = NS()
+    server.tools = {}
+    server._tool_handlers = {}
+    desktop_mod.register(server)
+
+    for tool_name, tool_def in server.tools.items():
+        schema = tool_def.get("inputSchema", {})
+        violations = _check_array_items(schema, tool_name)
+        assert not violations, (
+            f"Tool '{tool_name}' has array schema node(s) without 'items': {violations}"
+        )
+
+
+def test_desktop_multi_edit_fields_inner_array_has_items() -> None:
+    """The inner 'items' of fields (the [x, y, text] triple) must declare its own items."""
+    from types import SimpleNamespace as NS
+    import navig.mcp.tools.desktop as desktop_mod
+
+    server = NS()
+    server.tools = {}
+    server._tool_handlers = {}
+    desktop_mod.register(server)
+
+    tool_schema = server.tools["desktop_multi_edit"]["inputSchema"]
+    fields_schema = tool_schema["properties"]["fields"]
+
+    assert fields_schema["type"] == "array", "fields must be array type"
+    assert "items" in fields_schema, "fields must have items"
+
+    inner = fields_schema["items"]
+    assert inner["type"] == "array", "fields items must be array type"
+    assert "items" in inner, "fields items (inner triple array) must declare 'items'"

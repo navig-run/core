@@ -213,7 +213,7 @@ def _from_full_fm(fm: dict[str, Any], body: str, path: Path) -> Skill:
         category=fm.get("category", "general"),
         tags=_list("tags"),
         platforms=_list("platforms") or ["linux", "macos", "windows"],
-        tools=_list("tools"),
+        tools=_list("tools") or _list("allowed-tools"),  # accept Claude's key too
         safety=fm.get("safety", "safe"),
         body_markdown=body,
         examples=_extract_examples(body),
@@ -290,6 +290,47 @@ def _from_plain_md(body: str, path: Path) -> Skill:
 
 
 # ---------------------------------------------------------------------------
+# Claude Code / Agent Skill frontmatter → Skill (format 4)
+# ---------------------------------------------------------------------------
+
+
+def _from_claude_fm(fm: dict[str, Any], body: str, path: Path) -> Skill:
+    """Parse a Claude Code (Agent Skill) ``SKILL.md``.
+
+    Claude skills use just ``name`` + ``description`` (and optionally
+    ``allowed-tools``/``license``). We map them onto NAVIG's ``Skill`` so a skill
+    authored for Claude Code runs unchanged in NAVIG — ``allowed-tools`` →
+    ``tools``, defaulting to a safe, cross-platform, user-invocable skill.
+    """
+    folder_slug = _slug(path.parent.name)
+
+    def _list(key: str) -> list[str]:
+        val = fm.get(key, [])
+        if isinstance(val, list):
+            return [str(v) for v in val]
+        if isinstance(val, str):
+            return [v.strip() for v in val.split(",") if v.strip()]
+        return []
+
+    name = str(fm.get("name") or path.parent.name)
+    return Skill(
+        id=_slug(name) or folder_slug,
+        name=name,
+        version=str(fm.get("version", "1.0.0")),
+        category=str(fm.get("category", "general")),
+        tags=_list("tags") or _list("keywords"),
+        platforms=_list("platforms") or ["linux", "macos", "windows"],
+        tools=_list("allowed-tools") or _list("tools"),
+        safety=str(fm.get("safety", "safe")),
+        body_markdown=body,
+        examples=_extract_examples(body),
+        source_path=path,
+        description=str(fm.get("description", "")),
+        user_invocable=bool(fm.get("user_invocable", True)),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Public: parse a single SKILL.md file
 # ---------------------------------------------------------------------------
 
@@ -315,14 +356,18 @@ def parse_skill_file(path: Path) -> Skill | None:
     if not fm:
         return _from_plain_md(body, path)
 
-    # Distinguish full-format vs legacy by checking for a NAVIG-specific field
+    # Distinguish formats by their marker fields. NAVIG-native first, then
+    # legacy, then Claude Code (name + description, optionally allowed-tools).
     is_full = any(k in fm for k in ("id", "tags", "platforms", "tools", "safety"))
     is_legacy = any(k in fm for k in ("navig-commands", "risk-level", "risk_level"))
+    is_claude = ("allowed-tools" in fm) or ("name" in fm and "description" in fm)
 
     if is_full:
         return _from_full_fm(fm, body, path)
     if is_legacy:
         return _from_legacy_fm(fm, body, path)
+    if is_claude:
+        return _from_claude_fm(fm, body, path)
 
     # Has frontmatter but unknown shape — attempt full, fall back to legacy
     try:
@@ -387,15 +432,31 @@ def get_skill_dirs() -> list[Path]:
                     candidates.append(d)
             break
 
-    # Project-local skills
+    # Project/space-local skills — walk up to the nearest .navig/ (active workshop)
     try:
-        from navig.platform.paths import project_root
+        from navig.platform.paths import find_app_root
 
-        local_skills = project_root() / ".navig" / "skills"
-        if local_skills.exists():
-            candidates.append(local_skills)
+        root = find_app_root()
+        if root is not None:
+            local_skills = root / ".navig" / "skills"
+            if local_skills.exists():
+                candidates.append(local_skills)
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
+
+    # External agents' skills — navig as a federated hub. SKILL.md is the shared
+    # format (Format-4 parser handles Claude Code), so foreign skills "just work".
+    try:
+        home = Path.home()
+        for ext in (
+            home / ".claude" / "skills",
+            home / ".openclaw" / "workspace" / "skills",
+            home / ".hermes" / "skills",
+        ):
+            if ext.exists():
+                candidates.append(ext)
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; Claude/OpenClaw/Hermes may not be installed
 
     # Deduplicate while preserving order
     seen: set[Path] = set()

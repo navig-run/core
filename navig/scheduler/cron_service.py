@@ -591,6 +591,30 @@ class CronService:
         """Execute the job's command."""
         command = job.command.strip()
 
+        # Habit reminder delivery: write a due-now entry to RuntimeStore so that
+        # _poll_due_reminders() (telegram.py:615) picks it up within 15 seconds.
+        # Format: NAVIG_HABIT_REMINDER:<chat_id>:<base64_message>
+        if command.startswith("NAVIG_HABIT_REMINDER:"):
+            try:
+                import base64 as _b64
+
+                _prefix, chat_id_str, b64_msg = command.split(":", 2)
+                chat_id = int(chat_id_str)
+                message = _b64.b64decode(b64_msg).decode("utf-8")
+
+                from navig.store.runtime import get_runtime_store
+
+                store = get_runtime_store()
+                store.create_reminder(
+                    user_id=0,
+                    chat_id=chat_id,
+                    message=message,
+                    remind_at=datetime.now(),
+                )
+                return f"Habit reminder queued for chat {chat_id}: {message[:60]}"
+            except Exception as exc:
+                raise RuntimeError(f"Failed to queue habit reminder: {exc}") from exc
+
         # Check if it's a direct NAVIG command
         if command.startswith("navig "):
             import shlex

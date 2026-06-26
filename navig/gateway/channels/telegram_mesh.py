@@ -25,6 +25,7 @@ import html
 import json
 from typing import TYPE_CHECKING
 
+from navig._daemon_defaults import _GATEWAY_PORT
 from navig.debug_logger import get_debug_logger
 from navig.gateway.channels.telegram_utils import escape_mdv2
 
@@ -37,15 +38,15 @@ _mdv2_escape = escape_mdv2
 
 # Local gateway base URL for mesh routes — resolved from navig config at call time
 # so it tracks config changes without requiring a restart.
-# Default port: 8789.  Override via ~/.navig/config.yaml: gateway.port
+# Default port: _GATEWAY_PORT (8789).  Override via ~/.navig/config.yaml: gateway.port
 def _gateway_base() -> str:
     try:
         from navig.config import get_config_manager
 
-        port = get_config_manager().global_config.get("gateway", {}).get("port", 8789)
+        port = get_config_manager().global_config.get("gateway", {}).get("port", _GATEWAY_PORT)
         return f"http://127.0.0.1:{port}"
     except Exception:
-        return "http://127.0.0.1:8789"
+        return f"http://127.0.0.1:{_GATEWAY_PORT}"
 
 _GATEWAY_BASE = _gateway_base()
 

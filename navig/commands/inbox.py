@@ -43,6 +43,52 @@ def _inbox_callback(ctx: typer.Context) -> None:
         smart_launch("inbox", inbox_app)
 
 
+@inbox_app.command("promote")
+def inbox_promote(
+    ref: str = typer.Argument(..., help="Inbox event id, 'path:<abs>', or a file path"),
+    to: str = typer.Option("roadmap", "--to", help="Target tier: roadmap | deferred | after-mvp"),
+    space: str = typer.Option("", "--space", help="Target space (default: active space)"),
+    summary: str = typer.Option("", "--summary", help="Override the summarized bullet text"),
+    json_output: bool = typer.Option(False, "--json", help="Emit the result as JSON"),
+) -> None:
+    """Promote an inbox item up the plan tiers — never deletes; appends a bullet
+    to the active space's ROADMAP.md / DEV_PLAN.md and records a wiki note."""
+    from navig.inbox.promotion import promote as _promote
+
+    if not space:
+        try:
+            from navig.commands.space import get_active_space
+
+            space = get_active_space()
+        except Exception:  # noqa: BLE001
+            from navig.spaces.resolver import get_default_space
+
+            space = get_default_space()
+
+    res = _promote(
+        ref,
+        to_tier=to,
+        space=space or None,
+        summary=summary or None,
+        project_root=_find_project_root(Path.cwd()),
+    )
+
+    if json_output:
+        print(json.dumps(res, indent=2))
+        return
+
+    from navig import console_helper as ch
+
+    if res.get("ok"):
+        ch.success(f"Promoted → {res['to_tier']}: {res['summary']}")
+        ch.dim(f"  {res['plan_file']}  ({res['section']})")
+        if res.get("wiki_record"):
+            ch.dim(f"  wiki: {res['wiki_record']}")
+    else:
+        ch.error(res.get("error") or "promotion failed")
+        raise typer.Exit(1)
+
+
 def _print_plan(plan: dict, verbose: bool = False) -> None:
     """Pretty-print a single plan result."""
     source = Path(plan.get("source_file", "?")).name
@@ -730,7 +776,7 @@ def reroute_cmd(
     """
     import json as _json  # noqa: PLC0415
 
-    from navig.inbox.router import RouteMode  # noqa: PLC0415
+    from navig.inbox.router import InboxRouter, RouteMode  # noqa: PLC0415
     from navig.inbox.routes_loader import load  # noqa: PLC0415
     from navig.inbox.space_scorer import (  # noqa: PLC0415
         check_exclude_rules,
@@ -780,6 +826,8 @@ def reroute_cmd(
     except ValueError:
         typer.secho(f"Invalid mode '{mode}'. Choose: move, copy, link", fg=typer.colors.RED)
         raise typer.Exit(1) from None
+
+    router = InboxRouter(project_root=space_root, mode=route_mode)
 
     # ── Scan inbox files ──────────────────────────────────────
     inbox_files: list[Path] = []

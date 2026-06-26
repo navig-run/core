@@ -40,12 +40,39 @@ def resolve_persona(name: str, cwd: Path | None = None) -> Path | None:
     if user_candidate.is_dir():
         return user_candidate
 
-    # 3. Package defaults
+    # 3. navig packages that provide personas (package == plugin)
+    for pkg_personas in _package_persona_dirs():
+        candidate = pkg_personas / slug
+        if candidate.is_dir():
+            return candidate
+
+    # 4. Package (resource) defaults
     pkg_candidate = Path(__file__).parent.parent / "resources" / "personas" / slug
     if pkg_candidate.is_dir():
         return pkg_candidate
 
     return None
+
+
+def _package_persona_dirs() -> list[Path]:
+    """``<pkg>/personas`` dirs from installed navig packages (package == plugin)."""
+    dirs: list[Path] = []
+    try:
+        from navig.platform.paths import builtin_packages_dir, packages_dir
+
+        for base_fn in (builtin_packages_dir, packages_dir):
+            try:
+                base = base_fn()
+            except Exception:  # noqa: BLE001
+                continue
+            if base.exists():
+                for pkg in sorted(base.iterdir()):
+                    pdir = pkg / "personas"
+                    if pdir.is_dir():
+                        dirs.append(pdir)
+    except Exception:  # noqa: BLE001
+        pass
+    return dirs
 
 
 def discover_persona_paths(cwd: Path | None = None) -> dict[str, Path]:
@@ -56,14 +83,20 @@ def discover_persona_paths(cwd: Path | None = None) -> dict[str, Path]:
     current_dir = (cwd or Path.cwd()).resolve()
     discovered: dict[str, Path] = {}
 
-    # Package defaults first (lowest priority)
+    # Package (resource) defaults first (lowest priority)
     pkg_root = Path(__file__).parent.parent / "resources" / "personas"
     if pkg_root.exists():
         for entry in sorted(pkg_root.iterdir()):
             if entry.is_dir():
                 discovered[entry.name] = entry
 
-    # User home overrides package
+    # navig packages that provide personas (package == plugin) override resource defaults
+    for pkg_personas in _package_persona_dirs():
+        for entry in sorted(pkg_personas.iterdir()):
+            if entry.is_dir():
+                discovered[entry.name] = entry
+
+    # User home overrides packages
     user_root = config_dir() / "personas"
     if user_root.exists():
         for entry in sorted(user_root.iterdir()):

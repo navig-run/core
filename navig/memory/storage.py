@@ -137,8 +137,9 @@ class MemoryStorage:
         self.db_path = db_path
         self._local = threading.local()
         self._lock = threading.Lock()
+        self._vec_lock = threading.Lock()  # guards lazy VectorIndex init
         self._embedding_dim = embedding_dimensions
-        self._vec: VectorIndex | None = None  # lazy init per connection
+        self._vec: VectorIndex | None = None
 
         # Ensure directory exists
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -295,14 +296,13 @@ class MemoryStorage:
         return [FileMetadata.from_dict(dict(row)) for row in cursor.fetchall()]
 
     def delete_file(self, file_path: str) -> int:
-        """Delete a file and all its chunks."""
+        """Delete a file and all its chunks (CASCADE removes chunks automatically)."""
         conn = self._get_conn()
 
         with self._lock:
-            # Delete chunks first (foreign key)
-            cursor = conn.execute("DELETE FROM chunks WHERE file_path = ?", (file_path,))
-            deleted_chunks = cursor.rowcount
-
+            # ON DELETE CASCADE in the schema removes associated chunks automatically.
+            cursor = conn.execute("SELECT COUNT(*) FROM chunks WHERE file_path = ?", (file_path,))
+            deleted_chunks = cursor.fetchone()[0]
             conn.execute("DELETE FROM files WHERE file_path = ?", (file_path,))
             conn.commit()
 
@@ -381,22 +381,7 @@ class MemoryStorage:
 
     def update_chunk_embedding(self, chunk_id: str, embedding: list[float]) -> None:
         """Update the embedding for a specific chunk."""
-        conn = self._get_conn()
-
-        with self._lock:
-            conn.execute(
-                "UPDATE chunks SET embedding = ? WHERE id = ?",
-                (json.dumps(embedding), chunk_id),
-            )
-            conn.commit()
-
-        # Sync to vec0 table (best-effort)
-        try:
-            vec = self._get_vec()
-            if vec.available:
-                vec.upsert(chunk_id, embedding)
-        except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+        self.update_chunk_embeddings([(chunk_id, embedding)])
 
     def delete_chunks_for_file(self, file_path: str) -> int:
         """Delete all chunks for a file."""
@@ -475,14 +460,18 @@ class MemoryStorage:
         Simple keyword search - splits query into words and matches any.
         More forgiving than strict FTS5 syntax.
         """
-        # Build OR query from words
         words = query.split()
         if not words:
             return []
 
-        # Escape quotes and build FTS query
-        escaped_words = [w.replace('"', '""') for w in words]
-        fts_query = " OR ".join(f'"{w}"' for w in escaped_words)
+        # Strip characters that are invalid inside an FTS5 phrase token.
+        # Doubling quotes ("") is only valid *between* phrase tokens, not inside
+        # a "word" phrase — strip them instead to avoid malformed FTS5 queries.
+        cleaned = [w.replace('"', '').replace("'", '') for w in words if w.replace('"', '').replace("'", '')]
+        if not cleaned:
+            return self._search_like(query, limit)
+
+        fts_query = " OR ".join(f'"{w}"' for w in cleaned)
 
         try:
             return self.search_fts(fts_query, limit)
@@ -678,15 +667,18 @@ class MemoryStorage:
         stats = self.get_stats()
 
         with self._lock:
-            conn.executescript(
-                """
-                DELETE FROM chunks;
-                DELETE FROM files;
-                DELETE FROM embedding_cache;
-                DELETE FROM metadata;
-            """
-            )
-            conn.commit()
+            # Use explicit transaction instead of executescript (which auto-commits
+            # before each statement, breaking atomicity).
+            conn.execute("BEGIN")
+            try:
+                conn.execute("DELETE FROM chunks")
+                conn.execute("DELETE FROM files")
+                conn.execute("DELETE FROM embedding_cache")
+                conn.execute("DELETE FROM metadata")
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
 
         self.vacuum()
 
@@ -716,11 +708,12 @@ class MemoryStorage:
     # ---------- Vector Search (sqlite-vec) ----------
 
     def _get_vec(self):
-        """Lazily init VectorIndex on first call (per main-thread conn)."""
+        """Lazily init VectorIndex (thread-safe)."""
         if self._vec is None:
-            from navig.memory.vector import VectorIndex
-
-            self._vec = VectorIndex(self._get_conn(), dimensions=self._embedding_dim)
+            with self._vec_lock:
+                if self._vec is None:  # double-checked
+                    from navig.memory.vector import VectorIndex
+                    self._vec = VectorIndex(self._get_conn(), dimensions=self._embedding_dim)
         return self._vec
 
     @property

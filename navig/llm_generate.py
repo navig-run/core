@@ -995,6 +995,14 @@ def _call_provider(
     base_url: str | None = None,
 ) -> str:
     """Call an LLM provider using the providers system."""
+    _LOCAL_PROVIDERS = {"ollama", "llamacpp", "airllm", "mcp_bridge"}
+    if provider not in _LOCAL_PROVIDERS:
+        from navig.llm_router import _resolve_api_key
+        if not _resolve_api_key(provider):
+            raise ValueError(
+                f"No API key configured for provider '{provider}'. "
+                f"Set the env var or run: navig vault set {provider}"
+            )
     try:
         return _call_via_providers_system(
             provider,
@@ -1006,6 +1014,31 @@ def _call_provider(
             base_url,
         )
     except Exception as e:
+        # If the FIRST attempt timed out, the endpoint is slow/unresponsive —
+        # re-running the identical request over httpx-direct would just burn
+        # another full timeout (this is what turned one stuck heartbeat into a
+        # ~4-minute 120s+120s stall). Only the providers-system *transport*
+        # quirks (empty-message errors that httpx-direct genuinely recovers)
+        # are worth a second attempt.
+        try:
+            import httpx as _httpx
+
+            _cause = getattr(e, "__cause__", None)
+            _is_timeout = isinstance(e, _httpx.TimeoutException) or isinstance(
+                _cause, _httpx.TimeoutException
+            )
+        except Exception:  # noqa: BLE001
+            _is_timeout = "timed out" in str(e).lower() or "timeout" in str(e).lower()
+
+        if _is_timeout:
+            logger.warning(
+                "Provider %s timed out after %.0fs — skipping httpx-direct retry "
+                "(same endpoint would stall again)",
+                provider,
+                timeout,
+            )
+            raise
+
         logger.warning("Provider system call failed (%s), trying httpx direct: %s", provider, e)
         return _call_direct_openai_compat(
             provider,
@@ -1069,20 +1102,24 @@ def _call_via_providers_system(
     client = create_client(provider_cfg, api_key=api_key, timeout=timeout)
 
     async def _run():
-        return await client.complete(request)
-
-    async def _close_client() -> None:
-        close_fn = getattr(client, "close", None)
-        if callable(close_fn):
-            await close_fn()
-
-    try:
-        result = _safe_run_async(_run)
-    finally:
+        # Close the client INSIDE the same coroutine/event loop that created
+        # its httpx.AsyncClient. Closing it from a second _safe_run_async()
+        # (a different thread + event loop) could hang or raise "Event loop is
+        # closed" while aclose() drained the connection pool — which is exactly
+        # the kind of stall that turned a fast heartbeat into a 135s one.
         try:
-            _safe_run_async(_close_client)
-        except Exception as close_exc:  # noqa: BLE001
-            logger.debug("_call_via_providers_system client close skipped: %s", close_exc)
+            return await client.complete(request)
+        finally:
+            close_fn = getattr(client, "close", None)
+            if callable(close_fn):
+                try:
+                    await close_fn()
+                except Exception as close_exc:  # noqa: BLE001
+                    logger.debug(
+                        "_call_via_providers_system client close skipped: %s", close_exc
+                    )
+
+    result = _safe_run_async(_run)
     return result.content or ""
 
 
@@ -1117,8 +1154,21 @@ def _call_direct_openai_compat(
         "max_tokens": max_tokens,
     }
 
+    # Apply the same provider-specific scrubbing as the canonical client so the
+    # fallback path doesn't trip the same serde-rust errors on strict backends.
+    try:
+        from navig.providers.clients import _sanitize_openai_body
+        payload = _sanitize_openai_body(payload, provider_name=provider)
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; fall back to raw payload
+
     endpoint = f"{url.rstrip('/')}/chat/completions"
     resp = httpx.post(endpoint, json=payload, headers=headers, timeout=timeout)
+    if resp.status_code != 200:
+        logger.warning(
+            "Direct call to %s returned %d. Payload preview: %s",
+            provider, resp.status_code, str(payload)[:500],
+        )
     resp.raise_for_status()
     data = resp.json()
     return data["choices"][0]["message"]["content"]

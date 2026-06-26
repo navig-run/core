@@ -6,6 +6,7 @@ Middleware and utilities for verifying Telegram WebApp initData.
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import time
@@ -18,6 +19,32 @@ except ImportError:
     web = None
 
 logger = logging.getLogger(__name__)
+
+# Coalesce the very chatty "local request → desktop bypass" debug line. Every
+# Deck SPA poll hits auth, so logging each one floods --debug. Instead we count
+# them and emit a single summary line at most once per window.
+_LOCAL_BYPASS_WINDOW = 30.0  # seconds
+_local_bypass_state: dict[str, float | int] = {"count": 0, "last_flush": 0.0}
+
+
+def _log_local_bypass(origin: str) -> None:
+    """Emit the desktop-bypass debug line at most once per window, with a count.
+
+    First hit in a window logs immediately (so it's visible); subsequent hits
+    are tallied and folded into the next window's summary as "(xN in last 30s)".
+    """
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+    now = time.monotonic()
+    state = _local_bypass_state
+    state["count"] = int(state["count"]) + 1
+    if now - float(state["last_flush"]) >= _LOCAL_BYPASS_WINDOW:
+        count = int(state["count"])
+        suffix = f" (x{count} in last {int(_LOCAL_BYPASS_WINDOW)}s)" if count > 1 else ""
+        logger.debug("Deck API: local request (origin=%r) → desktop bypass%s", origin, suffix)
+        state["count"] = 0
+        state["last_flush"] = now
+
 
 _deck_config: dict[str, Any] = {
     "bot_token": "",
@@ -98,6 +125,49 @@ def validate_init_data(
 
 _DEV_BYPASS_SENTINEL = -1  # Negative = dev/localhost bypass; skips allowlist
 
+_LOOPBACK_REMOTES = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
+
+
+def _forwarded_client_ip(request: "web.Request") -> str | None:
+    """Real client IP when the request was relayed by a proxy/tunnel, else None.
+
+    Cloudflare (edge + cloudflared tunnel) stamps the genuine remote address in
+    CF-Connecting-IP / True-Client-IP and the client cannot override it. A
+    generic/local reverse proxy (incl. the Next.js dev-server rewrite) uses
+    X-Forwarded-For. None means no forwarding headers → a direct connection.
+    """
+    for h in ("CF-Connecting-IP", "True-Client-IP"):
+        v = request.headers.get(h, "").strip()
+        if v:
+            return v
+    xff = request.headers.get("X-Forwarded-For", "").strip()
+    if xff:
+        return xff.split(",")[0].strip()  # first hop = original client
+    return None
+
+
+def _request_is_local(request: "web.Request") -> bool:
+    """True only if the request genuinely originates from this machine.
+
+    Accepts a direct loopback connection AND a *local* reverse proxy / Next dev
+    rewrite (whose forwarded client IP is itself loopback). Rejects anything that
+    arrived via the cloudflared tunnel: Cloudflare always stamps CF-Ray plus a
+    public CF-Connecting-IP that the caller cannot strip, so tunneled traffic can
+    never masquerade as local — even though cloudflared connects to the daemon
+    from 127.0.0.1.
+    """
+    # CF-Ray is only ever present on Cloudflare edge/tunnel traffic.
+    if request.headers.get("CF-Ray"):
+        return False
+    fwd = _forwarded_client_ip(request)
+    if fwd is not None:
+        try:
+            return ipaddress.ip_address(fwd).is_loopback
+        except ValueError:
+            return False
+    remote = getattr(request, "remote", "") or ""
+    return remote in _LOOPBACK_REMOTES
+
 
 def _get_user_id(request: "web.Request", bot_token: str = "") -> int | None:
     """Return the authenticated user_id, or None if not authenticated.
@@ -113,7 +183,9 @@ def _get_user_id(request: "web.Request", bot_token: str = "") -> int | None:
     if auth_header.startswith("Bearer "):
         bearer = auth_header[7:].strip()
         configured_key = _deck_config.get("api_key", "")
-        if bearer and configured_key and bearer == configured_key:
+        # Constant-time compare to avoid leaking the api_key byte-by-byte via
+        # response timing (matches routes/common.py:require_bearer_auth).
+        if bearer and configured_key and hmac.compare_digest(bearer, configured_key):
             logger.debug("Deck API: valid Bearer token (api_key match)")
             return _DEV_BYPASS_SENTINEL
 
@@ -130,21 +202,32 @@ def _get_user_id(request: "web.Request", bot_token: str = "") -> int | None:
         # dev_mode with no X-Telegram-User header → deny (return None → 401).
         # The loopback bypass below is intentionally skipped in dev_mode.
 
-    # Auto-bypass for requests originating from localhost — production only.
-    # In dev_mode the caller must supply X-Telegram-User (handled above).
-    # Covers two cases:
+    # Auto-bypass for requests that are genuinely local to this machine — the
+    # desktop user talking to their own daemon. Covers two cases:
     #   a) Cross-origin requests from the React dev server (Origin: http://localhost:*)
-    #   b) Same-origin requests from the SPA served at 127.0.0.1:8765 (no Origin header,
-    #      request.remote == '127.0.0.1')  ← the common production case
-    if not _deck_config["dev_mode"]:
+    #   b) Same-origin requests from the SPA served at 127.0.0.1:8789 (no Origin
+    #      header, request.remote == '127.0.0.1')
+    #
+    # SECURITY: this must NEVER fire for tunneled traffic. cloudflared forwards
+    # internet requests to the daemon from 127.0.0.1, so request.remote is
+    # loopback for them too — loopback alone is not proof of local origin. We
+    # therefore refuse the bypass whenever edge/proxy headers are present, which
+    # forces tunneled callers to present a real Bearer api_key or Telegram
+    # initData. Local desktop requests carry none of these headers, so the
+    # desktop experience is unaffected.
+    if not _deck_config["dev_mode"] and _request_is_local(request):
+        # _request_is_local() has already excluded tunneled traffic, so any
+        # genuinely-local request is trusted here: a direct same-origin call from
+        # the desktop SPA (no Origin), a cross-origin call from the React dev
+        # server (Origin: http://localhost:7432), or that same call relayed by
+        # the Next dev-rewrite proxy (X-Forwarded-For: 127.0.0.1).
         origin = request.headers.get("Origin", "")
-        if origin.startswith("http://localhost:") or origin.startswith("http://127.0.0.1:"):
-            logger.debug("Deck API: localhost origin %s → dev bypass", origin)
-            return _DEV_BYPASS_SENTINEL
-        remote = getattr(request, "remote", "") or ""
-        _LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
-        if not origin and remote in _LOOPBACK:
-            logger.debug("Deck API: same-origin request from %s → dev bypass", remote)
+        if (
+            not origin
+            or origin.startswith("http://localhost:")
+            or origin.startswith("http://127.0.0.1:")
+        ):
+            _log_local_bypass(origin)
             return _DEV_BYPASS_SENTINEL
 
     return None

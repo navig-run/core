@@ -36,12 +36,32 @@ try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 try { [Console]::InputEncoding  = [System.Text.Encoding]::UTF8 } catch {}
 
 # ── Constants ─────────────────────────────────────────────────
-$MIN_PYTHON_MAJOR     = 3
-$MIN_PYTHON_MINOR     = 10
 $INSTALL_REGISTRY_KEY = "Registry::HKEY_CURRENT_USER\Software\NAVIG\Installer"
 $INSTALL_MARKER_PATH  = Join-Path $env:USERPROFILE ".navig\install.marker"
 $WINDOWS_SERVICE_NAME = "NavigDaemon"
 $WINDOWS_TASK_NAME    = "NAVIG Daemon"
+
+# ── Isolated runtime layout ───────────────────────────────────
+# NAVIG ships its own pinned CPython + venv so the user needs NOTHING
+# pre-installed. Nothing here touches the system Python.
+$NAVIG_HOME       = Join-Path $env:USERPROFILE ".navig"
+$RUNTIME_DIR      = Join-Path $NAVIG_HOME "runtime"        # uv.exe + python/ + venv/
+$RUNTIME_VENV     = Join-Path $RUNTIME_DIR "venv"
+$RUNTIME_VENV_PY  = Join-Path $RUNTIME_VENV "Scripts\python.exe"
+$RUNTIME_PY_DIR   = Join-Path $RUNTIME_DIR "python"        # uv-managed CPython installs
+$RUNTIME_CACHE    = Join-Path $RUNTIME_DIR "cache"         # uv cache (self-contained)
+$UV_EXE           = Join-Path $RUNTIME_DIR "uv.exe"
+$SHIM_DIR         = Join-Path $env:USERPROFILE ".local\bin"
+$SHIM_PATH        = Join-Path $SHIM_DIR "navig.cmd"
+
+# Pinned Python series for the managed runtime.
+$PYTHON_SERIES    = "3.12"
+
+# uv release pin. Leave $UV_VERSION empty to track the latest GitHub release.
+# When pinning a version, also set $UV_SHA256 to that asset's SHA-256 to enable
+# checksum verification (download is TLS-authenticated regardless).
+$UV_VERSION       = ""          # e.g. "0.7.13" — empty = latest
+$UV_SHA256        = ""          # SHA-256 of the windows asset for $UV_VERSION
 
 # ── Terminal capabilities ─────────────────────────────────────
 $script:NavColor   = $true
@@ -237,58 +257,107 @@ function Normalize-NavigAction { param([string]$v)
     }
 }
 
-# ── Python detection ──────────────────────────────────────────
-function Find-Python {
-    $knownPaths = @(
-        (Join-Path $HOME "AppData\Local\Programs\Python\Python314-32\python.exe"),
-        (Join-Path $HOME "AppData\Local\Programs\Python\Python314\python.exe"),
-        (Join-Path $HOME "AppData\Local\Programs\Python\Python313\python.exe"),
-        (Join-Path $HOME "AppData\Local\Programs\Python\Python312\python.exe"),
-        (Join-Path $HOME "AppData\Local\Programs\Python\Python311\python.exe"),
-        (Join-Path $HOME "AppData\Local\Programs\Python\Python310\python.exe")
-    )
-    foreach ($p in $knownPaths) {
-        if (-not (Test-Path $p)) { continue }
-        try {
-            $out = & $p --version 2>&1
-            if ($out -match '(\d+)\.(\d+)') {
-                $maj = [int]$Matches[1]; $min = [int]$Matches[2]
-                if ($maj -gt $MIN_PYTHON_MAJOR -or ($maj -eq $MIN_PYTHON_MAJOR -and $min -ge $MIN_PYTHON_MINOR)) { return $p }
-            }
-        } catch {}
-    }
-    foreach ($cmd in @("python", "python3")) {
-        try {
-            $out = & $cmd --version 2>&1
-            if ($out -match '(\d+)\.(\d+)') {
-                $maj = [int]$Matches[1]; $min = [int]$Matches[2]
-                if ($maj -gt $MIN_PYTHON_MAJOR -or ($maj -eq $MIN_PYTHON_MAJOR -and $min -ge $MIN_PYTHON_MINOR)) {
-                    $r = Get-Command $cmd -ErrorAction SilentlyContinue
-                    return $(if ($r -and $r.Source) { $r.Source } else { $cmd })
-                }
-            }
-        } catch {}
-    }
-    try {
-        $out = & py -3 --version 2>&1
-        if ($out -match '(\d+)\.(\d+)') {
-            $maj = [int]$Matches[1]; $min = [int]$Matches[2]
-            if ($maj -gt $MIN_PYTHON_MAJOR -or ($maj -eq $MIN_PYTHON_MAJOR -and $min -ge $MIN_PYTHON_MINOR)) {
-                return (& py -3 -c "import sys; print(sys.executable)" 2>&1).Trim()
-            }
-        }
-    } catch {}
-    return $null
+# ── Managed runtime (uv) ──────────────────────────────────────
+# Everything below installs an ISOLATED Python under ~/.navig/runtime.
+# No system Python is detected, required, or modified.
+
+function Get-NavigUvAsset {
+    # Returns the uv release asset name for this machine's architecture.
+    $arch = $env:PROCESSOR_ARCHITECTURE
+    if ($arch -eq "ARM64") { return "uv-aarch64-pc-windows-msvc.zip" }
+    return "uv-x86_64-pc-windows-msvc.zip"
 }
 
-function Get-PythonScriptsDir { param([string]$PythonExe)
+function Get-NavigUvUrl {
+    $asset = Get-NavigUvAsset
+    if ([string]::IsNullOrWhiteSpace($UV_VERSION)) {
+        return "https://github.com/astral-sh/uv/releases/latest/download/$asset"
+    }
+    return "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$asset"
+}
+
+function Install-NavigUv {
+    # Ensures $UV_EXE exists (pinned, self-contained under the runtime dir).
+    if (Test-Path $UV_EXE) { Write-NavVerbose "uv present: $UV_EXE"; return $true }
+
+    if (-not (Test-Path $RUNTIME_DIR)) { New-Item -ItemType Directory -Path $RUNTIME_DIR -Force | Out-Null }
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+
+    $url    = Get-NavigUvUrl
+    $tmpZip = Join-Path ([IO.Path]::GetTempPath()) ("navig-uv-" + [Guid]::NewGuid().ToString("N") + ".zip")
+    $tmpDir = Join-Path ([IO.Path]::GetTempPath()) ("navig-uv-" + [Guid]::NewGuid().ToString("N"))
     try {
-        $d = (& $PythonExe -c "import sysconfig; print(sysconfig.get_path('scripts'))" 2>&1).Trim()
-        if ($d -and (Test-Path $d)) { return $d }
-    } catch {}
-    $c = Join-Path (Split-Path $PythonExe -Parent) "Scripts"
-    if (Test-Path $c) { return $c }
-    return $null
+        Write-NavVerbose "Downloading uv: $url"
+        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tmpZip -ErrorAction Stop
+
+        if (-not [string]::IsNullOrWhiteSpace($UV_SHA256)) {
+            $actual = (Get-FileHash -Path $tmpZip -Algorithm SHA256).Hash
+            if ($actual -ne $UV_SHA256.ToUpperInvariant()) {
+                Write-NavHint "uv checksum mismatch (expected $UV_SHA256, got $actual)"
+                return $false
+            }
+            Write-NavVerbose "uv checksum verified"
+        } else {
+            Write-NavVerbose "uv checksum skipped (no pin set; download was TLS-authenticated)"
+        }
+
+        Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force
+        $found = Get-ChildItem -Path $tmpDir -Filter "uv.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $found) { Write-NavHint "uv.exe not found in downloaded archive"; return $false }
+        Copy-Item -Path $found.FullName -Destination $UV_EXE -Force
+        return (Test-Path $UV_EXE)
+    } catch {
+        Write-NavHint "uv download failed: $($_.Exception.Message)"
+        return $false
+    } finally {
+        Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue
+        Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Invoke-NavigUv {
+    # Run uv with a self-contained environment (managed python + cache under
+    # the runtime dir). Returns @{ Ok = <bool>; Tail = <last error lines> }.
+    param([string[]]$UvArgs)
+    $env:UV_PYTHON_INSTALL_DIR = $RUNTIME_PY_DIR
+    $env:UV_CACHE_DIR          = $RUNTIME_CACHE
+    $outFile = [IO.Path]::GetTempFileName()
+    $errFile = [IO.Path]::GetTempFileName()
+    try {
+        $proc = Start-Process -FilePath $UV_EXE -ArgumentList $UvArgs `
+                              -NoNewWindow -Wait -PassThru `
+                              -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+        if ($proc.ExitCode -ne 0) {
+            $tail = @()
+            foreach ($f in @($errFile, $outFile)) {
+                $tail += Get-Content $f -ErrorAction SilentlyContinue |
+                         Where-Object { $_ -match '\S' } | Select-Object -Last 6
+            }
+            return @{ Ok = $false; Tail = ($tail | Select-Object -Last 8) }
+        }
+        return @{ Ok = $true; Tail = @() }
+    } catch {
+        return @{ Ok = $false; Tail = @($_.Exception.Message) }
+    } finally {
+        Remove-Item $outFile, $errFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Install-NavigRuntime {
+    # Build (or rebuild) the isolated runtime: uv -> pinned CPython -> venv.
+    # Returns $true on success. The actual `navig` install is done separately.
+    if (-not (Install-NavigUv)) { return $false }
+
+    Write-NavVerbose "uv python install $PYTHON_SERIES"
+    $r = Invoke-NavigUv -UvArgs @("python", "install", $PYTHON_SERIES)
+    if (-not $r.Ok) { $r.Tail | ForEach-Object { Write-NavHint $_ }; return $false }
+
+    if (-not (Test-Path $RUNTIME_VENV_PY)) {
+        Write-NavVerbose "uv venv $RUNTIME_VENV"
+        $r = Invoke-NavigUv -UvArgs @("venv", $RUNTIME_VENV, "--python", $PYTHON_SERIES)
+        if (-not $r.Ok) { $r.Tail | ForEach-Object { Write-NavHint $_ }; return $false }
+    }
+    return $true
 }
 
 # ── PATH management ───────────────────────────────────────────
@@ -309,38 +378,64 @@ function Add-NavigBinToPath { param([string]$BinDir)
     }
 }
 
-# ── pip install ───────────────────────────────────────────────
-function Install-Navig { param([string]$PythonExe, [string]$PinVersion)
-    $spec    = if ($PinVersion) { "navig[interactive]==$PinVersion" } else { "navig[interactive]" }
-    $pipArgs = @("-m", "pip", "install", "--quiet", "--disable-pip-version-check", "--upgrade", $spec)
-    $tmp     = [IO.Path]::GetTempFileName()
+# ── Install navig into the managed runtime ────────────────────
+function Install-Navig { param([string]$PinVersion)
+    $spec = if ($PinVersion) { "navig[interactive]==$PinVersion" } else { "navig[interactive]" }
+    $r = Invoke-NavigUv -UvArgs @("pip", "install", "--python", $RUNTIME_VENV_PY, "--upgrade", $spec)
+    if (-not $r.Ok) { $r.Tail | ForEach-Object { Write-NavHint $_ }; return $false }
+    return $true
+}
+
+# ── Launcher shim ─────────────────────────────────────────────
+function New-NavigShim {
+    # ~/.local/bin/navig.cmd -> the venv's navig.exe. A single stable PATH
+    # entry that survives runtime rebuilds (the venv path is fixed), so updates
+    # never churn PATH.
+    if (-not (Test-Path $SHIM_DIR)) { New-Item -ItemType Directory -Path $SHIM_DIR -Force | Out-Null }
+    $shim = @(
+        '@echo off',
+        'rem NAVIG launcher shim - generated by install.ps1',
+        '"%USERPROFILE%\.navig\runtime\venv\Scripts\navig.exe" %*'
+    ) -join "`r`n"
+    try { Set-Content -Path $SHIM_PATH -Value $shim -Encoding ASCII; return (Test-Path $SHIM_PATH) }
+    catch { return $false }
+}
+
+# ── Daemon supervision ────────────────────────────────────────
+function Register-NavigDaemon {
+    # Register the NAVIG daemon for auto-start (logon trigger + restart-on-failure)
+    # via the runtime's own `navig service install --method task`. The service
+    # manager launches the venv's own python, so it inherits the isolated runtime.
+    # Best-effort: a failure here never fails the install. Set NAVIG_NO_DAEMON
+    # to skip (e.g. CI / headless).
+    if ($env:NAVIG_NO_DAEMON) { Write-NavVerbose "Skipping daemon registration (NAVIG_NO_DAEMON)"; return $false }
+    $venvNavig = Join-Path $RUNTIME_VENV "Scripts\navig.exe"
+    if (-not (Test-Path $venvNavig)) { return $false }
+    $tmp = [IO.Path]::GetTempFileName()
     try {
-        $proc = Start-Process -FilePath $PythonExe -ArgumentList $pipArgs `
+        $proc = Start-Process -FilePath $venvNavig `
+                              -ArgumentList @("service", "install", "--method", "task") `
                               -NoNewWindow -Wait -PassThru -RedirectStandardError $tmp
-        if ($proc.ExitCode -ne 0) {
-            $errs = Get-Content $tmp -ErrorAction SilentlyContinue |
-                    Where-Object { $_ -match '\S' } | Select-Object -Last 8
-            $errs | ForEach-Object { Write-NavHint $_ }
-            return $false
-        }
-        return $true
+        return ($proc.ExitCode -eq 0)
+    } catch {
+        Write-NavVerbose "Daemon registration failed: $($_.Exception.Message)"
+        return $false
     } finally {
         Remove-Item $tmp -Force -ErrorAction SilentlyContinue
     }
 }
 
 # ── Verify ────────────────────────────────────────────────────
-function Test-NavigCommand { param([string]$ScriptsDir)
+function Test-NavigCommand {
     $env:PATH = [Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
                 [Environment]::GetEnvironmentVariable("PATH", "User")    + ";" + $env:PATH
-    $gcm = Get-Command navig -ErrorAction SilentlyContinue
-    if (-not $gcm -and $ScriptsDir) {
-        $e = Join-Path $ScriptsDir "navig.exe"
-        if (Test-Path $e) { $gcm = $e }
-    }
-    if ($gcm) {
+    # Prefer the venv exe directly (deterministic), fall back to PATH resolution.
+    $venvNavig = Join-Path $RUNTIME_VENV "Scripts\navig.exe"
+    $exe = if (Test-Path $venvNavig) { $venvNavig }
+           else { $g = Get-Command navig -ErrorAction SilentlyContinue; if ($g) { $g.Source } else { $null } }
+    if ($exe) {
         try {
-            $v = (& navig --version 2>&1 | Select-Object -First 1).ToString().Trim()
+            $v = (& $exe --version 2>&1 | Select-Object -First 1).ToString().Trim()
             return $v
         } catch {}
     }
@@ -365,7 +460,7 @@ function Write-NavigInstallState { param([string]$InstalledVersion)
         if (-not (Test-Path $INSTALL_REGISTRY_KEY)) { New-Item -Path $INSTALL_REGISTRY_KEY -Force | Out-Null }
         Set-ItemProperty -Path $INSTALL_REGISTRY_KEY -Name "Version"     -Value $InstalledVersion
         Set-ItemProperty -Path $INSTALL_REGISTRY_KEY -Name "InstallDate" -Value (Get-Date -Format "yyyy-MM-dd")
-        Set-ItemProperty -Path $INSTALL_REGISTRY_KEY -Name "Method"      -Value "pip"
+        Set-ItemProperty -Path $INSTALL_REGISTRY_KEY -Name "Method"      -Value "uv"
         $md = Split-Path $INSTALL_MARKER_PATH -Parent
         if (-not (Test-Path $md)) { New-Item -ItemType Directory -Path $md -Force | Out-Null }
         Set-Content -Path $INSTALL_MARKER_PATH -Value $InstalledVersion -Encoding UTF8
@@ -434,12 +529,16 @@ function Stop-NavigBackgroundArtifacts {
 }
 
 function Remove-NavigFiles { param([switch]$PreserveUserData)
-    foreach ($pip in @("pip3", "pip")) {
-        if (-not (Get-Command $pip -ErrorAction SilentlyContinue)) { continue }
-        try { & $pip uninstall navig -y 2>&1 | Out-Null; Write-NavVerbose "Removed pip package: navig"; break } catch {}
+    # Always tear down the managed runtime + shim so reinstall is clean.
+    foreach ($p in @($RUNTIME_DIR, $SHIM_PATH)) {
+        if (Test-Path $p) {
+            try { Remove-Item -Path $p -Recurse -Force -ErrorAction Stop; Write-NavVerbose "Removed: $p" }
+            catch { Add-UninstallFailure "Remove $p" $_.Exception.Message }
+        }
     }
-    $home_ = Join-Path $env:USERPROFILE ".navig"
-    if ($PreserveUserData) { Write-NavVerbose "Preserving $home_" }
+    # User data (config, vault, data, logs) only on a full uninstall.
+    $home_ = $NAVIG_HOME
+    if ($PreserveUserData) { Write-NavVerbose "Preserving user data in $home_" }
     elseif (Test-Path $home_) {
         try { Remove-Item -Path $home_ -Recurse -Force -ErrorAction Stop; Write-NavVerbose "Removed: $home_" }
         catch { Add-UninstallFailure "Remove $home_" $_.Exception.Message }
@@ -588,41 +687,41 @@ function Main {
     $psv = $PSVersionTable.PSVersion
     Write-Ok "Shell" "PowerShell $($psv.Major).$($psv.Minor)"
 
-    # ── Requirements ──────────────────────────────────────────
-    Print-Section "Requirements"
-    Write-Step "Python" "detecting..."
-    $pythonExe = Find-Python
-    if (-not $pythonExe) {
+    # ── Runtime ───────────────────────────────────────────────
+    # NAVIG bundles its own pinned Python. Nothing is required up front and
+    # the system Python is never detected, used, or modified.
+    Print-Section "Runtime"
+    Write-Step "Python" "preparing isolated runtime..."
+    if (-not (Install-NavigRuntime)) {
         Print-Failure `
-            "Python $MIN_PYTHON_MAJOR.$MIN_PYTHON_MINOR+ not found" `
-            "No Python $MIN_PYTHON_MAJOR.$MIN_PYTHON_MINOR or higher was detected on this system." `
-            "Download from python.org and enable 'Add Python to PATH' during setup." `
-            "Start-Process 'https://www.python.org/downloads'"
+            "Could not prepare the NAVIG runtime" `
+            "Failed to fetch uv or build the isolated Python $PYTHON_SERIES environment." `
+            "Check your network / proxy and re-run. Your system Python is never touched." `
+            "iwr -useb https://navig.run/install.ps1 | iex"
         exit 1
     }
-    $pyVerStr = (& $pythonExe --version 2>&1).ToString().Trim() -replace '^Python\s*', ''
-    Write-Ok "Python" $pyVerStr
-    Write-NavVerbose $pythonExe
+    Write-Ok "Python" "$PYTHON_SERIES $(sym 'bullet') isolated (~/.navig/runtime)"
 
     # ── Install ───────────────────────────────────────────────
     Print-Section "Install"
     $spec = if ($Version) { "navig[interactive]==$Version" } else { "navig[interactive]" }
-    Write-Step "navig" "pip install $spec ..."
-    $ok = Install-Navig -PythonExe $pythonExe -PinVersion $Version
+    Write-Step "navig" "installing $spec ..."
+    $ok = Install-Navig -PinVersion $Version
     if (-not $ok) {
         Print-Failure `
-            "pip install failed" `
-            "pip exited with a non-zero code while installing navig." `
+            "navig install failed" `
+            "uv exited with a non-zero code while installing navig into the runtime." `
             "Run the command below manually to see the full error output." `
-            "$pythonExe -m pip install --upgrade navig[interactive]"
+            "$UV_EXE pip install --python `"$RUNTIME_VENV_PY`" --upgrade navig[interactive]"
         exit 1
     }
     Write-Ok "navig" "installed"
 
-    $scriptsDir = Get-PythonScriptsDir -PythonExe $pythonExe
-    if ($scriptsDir) {
-        Add-NavigBinToPath -BinDir $scriptsDir
-        Write-Ok "PATH" "$(sym 'bullet') $scriptsDir"
+    if (New-NavigShim) {
+        Add-NavigBinToPath -BinDir $SHIM_DIR
+        Write-Ok "PATH" "$(sym 'bullet') $SHIM_DIR"
+    } else {
+        Write-Warn "PATH" "could not create launcher shim at $SHIM_PATH"
     }
 
     Initialize-NavigConfig
@@ -655,19 +754,28 @@ function Main {
 
     # ── Verify ────────────────────────────────────────────────
     Print-Section "Verify"
-    $navVer = Test-NavigCommand -ScriptsDir $scriptsDir
+    $navVer = Test-NavigCommand
     if (-not $navVer) {
         Print-Failure `
             "navig not callable" `
-            "The navig executable was installed but is not on PATH in this session." `
-            "Add the Scripts directory to your PATH, then open a new terminal." `
-            "`$env:PATH = '$scriptsDir;' + `$env:PATH"
+            "navig installed into the runtime but is not resolving on PATH in this session." `
+            "Open a new terminal (PATH was just updated) and run 'navig --version'." `
+            "& `"$RUNTIME_VENV\Scripts\navig.exe`" --version"
         exit 1
     }
     Write-Ok "navig" $navVer
 
     $cleanVer = if ($navVer -match '(\d+\.\d+[\.\d]*)') { $Matches[1] } else { $navVer }
     try { Write-NavigInstallState -InstalledVersion $cleanVer } catch {}
+
+    # ── Daemon ────────────────────────────────────────────────
+    Print-Section "Daemon"
+    Write-Step "service" "registering auto-start..."
+    if (Register-NavigDaemon) {
+        Write-Ok "service" "auto-start enabled (Task Scheduler)"
+    } else {
+        Write-Warn "service" "skipped $(sym 'bullet') run 'navig service install --method task' later"
+    }
 
     # ── NAVIG Anchor offer ────────────────────────────────────────────────────
     # Disabled until Anchor v1.0 ships publicly.

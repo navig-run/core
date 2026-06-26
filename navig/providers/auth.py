@@ -452,6 +452,17 @@ class AuthProfileManager:
                     return key, f"env:{var}"
             return key, f"env:{provider.upper()}_API_KEY"
 
+        # Try navig vault as final fallback
+        try:
+            from navig.vault import get_vault
+
+            vault = get_vault()
+            vault_key = vault.get_api_key(provider)
+            if vault_key:
+                return vault_key, f"vault:{provider}"
+        except Exception as vault_err:
+            logger.debug("resolve_auth: vault lookup failed for %s: %s", provider, vault_err)
+
         return None, "not_found"
 
     def add_oauth_credentials(

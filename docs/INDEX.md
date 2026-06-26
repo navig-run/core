@@ -20,7 +20,12 @@
    - Troubleshooting quick links
    - Perfect for tech-savvy users and sysadmins
 
-2. **[ENHANCED_INSTALLERS_GUIDE.md](ENHANCED_INSTALLERS_GUIDE.md)**
+2. **[LIGHTHOUSE.md](LIGHTHOUSE.md)** 🗼
+   - Always-on access (Telegram / SMS / remote Deck) with **no tunnel**
+   - `navig lighthouse deploy` → your own Cloudflare edge (no Node, no domain)
+   - Recommended connectivity mode; see also [CLOUD.md](CLOUD.md)
+
+3. **[ENHANCED_INSTALLERS_GUIDE.md](ENHANCED_INSTALLERS_GUIDE.md)**
    - Complete walkthrough of new features
    - Step-by-step installation instructions
    - Comparison with old installers
@@ -393,4 +398,4 @@ You now have:
 
 ---
 
-**Version:** 2.0 | **Updated:** Feb 23, 2026 | **Status:** Production Ready
+**Version:** 2.9.1 | **Updated:** May 1, 2026 | **Status:** Production Ready
