@@ -149,8 +149,8 @@ NAVIG will automatically detect it in standard locations.
         self,
         script_path_or_content: Path | str,
         is_file: bool = True,
-        args: list[str] = None,
-        timeout: float = None,
+        args: list[str] | None = None,
+        timeout: float | None = None,
     ) -> ExecutionResult:
         if not self._executable:
             return ExecutionResult(False, stderr="AutoHotkey executable not found")
@@ -212,7 +212,7 @@ NAVIG will automatically detect it in standard locations.
                 duration_seconds=time.time() - start_time,
             )
 
-    def execute(self, code: str, timeout: float = None, force: bool = False) -> ExecutionResult:
+    def execute(self, code: str, timeout: float | None = None, force: bool = False) -> ExecutionResult:
         """Execute inline AHK code."""
         # Wrap in V2 requirement and provide a lightweight JSON shim for inline scripts.
         # Some inline snippets use JSON.stringify(...), which is not built into AHK v2.
@@ -272,17 +272,17 @@ NAVIG will automatically detect it in standard locations.
         return self._run_ahk_subprocess(full_code, is_file=False, timeout=timeout)
 
     def execute_file(
-        self, script_path: Path, args: list[str] = None, timeout: float = None
+        self, script_path: Path, args: list[str] | None = None, timeout: float | None = None
     ) -> ExecutionResult:
         """Execute an AHK script file."""
         return self._run_ahk_subprocess(script_path, is_file=True, args=args, timeout=timeout)
 
-    def run_detached(self, script_path: Path, args: list[str] = None) -> int:
+    def run_detached(self, script_path: Path, args: list[str] | None = None) -> int:
         """Run script in background (detached). Returns PID."""
-        if not self.executable.exists():
+        if not self._executable or not self._executable.exists():
             return 0
 
-        cmd = [str(self.executable), str(script_path)]
+        cmd = [str(self._executable), str(script_path)]
         if args:
             cmd.extend(args)
 
