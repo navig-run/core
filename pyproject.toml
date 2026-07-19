@@ -58,7 +58,7 @@ dependencies = [
   # NOT default deps — this keeps a bare `pip install navig` lean and always
   # resolvable (no unpublished packages in the base). They ship as optional
   # extras below and are delivered for the complete product by the installer /
-  # `navig store install pip:<pkg>`. See [tool.uv.sources] for local dev resolution.
+  # `navig store install pip:<pkg>`.
 ]
 
 [project.optional-dependencies]
@@ -119,8 +119,7 @@ firefox = [
 ]
 # First-party companion plugins (free, in-process engines). Optional so a bare
 # install stays lean; the installer / `navig store install pip:<pkg>` pulls them
-# for the complete product. Resolve from PyPI (once published) or from the local
-# monorepo in dev via [tool.uv.sources] below.
+# for the complete product. Resolve from PyPI (once published).
 github = ["navig-github>=0.2.0"]
 social = ["navig-social>=0.1.0"]
 download = ["navig-download>=0.1.0"]
@@ -145,19 +144,6 @@ tui = [
   "textual>=0.50.0",
 ]
 
-# Dev-only: resolve the first-party plugin extras from the local monorepo so
-# `uv lock` / `uv sync` work without the packages being on PyPI. Ignored by pip
-# and stripped from published wheel metadata — a released `navig[github]`
-# resolves the PyPI package via the `>=` specifier in the extra above.
-[tool.uv.sources]
-navig-github = { path = "../plugins/navig-github", editable = true }
-navig-social = { path = "../plugins/navig-social", editable = true }
-navig-download = { path = "../plugins/navig-download", editable = true }
-navig-generate = { path = "../plugins/navig-generate", editable = true }
-navig-audio = { path = "../plugins/navig-audio", editable = true }
-navig-antivirus = { path = "../plugins/navig-antivirus", editable = true }
-navig-games = { path = "../plugins/navig-games", editable = true }
-navig-mobile = { path = "../plugins/navig-mobile", editable = true }
 
 [project.urls]
 Homepage = "https://navig.run"
