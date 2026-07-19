@@ -15,9 +15,19 @@ from pathlib import Path
 
 from navig.platform.paths import config_dir
 
-# User-level canonical locations
-USER_NAVIG_DIR = config_dir()
-USER_WORKSPACE_DIR = USER_NAVIG_DIR / "workspace"
+
+# User-level canonical locations — resolved at CALL time (config_dir()
+# honours NAVIG_CONFIG_DIR). Frozen module constants routed the agent's
+# personal state files (SOUL.md, USER.md, MEMORY.md...) at the operator's
+# real home before test/daemon isolation applied
+# (see navig/vault/migrate.py:_legacy_db_path).
+def user_navig_dir() -> Path:
+    return config_dir()
+
+
+def user_workspace_dir() -> Path:
+    return user_navig_dir() / "workspace"
+
 
 # Project-level workspace location (legacy / discouraged for personal files)
 PROJECT_NAVIG_DIRNAME = ".navig"
@@ -90,7 +100,7 @@ def resolve_personal_workspace_path(
     Returns:
         (canonical_user_workspace, legacy_workspace_or_none)
     """
-    canonical = USER_WORKSPACE_DIR
+    canonical = user_workspace_dir()
     if requested_workspace is None:
         return canonical, None
 
@@ -130,7 +140,7 @@ def detect_project_workspace_duplicates(
     """
     root = (project_root or Path.cwd()).resolve()
     project_workspace = root / PROJECT_WORKSPACE_SUBPATH
-    user_ws = (user_workspace or USER_WORKSPACE_DIR).expanduser()
+    user_ws = (user_workspace or user_workspace_dir()).expanduser()
 
     duplicates: list[WorkspaceDuplicate] = []
     if not project_workspace.is_dir():

@@ -1,3 +1,8 @@
+navig action add
+navig action list
+navig action remove
+navig action run
+navig action show
 navig agent config
 navig agent continuation continue
 navig agent continuation pause
@@ -9,6 +14,7 @@ navig agent install
 navig agent learn
 navig agent logs
 navig agent personality
+navig agent plan
 navig agent remediation
 navig agent run
 navig agent service
@@ -19,6 +25,7 @@ navig agent stop
 navig agent telegram setup
 navig agent telegram start
 navig agent telegram status
+navig agent transcribe
 navig agents list
 navig agents run
 navig ahk activate
@@ -89,10 +96,11 @@ navig ai providers
 navig ai run
 navig ai show
 navig ai suggest
-navig alias edit
-navig alias list
-navig alias new
-navig alias run
+navig android connect
+navig android fastboot
+navig android logcat
+navig android reboot
+navig android sideload
 navig app add
 navig app edit
 navig app list
@@ -101,16 +109,15 @@ navig app remove
 navig app search
 navig app show
 navig app use
+navig apply
 navig approve list
 navig approve no
 navig approve policy
 navig approve yes
 navig ask
-navig assistant analyze
-navig assistant config
-navig assistant context
-navig assistant reset
-navig assistant status
+navig audio check
+navig audio gen
+navig audit tail
 navig auto click
 navig auto clipboard
 navig auto focus
@@ -126,7 +133,40 @@ navig backup remove
 navig backup restore
 navig backup run
 navig backup show
+navig bb bundle create
+navig bb bundle export
+navig bb bundle inspect
+navig bb capture
+navig bb clear
+navig bb crashes
+navig bb disable
+navig bb enable
+navig bb record
+navig bb seal
+navig bb status
+navig bb tail
+navig bb timeline
 navig benchmark run
+navig blackbox bundle create
+navig blackbox bundle export
+navig blackbox bundle inspect
+navig blackbox capture
+navig blackbox clear
+navig blackbox crashes
+navig blackbox disable
+navig blackbox enable
+navig blackbox record
+navig blackbox seal
+navig blackbox status
+navig blackbox tail
+navig blackbox timeline
+navig block doctor
+navig block list
+navig block new
+navig block show
+navig block sign
+navig block verify
+navig block verify-receipt
 navig blueprint apply
 navig blueprint list
 navig boot run
@@ -134,6 +174,10 @@ navig boot show
 navig bot start
 navig bot status
 navig bot stop
+navig brain prompts get
+navig brain prompts list
+navig brain prompts reload
+navig brain prompts set
 navig bridge connect
 navig bridge rotate-token
 navig bridge status
@@ -147,19 +191,42 @@ navig calendar add
 navig calendar auth
 navig calendar list
 navig calendar sync
-navig cert disable
-navig cert enable
-navig cert hestia add
-navig cert hestia list
-navig cert hestia remove
-navig cert module-disable
-navig cert module-enable
-navig cert recommend
-navig cert reload
-navig cert test
-navig cert vhosts
-navig cloud list
+navig cdp click
+navig cdp detach
+navig cdp eval
+navig cdp inject
+navig cdp key
+navig cdp launch
+navig cdp launched
+navig cdp login
+navig cdp move
+navig cdp nav
+navig cdp new
+navig cdp open
+navig cdp profile close
+navig cdp profile export
+navig cdp profile import
+navig cdp profile list
+navig cdp profile new
+navig cdp profile open
+navig cdp profile proxy
+navig cdp profile remove
+navig cdp profile use
+navig cdp screenshot
+navig cdp scroll
+navig cdp snapshot
+navig cdp status
+navig cdp stop
+navig cdp switch
+navig cdp tabs
+navig cdp targets
+navig cdp type
+navig cloud connect
+navig cloud direct
+navig cloud disconnect
+navig cloud key
 navig cloud status
+navig cloud tailscale
 navig config audit
 navig config backup
 navig config edit
@@ -173,9 +240,28 @@ navig config settings
 navig config show
 navig config test
 navig config validate
+navig connect add
+navig connect default
+navig connect detect
+navig connect doctor
+navig connect list
+navig connect login
+navig connect remove
+navig connect templates
+navig connect test
+navig connector connect
+navig connector disconnect
+navig connector fetch
+navig connector health
+navig connector list
+navig connector search
+navig connector status
 navig contacts add
 navig contacts import
 navig contacts list
+navig contacts remove
+navig contacts route
+navig contacts show
 navig context clear
 navig context init
 navig context set
@@ -197,21 +283,10 @@ navig copilot sessions view
 navig copilot status
 navig copilot suggest
 navig cortex run
+navig cost clear
+navig cost history
 navig council run
 navig crash export
-navig cred add
-navig cred audit
-navig cred clone
-navig cred delete
-navig cred disable
-navig cred edit
-navig cred enable
-navig cred list
-navig cred providers
-navig cred show
-navig cred test
-navig cred-profile list
-navig cred-profile use
 navig cron add
 navig cron disable
 navig cron enable
@@ -219,15 +294,15 @@ navig cron list
 navig cron remove
 navig cron run
 navig cron status
-navig ct add
-navig ct import
-navig ct list
 navig dashboard
-navig database list
-navig database query
 navig db dump
 navig db file
 navig db list
+navig db local backup
+navig db local cleanup
+navig db local maintenance
+navig db local migrate
+navig db local status
 navig db optimize
 navig db query
 navig db repair
@@ -237,22 +312,41 @@ navig db show
 navig db tables
 navig debug clear
 navig debug tail
-navig deck list
-navig deck new
+navig deck deploy
+navig deck dev
+navig deck open
+navig deploy check
+navig deploy history
+navig deploy init
+navig deploy rollback
+navig deploy run
+navig deploy status
 navig desktop ahk
 navig desktop click
+navig desktop crash-chrome
 navig desktop find
 navig desktop ping
 navig desktop set
 navig desktop tree
+navig devhost add
+navig devhost doctor
+navig devhost list
+navig devhost remove
+navig devhost status
+navig devhost up
 navig dispatch send
-navig dns audit
-navig dns dns
-navig dns firewall
-navig dns interfaces
-navig dns ping
-navig dns ports
-navig dns show
+navig dispatch status
+navig dispatch threads
+navig dl analyse
+navig dl batch
+navig dl comments
+navig dl download
+navig dl info
+navig dl login
+navig dl logout
+navig dl music-links
+navig dl post
+navig dl profile
 navig docker compose
 navig docker exec
 navig docker inspect
@@ -263,24 +357,22 @@ navig docker start
 navig docker stats
 navig docker stop
 navig docs
+navig doctor migrate-packs
+navig download analyse
+navig download batch
+navig download comments
+navig download download
+navig download info
+navig download login
+navig download logout
+navig download music-links
+navig download post
+navig download profile
 navig email list
 navig email search
 navig email send
 navig email setup
 navig email sync
-navig env audit
-navig env backup
-navig env edit
-navig env get
-navig env migrate
-navig env schema install
-navig env set
-navig env set-confirmation-level
-navig env set-mode
-navig env settings
-navig env show
-navig env test
-navig env validate
 navig eval run
 navig evolve fix
 navig evolve optimize
@@ -289,16 +381,22 @@ navig evolve script
 navig evolve skill
 navig evolve status
 navig evolve workflow
-navig explain command
-navig explain concept
-navig explain config
-navig farmore backup
-navig farmore clone
-navig farmore search
-navig farmore status
-navig farmore token remove
-navig farmore token set
-navig farmore token show
+navig facebook backup
+navig facebook caption
+navig facebook check
+navig facebook delete
+navig facebook delete-all
+navig facebook info
+navig facebook photos
+navig facebook set-about
+navig fb backup
+navig fb caption
+navig fb check
+navig fb delete
+navig fb delete-all
+navig fb info
+navig fb photos
+navig fb set-about
 navig fetch
 navig file add
 navig file edit
@@ -308,15 +406,10 @@ navig file remove
 navig file show
 navig finance balance
 navig finance status
-navig firewall audit
-navig firewall dns
-navig firewall firewall
-navig firewall interfaces
-navig firewall ping
-navig firewall ports
-navig firewall show
 navig flow add
+navig flow edit
 navig flow list
+navig flow remove
 navig flow run
 navig flow show
 navig flow template add
@@ -336,19 +429,130 @@ navig flux token
 navig formation agents
 navig formation init
 navig formation list
+navig formation run
 navig formation show
+navig games art
+navig games check
+navig games claim
+navig games deals list
+navig games deals notify
+navig games deals unwatch
+navig games deals watch
+navig games doctor
+navig games grab
+navig games history
+navig games library
+navig games login epic
+navig games login list
+navig games login remove
+navig games schedule disable
+navig games schedule enable
+navig games schedule status
+navig games status
+navig games steam accounts
+navig games steam auth
+navig games steam code
+navig games steam shortcuts
+navig games unify
+navig gateway restart
 navig gateway session
 navig gateway start
 navig gateway status
 navig gateway stop
 navig gateway test
-navig h list
-navig health down
-navig health health
-navig health info
-navig health logs
-navig health status
-navig health up
+navig generate analyse
+navig generate analyze
+navig generate browse
+navig generate contact-sheet
+navig generate dedupe-audio
+navig generate dedupe-files
+navig generate dedupe-images
+navig generate dedupe-video
+navig generate download
+navig generate edit
+navig generate frames
+navig generate gen
+navig generate ingest
+navig generate keep
+navig generate license
+navig generate list
+navig generate palette
+navig generate probe
+navig generate process
+navig generate redesign
+navig generate reject
+navig generate rembg
+navig generate tiktok analyse
+navig generate tiktok batch
+navig generate tiktok comments
+navig generate tiktok download
+navig generate tiktok info
+navig generate tiktok login
+navig generate tiktok logout
+navig generate tiktok music-links
+navig generate tiktok post
+navig generate tiktok profile
+navig github analytics
+navig github analytics-history
+navig github attachments
+navig github backup
+navig github clone
+navig github config-delete
+navig github config-export
+navig github config-import
+navig github config-list
+navig github config-load
+navig github config-save
+navig github delete
+navig github diff
+navig github discussions
+navig github followers
+navig github gists
+navig github issues
+navig github labels
+navig github milestones
+navig github notify-status
+navig github notify-test
+navig github org
+navig github profile
+navig github projects
+navig github pulls
+navig github releases
+navig github repo
+navig github restore-issues
+navig github restore-labels
+navig github restore-milestones
+navig github restore-releases
+navig github schedule-add
+navig github schedule-list
+navig github schedule-remove
+navig github schedule-run
+navig github search
+navig github secrets
+navig github snapshot
+navig github starred
+navig github status
+navig github template-create
+navig github template-delete
+navig github template-show
+navig github template-use
+navig github templates
+navig github token remove
+navig github token set
+navig github token show
+navig github transfer
+navig github user
+navig github verify
+navig github watched
+navig github webhooks
+navig github wiki
+navig github workflows
+navig gmail compose
+navig habit add
+navig habit list
+navig habit remove
+navig habit status
+navig habit templates
 navig heartbeat configure
 navig heartbeat history
 navig heartbeat status
@@ -362,7 +566,10 @@ navig history show
 navig history stats
 navig history undo
 navig host add
+navig host all
+navig host deploy
 navig host discover-local
+navig host firewall
 navig host list
 navig host maintenance clean
 navig host maintenance install
@@ -373,7 +580,9 @@ navig host monitor report
 navig host monitor show
 navig host security edit
 navig host security show
+navig host servers
 navig host show
+navig host status
 navig host test
 navig host use
 navig hosts add
@@ -385,6 +594,8 @@ navig inbox dry-run
 navig inbox filter
 navig inbox process-all
 navig inbox process-current
+navig inbox promote
+navig inbox reroute
 navig inbox stats
 navig inbox ui
 navig inbox watch
@@ -413,40 +624,40 @@ navig install show
 navig install status
 navig install update
 navig install upgrade
-navig job add
-navig job edit
-navig job list
-navig job remove
-navig job run
-navig job show
-navig job test
-navig key add
-navig key discover-local
-navig key list
-navig key maintenance clean
-navig key maintenance install
-navig key maintenance run
-navig key maintenance show
-navig key maintenance update
-navig key monitor report
-navig key monitor show
-navig key security edit
-navig key security show
-navig key show
-navig key test
-navig key use
+navig ios crashlogs
+navig ios dfu
+navig ios instruments
+navig ios pcap
+navig ios recovery
+navig ios syslog
 navig kg forget
 navig kg recall
 navig kg remember
 navig kg routines
 navig kg search
 navig kg status
+navig kill
 navig knowledge forget
 navig knowledge recall
 navig knowledge remember
 navig knowledge routines
 navig knowledge search
 navig knowledge status
+navig ledger reap
+navig ledger show
+navig ledger verify
+navig license paste
+navig license remove
+navig license show
+navig license status
+navig life show
+navig lighthouse deploy
+navig lighthouse disable
+navig lighthouse login
+navig lighthouse redeploy
+navig lighthouse status
+navig lighthouse url
+navig lighthouse version
 navig links add
 navig links delete
 navig links edit
@@ -465,8 +676,14 @@ navig local ports
 navig local show
 navig log run
 navig log show
-navig logs logs-cmd
+navig logs run
+navig logs show
 navig matrix accounts
+navig matrix bridge deploy
+navig matrix bridge logs
+navig matrix bridge restart
+navig matrix bridge setup
+navig matrix bridge status
 navig matrix e2ee blacklist
 navig matrix e2ee devices
 navig matrix e2ee export-keys
@@ -499,82 +716,170 @@ navig matrix store rooms
 navig matrix store stats
 navig matrix tail
 navig matrix use
+navig mcp disable
+navig mcp enable
+navig mcp install
+navig mcp install-config
 navig mcp list
-navig mcp start
-navig mcp status
+navig mcp remove
+navig mcp search
+navig mcp serve
+navig mcp tools
+navig media analyse
+navig media analyze
+navig media browse
+navig media contact-sheet
+navig media dedupe-audio
+navig media dedupe-files
+navig media dedupe-images
+navig media dedupe-video
+navig media download
+navig media edit
+navig media frames
+navig media gen
+navig media ingest
+navig media keep
+navig media license
+navig media list
+navig media palette
+navig media probe
+navig media process
+navig media redesign
+navig media reject
+navig media rembg
+navig media tiktok analyse
+navig media tiktok batch
+navig media tiktok comments
+navig media tiktok download
+navig media tiktok info
+navig media tiktok login
+navig media tiktok logout
+navig media tiktok music-links
+navig media tiktok post
+navig media tiktok profile
+navig memory approve
 navig memory bank
 navig memory clear
 navig memory clear-bank
+navig memory compact
+navig memory export
 navig memory fact-stats
 navig memory facts
 navig memory files
 navig memory forget
 navig memory history
+navig memory import
 navig memory index
 navig memory knowledge
+navig memory learn
+navig memory pending
+navig memory reject
 navig memory remember
 navig memory search
 navig memory sessions
 navig memory stats
 navig memory sync
-navig menu
+navig menu build
+navig menu doctor
+navig menu import
+navig menu organize
+navig menu run
+navig menu scan
+navig menu setup
 navig mesh peers
 navig mesh status
 navig migrate addons
 navig migrate all
 navig migrate config
 navig migrate status
+navig miniapp deploy
+navig miniapp register
+navig miniapp status
+navig miniapp unregister
+navig miniapp version
+navig mobile android connect
+navig mobile android fastboot
+navig mobile android logcat
+navig mobile android reboot
+navig mobile android sideload
+navig mobile apps
+navig mobile backup
+navig mobile battery
+navig mobile case
+navig mobile connect
+navig mobile consent
+navig mobile dev
+navig mobile devices
+navig mobile doctor
+navig mobile evidence
+navig mobile forensics
+navig mobile fs
+navig mobile info
+navig mobile ios crashlogs
+navig mobile ios dfu
+navig mobile ios instruments
+navig mobile ios pcap
+navig mobile ios recovery
+navig mobile ios syslog
+navig mobile jailbreak
+navig mobile logs
+navig mobile media
+navig mobile mirror
+navig mobile osint
+navig mobile pair
+navig mobile restore
+navig mobile root
+navig mobile scan
+navig mobile screenshot
+navig mobile storage
+navig mobile watch
 navig mode detect
+navig mode doctor
 navig mode list
 navig mode route set
 navig mode route show
 navig mode set
 navig mode show
+navig module disable
+navig module enable
+navig module info
+navig module list
+navig modules disable
+navig modules enable
+navig modules info
+navig modules list
 navig mount add
 navig mount list
 navig mount remove
 navig mount sync
 navig mount verify
+navig mstore auth
+navig mstore configure
+navig mstore creds
+navig mstore doctor
+navig mstore info
+navig mstore open
+navig mstore package
+navig mstore publish
+navig mstore show
+navig mstore status
 navig net speedtest
 navig node add
 navig node list
 navig node remove
-navig pack audit
-navig pack autoload add
-navig pack autoload list
-navig pack autoload remove
-navig pack init
-navig pack install
-navig pack list
-navig pack load
-navig pack remove
-navig pack show
-navig pack unload
-navig pack validate
-navig package audit
-navig package autoload add
-navig package autoload list
-navig package autoload remove
-navig package init
-navig package install
-navig package list
-navig package load
-navig package remove
-navig package show
-navig package unload
-navig package validate
-navig packs audit
-navig packs autoload add
-navig packs autoload list
-navig packs autoload remove
-navig packs init
-navig packs install
-navig packs list
-navig packs load
-navig packs remove
-navig packs show
-navig packs unload
-navig packs validate
+navig output-style create
+navig output-style list
+navig output-style off
+navig output-style show
+navig output-style use
+navig pipeline run
+navig pipeline schedule
+navig pipeline status
+navig pipeline telegram-import
+navig plan list
+navig plan new
+navig plan run
+navig plan show
 navig plans add
 navig plans briefing
 navig plans next
@@ -583,15 +888,39 @@ navig plans status
 navig plans summary
 navig plans sync
 navig plans update
-navig port audit
-navig port dns
-navig port firewall
-navig port interfaces
-navig port ping
-navig port ports
-navig port show
+navig plugin add
+navig plugin disable
+navig plugin enable
+navig plugin inspect
+navig plugin list
+navig plugin marketplace add
+navig plugin marketplace list
+navig plugin marketplace refresh
+navig plugin marketplace remove
+navig plugin new
+navig plugin remove
+navig plugin show
+navig plugins add
+navig plugins disable
+navig plugins enable
+navig plugins inspect
+navig plugins list
+navig plugins marketplace add
+navig plugins marketplace list
+navig plugins marketplace refresh
+navig plugins marketplace remove
+navig plugins new
+navig plugins remove
+navig plugins show
 navig portable create
 navig portable validate
+navig presence accounts
+navig presence check
+navig presence crawl
+navig presence ingest
+navig presence lint
+navig presence report
+navig presence status
 navig proactive setup
 navig proactive start
 navig proactive status
@@ -602,14 +931,10 @@ navig profile pin-set
 navig profile set
 navig profile show
 navig prompts edit
+navig prompts export
 navig prompts list
 navig prompts remove
 navig prompts show
-navig proxy auto
-navig proxy remove
-navig proxy run
-navig proxy show
-navig proxy update
 navig queue add
 navig queue cancel
 navig queue list
@@ -624,18 +949,21 @@ navig radar add
 navig radar list
 navig replay list
 navig replay run
+navig repo conflicts
+navig repo guard install
+navig repo guard status
+navig repo guard uninstall
+navig repo lock release
+navig repo lock status
+navig repo stale
 navig run
 navig scaffold apply
+navig scaffold validate
 navig script edit
 navig script list
 navig script new
 navig script run
 navig search
-navig secret delete
-navig secret get
-navig secret list
-navig secret set
-navig secret validate
 navig server list
 navig server run
 navig server show
@@ -656,30 +984,104 @@ navig service status
 navig service stop
 navig service uninstall
 navig settings
+navig signal add
+navig signal list
+navig signal presets
+navig signal remove
+navig signal rotate
+navig signal test
+navig signals add
+navig signals list
+navig signals presets
+navig signals remove
+navig signals rotate
+navig signals test
+navig skill auto
+navig skill benchmark
+navig skill create
+navig skill distill
+navig skill eval
+navig skill export
+navig skill install
+navig skill lint
+navig skill list
+navig skill new
+navig skill run
+navig skill show
+navig skill suggest
+navig skill synthesize
+navig skill tree
+navig skill validate
+navig skills auto
+navig skills benchmark
+navig skills create
+navig skills distill
+navig skills eval
+navig skills export
+navig skills install
+navig skills lint
 navig skills list
+navig skills new
 navig skills run
 navig skills show
+navig skills suggest
 navig skills synthesize
 navig skills tree
+navig skills validate
 navig snapshot create
-navig snapshot list
+navig snapshot diff
 navig snapshot restore
+navig snapshot versions
+navig social connect
+navig social disconnect
+navig social engagement
+navig social fan-out
+navig social receipts
+navig social redirect-uri
+navig social refresh
+navig social report
+navig social status
+navig social sync
 navig software list
 navig software search
+navig space audit
+navig space books
+navig space check
 navig space create
 navig space current
 navig space delete
+navig space disable
+navig space doctor
+navig space enable
+navig space forget
+navig space init
+navig space install
+navig space lint
 navig space list
 navig space new
+navig space register
 navig space switch
 navig space use
+navig space wire
+navig spaces audit
+navig spaces books
+navig spaces check
 navig spaces create
 navig spaces current
 navig spaces delete
+navig spaces disable
+navig spaces doctor
+navig spaces enable
+navig spaces forget
+navig spaces init
+navig spaces install
+navig spaces lint
 navig spaces list
 navig spaces new
+navig spaces register
 navig spaces switch
 navig spaces use
+navig spaces wire
 navig stack down
 navig stack health
 navig stack info
@@ -688,12 +1090,16 @@ navig stack status
 navig stack up
 navig start
 navig status
-navig store backup
-navig store cleanup
-navig store maintenance
-navig store migrate
+navig store disable
+navig store enable
+navig store info
+navig store install
+navig store list
+navig store open
+navig store remove
 navig store status
 navig suggest
+navig sync instructions
 navig sync status
 navig system clean
 navig system info
@@ -705,15 +1111,59 @@ navig task remove
 navig task run
 navig task show
 navig task test
+navig telegram business alerts
+navig telegram business disable
+navig telegram business emoji
+navig telegram business enable
+navig telegram business ping
+navig telegram business rights
+navig telegram business status
+navig telegram confirm
+navig telegram dedupe
+navig telegram delete
+navig telegram dialogs
+navig telegram download-media
+navig telegram folders apply
+navig telegram folders export
+navig telegram folders list
+navig telegram folders rename
+navig telegram forward
+navig telegram history sync
+navig telegram links
+navig telegram login
+navig telegram logout
+navig telegram move
+navig telegram rename
+navig telegram rename-bulk
+navig telegram search
 navig telegram send
 navig telegram sessions clear
 navig telegram sessions delete
 navig telegram sessions list
 navig telegram sessions prune
 navig telegram sessions show
+navig telegram setup
 navig telegram status
+navig telegram topics
+navig telegram-exports audit
+navig telegram-exports dedupe
+navig telegram-exports match
+navig telegram-exports organize
+navig telegram-exports verify
 navig telemetry disable
 navig telemetry enable
+navig text check
+navig text gen
+navig tiktok analyse
+navig tiktok batch
+navig tiktok comments
+navig tiktok download
+navig tiktok info
+navig tiktok login
+navig tiktok logout
+navig tiktok music-links
+navig tiktok post
+navig tiktok profile
 navig tray install
 navig tray start
 navig tray status
@@ -730,11 +1180,22 @@ navig trigger remove
 navig trigger show
 navig trigger stats
 navig trigger test
+navig tt analyse
+navig tt batch
+navig tt comments
+navig tt download
+navig tt info
+navig tt login
+navig tt logout
+navig tt music-links
+navig tt post
+navig tt profile
 navig tunnel auto
 navig tunnel remove
 navig tunnel run
 navig tunnel show
 navig tunnel update
+navig undo
 navig update check
 navig update history
 navig update nodes
@@ -745,10 +1206,29 @@ navig update status
 navig upgrade
 navig user set
 navig user show
+navig vault activate
+navig vault add
+navig vault audit
+navig vault check-all
+navig vault clone
 navig vault delete
+navig vault disable
+navig vault edit
+navig vault enable
 navig vault get
+navig vault info
 navig vault list
+navig vault login add
+navig vault login get
+navig vault login list
+navig vault login remove
+navig vault profile list
+navig vault profile use
+navig vault providers
+navig vault remove
 navig vault set
+navig vault show
+navig vault test
 navig vault validate
 navig version
 navig voice list-voices
@@ -780,6 +1260,21 @@ navig webhooks disable
 navig webhooks list
 navig webhooks test
 navig whoami
+navig wiki add
+navig wiki edit
+navig wiki inbox process
+navig wiki init
+navig wiki links broken
+navig wiki list
+navig wiki publish
+navig wiki rag add
+navig wiki rag query
+navig wiki rag rebuild
+navig wiki remove
+navig wiki search
+navig wiki show
+navig wiki sync
+navig wire
 navig work add
 navig work archive
 navig work kinds

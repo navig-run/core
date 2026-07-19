@@ -2,7 +2,7 @@
 
 import pytest
 
-from navig.llm_routing_types import (
+from navig.llm.types import (
     LLMChunk,
     LLMProviderAdapter,
     LLMResult,
@@ -119,7 +119,7 @@ class TestRoutingContext:
 class TestModeRouterProtocol:
     def test_llm_mode_router_conforms(self):
         """LLMModeRouter should conform to ModeRouterProtocol."""
-        from navig.llm_router import LLMModeRouter
+        from navig.llm.router import LLMModeRouter
 
         router = LLMModeRouter({})
         assert isinstance(router, ModeRouterProtocol)
@@ -211,7 +211,7 @@ class TestRouterEval:
     ]
 
     def test_mode_detection_eval(self):
-        from navig.llm_router import detect_mode
+        from navig.llm.router import detect_mode
 
         failures = []
         for prompt, expected_mode in self.EVAL_CASES:

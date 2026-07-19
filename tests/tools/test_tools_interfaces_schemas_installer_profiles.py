@@ -5,23 +5,24 @@ Batch 77: navig/tools/interfaces.py, navig/tools/schemas.py,
 from __future__ import annotations
 
 import asyncio
+
 import pytest
 
 # ---------------------------------------------------------------------------
 # tools/interfaces.py
 # ---------------------------------------------------------------------------
 from navig.tools.interfaces import (
+    EndState,
     EventPhase,
-    StreamStatus,
-    StreamChunk,
-    StreamFinal,
-    StreamError,
     ExecutionContext,
     ExecutionRequest,
-    EndState,
     ExecutionResult,
-    ToolSpec,
     SkillSpec,
+    StreamChunk,
+    StreamError,
+    StreamFinal,
+    StreamStatus,
+    ToolSpec,
 )
 
 
@@ -154,13 +155,13 @@ class TestSkillSpec:
 # ---------------------------------------------------------------------------
 from navig.tools.schemas import (
     ActionType,
-    ToolResultStatus,
-    ToolCallAction,
-    RespondAction,
     MultiStepAction,
+    RespondAction,
+    ToolCallAction,
     ToolResult,
-    parse_llm_action,
+    ToolResultStatus,
     format_tool_result_for_llm,
+    parse_llm_action,
 )
 
 
@@ -265,7 +266,7 @@ class TestFormatToolResultForLlm:
 # ---------------------------------------------------------------------------
 # installer/profiles.py
 # ---------------------------------------------------------------------------
-from navig.installer.profiles import PROFILE_MODULES, DEFAULT_PROFILE, VALID_PROFILES
+from navig.installer.profiles import DEFAULT_PROFILE, PROFILE_MODULES, VALID_PROFILES
 
 
 class TestInstallerProfiles:

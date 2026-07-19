@@ -11,7 +11,6 @@ import time
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/core/tokens.py
 # ---------------------------------------------------------------------------
@@ -61,17 +60,17 @@ class TestThreshold:
 
 class TestThresholdResolve:
     def test_resolves_known_metric(self) -> None:
-        from navig.core.thresholds import resolve, REGISTRY
+        from navig.core.thresholds import REGISTRY, resolve
         t = resolve("cpu_usage")
         assert t == REGISTRY["cpu_usage"]
 
     def test_falls_back_to_defaults(self) -> None:
-        from navig.core.thresholds import resolve, DEFAULTS
+        from navig.core.thresholds import DEFAULTS, resolve
         t = resolve("nonexistent_metric_xyz")
         assert t == DEFAULTS
 
     def test_all_registry_metrics_resolvable(self) -> None:
-        from navig.core.thresholds import resolve, REGISTRY
+        from navig.core.thresholds import REGISTRY, resolve
         for name in REGISTRY:
             t = resolve(name)
             assert 0 < t.warn_pct < t.crit_pct <= 100
@@ -209,7 +208,10 @@ class TestFormatRateLimitDisplay:
         assert "No rate limit data" in result
 
     def test_display_includes_provider(self) -> None:
-        from navig.core.rate_limit_tracker import parse_rate_limit_headers, format_rate_limit_display
+        from navig.core.rate_limit_tracker import (
+            format_rate_limit_display,
+            parse_rate_limit_headers,
+        )
         headers = {
             "x-ratelimit-limit-requests": "100",
             "x-ratelimit-remaining-requests": "60",
@@ -226,7 +228,10 @@ class TestFormatRateLimitDisplay:
         assert "No rate limit data" in result
 
     def test_compact_format_with_data(self) -> None:
-        from navig.core.rate_limit_tracker import parse_rate_limit_headers, format_rate_limit_compact
+        from navig.core.rate_limit_tracker import (
+            format_rate_limit_compact,
+            parse_rate_limit_headers,
+        )
         headers = {
             "x-ratelimit-limit-requests": "100",
             "x-ratelimit-remaining-requests": "75",

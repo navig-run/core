@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/boot_messages.py
 # ---------------------------------------------------------------------------
@@ -35,7 +34,7 @@ class TestGetBootMessage:
         assert len(get_boot_message()) > 0
 
     def test_message_is_one_of_variants(self) -> None:
-        from navig.boot_messages import get_boot_message, NAVIG_BOOT_MESSAGES
+        from navig.boot_messages import NAVIG_BOOT_MESSAGES, get_boot_message
         msg = get_boot_message()
         # The message starts with one of the variants
         assert any(msg.startswith(variant) for variant in NAVIG_BOOT_MESSAGES)
@@ -99,8 +98,16 @@ class TestOptionHelp:
 
     def test_standard_opts_exist(self) -> None:
         from navig.help_texts import (
-            OPT_HOST, OPT_APP, OPT_VERBOSE, OPT_QUIET, OPT_YES,
-            OPT_CONFIRM, OPT_DRY_RUN, OPT_JSON, OPT_PLAIN, OPT_FORCE,
+            OPT_APP,
+            OPT_CONFIRM,
+            OPT_DRY_RUN,
+            OPT_FORCE,
+            OPT_HOST,
+            OPT_JSON,
+            OPT_PLAIN,
+            OPT_QUIET,
+            OPT_VERBOSE,
+            OPT_YES,
         )
         opts = [OPT_HOST, OPT_APP, OPT_VERBOSE, OPT_QUIET, OPT_YES,
                 OPT_CONFIRM, OPT_DRY_RUN, OPT_JSON, OPT_PLAIN, OPT_FORCE]

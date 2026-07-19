@@ -13,6 +13,11 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Docker calls must be BOUNDED: an unresponsive docker daemon used to hang these
+# forever, and they run from the gateway's event loop.
+_DOCKER_TIMEOUT = 15.0
+_DOCKER_RESTART_TIMEOUT = 60.0
+
 # Timeout for all Matrix homeserver admin API calls.
 _MATRIX_API_TIMEOUT: float = 10.0
 _MATRIX_STATUS_TIMEOUT: float = 5.0  # Short timeout for server-type probes
@@ -128,12 +133,15 @@ class MatrixAdminClient:
 
     async def _conduit_set_registration(self, enabled: bool) -> bool:
         """Toggle registration for Conduit by updating config and restarting."""
+        import asyncio
         import subprocess
 
-        # Try local docker approach
+        # `docker exec` / `docker restart` are BLOCKING and had no timeout — a
+        # wedged container or an unresponsive docker daemon froze the whole
+        # gateway forever. Bounded, and off the event loop.
         value = "true" if enabled else "false"
-        try:
-            # Update the conduit.toml file
+
+        def _apply() -> None:
             subprocess.run(
                 [
                     "docker",
@@ -145,15 +153,20 @@ class MatrixAdminClient:
                 ],
                 check=True,
                 capture_output=True,
+                timeout=_DOCKER_TIMEOUT,
             )
             # Restart to pick up config
             subprocess.run(
                 ["docker", "restart", self.container_name],
                 check=True,
                 capture_output=True,
+                timeout=_DOCKER_RESTART_TIMEOUT,
             )
+
+        try:
+            await asyncio.to_thread(_apply)
             return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
             logger.exception("Docker restart failed for Conduit")
             return False
 

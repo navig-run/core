@@ -194,6 +194,7 @@ class TestBackoffPolicyDefaults:
 
     def test_is_frozen(self):
         import pytest
+
         from navig.retry_policy import BackoffPolicy
         p = BackoffPolicy()
         with pytest.raises((AttributeError, TypeError)):
@@ -260,6 +261,7 @@ class TestDelayMs:
 class TestDelayS:
     def test_delay_s_is_delay_ms_divided_by_1000(self):
         import math
+
         from navig.retry_policy import BackoffPolicy
         p = BackoffPolicy(initial_ms=2000, max_ms=60_000, factor=2.0, jitter=0.0)
         assert math.isclose(p.delay_s(0), p.delay_ms(0) / 1000.0)

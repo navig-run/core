@@ -29,12 +29,26 @@ except ImportError:
 from navig.core.yaml_io import atomic_write_text
 from navig.platform import paths
 
-NAVIG_HOME = paths.config_dir()
-LOG_DIR = NAVIG_HOME / "logs"
-DAEMON_DIR = NAVIG_HOME / "daemon"
 SERVICE_NAME = "NavigDaemon"
 TASK_NAME = "NAVIG Daemon"
 SYSTEMD_UNIT = "navig-agent"  # Linux systemd unit name
+
+
+# Paths are resolved at CALL time (config_dir() honours NAVIG_CONFIG_DIR) —
+# frozen module constants would point service install/stop state at the real
+# user home before test/daemon isolation applies
+# (see navig/vault/migrate.py:_legacy_db_path).
+def _navig_home() -> Path:
+    return paths.config_dir()
+
+
+def _log_dir() -> Path:
+    return _navig_home() / "logs"
+
+
+def daemon_dir() -> Path:
+    """Public call-time resolver for the daemon state directory."""
+    return _navig_home() / "daemon"
 
 
 def _python_exe() -> str:
@@ -57,8 +71,8 @@ def _daemon_command(*, windowless: bool = True) -> list[str]:
 
 
 def _ensure_dirs() -> None:
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    DAEMON_DIR.mkdir(parents=True, exist_ok=True)
+    _log_dir().mkdir(parents=True, exist_ok=True)
+    daemon_dir().mkdir(parents=True, exist_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -71,19 +85,20 @@ def _ensure_dirs() -> None:
 # `navig service start` or spawn the daemon directly are blocked until a
 # deliberate `navig service start` clears it.
 
-_STOP_FLAG_FILE = DAEMON_DIR / "stop_requested"
-_WATCHDOG_DEADLINE_FILE = DAEMON_DIR / "stop_watchdog_deadline"
-
-
 def _stop_flag_path() -> Path:
-    return _STOP_FLAG_FILE
+    return daemon_dir() / "stop_requested"
+
+
+def _watchdog_deadline_path() -> Path:
+    return daemon_dir() / "stop_watchdog_deadline"
 
 
 def set_stop_flag() -> None:
     """Create the stop-intent flag so the daemon refuses to auto-restart."""
     try:
-        _STOP_FLAG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(_STOP_FLAG_FILE, "1")
+        flag = _stop_flag_path()
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(flag, "1")
     except Exception:  # noqa: BLE001
         pass  # best-effort; never block the stop path
 
@@ -91,14 +106,14 @@ def set_stop_flag() -> None:
 def clear_stop_flag() -> None:
     """Remove the stop-intent flag so the daemon is allowed to start."""
     try:
-        _STOP_FLAG_FILE.unlink(missing_ok=True)
+        _stop_flag_path().unlink(missing_ok=True)
     except Exception:  # noqa: BLE001
         pass
 
 
 def stop_flag_is_set() -> bool:
     """Return True if a deliberate stop has been requested."""
-    return _STOP_FLAG_FILE.exists()
+    return _stop_flag_path().exists()
 
 
 # ---------------------------------------------------------------------------
@@ -116,8 +131,9 @@ def set_watchdog_deadline(seconds: int = 30) -> None:
     import time as _time
 
     try:
-        _WATCHDOG_DEADLINE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(_WATCHDOG_DEADLINE_FILE, str(_time.time() + seconds))
+        deadline = _watchdog_deadline_path()
+        deadline.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(deadline, str(_time.time() + seconds))
     except Exception:  # noqa: BLE001
         pass
 
@@ -125,7 +141,7 @@ def set_watchdog_deadline(seconds: int = 30) -> None:
 def clear_watchdog_deadline() -> None:
     """Delete the watchdog deadline file, causing the watchdog to exit on its next tick."""
     try:
-        _WATCHDOG_DEADLINE_FILE.unlink(missing_ok=True)
+        _watchdog_deadline_path().unlink(missing_ok=True)
     except Exception:  # noqa: BLE001
         pass
 
@@ -138,7 +154,7 @@ def watchdog_deadline_active() -> bool:
     import time as _time
 
     try:
-        val = float(_WATCHDOG_DEADLINE_FILE.read_text(encoding="utf-8").strip())
+        val = float(_watchdog_deadline_path().read_text(encoding="utf-8").strip())
         return _time.time() < val
     except Exception:  # noqa: BLE001
         return False
@@ -186,7 +202,7 @@ def nssm_install(start_now: bool = True) -> tuple[bool, str]:
         )
         # Set working directory
         subprocess.run(
-            ["nssm", "set", SERVICE_NAME, "AppDirectory", str(NAVIG_HOME)],
+            ["nssm", "set", SERVICE_NAME, "AppDirectory", str(_navig_home())],
             capture_output=True,
         )
         # Description
@@ -212,7 +228,7 @@ def nssm_install(start_now: bool = True) -> tuple[bool, str]:
                 "set",
                 SERVICE_NAME,
                 "AppStdout",
-                str(LOG_DIR / "service.stdout.log"),
+                str(_log_dir() / "service.stdout.log"),
             ],
             capture_output=True,
         )
@@ -222,7 +238,7 @@ def nssm_install(start_now: bool = True) -> tuple[bool, str]:
                 "set",
                 SERVICE_NAME,
                 "AppStderr",
-                str(LOG_DIR / "service.stderr.log"),
+                str(_log_dir() / "service.stderr.log"),
             ],
             capture_output=True,
         )
@@ -231,8 +247,15 @@ def nssm_install(start_now: bool = True) -> tuple[bool, str]:
             ["nssm", "set", SERVICE_NAME, "AppExit", "Default", "Restart"],
             capture_output=True,
         )
-        # Environment: pass current env + NAVIG markers
-        env_str = f"NAVIG_SERVICE=1\nNAVIG_HOME={NAVIG_HOME}"
+        # Environment: pass current env + NAVIG markers.
+        # NAVIG_CONFIG_DIR is the CANONICAL var config_dir() (and vault, gateway.json, the
+        # single-instance/supersede scoping — everything downstream) reads; NAVIG_HOME is a
+        # legacy alias only memory/paths + theme honour. Writing NAVIG_HOME alone split the
+        # daemon: with a custom install home, config_dir() fell back to the default ~/.navig
+        # while memory followed NAVIG_HOME. Both are written to the SAME value, so every
+        # reader resolves the same home and no divergence is possible.
+        _home = _navig_home()
+        env_str = f"NAVIG_SERVICE=1\nNAVIG_CONFIG_DIR={_home}\nNAVIG_HOME={_home}"
         subprocess.run(
             ["nssm", "set", SERVICE_NAME, "AppEnvironmentExtra", env_str],
             capture_output=True,
@@ -313,7 +336,7 @@ def _schtasks_xml() -> str:
     <Exec>
       <Command>{python}</Command>
       <Arguments>{args}</Arguments>
-      <WorkingDirectory>{NAVIG_HOME}</WorkingDirectory>
+      <WorkingDirectory>{_navig_home()}</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>"""
@@ -322,7 +345,7 @@ def _schtasks_xml() -> str:
 def task_scheduler_install(start_now: bool = True) -> tuple[bool, str]:
     """Install via Windows Task Scheduler (no admin needed)."""
     _ensure_dirs()
-    xml_path = DAEMON_DIR / "navig-task.xml"
+    xml_path = daemon_dir() / "navig-task.xml"
     xml_path.write_text(_schtasks_xml(), encoding="utf-16")
 
     try:
@@ -462,8 +485,8 @@ def _systemd_unit_path(user: bool = False) -> Path:
 def _systemd_unit_content(user: bool = False) -> str:
     """Generate a systemd unit file for the NAVIG agent daemon."""
     python = _python_exe()
-    home = str(NAVIG_HOME)
-    log_path = str(LOG_DIR / "daemon.log")
+    home = str(_navig_home())
+    log_path = str(_log_dir() / "daemon.log")
 
     unit = f"""[Unit]
 Description=NAVIG Agent Daemon
@@ -480,6 +503,7 @@ RestartSec=10
 StandardOutput=append:{log_path}
 StandardError=append:{log_path}
 Environment=NAVIG_SERVICE=1
+Environment=NAVIG_CONFIG_DIR={home}
 Environment=NAVIG_HOME={home}
 """
     if not user:

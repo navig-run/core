@@ -2,7 +2,7 @@
 Console Helper - Centralized Rich formatting utilities
 
 Provides consistent, beautiful terminal output across all NAVIG commands.
-The Schema's visual language for encrypted operations.
+NAVIG's visual language for operator-grade output.
 
 Performance note: ALL Rich imports are deferred until actually needed
 to improve CLI startup time (~120 ms saved).
@@ -181,7 +181,7 @@ def __getattr__(name: str):
 
 
 # ============================================================================
-# COLOR SCHEME (Schema Standard)
+# COLOR SCHEME (NAVIG Standard)
 # ============================================================================
 
 
@@ -282,6 +282,17 @@ def dim(message: str):
     console.print(f"[{Colors.DIM}]{message}[/{Colors.DIM}]")
 
 
+def kv(label: str, value: object, indent: int = 2):
+    """Print one aligned ``label: value`` detail line.
+
+    Callers were already using ``ch.kv(...)`` — it just did not exist, so every
+    one of those lines raised AttributeError the moment it ran. It is a real
+    primitive (detail views print rows of these), so it exists now rather than
+    being rewritten away at each call site.
+    """
+    console.print(f"{' ' * indent}[{Colors.DIM}]{label}:[/{Colors.DIM}] {value}")
+
+
 def _redact_raw_output(text: str) -> str:
     """Redact sensitive key=value patterns from text before raw output."""
     from navig.core.security import redact_sensitive_text
@@ -292,6 +303,44 @@ def _redact_raw_output(text: str) -> str:
 def raw_print(message: str):
     """Print raw text without formatting (for --raw flag)."""
     print(_redact_raw_output(str(message)))
+
+
+def emit_json(
+    data: object,
+    *,
+    indent: int | None = 2,
+    sort_keys: bool = False,
+    ensure_ascii: bool = True,
+    default: object = str,
+) -> None:
+    """Machine-readable JSON to stdout — THE approved emitter for ``--json`` output.
+
+    Writes exactly ``json.dumps(data) + "\\n"`` via builtin ``print``: no Rich
+    console, so no markup interpretation, no width-dependent wrapping, no color.
+
+    Never route ``--json`` payloads through the Rich console:
+    ``console.print(json.dumps(...))`` hard-wraps at the console width (80 when
+    piped), inserting newlines inside string values — the output no longer
+    parses. ``print_json`` below (Rich Syntax, ``word_wrap=True``) wraps the
+    same way. Both corruptions are invisible on short payloads and only bite
+    when a value grows past the terminal width, in the consumer's parser.
+
+    In ``--json`` mode stdout belongs to the payload: exactly one document,
+    parseable by ``json.loads``; narration goes to stderr or is suppressed.
+    ``tests/cli/test_json_stdout_tripwire.py`` enforces this for every verb
+    that declares ``--json`` in the command schema.
+    """
+    import json
+
+    print(
+        json.dumps(
+            data,
+            indent=indent,
+            sort_keys=sort_keys,
+            ensure_ascii=ensure_ascii,
+            default=default,  # type: ignore[arg-type]
+        )
+    )
 
 
 # ============================================================================
@@ -533,7 +582,12 @@ def print_code(
 
 
 def print_json(data: dict | list, indent: int = 2):
-    """Print JSON with syntax highlighting."""
+    """Print JSON with syntax highlighting — for HUMAN display only.
+
+    Renders through Rich Syntax with ``word_wrap=True``, which hard-wraps long
+    lines at the console width: the output is pretty but NOT reliably
+    parseable once piped. For ``--json`` output use :func:`emit_json`.
+    """
     import json
 
     json_str = json.dumps(data, indent=indent)

@@ -153,14 +153,17 @@ async def build_away_summary(
             except Exception:  # noqa: BLE001
                 pass
 
-        # LLM call — effort=low → fast, cheap, non-blocking
-        from navig.llm_generate import run_llm
+        # LLM call — effort=low → fast, cheap. run_llm is SYNC, so offload it off
+        # the gateway event loop (a direct call freezes the whole daemon).
+        import asyncio
+
+        from navig.llm.generate import run_llm
 
         messages = [
             {"role": "system", "content": system_content},
             *truncated,
         ]
-        result = run_llm(messages, mode="summary", effort="low")
+        result = await asyncio.to_thread(run_llm, messages, mode="summary", effort="low")
         summary = (result.content or "").strip()
 
         return summary if summary else None

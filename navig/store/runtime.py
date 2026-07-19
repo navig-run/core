@@ -28,8 +28,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from navig.store.base import BaseStore, _utcnow
 from navig.platform.paths import config_dir
+from navig.store.base import BaseStore, _utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -511,12 +511,23 @@ class RuntimeStore(BaseStore):
     def increment_reminder_retry(
         self, reminder_id: int, reschedule_seconds: int = 60
     ) -> None:
-        """Increment retry_count and push remind_at forward by *reschedule_seconds*."""
+        """Increment retry_count and push remind_at forward by *reschedule_seconds*.
+
+        ``remind_at`` MUST be written in the same ISO-8601 'T'/'Z' shape the rest of the
+        lifecycle uses (``create_reminder`` → ``isoformat()``; the readers compare against
+        ``_utcnow()``). SQLite's ``datetime('now', …)`` returns a *space-separated*,
+        Z-less string ("2026-07-19 15:31:00"); since ``remind_at`` comparisons are plain
+        string compares, at column 10 that space (0x20) sorts *before* the readers' 'T'
+        (0x54), so a freshly-rescheduled reminder looked ``<= now`` (due immediately) —
+        the backoff was ignored, retries fired every poll tick, and a transient failure
+        burned all retries in seconds and dropped the reminder. strftime keeps the shape
+        homogeneous.
+        """
         self._write(
             """
             UPDATE reminders
             SET retry_count = retry_count + 1,
-                remind_at   = datetime('now', ? || ' seconds')
+                remind_at   = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ? || ' seconds')
             WHERE id = ?
             """,
             (str(reschedule_seconds), reminder_id),
@@ -699,19 +710,30 @@ class RuntimeStore(BaseStore):
     def prune(
         self, command_log_days: int = 30, interaction_days: int = 30
     ) -> dict[str, int]:
-        """Purge old data. Returns counts deleted."""
+        """Purge old data. Returns counts deleted.
+
+        Same ISO-shape threshold rule as ``increment_reminder_retry`` (see its note): the
+        columns are stored 'T'/'Z' (``strftime`` DEFAULT / ``isoformat()``), so a
+        ``datetime('now', …)`` cutoff mis-compared here too. Here the direction was
+        *safe* — a boundary-date row sorts greater, so ``<`` under-deleted (kept rows up
+        to a day longer) and never dropped one it should keep — but strftime makes the
+        retention cutoff exact and keeps every threshold in this store homogeneous.
+        """
         deleted = {}
         deleted["command_log"] = self._write(
-            "DELETE FROM command_log WHERE executed_at < datetime('now', ? || ' days')",
+            "DELETE FROM command_log "
+            "WHERE executed_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ? || ' days')",
             (str(-command_log_days),),
         ).rowcount
         deleted["interactions"] = self._write(
-            "DELETE FROM interactions WHERE timestamp < datetime('now', ? || ' days')",
+            "DELETE FROM interactions "
+            "WHERE timestamp < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ? || ' days')",
             (str(-interaction_days),),
         ).rowcount
         deleted["cache"] = self.cache_clear_expired()
         deleted["reminders"] = self._write(
-            "DELETE FROM reminders WHERE completed = 1 AND remind_at < datetime('now', '-30 days')",
+            "DELETE FROM reminders WHERE completed = 1 "
+            "AND remind_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-30 days')",
             (),
         ).rowcount
         return deleted

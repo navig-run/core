@@ -110,6 +110,7 @@ def _register_node(gw: NavigGateway):
             node = Node.from_dict(body)
             store = get_runtime_store()
             registered = store.register_node(node)
+            store.flush()
             return json_ok(registered.to_dict(), status=201)
         except (KeyError, ValueError, TypeError) as exc:
             logger.warning("register_node error: %s", exc)
@@ -202,6 +203,7 @@ def _create_mission(gw: NavigGateway):
             mission = Mission.from_dict(body)
             store = get_runtime_store()
             created = store.create_mission(mission)
+            store.flush()
             return json_ok(created.to_dict(), status=201)
         except (KeyError, ValueError, TypeError) as exc:
             logger.warning("create_mission error: %s", exc)
@@ -272,6 +274,7 @@ def _advance_mission(gw: NavigGateway):
             logger.error("advance_mission error: %s", exc)
             return json_error_response("Internal error", status=500, code="internal_error")
 
+        store.flush()
         return json_ok(updated.to_dict())
 
     return h
@@ -318,6 +321,7 @@ def _complete_mission(gw: NavigGateway):
             logger.error("complete_mission error: %s", exc)
             return json_error_response("Internal error", status=500, code="internal_error")
 
+        store.flush()
         return json_ok(receipt.to_dict(), status=201)
 
     return h

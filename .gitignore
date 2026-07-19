@@ -339,9 +339,15 @@ host/*.exe
 # Community stub folder (separate repo at navig-community/)
 navig-community/
 
-# Runtime store - live content lives in ~/.navig/store/, not in VCS
-store/
-store/.dev/
+# There is NO `store/` ignore rule any more, on purpose. A bare `store/` used to sit
+# here to keep "runtime store" content out of VCS — but the runtime store lives in
+# ~/.navig/data/store (see platform.paths.store_dir), never in the repo. All the rule
+# ever did was SILENTLY swallow tracked content:
+#   * `navig/store/` (BaseStore source code) had to be rescued with a !negation;
+#   * 13 authored builtin blocks were dropped by `git add` and never shipped.
+# The built-in content store is now navig/builtin/ (tracked, and shipped in the wheel
+# via package-data). Do not re-add a bare `store/` rule.
+navig/store/**/__pycache__/
 
 # icons/ was moved to .navig/brand/ (tracked); ignore any root-level recreation
 icons/
@@ -384,3 +390,28 @@ tools/license_keys/
 # scratch / one-off dev files — never commit
 .tmp_*
 fix_aiohttp.ps1
+
+# ===============================================
+# navig-os workspace scaffold (runtime state — NEVER commit)
+# ===============================================
+# When navig-os (apps/os) manages a directory as a "workspace" it scaffolds this exact
+# set of files/dirs at the workspace root — config.json (workspace metadata), events.jsonl
+# (automation log), a statuses/ + labels/ task system, skills/, and a .claude-plugin/
+# marker. Pointing navig-os at core/ (which is the Python package, NOT a workspace) littered
+# these here as untracked files that clutter every `git status`. The repo root already
+# ignores the same set (root .gitignore); these rules are the core/-scoped mirror. None of
+# these names is a legitimate core file — core's real config is pyproject.toml.
+/config.json
+/events.jsonl
+/install.json
+/views.json
+/labels/
+/statuses/
+/sources/
+/skills/
+/.claude-plugin/
+/.inbox
+/.agents
+/plans/
+/AGENTS.md
+/GEMINI.md

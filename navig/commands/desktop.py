@@ -11,6 +11,7 @@ Commands:
   navig desktop set <handle> <value>   Set element value (requires --confirm).
   navig desktop tree                   Dump the UI element tree.
   navig desktop ahk <script|filepath>  Run an AHK script (requires --confirm).
+  navig desktop crash-chrome           Crash all Chrome tabs+extensions, keep the browser (frees RAM).
 """
 
 from __future__ import annotations
@@ -56,17 +57,18 @@ class _DesktopClient:
     """
 
     def __init__(self) -> None:
+        # The agent backend is a source-tree host component (host/internal/desktop), not
+        # Python package data — it is absent from every installed navig. Fail with that,
+        # rather than Popen-ing a path that does not exist: python then starts, prints
+        # "can't open file", and closes stdout, so the user saw the useless
+        # "agent closed stdout unexpectedly" instead of being told what was wrong.
         agent_script = (
             Path(__file__).parent.parent.parent / "host" / "internal" / "desktop" / "agent.py"
         )
         if not agent_script.exists():
-            # Try relative to package install
-            agent_script = (
-                Path(__file__).parent.parent.parent.parent
-                / "host"
-                / "internal"
-                / "desktop"
-                / "agent.py"
+            raise _AgentError(
+                f"desktop agent backend not found at {agent_script} — `navig desktop` needs "
+                "the host component, which ships only with a source checkout."
             )
 
         python_exe = os.environ.get("NAVIG_PYTHON_PATH", sys.executable)
@@ -282,6 +284,65 @@ def desktop_set(
         raise typer.Exit(1) from exc
     finally:
         client.close()
+
+
+@desktop_app.command("crash-chrome")
+def desktop_crash_chrome(
+    confirm: bool = typer.Option(
+        False, "--confirm", "-y", help="Skip the interactive confirmation."
+    ),
+    extensions: bool = typer.Option(
+        True,
+        "--extensions/--no-extensions",
+        help="Also crash extension processes (default: yes).",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Output raw JSON."),
+) -> None:
+    """Crash all Chrome tabs + extensions to reclaim RAM — without closing the browser.
+
+    Kills every Chrome *renderer* process (each open tab and each extension host is one
+    renderer) while leaving the main browser process, GPU, and network service alive.
+    The Chrome window stays open; crashed tabs show "Aw, Snap!" and reload on click
+    (Ctrl+Shift+T restores them). Frees the memory the tabs/extensions were holding.
+
+    Cross-platform Chrome logic is reused from navig.commands.processes.
+    """
+    if sys.platform != "win32":
+        typer.echo("error: navig desktop is Windows only", err=True)
+        raise typer.Exit(1)
+
+    from navig.commands.processes import find_chrome_renderers, kill_processes
+
+    procs = find_chrome_renderers(include_extensions=extensions)
+    if not procs:
+        if json_output:
+            typer.echo(json.dumps({"crashed": 0, "message": "no Chrome renderers found"}))
+        else:
+            typer.echo("  No Chrome renderer processes found (is Chrome running?).")
+        return
+
+    if not confirm:
+        typer.confirm(
+            f"Crash {len(procs)} Chrome renderer(s) "
+            f"(tabs{'+extensions' if extensions else ''})? The browser stays open.",
+            abort=True,
+        )
+
+    report = kill_processes(procs, force=True, exclude_self=True)
+    result = {
+        "crashed": len(report.get("killed", [])),
+        "failed": len(report.get("failed", [])),
+        "skipped": len(report.get("skipped", [])),
+        "extensions": extensions,
+        "note": "browser left running — Ctrl+Shift+T restores crashed tabs",
+    }
+    if json_output:
+        typer.echo(json.dumps(result, indent=2, default=str))
+    else:
+        typer.echo(
+            f"  Crashed {result['crashed']} Chrome renderer(s) "
+            f"(failed {result['failed']}). Browser still open — Ctrl+Shift+T to restore tabs."
+        )
 
 
 @desktop_app.command("tree")

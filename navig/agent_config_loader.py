@@ -31,7 +31,7 @@ try:
 except ImportError:
     PYDANTIC_OK = False
 
-from navig.llm_router import CANONICAL_MODES
+from navig.llm.router import CANONICAL_MODES
 
 # ─────────────────────────────────────────────────────────────
 # Pydantic Schema

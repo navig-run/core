@@ -10,7 +10,6 @@ import pytest
 from navig.cli.launcher import get_domain_commands, smart_launch
 from navig.cli.selector import CommandEntry
 
-
 # ── helpers ──────────────────────────────────────────────────
 
 

@@ -21,6 +21,7 @@ import sys
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from rich.align import Align
@@ -109,11 +110,23 @@ TENTACLE_TIPS = [
 from navig._daemon_defaults import _GATEWAY_PORT
 from navig.platform.paths import config_dir as _config_dir
 
-NAVIG_HOME = _config_dir()
-DAEMON_PID_FILE = NAVIG_HOME / "daemon" / "supervisor.pid"
-DAEMON_STATE_FILE = NAVIG_HOME / "daemon" / "state.json"
-TUNNELS_FILE = NAVIG_HOME / "cache" / "tunnels.json"
 GATEWAY_PORT = _GATEWAY_PORT
+
+
+# State-file paths are resolved at CALL time (config_dir() honours
+# NAVIG_CONFIG_DIR) — frozen module constants would read the operator's real
+# daemon state before test/daemon isolation applies
+# (see navig/vault/migrate.py:_legacy_db_path).
+def _daemon_pid_file() -> Path:
+    return _config_dir() / "daemon" / "supervisor.pid"
+
+
+def _daemon_state_file() -> Path:
+    return _config_dir() / "daemon" / "state.json"
+
+
+def _tunnels_file() -> Path:
+    return _config_dir() / "cache" / "tunnels.json"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -155,9 +168,10 @@ def _check_pid_alive(pid: int) -> bool:
 def _detect_daemon_status() -> dict[str, Any]:
     """Detect NAVIG daemon supervisor status."""
     info = {"status": "stopped", "pid": None, "children": []}
-    if DAEMON_PID_FILE.exists():
+    pid_file = _daemon_pid_file()
+    if pid_file.exists():
         try:
-            pid = int(DAEMON_PID_FILE.read_text().strip())
+            pid = int(pid_file.read_text(encoding="utf-8").strip())
             if _check_pid_alive(pid):
                 info["status"] = "running"
                 info["pid"] = pid
@@ -167,9 +181,10 @@ def _detect_daemon_status() -> dict[str, Any]:
         except (ValueError, OSError):
             pass  # best-effort cleanup
 
-    if DAEMON_STATE_FILE.exists():
+    state_file = _daemon_state_file()
+    if state_file.exists():
         try:
-            state = json.loads(DAEMON_STATE_FILE.read_text())
+            state = json.loads(state_file.read_text(encoding="utf-8"))
             info["children"] = state.get("children", [])
             info["started_at"] = state.get("started_at")
         except Exception:  # noqa: BLE001
@@ -198,18 +213,25 @@ def _detect_child_status(daemon_info: dict[str, Any], child_name: str) -> dict[s
 
 
 def _detect_gateway_status() -> dict[str, Any]:
-    """Detect NAVIG Gateway status via port check."""
-    if _check_port(GATEWAY_PORT):
-        return {"status": "running", "port": GATEWAY_PORT}
-    return {"status": "stopped", "port": GATEWAY_PORT}
+    """Detect NAVIG Gateway status via port check (live-resolved port)."""
+    try:
+        from navig.gateway_client import gateway_live_defaults
+
+        port = gateway_live_defaults()[0]
+    except Exception:  # noqa: BLE001
+        port = GATEWAY_PORT
+    if _check_port(port):
+        return {"status": "running", "port": port}
+    return {"status": "stopped", "port": port}
 
 
 def _detect_tunnels() -> list[dict[str, Any]]:
     """Load active SSH tunnels from cache."""
-    if not TUNNELS_FILE.exists():
+    tunnels_file = _tunnels_file()
+    if not tunnels_file.exists():
         return []
     try:
-        data = json.loads(TUNNELS_FILE.read_text())
+        data = json.loads(tunnels_file.read_text(encoding="utf-8"))
         tunnels = []
         for name, info in data.items():
             pid = info.get("pid")

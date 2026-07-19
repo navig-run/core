@@ -15,7 +15,7 @@ import yaml
 from navig import console_helper as ch
 from navig.config import ConfigManager, get_config_manager
 from navig.core.dict_utils import deep_merge
-from navig.core.yaml_io import atomic_write_yaml
+from navig.core.yaml_io import atomic_write_yaml, load_yaml_for_update
 from navig.template_manager import TemplateManager
 
 
@@ -309,8 +309,9 @@ class ServerTemplateManager:
 
         custom_config = {}
         if yaml_config_file.exists():
-            with open(yaml_config_file, encoding="utf-8") as f:
-                custom_config = yaml.safe_load(f) or {}
+            # Read-modify-write through the shared guard — refuses an unreadable-but-
+            # populated template instead of overwriting it with {} (config-wipe class).
+            custom_config = load_yaml_for_update(yaml_config_file)
         elif json_config_file.exists():
             # Migrate from JSON to YAML
             with open(json_config_file, encoding="utf-8") as f:

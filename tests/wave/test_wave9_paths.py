@@ -95,12 +95,15 @@ def test_get_memory_dir_respects_data_env(tmp_path, monkeypatch):
 
 
 def test_ipc_promoted_flag_respects_config_env(tmp_path, monkeypatch):
-    """`_PROMOTED_FLAG` must sit inside NAVIG_CONFIG_DIR when env is set."""
+    """`_promoted_flag()` must resolve inside NAVIG_CONFIG_DIR at CALL time.
+
+    Import FIRST, then set the env — the pre-fix module-level constant froze
+    the path at import and failed exactly this.
+    """
+    import navig.ipc_pipe as ipc_mod
+
     custom = tmp_path / "cfg"
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(custom))
 
-    import navig.ipc_pipe as ipc_mod
-
-    importlib.reload(ipc_mod)
-
-    assert ipc_mod._PROMOTED_FLAG == custom / ".ipc_promoted"
+    assert ipc_mod._promoted_flag() == custom / ".ipc_promoted"
+    assert ipc_mod._shadow_log() == custom / "shadow_ipc_anomalies.log"

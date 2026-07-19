@@ -131,7 +131,9 @@ class ChatMemoryStore:
         max_context_tokens: int = _DEFAULT_MAX_CONTEXT_TOKENS,
     ) -> None:
         if base_dir is None:
-            base_dir = Path("~/.navig/memory").expanduser()
+            from navig.platform.paths import config_dir  # noqa: PLC0415
+
+            base_dir = config_dir() / "memory"
         self._dir = Path(base_dir) / str(chat_id)
         self._transcript = self._dir / _TRANSCRIPT_FILENAME
         self._notes = self._dir / _NOTES_FILENAME

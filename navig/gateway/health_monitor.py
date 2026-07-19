@@ -166,6 +166,18 @@ class ChannelHealthMonitor:
         if not is_running:
             return
 
+        # Webhook-mode channels have no long-lived polling connection that this
+        # monitor can keep warm. Telegram pushes updates to the edge → gateway;
+        # the channel only stamps _last_event_at when traffic actually arrives.
+        # For a quiet bot that means perpetual "silence", which is NORMAL, not a
+        # wedged connection — and restarting only deletes/re-sets the webhook
+        # (dropping pending updates) and re-registers commands. Event-silence
+        # staleness does not apply here, so skip it. (A real webhook-health check
+        # via getWebhookInfo.last_error_date would be the right signal — separate
+        # additive feature, out of scope for staleness detection.)
+        if getattr(channel, "_use_webhook", False):
+            return
+
         # Startup grace: skip for a short window after the channel first saw events
         idle_s = now - last_event_at
         if idle_s < self._startup_grace_s:

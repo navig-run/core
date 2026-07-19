@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.spaces.resolver
 # ---------------------------------------------------------------------------
@@ -44,8 +43,8 @@ class TestFindProjectNavigRoot:
 
 class TestResolveSpace:
     def test_resolves_global_when_no_project(self, tmp_path):
-        from navig.spaces.resolver import resolve_space
         from navig.platform import paths as pths
+        from navig.spaces.resolver import resolve_space
         global_spaces = tmp_path / "config" / "spaces"
         global_spaces.mkdir(parents=True)
         with (
@@ -56,8 +55,8 @@ class TestResolveSpace:
         assert cfg.canonical_name == "devops"
 
     def test_resolves_project_space_when_exists(self, tmp_path):
-        from navig.spaces.resolver import resolve_space
         from navig.platform import paths as pths
+        from navig.spaces.resolver import resolve_space
         navig_dir = tmp_path / ".navig"
         project_spaces = navig_dir / "spaces" / "devops"
         project_spaces.mkdir(parents=True)
@@ -69,8 +68,8 @@ class TestResolveSpace:
         assert cfg.path == project_spaces
 
     def test_requested_name_preserved(self, tmp_path):
-        from navig.spaces.resolver import resolve_space
         from navig.platform import paths as pths
+        from navig.spaces.resolver import resolve_space
         with patch.object(pths, "config_dir", return_value=tmp_path / "config"):
             cfg = resolve_space("ops", cwd=tmp_path)
         assert cfg.requested_name == "ops"
@@ -131,8 +130,9 @@ class TestCompletionFromMarkdown:
 
 class TestFormatSpacesProgressLines:
     def _make_progress(self, name="test", scope="global", completion=50.0, goal="Do stuff"):
-        from navig.spaces.progress import SpaceProgress
         from pathlib import Path
+
+        from navig.spaces.progress import SpaceProgress
         return SpaceProgress(
             name=name, scope=scope, path=Path("/tmp"),
             goal=goal, completion_pct=completion, last_updated="2024-01-01"

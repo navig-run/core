@@ -12,7 +12,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # bot/start_menu — build_main_menu
 # ---------------------------------------------------------------------------
-
 from navig.bot.start_menu import build_main_menu, build_section, get_action_info
 
 

@@ -103,10 +103,13 @@ def _scan_inbox_entries(project_root: Path) -> list[tuple[Path, str | None]]:
         (project_root / ".navig" / "wiki" / "inbox", None),
         (project_root / ".navig" / "plans" / "inbox", None),
     ]
+    # The global inbox lives at `data_dir()/inbox` (navig/inbox/watcher.py). This imported a
+    # nonexistent `navig_data_dir`, so the try always failed into `pass` — the deck inbox
+    # view NEVER included the global inbox at all.
     try:
-        from navig.platform.paths import navig_data_dir
+        from navig.platform.paths import data_dir
 
-        sources.append((navig_data_dir() / "inbox", None))
+        sources.append((data_dir() / "inbox", None))
     except Exception:
         pass
     sources.extend(_space_inbox_dirs())
@@ -129,6 +132,47 @@ def _scan_inbox_entries(project_root: Path) -> list[tuple[Path, str | None]]:
 def _scan_inbox_dirs(project_root: Path) -> list[Path]:
     """Back-compat: just the un-routed files, without space attribution."""
     return [f for f, _ in _scan_inbox_entries(project_root)]
+
+
+def _inbox_dirs(project_root: Path) -> list[Path]:
+    """The dirs the inbox scan reads — the ONLY places a source file may legitimately live.
+    Mirrors the sources in _scan_inbox_entries."""
+    dirs = [
+        project_root / ".navig" / "wiki" / "inbox",
+        project_root / ".navig" / "plans" / "inbox",
+    ]
+    try:
+        from navig.platform.paths import data_dir
+
+        dirs.append(data_dir() / "inbox")
+    except Exception:
+        pass
+    dirs.extend(d for d, _ in _space_inbox_dirs())
+    return dirs
+
+
+def _source_in_inbox(source: Path | None, project_root: Path) -> bool:
+    """True iff *source* resolves under one of the scanned inbox dirs.
+
+    Security boundary: a ``path:<abs>`` event id is CLIENT-SUPPLIED, so without this a caller
+    could route/promote (read, or with ``mode=move`` relocate) an arbitrary file off disk — the
+    deck API is reachable remotely via Lighthouse. Legit ``path:`` refs only ever come from the
+    inbox scan, so they always live under one of these dirs. ``.resolve()`` collapses ``..`` /
+    symlinks before the containment check, so traversal escapes are rejected.
+    """
+    if source is None:
+        return False
+    try:
+        rp = source.resolve()
+    except Exception:  # noqa: BLE001
+        return False
+    for d in _inbox_dirs(project_root):
+        try:
+            rp.relative_to(d.resolve())
+            return True
+        except (ValueError, OSError):
+            continue
+    return False
 
 
 def _space_root(space_name: str | None) -> Path | None:
@@ -360,6 +404,10 @@ async def handle_deck_inbox_route(request: "web.Request") -> "web.Response":
         return _err("source not found", 404)
 
     project_root = _find_project_root()
+    # A path:<abs> event id is client-supplied; only operate on files that live in an inbox dir
+    # (route reads and, with mode=move, relocates the source). Closes an arbitrary-file vector.
+    if not _source_in_inbox(source, project_root):
+        return _err("source is outside the inbox", 403)
     try:
         result = await asyncio.to_thread(
             _route_file,
@@ -393,6 +441,10 @@ async def handle_deck_inbox_skip(request: "web.Request") -> "web.Response":
     store = InboxStore()
     if event_id.startswith("path:"):
         p = Path(event_id[5:])
+        # Client-supplied path — never record an inbox event for a file outside the inbox
+        # (a stored event is what a later numeric `route` would then act on).
+        if not _source_in_inbox(p, _find_project_root()):
+            return _err("source is outside the inbox", 403)
         store.insert_event(
             InboxEvent(source_path=str(p), source_type="file", filename=p.name, status="ignored")
         )
@@ -437,6 +489,13 @@ async def handle_deck_inbox_promote(request: "web.Request") -> "web.Response":
     space = body.get("space")
     summary = body.get("summary")
     project_root = _find_project_root()
+
+    # promote reads the source (to derive a summary); a client-supplied path:<abs> must be an
+    # inbox file, not an arbitrary one off disk. A None (unknown id) falls through to promote's
+    # own graceful handling; only a resolved-but-out-of-inbox source is rejected.
+    src, _ev = _resolve_source(event_id)
+    if src is not None and not _source_in_inbox(src, project_root):
+        return _err("source is outside the inbox", 403)
 
     from navig.inbox.promotion import promote as _promote
     from navig.inbox.store import InboxStore
@@ -499,10 +558,12 @@ def _upload_dest(space: str | None) -> Path:
         root = _space_root(space)
         if root is not None:
             return root / ".space" / "inbox"
+    # Canonical global inbox = `data_dir()/inbox`. This imported a nonexistent
+    # `navig_data_dir`, so it always fell through to the wiki inbox instead.
     try:
-        from navig.platform.paths import navig_data_dir
+        from navig.platform.paths import data_dir
 
-        return navig_data_dir() / "inbox"
+        return data_dir() / "inbox"
     except Exception:
         return _find_project_root() / ".navig" / "wiki" / "inbox"
 

@@ -2,7 +2,7 @@
 SSH Tunnel Manager for NAVIG
 
 Manages secure encrypted channels. No exposed ports. No traces.
-The Schema's preferred method of communication.
+NAVIG's preferred method of communication.
 """
 
 import json
@@ -416,7 +416,7 @@ class TunnelManager:
         """
         Clean up stale tunnel references.
 
-        The Schema doesn't leave loose ends.
+        NAVIG doesn't leave loose ends.
         """
         tunnels = self._load_tunnels()
         active_tunnels = {}

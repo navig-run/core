@@ -8,7 +8,6 @@ import pytest
 
 from navig.connectors.circuit_breaker import CircuitBreaker, CircuitState
 
-
 # ── factory ──────────────────────────────────────────────────
 
 

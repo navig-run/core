@@ -65,6 +65,13 @@ def load_soul(
                 content = _try_read(persona_dir / "soul.md")
                 if content:
                     return content
+                # Community personas ship soul.yaml instead of soul.md — compose
+                # the injected identity from it so `navig persona use` works.
+                from navig.personas.loader import read_soul_yaml  # noqa: PLC0415
+
+                adapted = read_soul_yaml(persona_dir)
+                if adapted is not None and adapted[1]:
+                    return adapted[1]
         except Exception as exc:  # noqa: BLE001
             logger.debug("Failed to load persona soul for '%s': %s", persona_name, exc)
 

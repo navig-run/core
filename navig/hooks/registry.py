@@ -95,6 +95,12 @@ class HookRegistry:
             if path.exists():
                 self._load_file(path)
 
+        # Installed CC/NAVIG plugins: translate each plugin's `hooks/hooks.json`
+        # (Claude Code schema) into NAVIG definitions. Appended last so explicit
+        # user/project hooks fire first; skipped entirely when hooks are disabled.
+        if self._enabled:
+            self._load_plugin_hooks()
+
         self._loaded = True
         logger.debug(
             "hooks.registry: loaded %d definitions (enabled=%s)",
@@ -172,6 +178,17 @@ class HookRegistry:
             defn = self._parse_entry(entry)
             if defn is not None:
                 self._definitions.append(defn)
+
+    def _load_plugin_hooks(self) -> None:
+        """Append hooks translated from installed plugins' `hooks/hooks.json`."""
+        try:
+            from navig.hooks.cc_bridge import load_plugin_hook_definitions
+
+            self._definitions.extend(
+                load_plugin_hook_definitions(default_timeout=self._timeout_seconds)
+            )
+        except Exception as exc:  # noqa: BLE001 — a bad plugin never blocks hook loading
+            logger.warning("hooks.registry: plugin hook load failed: %s", exc)
 
     def _parse_entry(self, entry: dict[str, Any]) -> HookDefinition | None:
         event_raw = entry.get("event", "")

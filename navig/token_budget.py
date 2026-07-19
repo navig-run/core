@@ -1,7 +1,7 @@
 """
 Token Budget — diminishing-returns continuation guard.
 
-Ported from .lab/claude/query/ (MIT, Anthropic).  Pure logic; no I/O.
+Pure logic; no I/O.
 
 The check prevents unbounded LLM continuation loops: if the model has
 continued at least ``min_continuation_count`` times AND each of the last

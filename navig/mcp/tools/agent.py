@@ -438,8 +438,11 @@ def _tool_agent_learning_run(server: Any, args: dict[str, Any]) -> dict[str, Any
     days = max(1, int(args.get("days", 7)))
     export = bool(args.get("export", False))
     cutoff = datetime.now() - timedelta(days=days)
+    from navig.platform.paths import debug_log_path
+
+    # Same split as commands/agent.py: debug.log is in log_dir(), remediation.log is not.
     log_dir = config_dir() / "logs"
-    debug_log = log_dir / "debug.log"
+    debug_log = debug_log_path()
     remediation_log = log_dir / "remediation.log"
 
     patterns = {

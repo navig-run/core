@@ -1,10 +1,11 @@
 """Tests for navig/commands/benchmark.py, origin.py, and cloud.py."""
 
-import pytest
-from typer.testing import CliRunner
 from unittest.mock import patch
 
-_WARN = "navig.console_helper.warn"
+import pytest
+from typer.testing import CliRunner
+
+_WARN = "navig.console_helper.warning"
 
 
 # ===========================================================================
@@ -28,44 +29,44 @@ def test_benchmark_no_args_shows_help_or_error():
 
 
 def test_benchmark_run_default_suite_exits_0():
-    with patch(_WARN, create=True):
+    with patch(_WARN):
         result = benchmark_runner.invoke(benchmark_app, [])
     # With single promoted command and default argument, may show help or run
     assert result.exit_code in (0, 1, 2)
 
 
 def test_benchmark_run_all_suite_exits_0():
-    with patch(_WARN, create=True):
+    with patch(_WARN):
         result = benchmark_runner.invoke(benchmark_app, ["all"])
     assert result.exit_code == 0
 
 
 def test_benchmark_run_calls_warn():
-    with patch(_WARN, create=True) as mock_warn:
+    with patch(_WARN) as mock_warn:
         benchmark_runner.invoke(benchmark_app, ["all"])
     mock_warn.assert_called_once()
 
 
 def test_benchmark_run_says_not_implemented():
-    with patch(_WARN, create=True) as mock_warn:
+    with patch(_WARN) as mock_warn:
         benchmark_runner.invoke(benchmark_app, ["startup"])
     assert "not yet implemented" in mock_warn.call_args[0][0]
 
 
 def test_benchmark_run_with_startup_suite():
-    with patch(_WARN, create=True):
+    with patch(_WARN):
         result = benchmark_runner.invoke(benchmark_app, ["startup"])
     assert result.exit_code == 0
 
 
 def test_benchmark_run_with_ssh_suite():
-    with patch(_WARN, create=True):
+    with patch(_WARN):
         result = benchmark_runner.invoke(benchmark_app, ["ssh"])
     assert result.exit_code == 0
 
 
 def test_benchmark_run_with_db_suite():
-    with patch(_WARN, create=True):
+    with patch(_WARN):
         result = benchmark_runner.invoke(benchmark_app, ["db"])
     assert result.exit_code == 0
 
@@ -85,19 +86,19 @@ def test_origin_help_exits_0():
 
 
 def test_origin_default_exits_0():
-    with patch(_WARN, create=True):
+    with patch(_WARN):
         result = origin_runner.invoke(origin_app, [])
     assert result.exit_code == 0
 
 
 def test_origin_default_calls_warn():
-    with patch(_WARN, create=True) as mock_warn:
+    with patch(_WARN) as mock_warn:
         origin_runner.invoke(origin_app, [])
     mock_warn.assert_called_once()
 
 
 def test_origin_warn_says_not_implemented():
-    with patch(_WARN, create=True) as mock_warn:
+    with patch(_WARN) as mock_warn:
         origin_runner.invoke(origin_app, [])
     assert "not yet implemented" in mock_warn.call_args[0][0]
 
@@ -126,9 +127,29 @@ def test_cloud_help_mentions_status():
     assert "status" in result.output.lower()
 
 
-def test_cloud_help_mentions_list():
+# ── `navig cloud` is IMPLEMENTED — these pin the real contract ────────────────
+#
+# The seven tests that used to live here asserted a PLACEHOLDER: that `cloud
+# status` / `cloud list` each warn "not yet implemented", and that a `list`
+# command exists at all. `cloud` has since become a real Cloudflare quick-tunnel
+# broker (connect · direct · tailscale · status · disconnect · key) and `list`
+# was never built. Those tests therefore demanded a regression — and they only
+# surfaced now because the suite had not actually been running (the ci-local
+# runner collected 0 tests). Re-aimed at what the command really does; do not
+# reintroduce a "not yet implemented" assertion for a shipped feature.
+
+
+def test_cloud_help_lists_the_real_commands():
     result = cloud_runner.invoke(cloud_app, ["--help"])
-    assert "list" in result.output.lower()
+    out = result.output.lower()
+    for cmd in ("connect", "status", "disconnect"):
+        assert cmd in out
+
+
+def test_cloud_has_no_list_command():
+    # Guards the stale expectation directly: there is no `navig cloud list`.
+    result = cloud_runner.invoke(cloud_app, ["list"])
+    assert result.exit_code != 0
 
 
 def test_cloud_no_args_exits_nonzero_or_help():
@@ -137,45 +158,11 @@ def test_cloud_no_args_exits_nonzero_or_help():
 
 
 def test_cloud_status_exits_0():
-    with patch(_WARN, create=True):
+    with patch(_WARN):
         result = cloud_runner.invoke(cloud_app, ["status"])
     assert result.exit_code == 0
 
 
-def test_cloud_status_calls_warn():
-    with patch(_WARN, create=True) as mock_warn:
-        cloud_runner.invoke(cloud_app, ["status"])
-    mock_warn.assert_called_once()
-
-
-def test_cloud_status_says_not_implemented():
-    with patch(_WARN, create=True) as mock_warn:
-        cloud_runner.invoke(cloud_app, ["status"])
-    assert "not yet implemented" in mock_warn.call_args[0][0]
-
-
-def test_cloud_list_exits_0():
-    with patch(_WARN, create=True):
-        result = cloud_runner.invoke(cloud_app, ["list"])
-    assert result.exit_code == 0
-
-
-def test_cloud_list_calls_warn():
-    with patch(_WARN, create=True) as mock_warn:
-        cloud_runner.invoke(cloud_app, ["list"])
-    mock_warn.assert_called_once()
-
-
-def test_cloud_list_says_not_implemented():
-    with patch(_WARN, create=True) as mock_warn:
-        cloud_runner.invoke(cloud_app, ["list"])
-    assert "not yet implemented" in mock_warn.call_args[0][0]
-
-
-def test_cloud_status_and_list_distinct_messages():
-    messages = []
-    for cmd in ["status", "list"]:
-        with patch(_WARN, create=True) as mock_warn:
-            cloud_runner.invoke(cloud_app, [cmd])
-        messages.append(mock_warn.call_args[0][0])
-    assert len(set(messages)) == 2
+def test_cloud_status_does_not_claim_unimplemented():
+    result = cloud_runner.invoke(cloud_app, ["status"])
+    assert "not yet implemented" not in result.output.lower()

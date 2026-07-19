@@ -14,14 +14,102 @@ def _first_line(text: str | None) -> str:
     return text.strip().splitlines()[0].strip()
 
 
-def _iter_typer_commands(typer_app: Any, prefix: list[str], group_hidden: bool = False):
+def _extract_arguments(callback: Any) -> list[dict[str, Any]]:
+    """Positional CLI arguments of a Typer command, in declaration order.
+
+    Read off the handler's own signature: a parameter whose default is a Typer
+    ``ArgumentInfo`` is a positional argument (``typer.Option`` params are flags and a
+    ``typer.Context`` param carries no default of either kind, so both are skipped).
+    Used to render a real usage hint — ``navig db query <query>`` — instead of a bare
+    ``navig db query`` on every command surface (help, the deck, navig.run/commands).
+
+    Returns ``[{name, required, variadic}]``. ``required`` is true when the argument has
+    no default (Typer stores ``...``); ``variadic`` is true for a ``list[...]`` argument
+    (Typer's ``nargs=-1``). Never raises — a signature it can't read yields ``[]``.
+    """
+    import inspect
+    import typing
+
+    try:
+        params = inspect.signature(callback).parameters
+    except (TypeError, ValueError):  # builtins / C callables have no signature
+        return []
+
+    args: list[dict[str, Any]] = []
+    for name, param in params.items():
+        default = param.default
+        # Typer's ArgumentInfo is the only thing that marks a positional argument.
+        if type(default).__name__ != "ArgumentInfo":
+            continue
+        required = getattr(default, "default", ...) is ...
+        variadic = typing.get_origin(param.annotation) is list
+        args.append(
+            {"name": name.replace("_", "-"), "required": required, "variadic": variadic}
+        )
+    return args
+
+
+def _extract_options(callback: Any) -> list[dict[str, Any]]:
+    """Option flags of a Typer command, in declaration order.
+
+    The counterpart to :func:`_extract_arguments`: a parameter whose default is a Typer
+    ``OptionInfo`` is a ``--flag``. Completes the command schema so a consumer (an agent
+    driving navig, the deck, `navig help`) sees the full interface — that ``navig db
+    query`` accepts ``--json`` — not just its positional ``<query>``.
+
+    Returns ``[{flags, takes_value}]`` where ``flags`` is every declared spelling
+    (``["--json"]``, ``["--container", "-c"]``) and ``takes_value`` is false for a
+    boolean switch. Falls back to ``--<name>`` when Typer records no explicit flag.
+    Never raises — a signature it can't read yields ``[]``.
+    """
+    import inspect
+
+    try:
+        params = inspect.signature(callback).parameters
+    except (TypeError, ValueError):  # builtins / C callables have no signature
+        return []
+
+    opts: list[dict[str, Any]] = []
+    for name, param in params.items():
+        default = param.default
+        if type(default).__name__ != "OptionInfo":
+            continue
+        declared = getattr(default, "param_decls", None) or ()
+        flags = [d for d in declared if isinstance(d, str) and d.startswith("-")]
+        if not flags:
+            flags = ["--" + name.replace("_", "-")]
+        # A bool param (or an explicit is_flag) is a switch that takes no value.
+        takes_value = param.annotation is not bool and getattr(default, "is_flag", None) is not True
+        opts.append({"flags": flags, "takes_value": bool(takes_value)})
+    return opts
+
+
+def _iter_typer_commands(
+    typer_app: Any,
+    prefix: list[str],
+    *,
+    top_hidden: bool = False,
+    nested_hidden: bool = False,
+    depth: int = 0,
+):
+    """Walk the Typer tree, keeping the TWO reasons a command can be hidden apart.
+
+    ``top_hidden``    — the top-level ``navig <group>`` is hidden from ``--help``. That
+                        says nothing about whether the command is public: an alias is
+                        hidden *and* private, while an unlisted-but-real group (``navig
+                        cost``) is hidden *and* public. :func:`_public_status` decides.
+    ``nested_hidden`` — this command, or a sub-group above it, is itself hidden. That is
+                        always genuinely internal, whatever the top-level group is.
+
+    Collapsing the two is what deleted `navig ai` / `brain` / `cost` from the manifest.
+    """
     for cmd_info in getattr(typer_app, "registered_commands", []):
         callback = getattr(cmd_info, "callback", None)
         if callback is None:
             continue
 
         name = cmd_info.name or callback.__name__.replace("_", "-")
-        hidden = bool(group_hidden or getattr(cmd_info, "hidden", False))
+        own_hidden = bool(getattr(cmd_info, "hidden", False))
         help_text = _first_line(getattr(cmd_info, "help", None)) or _first_line(
             getattr(callback, "__doc__", None)
         )
@@ -31,7 +119,8 @@ def _iter_typer_commands(typer_app: Any, prefix: list[str], group_hidden: bool =
             "path": " ".join(path_parts),
             "callback": callback,
             "help": help_text,
-            "hidden": hidden,
+            "top_hidden": top_hidden,
+            "nested_hidden": bool(nested_hidden or own_hidden),
         }
 
     for group_info in getattr(typer_app, "registered_groups", []):
@@ -40,8 +129,58 @@ def _iter_typer_commands(typer_app: Any, prefix: list[str], group_hidden: bool =
         if not group_name or group_typer is None:
             continue
 
-        nested_hidden = bool(group_hidden or getattr(group_info, "hidden", False))
-        yield from _iter_typer_commands(group_typer, [*prefix, group_name], nested_hidden)
+        this_hidden = bool(getattr(group_info, "hidden", False))
+        if depth == 0:
+            # A top-level `navig <group>`.
+            yield from _iter_typer_commands(
+                group_typer,
+                [*prefix, group_name],
+                top_hidden=this_hidden,
+                nested_hidden=False,
+                depth=1,
+            )
+        else:
+            # A sub-group. Hidden here means internal, never merely "unlisted".
+            yield from _iter_typer_commands(
+                group_typer,
+                [*prefix, group_name],
+                top_hidden=top_hidden,
+                nested_hidden=bool(nested_hidden or this_hidden),
+                depth=depth + 1,
+            )
+
+
+def _public_status(item: dict[str, Any]) -> str:
+    """Is this command part of the public API?
+
+    Hidden-from-``--help`` is a readability choice; public-API is a contract. Only an
+    ALIAS (a duplicate name whose canonical group is documented) leaves the manifest.
+    """
+    if item.get("nested_hidden"):
+        return "hidden"  # the command / sub-group is itself internal
+    if not item.get("top_hidden"):
+        return "stable"
+
+    from navig.cli.registration import _UNLISTED_COMMANDS  # noqa: PLC0415 — avoid a cycle
+
+    parts = item.get("path_parts") or []
+    group = parts[1] if len(parts) > 1 else ""
+    return "stable" if group in _UNLISTED_COMMANDS else "hidden"
+
+
+def _is_alias_path(item: dict[str, Any]) -> bool:
+    """True when this path sits under a top-level ALIAS group.
+
+    An alias registers the SAME callbacks under a second name, so it inherits the
+    canonical command's ``CommandMeta`` too — and `meta.status` used to win over the
+    hidden flag, which is how `navig database list` / `navig database query` shipped in
+    the public manifest as duplicates of `navig db list` / `navig db query`. An alias is
+    never public, meta or not: the canonical group already documents every subcommand.
+    """
+    from navig.cli.registration import _ALIAS_COMMANDS  # noqa: PLC0415 — avoid a cycle
+
+    parts = item.get("path_parts") or []
+    return len(parts) > 1 and parts[1] in _ALIAS_COMMANDS
 
 
 def _entry_from_command(item: dict[str, Any]) -> dict[str, Any]:
@@ -55,7 +194,12 @@ def _entry_from_command(item: dict[str, Any]) -> dict[str, Any]:
         or _first_line(getattr(callback, "__doc__", None))
         or f"Run {item['path']}"
     )
-    status = meta.status if meta is not None else ("hidden" if item.get("hidden") else "stable")
+    if _is_alias_path(item):
+        status = "hidden"
+    elif meta is not None:
+        status = meta.status
+    else:
+        status = _public_status(item)
     since = meta.since if meta is not None else __version__
     tags = list(meta.tags) if meta is not None else []
     aliases = list(meta.aliases) if meta is not None else []
@@ -71,6 +215,8 @@ def _entry_from_command(item: dict[str, Any]) -> dict[str, Any]:
         "aliases": aliases,
         "tags": tags,
         "examples": examples,
+        "arguments": _extract_arguments(callback),
+        "options": _extract_options(callback),
         "_has_explicit_meta": meta is not None,
     }
 
@@ -153,6 +299,8 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         "aliases",
         "tags",
         "examples",
+        "arguments",
+        "options",
     ]
     valid_status = {
         "stable",
@@ -187,6 +335,24 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         examples = command.get("examples", [])
         if not isinstance(examples, list) or not examples:
             errors.append(f"{path}: examples must be a non-empty list")
+
+        arguments = command.get("arguments")
+        if not isinstance(arguments, list):
+            errors.append(f"{path}: arguments must be a list")
+        else:
+            for arg in arguments:
+                if not isinstance(arg, dict) or "name" not in arg or "required" not in arg:
+                    errors.append(f"{path}: each argument needs 'name' and 'required'")
+                    break
+
+        options = command.get("options")
+        if not isinstance(options, list):
+            errors.append(f"{path}: options must be a list")
+        else:
+            for opt in options:
+                if not isinstance(opt, dict) or not opt.get("flags"):
+                    errors.append(f"{path}: each option needs a non-empty 'flags' list")
+                    break
 
         if status == "deprecated":
             deprecated = command.get("deprecated")

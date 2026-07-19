@@ -11,7 +11,7 @@ class TestBackwardCompat:
 
     def test_no_llm_modes_router_uses_defaults(self):
         """Router with empty config still produces valid defaults."""
-        from navig.llm_router import LLMModeRouter
+        from navig.llm.router import LLMModeRouter
 
         router = LLMModeRouter({})  # No llm_modes
         resolved = router.get_config("big_tasks")
@@ -21,7 +21,7 @@ class TestBackwardCompat:
 
     def test_no_llm_modes_no_error(self):
         """No errors or warnings when llm_modes is absent."""
-        from navig.llm_router import LLMModeRouter
+        from navig.llm.router import LLMModeRouter
 
         # Should not raise
         router = LLMModeRouter({})
@@ -29,11 +29,11 @@ class TestBackwardCompat:
             resolved = router.get_config(mode)
             assert resolved is not None
 
-    @patch("navig.llm_router._has_api_key", return_value=True)
+    @patch("navig.llm.router._has_api_key", return_value=True)
     def test_legacy_env_var_still_works(self, mock_key):
         """NAVIG_AI_MODEL env var path is not broken."""
         # The env var should be respected by the legacy path in llm_generate
-        from navig.llm_router import LLMModeRouter
+        from navig.llm.router import LLMModeRouter
 
         router = LLMModeRouter({})
         # Just verify no crash
@@ -42,7 +42,7 @@ class TestBackwardCompat:
 
     def test_detect_mode_works_without_config(self):
         """detect_mode is independent of config and always works."""
-        from navig.llm_router import detect_mode
+        from navig.llm.router import detect_mode
 
         assert detect_mode("hello") == "small_talk"
         assert detect_mode("write a function") == "coding"
@@ -51,8 +51,8 @@ class TestBackwardCompat:
     def test_resolve_llm_convenience(self):
         """resolve_llm() works even without config."""
         # Reset singleton
-        import navig.llm_router as mod
-        from navig.llm_router import resolve_llm
+        import navig.llm.router as mod
+        from navig.llm.router import resolve_llm
 
         old = mod._router_instance
         mod._router_instance = None

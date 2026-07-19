@@ -5,15 +5,14 @@ Pure-logic and I/O-mocked tests.
 from __future__ import annotations
 
 import os
-from unittest.mock import patch, MagicMock, call
 from pathlib import Path
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 # ─────────────────────────────────────────────────────────────
 # navig.core.tokens
 # ─────────────────────────────────────────────────────────────
-
 from navig.core.tokens import estimate_tokens
 
 
@@ -57,7 +56,7 @@ class TestEstimateTokens:
 # navig.core.dict_utils
 # ─────────────────────────────────────────────────────────────
 
-from navig.core.dict_utils import deep_merge, truncate_output, utc_now, now_iso
+from navig.core.dict_utils import deep_merge, now_iso, truncate_output, utc_now
 
 
 class TestDeepMerge:
@@ -152,7 +151,7 @@ class TestNowIso:
 # navig.core.thresholds
 # ─────────────────────────────────────────────────────────────
 
-from navig.core.thresholds import Threshold, REGISTRY, DEFAULTS, resolve
+from navig.core.thresholds import DEFAULTS, REGISTRY, Threshold, resolve
 
 
 class TestThreshold:

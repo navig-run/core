@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from dataclasses import field
-import pytest
+from datetime import datetime, timezone
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers: build minimal Credential / TestResult without importing full vault
@@ -51,17 +51,17 @@ class TestValidatorsRegistry:
 
 class TestGetValidator:
     def test_openai_returns_correct_type(self):
-        from navig.vault.validators import get_validator, OpenAIValidator
+        from navig.vault.validators import OpenAIValidator, get_validator
         v = get_validator("openai")
         assert isinstance(v, OpenAIValidator)
 
     def test_case_insensitive(self):
-        from navig.vault.validators import get_validator, OpenAIValidator
+        from navig.vault.validators import OpenAIValidator, get_validator
         v = get_validator("OpenAI")
         assert isinstance(v, OpenAIValidator)
 
     def test_unknown_provider_returns_generic(self):
-        from navig.vault.validators import get_validator, GenericValidator
+        from navig.vault.validators import GenericValidator, get_validator
         v = get_validator("some_unknown_provider_xyz")
         assert isinstance(v, GenericValidator)
 
@@ -71,12 +71,12 @@ class TestGetValidator:
         assert not isinstance(v, type)
 
     def test_telegram_validator(self):
-        from navig.vault.validators import get_validator, TelegramValidator
+        from navig.vault.validators import TelegramValidator, get_validator
         v = get_validator("telegram")
         assert isinstance(v, TelegramValidator)
 
     def test_anthropic_validator(self):
-        from navig.vault.validators import get_validator, AnthropicValidator
+        from navig.vault.validators import AnthropicValidator, get_validator
         v = get_validator("anthropic")
         assert isinstance(v, AnthropicValidator)
 
@@ -142,8 +142,8 @@ class TestGenericValidator:
         assert result.details.get("provider") == "myprovider"
 
     def test_result_is_test_result_type(self):
-        from navig.vault.validators import GenericValidator
         from navig.vault.types import TestResult
+        from navig.vault.validators import GenericValidator
         v = GenericValidator()
         cred = _make_credential(data={"k": "v"})
         result = v.validate(cred)

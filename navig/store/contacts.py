@@ -41,8 +41,28 @@ def normalize_phone(phone: str | None) -> str:
     return f"+{digits}" if has_plus else digits
 
 
+# Networks whose address IS a phone number (E.164). Others (discord/matrix/email/
+# slack) key on IDs/handles and must be stored verbatim.
+_PHONE_NETWORKS = frozenset({"sms", "whatsapp", "signal", "imessage"})
+
+
+def _normalize_route_address(network: str, address: str) -> str:
+    """Canonicalise a phone-network address to ``normalize_phone`` form.
+
+    Only touches phone networks, and only a genuine phone shape — an address
+    carrying a letter or ``@`` (a WhatsApp group id ``…@g.us``, an ``@handle``,
+    an email) is left intact, so this can never blank out or mangle a non-phone
+    route. Callers (the deck's ``phone`` field, ``dispatch``) already normalise;
+    doing it here at the single parse choke point makes CLI / YAML-import /
+    ``routes[]`` writes consistent (no ``"+1 555"`` vs ``"+1555"`` duplicates).
+    """
+    if network not in _PHONE_NETWORKS or re.search(r"[A-Za-z@]", address):
+        return address
+    return normalize_phone(address) or address  # never blank out a stored route
+
+
 def _parse_route_string(route_str: str) -> tuple[str, str]:
-    """Parse ``network:address`` → ``(network, address)``."""
+    """Parse ``network:address`` → ``(network, address)`` (phone addresses canonicalised)."""
     if ":" not in route_str:
         raise ValueError(f"Invalid route format (expected 'network:address'): {route_str!r}")
     network, _, address = route_str.partition(":")
@@ -50,7 +70,7 @@ def _parse_route_string(route_str: str) -> tuple[str, str]:
     address = address.strip()
     if not network or not address:
         raise ValueError(f"Invalid route format (empty network or address): {route_str!r}")
-    return network, address
+    return network, _normalize_route_address(network, address)
 
 
 # ── Store ─────────────────────────────────────────────────────

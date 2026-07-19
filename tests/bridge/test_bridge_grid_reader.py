@@ -59,16 +59,18 @@ class TestIsPidAlive:
     def test_zero_pid_returns_false(self):
         assert bgr._is_pid_alive(0) is False
 
-    def test_alive_when_os_kill_succeeds(self):
-        with patch.object(bgr.os, "kill", return_value=None):
+    # _is_pid_alive delegates to windows_utils.check_pid_exists (a psutil probe —
+    # deliberately NOT os.kill, which on Windows calls TerminateProcess and would
+    # kill the very process it means to check). The old tests mocked bgr.os.kill,
+    # which the code no longer uses, so they hit the REAL check_pid_exists(1234) —
+    # passing on Windows (pid 1234 happens to exist) but failing on macOS/Linux.
+    # Mock the actual dependency so the tests are deterministic + platform-independent.
+    def test_alive_when_check_pid_exists_true(self):
+        with patch("navig.platform.windows_utils.check_pid_exists", return_value=True):
             assert bgr._is_pid_alive(1234) is True
 
-    def test_dead_when_os_kill_raises_oserror(self):
-        with patch.object(bgr.os, "kill", side_effect=OSError("ESRCH")):
-            assert bgr._is_pid_alive(1234) is False
-
-    def test_dead_when_process_lookup_error(self):
-        with patch.object(bgr.os, "kill", side_effect=ProcessLookupError):
+    def test_dead_when_check_pid_exists_false(self):
+        with patch("navig.platform.windows_utils.check_pid_exists", return_value=False):
             assert bgr._is_pid_alive(9999) is False
 
 

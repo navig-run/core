@@ -5,6 +5,8 @@ import shlex  # CRITICAL: Import shlex for secure shell escaping
 from pathlib import Path
 from typing import Any
 
+import typer
+
 from navig import console_helper as ch
 
 
@@ -39,7 +41,7 @@ def delete_file_cmd(remote: str, options: dict[str, Any]):
             ch.raw_print(json.dumps({"success": False, "error": msg}))
         else:
             ch.error(msg)
-        return False
+        raise typer.Exit(2)
 
     # Determine if directory
     is_dir_cmd = f"test -d {remote_quoted} && echo 'dir' || echo 'file'"
@@ -54,7 +56,7 @@ def delete_file_cmd(remote: str, options: dict[str, Any]):
                 ch.raw_print(json.dumps({"success": False, "error": msg}))
             else:
                 ch.error(msg)
-            return False
+            raise typer.Exit(1)
         delete_cmd = f"rm -rf {remote_quoted}"
     else:
         delete_cmd = f"rm -f {remote_quoted}"
@@ -96,7 +98,7 @@ def delete_file_cmd(remote: str, options: dict[str, Any]):
             ch.raw_print(json.dumps({"success": False, "error": msg}))
         else:
             ch.error(f"Delete failed: {msg}")
-        return False
+        raise typer.Exit(1)
 
 
 def mkdir_cmd(remote: str, options: dict[str, Any]):
@@ -121,7 +123,7 @@ def mkdir_cmd(remote: str, options: dict[str, Any]):
     mode = options.get("mode", "755")
     if not mode.isdigit() or len(mode) not in [3, 4]:
         ch.error("Invalid mode. Use numeric format like '755' or '0644'")
-        return False
+        raise typer.Exit(1)
     mode_quoted = shlex.quote(mode)
 
     # SECURITY: Quote remote path
@@ -159,7 +161,7 @@ def mkdir_cmd(remote: str, options: dict[str, Any]):
             ch.raw_print(json.dumps({"success": False, "error": msg}))
         else:
             ch.error(f"mkdir failed: {msg}")
-        return False
+        raise typer.Exit(1)
 
 
 def chmod_cmd(remote: str, mode: str, options: dict[str, Any]):
@@ -188,7 +190,7 @@ def chmod_cmd(remote: str, mode: str, options: dict[str, Any]):
             ch.raw_print(json.dumps({"success": False, "error": msg}))
         else:
             ch.error(msg)
-        return False
+        raise typer.Exit(1)
 
     # SECURITY: Quote all parameters
     mode_quoted = shlex.quote(mode)
@@ -226,7 +228,7 @@ def chmod_cmd(remote: str, mode: str, options: dict[str, Any]):
             ch.raw_print(json.dumps({"success": False, "error": msg}))
         else:
             ch.error(f"chmod failed: {msg}")
-        return False
+        raise typer.Exit(1)
 
 
 def chown_cmd(remote: str, owner: str, options: dict[str, Any]):
@@ -284,7 +286,7 @@ def chown_cmd(remote: str, owner: str, options: dict[str, Any]):
             ch.raw_print(json.dumps({"success": False, "error": msg}))
         else:
             ch.error(f"chown failed: {msg}")
-        return False
+        raise typer.Exit(1)
 
 
 def cat_file_cmd(
@@ -333,7 +335,7 @@ def cat_file_cmd(
                 end_line = int(parts[1])
             except ValueError:
                 ch.error(f"Invalid line range: {lines}", "Use format: 100-200")
-                return
+                raise typer.Exit(1)
         elif ":" in lines:
             parts = lines.split(":", 1)
             try:
@@ -341,7 +343,7 @@ def cat_file_cmd(
                 end_line = int(parts[1])
             except ValueError:
                 ch.error(f"Invalid line range: {lines}", "Use format: 100:200")
-                return
+                raise typer.Exit(1)
         else:
             # Single number
             try:
@@ -351,7 +353,7 @@ def cat_file_cmd(
                     f"Invalid line number: {lines}",
                     "Use an integer or range (e.g., 100-200)",
                 )
-                return
+                raise typer.Exit(1)
 
     # Build command based on options
     if start_line and end_line:
@@ -387,7 +389,7 @@ def cat_file_cmd(
             )
         else:
             ch.error(f"File not found: {remote}")
-        return
+        raise typer.Exit(2)
 
     if options.get("json"):
         # JSON mode captures output instead of streaming.
@@ -475,23 +477,23 @@ def write_file_cmd(
                 "No input provided via stdin.",
                 "Pipe content to this command or use --content.",
             )
-            return False
+            raise typer.Exit(1)
         final_content = sys.stdin.read()
     elif local_file:
         # Read from local file
         if not local_file.exists():
             ch.error(f"Local file not found: {local_file}")
-            return False
-        final_content = local_file.read_text()
+            raise typer.Exit(2)
+        final_content = local_file.read_text(encoding="utf-8")
     elif content:
         final_content = content
     else:
         ch.error("No content provided.", "Use --content, --stdin, or --from-file.")
-        return False
+        raise typer.Exit(1)
 
     if not final_content:
         ch.error("Content is empty.")
-        return False
+        raise typer.Exit(1)
 
     # Confirm write operation
     if not ch.confirm_operation(
@@ -527,7 +529,7 @@ def write_file_cmd(
 
         if not success:
             ch.error("Failed to upload content to server.")
-            return False
+            raise typer.Exit(1)
 
         # Move to final destination (or append)
         remote_quoted = shlex.quote(remote)
@@ -541,7 +543,7 @@ def write_file_cmd(
 
         if result.returncode != 0:
             ch.error(f"Failed to write file: {result.stderr}")
-            return False
+            raise typer.Exit(1)
 
         # Set permissions if specified
         if mode:

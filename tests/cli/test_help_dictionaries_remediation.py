@@ -16,7 +16,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # navig.cli.help_dictionaries
 # ---------------------------------------------------------------------------
-
 import navig.cli.help_dictionaries as _hd
 
 
@@ -86,7 +85,6 @@ from navig.agent.remediation import (
     RemediationStatus,
     RemediationType,
 )
-
 
 # ---------------------------------------------------------------------------
 # Enums

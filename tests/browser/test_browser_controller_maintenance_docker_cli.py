@@ -3,8 +3,12 @@ Tests covering:
   - navig/browser/controller.py  (BrowserConfig, BrowserController)
   - navig/commands/maintenance.py
   - navig/commands/docker.py
-  - navig/cli/legacy_flat_commands.py
-  - navig/cli/host_infra.py
+
+(It also used to cover navig/cli/legacy_flat_commands.py and navig/cli/
+host_infra.py. Nothing ever registered those two modules, so every command and
+deprecation shim in them was dead — including the ones other code told users to
+run. They were deleted, and these tests with them: they only ever proved that
+dead code was internally consistent.)
 """
 from __future__ import annotations
 
@@ -17,8 +21,31 @@ from unittest.mock import MagicMock, patch
 # Minimal playwright stub so browser/controller.py imports cleanly
 # ---------------------------------------------------------------------------
 def _stub_playwright():
-    if "playwright" in sys.modules:
-        return
+    """Stub playwright ONLY when it is genuinely not installed.
+
+    The old guard was ``if "playwright" in sys.modules: return`` — which asks "has it been
+    imported YET?", not "is it INSTALLED?". This function runs at COLLECTION time, when
+    nothing has imported playwright yet, so with a real playwright present it happily shoved
+    a MagicMock into ``sys.modules`` and left it there — never restored — for the whole
+    worker process, permanently shadowing the real package.
+
+    Anything imported afterwards that needs real playwright then died. camoufox imports
+    playwright, so tests/browser/test_firefox.py blew up with ImportError — but only when
+    this module happened to be imported first in a worker. That is why all 5 of those tests
+    passed in isolation and failed in the full xdist run: a cross-test poisoning, not a bug
+    in the tests they broke.
+
+    Importing the real module here (instead of sniffing sys.modules) costs one import and
+    makes the stub what it always claimed to be: a fallback for environments without
+    playwright.
+    """
+    try:
+        import playwright.async_api  # noqa: F401, PLC0415
+    except ImportError:
+        pass  # not installed — the stub below is the whole point
+    else:
+        return  # real playwright is present; never shadow it
+
     pw = types.ModuleType("playwright")
     pw_async = types.ModuleType("playwright.async_api")
     pw_async.async_playwright = MagicMock()
@@ -205,54 +232,3 @@ class TestDockerModule:
         import navig.commands.docker as d
         assert callable(d._docker_callback)
 
-
-# ---------------------------------------------------------------------------
-# 4. navig/cli/legacy_flat_commands.py
-# ---------------------------------------------------------------------------
-class TestLegacyFlatCommands:
-    def test_import(self):
-        from navig.cli.legacy_flat_commands import register_legacy_flat_commands
-        assert callable(register_legacy_flat_commands)
-
-    def test_returns_none(self):
-        from navig.cli.legacy_flat_commands import register_legacy_flat_commands
-        import typer
-        app = typer.Typer()
-        result = register_legacy_flat_commands(app)
-        assert result is None
-
-    def test_registration_adds_commands(self):
-        """register_legacy_flat_commands adds hidden commands to a Typer app."""
-        from navig.cli.legacy_flat_commands import register_legacy_flat_commands
-        import typer
-        app = typer.Typer()
-        before = len(app.registered_commands)
-        register_legacy_flat_commands(app)
-        # Should have added at least some commands
-        assert len(app.registered_commands) > before
-
-
-# ---------------------------------------------------------------------------
-# 5. navig/cli/host_infra.py
-# ---------------------------------------------------------------------------
-class TestHostInfraCommands:
-    def test_import(self):
-        from navig.cli.host_infra import register_host_infra_commands
-        assert callable(register_host_infra_commands)
-
-    def test_returns_none(self):
-        from navig.cli.host_infra import register_host_infra_commands
-        import typer
-        app = typer.Typer()
-        result = register_host_infra_commands(app)
-        assert result is None
-
-    def test_registration_adds_groups(self):
-        """Should register sub-apps or commands under the provided app."""
-        from navig.cli.host_infra import register_host_infra_commands
-        import typer
-        app = typer.Typer()
-        register_host_infra_commands(app)
-        # At minimum some groups or commands should be registered
-        total = len(app.registered_commands) + len(app.registered_groups)
-        assert total >= 1

@@ -14,7 +14,6 @@ from navig.agent.tools.skill_tools import (
     register_skill_tools,
 )
 
-
 # ── helpers ──────────────────────────────────────────────────
 
 
@@ -193,7 +192,7 @@ class TestRegister:
 
     def test_sets_skills_ctx(self):
         ctx = _ctx()
-        with patch("navig.agent.tools.skill_tools._AGENT_REGISTRY" if False else "navig.agent.agent_tool_registry._AGENT_REGISTRY", create=True):
+        with patch("navig.agent.tools.skill_tools._AGENT_REGISTRY" if False else "navig.agent.agent_tool_registry._AGENT_REGISTRY"):
             register_skill_tools(ctx)
         assert skill_tools_mod._skills_ctx is ctx
 

@@ -180,11 +180,15 @@ def write_bundle(bundle: Bundle, output: Path) -> Path:
 
 def _default_log_files() -> list[Path]:
     """Default log files to include in bundles."""
+    from navig.platform.paths import config_dir as _config_dir
+    from navig.platform.paths import debug_log_path as _debug_log_path
     from navig.platform.paths import log_dir as _log_dir
 
-    log_dir = _log_dir()
     return [
-        log_dir / "debug.log",
-        log_dir / "navig.log",
-        log_dir / "daemon.log",
+        _debug_log_path(),
+        # navig.log is written to the CONFIG dir (config.py: base_dir/"navig.log"), not the
+        # log dir — reading it from log_dir() meant the diagnostics bundle silently shipped
+        # without the main application log.
+        _config_dir() / "navig.log",
+        _log_dir() / "daemon.log",
     ]

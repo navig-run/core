@@ -9,27 +9,30 @@ CronService fires them on schedule; _execute_job_command() detects the prefix
 and writes a due-now reminder to RuntimeStore.  The existing _poll_due_reminders()
 loop (navig/gateway/channels/telegram.py:615) delivers it within 15 seconds.
 
-This CLI reads/writes ~/.navig/daemon/cron_jobs.json directly so it works even
-when the gateway daemon is not running.  Jobs are picked up by CronService on
-its next start/reload.
+Storage goes through navig.scheduler.habit_store — the LIVE scheduler store:
+mutations run through the daemon's /api/deck/schedule routes when the gateway
+is up (race-free against the running scheduler) and fall back to a detached
+CronService over the same store when it is down (picked up on the daemon's
+next start). The legacy ~/.navig/daemon/cron_jobs.json store this CLI used to
+write was never executed by the scheduler; habit_store migrates it once.
 """
 
 from __future__ import annotations
 
 import base64
-import json
-import os
-import tempfile
-import uuid
 from datetime import datetime
-from pathlib import Path
-from typing import Any
 
 import typer
 
 from navig import console_helper as ch
-from navig.scheduler.cron_service import CronJob, CronParser, JobStatus
-from navig.spaces.health import BUILTIN_HABITS, HabitTemplate, get_habit_template, list_habit_templates
+from navig.scheduler import habit_store
+from navig.scheduler.cron_service import CronParser
+from navig.spaces.health import (
+    BUILTIN_HABITS,
+    HabitTemplate,
+    get_habit_template,
+    list_habit_templates,
+)
 
 habit_app = typer.Typer(
     name="habit",
@@ -41,43 +44,11 @@ habit_app = typer.Typer(
 _HABIT_NAME_PREFIX = "habit:"
 _HABIT_CMD_PREFIX = "NAVIG_HABIT_REMINDER"
 
-# ── Storage helpers ────────────────────────────────────────────────────────────
-
-def _jobs_path() -> Path:
-    return Path.home() / ".navig" / "daemon" / "cron_jobs.json"
-
-
-def _load_all_jobs() -> tuple[list[dict], int]:
-    """Return (raw_jobs_list, counter) from cron_jobs.json, or empty defaults."""
-    p = _jobs_path()
-    if not p.exists():
-        return [], 0
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-        return data.get("jobs", []), data.get("counter", 0)
-    except Exception:
-        return [], 0
-
-
-def _save_all_jobs(jobs: list[dict], counter: int) -> None:
-    """Atomically write jobs list back to cron_jobs.json."""
-    p = _jobs_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    data = {"counter": counter, "jobs": jobs}
-    tmp_fd, tmp_name = tempfile.mkstemp(dir=p.parent, suffix=".tmp")
-    try:
-        with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
-            fh.write(json.dumps(data, indent=2))
-        os.replace(tmp_name, p)
-    except Exception:
-        Path(tmp_name).unlink(missing_ok=True)
-        raise
-
+# ── Storage helpers (live scheduler store via habit_store) ────────────────────
 
 def _load_habit_jobs() -> list[dict]:
     """Return only job dicts that are habits (name starts with 'habit:')."""
-    jobs, _ = _load_all_jobs()
-    return [j for j in jobs if j.get("name", "").startswith(_HABIT_NAME_PREFIX)]
+    return habit_store.list_habit_jobs()
 
 
 # ── Config helpers ─────────────────────────────────────────────────────────────
@@ -205,15 +176,13 @@ def habit_add(
             raise typer.Exit(1)
 
     # Check for existing habit
-    existing_jobs, counter = _load_all_jobs()
     habit_name = f"{_HABIT_NAME_PREFIX}{habit_key}"
-    duplicate = next((j for j in existing_jobs if j.get("name") == habit_name), None)
+    duplicate = next((j for j in _load_habit_jobs() if j.get("name") == habit_name), None)
     if duplicate:
         ch.warning(f"Habit '{habit_key}' already exists (id: {duplicate['id']}).")
         if not typer.confirm("Replace it?", default=False):
             ch.dim("Keeping existing habit. Use 'navig habit remove' first if needed.")
             raise typer.Exit()
-        existing_jobs = [j for j in existing_jobs if j.get("name") != habit_name]
 
     schedule = _build_schedule(template, time_str, days, every)
     reminder_text = message or template.reminder_message
@@ -221,33 +190,18 @@ def habit_add(
     b64_msg = base64.b64encode(reminder_text.encode()).decode()
     command = f"{_HABIT_CMD_PREFIX}:{effective_chat_id}:{b64_msg}"
 
-    next_run = CronParser.calculate_next(schedule)
-    counter += 1
-    job_id = f"job_{counter}"
+    job = habit_store.create_job(
+        habit_name, schedule, command, timeout_seconds=30, replace=True
+    )
 
-    job_dict: dict[str, Any] = {
-        "id": job_id,
-        "name": habit_name,
-        "schedule": schedule,
-        "command": command,
-        "enabled": True,
-        "timeout_seconds": 30,
-        "retry_count": 0,
-        "max_retries": 1,
-        "last_run": None,
-        "next_run": next_run.isoformat(),
-        "last_status": None,
-        "last_output": None,
-        "created_at": datetime.now().isoformat(),
-    }
-
-    existing_jobs.append(job_dict)
-    _save_all_jobs(existing_jobs, counter)
+    next_run_display = str(job.get("next_run") or "")[:16].replace("T", " ")
+    if not next_run_display:
+        next_run_display = CronParser.calculate_next(schedule).strftime("%Y-%m-%d %H:%M")
 
     ch.success(f"{template.emoji} Habit '{template.display_name}' added.")
-    ch.print(f"  [dim]Schedule:[/dim]  {schedule}")
-    ch.print(f"  [dim]Next run:[/dim]  {next_run.strftime('%Y-%m-%d %H:%M')}")
-    ch.print(f"  [dim]Message:[/dim]   {reminder_text}")
+    ch.console.print(f"  [dim]Schedule:[/dim]  {schedule}")
+    ch.console.print(f"  [dim]Next run:[/dim]  {next_run_display}")
+    ch.console.print(f"  [dim]Message:[/dim]   {reminder_text}")
     ch.dim("Reminder will fire via Telegram when the daemon is running.")
 
 
@@ -256,7 +210,7 @@ def habit_add(
 def _habit_list_impl() -> None:
     habits = _load_habit_jobs()
     if not habits:
-        ch.print("[dim]No habits configured yet.[/dim]")
+        ch.console.print("[dim]No habits configured yet.[/dim]")
         ch.dim("Run 'navig habit templates' to see options, then 'navig habit add <key>'.")
         return
 
@@ -303,18 +257,17 @@ def habit_remove(
     habit_key: str = typer.Argument(..., help="Habit key (e.g. workout) or job ID"),
 ) -> None:
     """Remove a habit reminder."""
-    jobs, counter = _load_all_jobs()
-
-    # Try by habit key first, then by job ID
+    # Try by habit name first, then by job ID
     habit_name = f"{_HABIT_NAME_PREFIX}{habit_key}"
-    remaining = [j for j in jobs if j.get("name") != habit_name and j.get("id") != habit_key]
+    removed = habit_store.delete_jobs(habit_name)
+    if not removed:
+        removed = habit_store.delete_jobs(habit_key)
 
-    if len(remaining) == len(jobs):
+    if not removed:
         ch.error(f"Habit '{habit_key}' not found.")
         ch.dim("Run 'navig habit list' to see configured habits.")
         raise typer.Exit(1)
 
-    _save_all_jobs(remaining, counter)
     ch.success(f"Habit '{habit_key}' removed.")
 
 
@@ -325,7 +278,7 @@ def habit_status() -> None:
     """Show habit job details including last run and next fire time."""
     habits = _load_habit_jobs()
     if not habits:
-        ch.print("[dim]No habits configured.[/dim]")
+        ch.console.print("[dim]No habits configured.[/dim]")
         return
 
     for j in sorted(habits, key=lambda x: x.get("name", "")):
@@ -347,8 +300,8 @@ def habit_status() -> None:
             except Exception:
                 pass
 
-        ch.print(f"\n{emoji} [cyan]{key}[/cyan] — {enabled_str}")
-        ch.print(f"   Schedule:    {j.get('schedule', '—')}")
-        ch.print(f"   Next run:    {next_run}")
-        ch.print(f"   Last run:    {last_run}")
-        ch.print(f"   Last status: {last_status}")
+        ch.console.print(f"\n{emoji} [cyan]{key}[/cyan] — {enabled_str}")
+        ch.console.print(f"   Schedule:    {j.get('schedule', '—')}")
+        ch.console.print(f"   Next run:    {next_run}")
+        ch.console.print(f"   Last run:    {last_run}")
+        ch.console.print(f"   Last status: {last_status}")

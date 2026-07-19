@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from navig.tools.bash_exec import ApprovalRequiredError, BashExecTool, _DEFAULT_TIMEOUT
+from navig.tools.bash_exec import _DEFAULT_TIMEOUT, ApprovalRequiredError, BashExecTool
 
 
 def _run(coro):

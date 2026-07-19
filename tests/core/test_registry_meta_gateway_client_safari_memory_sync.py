@@ -15,7 +15,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/registry/meta.py
 # ---------------------------------------------------------------------------
@@ -51,7 +50,7 @@ class TestDeprecationInfo:
 
 class TestCommandMetaDecorator:
     def test_decorates_function(self) -> None:
-        from navig.registry.meta import command_meta, _META_ATTR
+        from navig.registry.meta import _META_ATTR, command_meta
 
         @command_meta(summary="test cmd", status="stable", since="1.0", tags=["net"])
         def my_command():
@@ -82,7 +81,7 @@ class TestCommandMetaDecorator:
         assert fn() == 42
 
     def test_deprecated_key_creates_deprecation_info(self) -> None:
-        from navig.registry.meta import command_meta, DeprecationInfo
+        from navig.registry.meta import DeprecationInfo, command_meta
 
         @command_meta(
             summary="old cmd",
@@ -298,8 +297,8 @@ class TestAsChunk:
         assert _as_chunk({"content": "   "}, "file.py") is None
 
     def test_returns_chunk_on_valid_item(self) -> None:
-        from navig.memory.sync import _as_chunk
         from navig.memory.storage import MemoryChunk
+        from navig.memory.sync import _as_chunk
         item = {"content": "def foo(): pass", "id": "abc123", "file_path": "a.py"}
         chunk = _as_chunk(item, "fallback.py")
         assert isinstance(chunk, MemoryChunk)
@@ -318,8 +317,9 @@ class TestAsChunk:
         assert chunk.id.startswith("sync::")
 
     def test_parses_json_string_metadata(self) -> None:
-        from navig.memory.sync import _as_chunk
         import json
+
+        from navig.memory.sync import _as_chunk
         item = {"content": "test", "metadata": json.dumps({"key": "value"})}
         chunk = _as_chunk(item, "f.py")
         assert chunk.metadata == {"key": "value"}

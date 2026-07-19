@@ -346,26 +346,27 @@ def filter_cmd(
             typer.echo("\nWatch stopped.")
         return
 
-    # Single-pass scan
-    typer.echo(f"Filtering .navig/ under {project_root} {'[dry-run]' if dry_run else ''}\n")
+    # Single-pass scan. Narration must never interleave with the JSON payload:
+    # stdout in --json mode belongs to the document alone.
+    if not json_output:
+        typer.echo(f"Filtering .navig/ under {project_root} {'[dry-run]' if dry_run else ''}\n")
     results = engine.scan_and_filter(dry_run=dry_run)
 
     if json_output:
-        typer.echo(
-            __import__("json").dumps(
-                [
-                    {
-                        "path": str(r.path),
-                        "changed": r.changed,
-                        "would_change": r.would_change,
-                        "skipped": r.skipped,
-                        "error": r.error,
-                        "rules_applied": r.rules_applied,
-                    }
-                    for r in results
-                ],
-                indent=2,
-            )
+        from navig.console_helper import emit_json
+
+        emit_json(
+            [
+                {
+                    "path": str(r.path),
+                    "changed": r.changed,
+                    "would_change": r.would_change,
+                    "skipped": r.skipped,
+                    "error": r.error,
+                    "rules_applied": r.rules_applied,
+                }
+                for r in results
+            ]
         )
         return
 
@@ -640,8 +641,13 @@ def ui_cmd(
     files = [f for f in inbox_dir.iterdir() if f.is_file() and not f.name.startswith(".")]
     if not files:
         # Also check global inbox
+        # `data_dir()/inbox` is the canonical global inbox (navig/inbox/watcher.py writes
+        # it there). This imported a nonexistent `navig_data_dir`, so the try always failed
+        # and it silently read `config_dir()/inbox` — the wrong directory, missing every
+        # file the watcher dropped in the data dir.
         try:
-            from navig.platform.paths import config_dir, navig_data_dir
+            from navig.platform.paths import config_dir
+            from navig.platform.paths import data_dir as navig_data_dir
 
             global_inbox = navig_data_dir() / "inbox"
         except Exception:

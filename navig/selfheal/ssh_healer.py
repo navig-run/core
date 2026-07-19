@@ -46,9 +46,29 @@ class HealResult:
 # ---------------------------------------------------------------------------
 
 _LOCALHOST_ALIASES = {"127.0.0.1", "::1", "localhost"}
-_DEFAULT_SSH_KEY_PATH = Path.home() / ".ssh" / "id_ed25519"
-_KNOWN_HOSTS_PATH = Path.home() / ".ssh" / "known_hosts"
 _KEYSCAN_TIMEOUT = 10  # seconds
+
+# Test seams — when ``None`` (the normal state), the resolvers below evaluate
+# ``Path.home()`` at CALL time so a HOME/USERPROFILE isolated after import is
+# honoured. Frozen module constants meant a test could append scanned keys to
+# the operator's REAL ~/.ssh/known_hosts or generate keys in the real ~/.ssh
+# (see navig/vault/migrate.py:_legacy_db_path for the pattern).
+_DEFAULT_SSH_KEY_PATH: Path | None = None
+_KNOWN_HOSTS_PATH: Path | None = None
+
+
+def _default_ssh_key_path() -> Path:
+    return (
+        _DEFAULT_SSH_KEY_PATH
+        if _DEFAULT_SSH_KEY_PATH is not None
+        else Path.home() / ".ssh" / "id_ed25519"
+    )
+
+
+def _known_hosts_path() -> Path:
+    return (
+        _KNOWN_HOSTS_PATH if _KNOWN_HOSTS_PATH is not None else Path.home() / ".ssh" / "known_hosts"
+    )
 
 
 class SSHHealer:
@@ -94,7 +114,7 @@ class SSHHealer:
             )
 
         # Ensure ~/.ssh/ directory exists (first-run safety)
-        _KNOWN_HOSTS_PATH.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        _known_hosts_path().parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 
         logger.info("ssh_healer: keyscan {}", host)
         try:
@@ -129,7 +149,7 @@ class SSHHealer:
                 )
 
             # Append scanned keys to known_hosts
-            with open(_KNOWN_HOSTS_PATH, "ab") as kh:
+            with open(_known_hosts_path(), "ab") as kh:
                 kh.write(stdout)
 
             logger.info("ssh_healer: added host key for {}", host)
@@ -177,14 +197,15 @@ class SSHHealer:
             HealResult. ``should_retry`` is always False here because the user
             must add the public key to the remote server before retrying.
         """
-        if _DEFAULT_SSH_KEY_PATH.exists():
+        key_path = _default_ssh_key_path()
+        if key_path.exists():
             # Key present but rejected → auth misconfiguration on the remote side
             pub_key = self._read_public_key()
             pub_preview = pub_key[:120] + "…" if len(pub_key) > 120 else pub_key
             return HealResult(
                 status="partial",
                 message=(
-                    f"🔑 An SSH key already exists at `{_DEFAULT_SSH_KEY_PATH}`.\n\n"
+                    f"🔑 An SSH key already exists at `{key_path}`.\n\n"
                     "The server rejected it. Possible causes:\n"
                     "• Your public key is not in `~/.ssh/authorized_keys` on the server\n"
                     "• Wrong user or key mismatch\n\n"
@@ -196,7 +217,7 @@ class SSHHealer:
             )
 
         # No key at all — generate one
-        _DEFAULT_SSH_KEY_PATH.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        key_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         logger.info("ssh_healer: generating ED25519 key pair")
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -206,7 +227,7 @@ class SSHHealer:
                 "-N",
                 "",  # empty passphrase — automated use
                 "-f",
-                str(_DEFAULT_SSH_KEY_PATH),
+                str(key_path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -384,7 +405,7 @@ class SSHHealer:
     @staticmethod
     def _read_public_key() -> str:
         """Read the public key corresponding to the default ED25519 private key."""
-        pub_path = _DEFAULT_SSH_KEY_PATH.with_suffix(".pub")
+        pub_path = _default_ssh_key_path().with_suffix(".pub")
         if pub_path.exists():
             return pub_path.read_text(encoding="utf-8").strip()
         return "(public key file not found)"

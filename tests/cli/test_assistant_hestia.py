@@ -7,8 +7,8 @@ group names, hidden flag, and deprecation_warning calls.
 
 from unittest.mock import patch
 
-import typer
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from navig.cli.assistant_hestia import register_assistant_hestia_commands

@@ -254,16 +254,33 @@ async def handle_notify_signals_post(request: "web.Request") -> "web.Response":
 # ── Monitors (local producers toggle) ────────────────────────────────────────
 
 _MONITORS = [
-    {"key": "self_errors",  "label": "NAVIG errors",      "desc": "Tell me when the daemon logs an error."},
-    {"key": "connectivity", "label": "Brain reachability", "desc": "Tell me when the Lighthouse uplink drops or returns."},
-    {"key": "resources",    "label": "Resource alerts",    "desc": "Disk / memory / CPU threshold alerts."},
-    {"key": "webcam",       "label": "Webcam (privacy)",   "desc": "Alert when an app starts using your camera."},
+    {"key": "self_errors",      "label": "NAVIG errors",       "desc": "Tell me when the daemon logs an error."},
+    {"key": "config_incidents", "label": "Config rescues",     "desc": "Tell me when the config/identity layer had to heal itself (a wiped config, a restored or re-identified deck key) — the silent events that can take the bot offline."},
+    {"key": "connectivity",     "label": "Brain reachability", "desc": "Tell me when the Lighthouse uplink drops or returns."},
+    {"key": "resources",        "label": "Resource alerts",    "desc": "Disk / memory / CPU threshold alerts."},
+    {"key": "webcam",           "label": "Webcam (privacy)",   "desc": "Alert when an app starts using your camera."},
 ]
 _MONITOR_KEYS = {m["key"] for m in _MONITORS}
 
+# Monitors shown ON when the operator has never toggled them. Mirrors
+# NavigGateway.MONITORS_DEFAULT_ON (kept in sync by test_monitor_defaults_agree) so the
+# card and the gateway never disagree about a monitor's default state.
+_DEFAULT_ON = frozenset({"config_incidents"})
+
 
 def _truthy(v: object) -> bool:
-    return v in (True, "1", "true", "yes", "True")
+    # Canonical coercion so `config set monitors.x.enabled on/ON/off/…` resolves
+    # correctly — case-insensitively and identically to the gateway
+    # (test_monitor_enabled_coercion_matches_the_deck). `"false"` is not on.
+    from navig.core.coerce import coerce_bool
+
+    return coerce_bool(v)
+
+
+def _monitor_enabled(cfg, key: str) -> bool:
+    """The effective enabled state: an explicit config value wins; otherwise the default."""
+    raw = cfg.get(f"monitors.{key}.enabled")
+    return _truthy(raw) if raw is not None else (key in _DEFAULT_ON)
 
 
 def _monitor_availability(
@@ -307,7 +324,7 @@ async def handle_notify_monitors_get(request: "web.Request") -> "web.Response":
             )
             out.append({
                 **m,
-                "enabled": _truthy(cfg.get(f"monitors.{m['key']}.enabled")),
+                "enabled": _monitor_enabled(cfg, m["key"]),
                 "available": available,
                 "requirement": requirement,
             })

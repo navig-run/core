@@ -30,17 +30,163 @@ from navig.cli.registration import extract_non_global_tokens
 
 _log = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Terminal exit-code capture — the ledger-honesty seam.
+#
+# An operation record is COMPLETED in an atexit handler (below), because the
+# ``@app.callback`` middleware runs BEFORE the subcommand and cannot wrap it.
+# But atexit runs during interpreter shutdown — AFTER any SystemExit
+# (``typer.Exit`` / ``sys.exit`` / a Click usage error) has already been
+# consumed at the top level — so ``sys.exc_info()`` is ``(None, None, None)``
+# there and cannot reveal a clean non-zero exit. (The completion also runs in a
+# fresh worker thread, whose thread-local ``sys.exc_info()`` is empty regardless
+# of what the main thread raised.) The old handler keyed success off
+# ``sys.exc_info()`` and therefore recorded EVERY operation — including
+# ``navig db tables --host missing`` (exit 2) — as SUCCESS, corrupting
+# ``navig ledger show`` and making ``navig skill distill`` (T-069) file a failed
+# command as a working step instead of a pitfall.
+#
+# Fix: ``navig.main.main()`` — the single process-exit chokepoint that already
+# branches on the exit code — reports it here via ``note_exit_code()`` BEFORE
+# re-raising, and the atexit handler reads this module global (shared across
+# threads, unlike ``sys.exc_info()``).
+# ---------------------------------------------------------------------------
+
+_terminal_exit_code: object | None = None
+
+
+def note_exit_code(code: object | None) -> None:
+    """Record the process's terminal exit code for the operation ledger.
+
+    Called from ``navig.main.main()`` at every point the process leaves through
+    (its ``except SystemExit`` / ``KeyboardInterrupt`` / crash paths), BEFORE
+    the process actually exits, so the atexit completion handler can map it to a
+    truthful :class:`~navig.operation_recorder.OperationStatus`. ``code`` follows
+    ``SystemExit.code`` semantics (``None``/``0`` = clean; an int is the code; a
+    non-int message string counts as failure — exit 1, Python's own rule).
+    """
+    global _terminal_exit_code
+    _terminal_exit_code = code
+
+
+def _exit_code_to_int(code: object | None) -> int:
+    """``SystemExit.code`` → the integer the OS sees (Python's own mapping):
+    ``None`` → 0; an int stays (``bool`` normalised first); anything else
+    (e.g. a string message) → 1."""
+    if code is None:
+        return 0
+    if isinstance(code, bool):  # bool is an int subclass — normalise True→1/False→0
+        return int(code)
+    if isinstance(code, int):
+        return code
+    return 1
+
+
+def _exit_was_success() -> bool:
+    """True when the process is exiting cleanly (code 0 or a normal return)."""
+    return _exit_code_to_int(_terminal_exit_code) == 0
+
+
+def _status_for_exit_code(code: object | None):
+    """Map a terminal exit code to an OperationStatus.
+
+    ``0`` / ``None`` → SUCCESS; ``130`` (SIGINT / Ctrl-C) → CANCELLED — a cancel
+    is neither a working step nor a "don't do this" pitfall, so distill treats it
+    as neither; every other non-zero code → FAILED.
+    """
+    from navig.operation_recorder import OperationStatus
+
+    n = _exit_code_to_int(code)
+    if n == 0:
+        return OperationStatus.SUCCESS
+    if n == 130:
+        return OperationStatus.CANCELLED
+    return OperationStatus.FAILED
+
+
 # Meta-commands whose invocation should skip operation recording / fact
 # extraction (avoids polluting history with internal bookkeeping calls).
+# "ledger " is here for the observer effect: `navig ledger show/verify` are
+# pure reads of the ledger and must not append to the thing they inspect.
+# "audit " likewise: `navig audit tail` is a pure read of the gateway audit
+# log — an inspection view, not an operation worth a history line.
+# `navig undo` is deliberately NOT here — an undo is a real operation and
+# is recorded on the chain (T-068).
 _SKIP_RECORD_KEYWORDS: frozenset[str] = frozenset([
     "history ", "help", "--help", "-h", "--version", "-v",
     "insights ", "dashboard", "suggest",
     "trigger test", "trigger history",
+    "ledger ", "audit ",
 ])
 _SKIP_FACT_CMDS: frozenset[str] = frozenset([
     "memory", "kg", "index", "history", "version", "help",
     "--help", "--version",
 ])
+
+# ---------------------------------------------------------------------------
+# Operation-type classification tables (used by _classify_operation_type).
+#
+# Values are OperationType *strings* on purpose: middleware must not import
+# navig.operation_recorder at module load (lazy-import discipline — the enum
+# is resolved inside the function). Classification keys on the RESOLVED
+# command tokens (`navig <resource> <action>`), never on substrings of the
+# raw argv — the old substring heuristic labeled `navig config get` a
+# file_download and any `--output` flag a file_upload, labels that became
+# user-visible in `navig ledger show` (T-068).
+# ---------------------------------------------------------------------------
+
+#: Short CLI aliases normalised to their canonical resource name.
+_RESOURCE_ALIASES: dict[str, str] = {
+    "h": "host",
+    "f": "file",
+    "t": "tunnel",
+    "r": "run",
+    "database": "db",
+}
+
+#: Resources whose second token is a free-form payload (a shell command),
+#: never a subcommand — the read-verb rule must not apply to them
+#: (`navig run list` executes `list` remotely; it is not a listing).
+_FREE_ARG_RESOURCE_TYPES: dict[str, str] = {
+    "run": "remote_command",
+    "exec": "remote_command",
+    "ssh": "remote_command",
+    "local": "local_command",
+}
+
+#: Actions that are pure reads wherever they appear on the CLI surface.
+_READ_ACTIONS: frozenset[str] = frozenset({
+    "get", "show", "list", "ls", "status", "info", "search", "logs",
+    "history", "settings", "tables", "doctor", "validate", "verify",
+    "check", "ps", "help", "version",
+})
+
+#: Top-level commands that are pure reads on their own (`navig status`).
+_READ_RESOURCES: frozenset[str] = frozenset({"status", "doctor", "version", "paths"})
+
+#: Explicit (resource, action) → OperationType value. Wins over the generic
+#: read-verb rule: `file get` downloads (a local copy now exists) even though
+#: bare `get` is a read verb everywhere else.
+_EXACT_OPERATION_TYPES: dict[tuple[str, str], str] = {
+    ("file", "get"): "file_download",
+    ("file", "add"): "file_upload",
+    ("file", "edit"): "file_modify",
+    ("file", "remove"): "file_delete",
+    ("db", "dump"): "database_dump",
+    ("tunnel", "run"): "tunnel_start",
+    ("tunnel", "auto"): "tunnel_start",
+    ("tunnel", "remove"): "tunnel_stop",
+    ("host", "use"): "host_switch",
+    ("config", "set"): "config_change",
+    ("flow", "run"): "workflow_run",
+}
+
+#: Resource → default OperationType value when no action rule matched.
+_RESOURCE_OPERATION_TYPES: dict[str, str] = {
+    "db": "database_query",
+    "docker": "docker_command",
+    "service": "service_restart",
+}
 
 
 # =============================================================================
@@ -73,7 +219,7 @@ def init_operation_recorder(
         non_global = extract_non_global_tokens(sys.argv[1:])
         cmd_str_for_skip = " ".join(non_global)
 
-        op_type = _classify_operation_type(command_str)
+        op_type = _classify_operation_type(non_global)
 
         skip = any(kw in cmd_str_for_skip for kw in _SKIP_RECORD_KEYWORDS)
         if not skip and command_str.strip():
@@ -87,6 +233,12 @@ def init_operation_recorder(
             ctx.obj["_operation_start"] = time.time()
             ctx.obj["_operation_recorder"] = recorder
 
+            # Write an in-flight marker so a hard kill (SIGKILL / an un-caught
+            # SIGTERM) that never reaches the atexit completer still leaves a
+            # trace — `navig ledger reap` / `navig doctor` turn it into an honest
+            # `interrupted` record instead of a silently-lost operation.
+            recorder.mark_inflight(record)
+
     except Exception as exc:
         if verbose:
             ch.dim(f"→ Operation recording skipped: {exc}")
@@ -95,26 +247,41 @@ def init_operation_recorder(
         _register_operation_complete_atexit(ctx)
 
 
-def _classify_operation_type(command_str: str):
-    """Derive the OperationType from the raw command string."""
+def _classify_operation_type(tokens: list[str]):
+    """Derive the OperationType from the resolved command tokens.
+
+    *tokens* is the global-flag-stripped argv (``extract_non_global_tokens``),
+    so ``tokens[0]``/``tokens[1]`` follow the ``navig <resource> <action>``
+    contract — free-text arguments and option flags never leak into the match.
+    Rules, in priority order:
+
+    1. explicit (resource, action) pairs — `file get` is a download even
+       though bare `get` is a read verb everywhere else;
+    2. free-payload resources (`run`/`exec`/`ssh`/`local`) — their second
+       token is a shell command, not a subcommand;
+    3. read-only resources and read verbs → READ_QUERY (no side effect);
+    4. resource defaults (db/docker/service);
+    5. LOCAL_COMMAND — the honest "unknowable" fallback (red, T-068).
+    """
     from navig.operation_recorder import OperationType
 
-    if any(kw in command_str for kw in ("exec ", "ssh ", "tunnel ")):
-        return OperationType.REMOTE_COMMAND
-    if any(kw in command_str for kw in ("db ", "database ")):
-        return OperationType.DATABASE_QUERY
-    if "upload" in command_str or "put" in command_str:
-        return OperationType.FILE_UPLOAD
-    if any(kw in command_str for kw in ("download ", "get ")):
-        return OperationType.FILE_DOWNLOAD
-    if any(kw in command_str for kw in ("docker ", "container ")):
-        return OperationType.DOCKER_COMMAND
-    if "workflow run" in command_str:
-        return OperationType.WORKFLOW_RUN
-    if "host use" in command_str or "host switch" in command_str:
-        return OperationType.HOST_SWITCH
-    if "service" in command_str:
-        return OperationType.SERVICE_RESTART
+    if not tokens:
+        return OperationType.LOCAL_COMMAND
+
+    resource = _RESOURCE_ALIASES.get(tokens[0], tokens[0])
+    action = tokens[1] if len(tokens) > 1 else ""
+
+    exact = _EXACT_OPERATION_TYPES.get((resource, action))
+    if exact is not None:
+        return OperationType(exact)
+    free_arg = _FREE_ARG_RESOURCE_TYPES.get(resource)
+    if free_arg is not None:
+        return OperationType(free_arg)
+    if resource in _READ_RESOURCES or action in _READ_ACTIONS:
+        return OperationType.READ_QUERY
+    default = _RESOURCE_OPERATION_TYPES.get(resource)
+    if default is not None:
+        return OperationType(default)
     return OperationType.LOCAL_COMMAND
 
 
@@ -129,21 +296,22 @@ def _register_operation_complete_atexit(ctx: typer.Context) -> None:
                 start_time = ctx.obj.get("_operation_start", time.time())
 
                 if record and recorder:
+                    from navig.operation_recorder import OperationStatus
+
                     duration_ms = (time.time() - start_time) * 1000
-                    exc_type, exc_val, _ = sys.exc_info()
-                    if exc_type is None:
-                        success = True
-                    elif issubclass(exc_type, SystemExit):
-                        code = getattr(exc_val, "code", 0)
-                        success = code in (0, None)
-                    else:
-                        success = False
+                    # The terminal exit code is captured by note_exit_code()
+                    # from navig.main BEFORE the process exits — a module global
+                    # readable from this worker thread, unlike sys.exc_info().
+                    status = _status_for_exit_code(_terminal_exit_code)
+                    exit_code = _exit_code_to_int(_terminal_exit_code)
 
                     recorder.complete_operation(
                         record=record,
-                        success=success,
+                        success=status == OperationStatus.SUCCESS,
                         output="",
+                        exit_code=exit_code,
                         duration_ms=duration_ms,
+                        status=status,
                     )
             except Exception as exc:
                 _log.debug("operation recorder write failed: %s", exc)
@@ -209,13 +377,11 @@ def init_debug_logger(
             },
         )
 
-        atexit.register(lambda: debug_logger.log_command_end(
-            success=not any(
-                isinstance(e, Exception) and not isinstance(e, SystemExit)
-                for e in [sys.exc_info()[1]]
-                if e is not None
-            )
-        ))
+        # Same seam as the operation ledger: sys.exc_info() is empty at atexit
+        # (and in this handler's thread), so read the exit code captured by
+        # note_exit_code() instead — otherwise a failed command's debug log
+        # would claim success too.
+        atexit.register(lambda: debug_logger.log_command_end(success=_exit_was_success()))
 
         if verbose:
             ch.dim(f"→ Debug logging enabled: {debug_logger.log_path}")

@@ -15,7 +15,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # Helpers shared by all files_advanced tests
 # ---------------------------------------------------------------------------
-
 import navig.commands.files_advanced as _fa
 import navig.console_helper as _ch
 
@@ -47,12 +46,12 @@ class TestDeleteFileCmd:
             patch("navig.config.get_config_manager", return_value=mock_cm),
             patch("navig.remote.RemoteOperations", return_value=mock_remote_ops),
             patch("navig.cli.recovery.require_active_server", return_value="myhost"),
-            patch.object(_ch, "error", create=True),
-            patch.object(_ch, "success", create=True),
-            patch.object(_ch, "warning", create=True),
-            patch.object(_ch, "info", create=True),
-            patch.object(_ch, "raw_print", create=True),
-            patch.object(_ch, "confirm_action", create=True, return_value=True),
+            patch.object(_ch, "error"),
+            patch.object(_ch, "success"),
+            patch.object(_ch, "warning"),
+            patch.object(_ch, "info"),
+            patch.object(_ch, "raw_print"),
+            patch.object(_ch, "confirm_action", return_value=True),
         ):
             return _fa.delete_file_cmd(remote, options)
 
@@ -76,7 +75,7 @@ class TestDeleteFileCmd:
         assert result is True
 
     def test_dry_run_json(self):
-        with patch.object(_ch, "raw_print", create=True) as mock_rp:
+        with patch.object(_ch, "raw_print") as mock_rp:
             result = self._run(
                 "/tmp/f.txt",
                 {"dry_run": True, "json": True},
@@ -158,10 +157,10 @@ class TestMkdirCmd:
             patch("navig.config.get_config_manager", return_value=mock_cm),
             patch("navig.remote.RemoteOperations", return_value=mock_remote_ops),
             patch("navig.cli.recovery.require_active_server", return_value="myhost"),
-            patch.object(_ch, "error", create=True),
-            patch.object(_ch, "success", create=True),
-            patch.object(_ch, "info", create=True),
-            patch.object(_ch, "raw_print", create=True),
+            patch.object(_ch, "error"),
+            patch.object(_ch, "success"),
+            patch.object(_ch, "info"),
+            patch.object(_ch, "raw_print"),
         ):
             return _fa.mkdir_cmd(remote, options)
 
@@ -200,10 +199,10 @@ class TestMkdirCmd:
             patch("navig.config.get_config_manager", return_value=mock_cm),
             patch("navig.remote.RemoteOperations", return_value=mock_remote_ops),
             patch("navig.cli.recovery.require_active_server", return_value="myhost"),
-            patch.object(_ch, "error", create=True),
-            patch.object(_ch, "success", create=True),
-            patch.object(_ch, "info", create=True),
-            patch.object(_ch, "raw_print", create=True),
+            patch.object(_ch, "error"),
+            patch.object(_ch, "success"),
+            patch.object(_ch, "info"),
+            patch.object(_ch, "raw_print"),
         ):
             _fa.mkdir_cmd("/deep/path", {"parents": True, "mode": "755"})
         cmd_used = mock_remote_ops.execute_command.call_args[0][0]
@@ -222,10 +221,10 @@ class TestChmodCmd:
             patch("navig.config.get_config_manager", return_value=mock_cm),
             patch("navig.remote.RemoteOperations", return_value=mock_remote_ops),
             patch("navig.cli.recovery.require_active_server", return_value="myhost"),
-            patch.object(_ch, "error", create=True),
-            patch.object(_ch, "success", create=True),
-            patch.object(_ch, "info", create=True),
-            patch.object(_ch, "raw_print", create=True),
+            patch.object(_ch, "error"),
+            patch.object(_ch, "success"),
+            patch.object(_ch, "info"),
+            patch.object(_ch, "raw_print"),
         ):
             return _fa.chmod_cmd(remote, mode, options)
 
@@ -247,10 +246,10 @@ class TestChmodCmd:
             patch("navig.config.get_config_manager", return_value=mock_cm),
             patch("navig.remote.RemoteOperations", return_value=mock_remote_ops),
             patch("navig.cli.recovery.require_active_server", return_value="myhost"),
-            patch.object(_ch, "error", create=True),
-            patch.object(_ch, "success", create=True),
-            patch.object(_ch, "info", create=True),
-            patch.object(_ch, "raw_print", create=True),
+            patch.object(_ch, "error"),
+            patch.object(_ch, "success"),
+            patch.object(_ch, "info"),
+            patch.object(_ch, "raw_print"),
         ):
             _fa.chmod_cmd("/tmp/dir", "755", {"recursive": True})
         cmd_used = mock_remote_ops.execute_command.call_args[0][0]
@@ -269,10 +268,10 @@ class TestChownCmd:
             patch("navig.config.get_config_manager", return_value=mock_cm),
             patch("navig.remote.RemoteOperations", return_value=mock_remote_ops),
             patch("navig.cli.recovery.require_active_server", return_value="myhost"),
-            patch.object(_ch, "error", create=True),
-            patch.object(_ch, "success", create=True),
-            patch.object(_ch, "info", create=True),
-            patch.object(_ch, "raw_print", create=True),
+            patch.object(_ch, "error"),
+            patch.object(_ch, "success"),
+            patch.object(_ch, "info"),
+            patch.object(_ch, "raw_print"),
         ):
             return _fa.chown_cmd(remote, owner, options)
 
@@ -291,10 +290,10 @@ class TestChownCmd:
 # ---------------------------------------------------------------------------
 
 from navig.selfheal.ssh_healer import (
+    _LOCALHOST_ALIASES,
     HealResult,
     SSHHealer,
     _sanitize_ssh_verbose,
-    _LOCALHOST_ALIASES,
 )
 
 

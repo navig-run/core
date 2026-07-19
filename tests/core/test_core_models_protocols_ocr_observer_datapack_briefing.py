@@ -22,7 +22,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # navig/core/models.py
 # ---------------------------------------------------------------------------
-
 from navig.core.models import (
     CommandParameter,
     NavigCommand,

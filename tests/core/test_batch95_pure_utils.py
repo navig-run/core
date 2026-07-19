@@ -23,7 +23,6 @@ from navig.core.thresholds import (
 )
 from navig.core.tokens import estimate_tokens
 
-
 # ===========================================================================
 # safe_eval — arithmetic
 # ===========================================================================

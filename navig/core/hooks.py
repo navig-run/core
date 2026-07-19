@@ -27,7 +27,7 @@ import asyncio
 import logging
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, TypeVar
 
 logger = logging.getLogger("navig.hooks")
@@ -100,7 +100,7 @@ class HookEvent:
     type: str
     action: str
     context: dict[str, Any] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     messages: list[str] = field(default_factory=list)
     cancel: bool = False
     data: dict[str, Any] = field(default_factory=dict)

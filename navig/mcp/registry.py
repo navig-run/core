@@ -57,6 +57,31 @@ class MCPClientManager:
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
 
+    def _installed_plugin_mcp_servers(self) -> dict[str, dict[str, Any]]:
+        """MCP servers declared by installed plugins (`.mcp.json`), keyed by name.
+
+        Reuses the plugin host's parsed `mcp_servers`; normalises the Claude Code
+        `type` field to `transport`. Best-effort — a bad plugin is skipped, never
+        fatal, so it can't block MCP startup (degraded-never-blocks-boot)."""
+        out: dict[str, dict[str, Any]] = {}
+        try:
+            from navig.plugins.package import installed_plugin_roots, load_package
+        except Exception:  # noqa: BLE001
+            return out
+        for root in installed_plugin_roots():
+            try:
+                pkg = load_package(root)
+            except Exception:  # noqa: BLE001
+                continue
+            for name, cfg in (pkg.mcp_servers or {}).items():
+                if not isinstance(cfg, dict):
+                    continue
+                norm = dict(cfg)
+                if "transport" not in norm and "type" in norm:
+                    norm["transport"] = norm.get("type")
+                out.setdefault(name, norm)
+        return out
+
     # ------------------------------------------------------------------
     # Read-only views
     # ------------------------------------------------------------------
@@ -157,9 +182,14 @@ class MCPClientManager:
 
         self._started = True
 
-        mcp_config: dict[str, Any] = (
+        mcp_config: dict[str, Any] = dict(
             self.config.get("mcp", {}).get("clients", {})
         )
+        # Merge MCP servers declared by installed CC/NAVIG plugins (`.mcp.json`).
+        # Config-defined clients win — a plugin never overrides an explicit client.
+        for client_id, client_cfg in self._installed_plugin_mcp_servers().items():
+            mcp_config.setdefault(client_id, client_cfg)
+
         for client_id, client_cfg in mcp_config.items():
             if not client_cfg.get("enabled", True):
                 continue

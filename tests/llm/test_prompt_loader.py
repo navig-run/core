@@ -1,4 +1,4 @@
-"""Hermetic unit tests for navig.prompt_loader."""
+"""Hermetic unit tests for navig.prompts.loader."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -23,7 +23,7 @@ def _write_prompt(directory: Path, slug: str, content: str) -> Path:
 
 
 def _clear_cache():
-    from navig.prompt_loader import load_prompt
+    from navig.prompts.loader import load_prompt
 
     load_prompt.cache_clear()
 
@@ -41,53 +41,53 @@ class TestLoadPrompt:
         _clear_cache()
 
     def test_missing_file_returns_warning_string(self, tmp_path):
-        from navig.prompt_loader import load_prompt
+        from navig.prompts.loader import load_prompt
 
-        with patch("navig.prompt_loader.builtin_store_dir", return_value=tmp_path):
+        with patch("navig.prompts.loader.builtin_store_dir", return_value=tmp_path):
             result = load_prompt("nonexistent_slug")
 
         assert result == "Warning: Prompt nonexistent_slug not found."
 
     def test_plain_content_returned(self, tmp_path):
-        from navig.prompt_loader import load_prompt
+        from navig.prompts.loader import load_prompt
 
         _write_prompt(tmp_path, "hello", "Hello world prompt")
 
-        with patch("navig.prompt_loader.builtin_store_dir", return_value=tmp_path):
+        with patch("navig.prompts.loader.builtin_store_dir", return_value=tmp_path):
             result = load_prompt("hello")
 
         assert result == "Hello world prompt"
 
     def test_frontmatter_stripped(self, tmp_path):
-        from navig.prompt_loader import load_prompt
+        from navig.prompts.loader import load_prompt
 
         content = "---\ntitle: Test\nversion: 1\n---\nActual prompt body"
         _write_prompt(tmp_path, "with_fm", content)
 
-        with patch("navig.prompt_loader.builtin_store_dir", return_value=tmp_path):
+        with patch("navig.prompts.loader.builtin_store_dir", return_value=tmp_path):
             result = load_prompt("with_fm")
 
         assert result == "Actual prompt body"
         assert "title:" not in result
 
     def test_incomplete_frontmatter_returns_full_content(self, tmp_path):
-        from navig.prompt_loader import load_prompt
+        from navig.prompts.loader import load_prompt
 
         # Only one --- delimiter; should fall through to plain content
         content = "---\nno closing delimiter\njust content"
         _write_prompt(tmp_path, "partial_fm", content)
 
-        with patch("navig.prompt_loader.builtin_store_dir", return_value=tmp_path):
+        with patch("navig.prompts.loader.builtin_store_dir", return_value=tmp_path):
             result = load_prompt("partial_fm")
 
         assert "no closing delimiter" in result
 
     def test_cache_returns_same_object_on_second_call(self, tmp_path):
-        from navig.prompt_loader import load_prompt
+        from navig.prompts.loader import load_prompt
 
         _write_prompt(tmp_path, "cached_slug", "Cached content")
 
-        with patch("navig.prompt_loader.builtin_store_dir", return_value=tmp_path) as mock_dir:
+        with patch("navig.prompts.loader.builtin_store_dir", return_value=tmp_path) as mock_dir:
             r1 = load_prompt("cached_slug")
             r2 = load_prompt("cached_slug")
 
@@ -96,11 +96,11 @@ class TestLoadPrompt:
         assert mock_dir.call_count == 1
 
     def test_nested_slug_resolves(self, tmp_path):
-        from navig.prompt_loader import load_prompt
+        from navig.prompts.loader import load_prompt
 
         _write_prompt(tmp_path, "browser/vision", "Browser vision prompt")
 
-        with patch("navig.prompt_loader.builtin_store_dir", return_value=tmp_path):
+        with patch("navig.prompts.loader.builtin_store_dir", return_value=tmp_path):
             result = load_prompt("browser/vision")
 
         assert result == "Browser vision prompt"

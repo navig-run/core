@@ -40,6 +40,7 @@ from pathlib import Path
 
 from navig._daemon_defaults import _DAEMON_PORT
 from navig.platform import paths
+from navig.platform.opener import open_path
 
 # Fix console encoding on Windows
 if sys.platform == "win32":
@@ -105,7 +106,7 @@ class TraySettings:
     def load(cls) -> TraySettings:
         if SETTINGS_FILE.exists():
             try:
-                data = json.loads(SETTINGS_FILE.read_text())
+                data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
                 return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
@@ -358,7 +359,7 @@ class NavigTray:
             try:
                 pid_file = paths.config_dir() / "daemon" / "supervisor.pid"
                 if pid_file.exists():
-                    daemon_pid = int(pid_file.read_text().strip())
+                    daemon_pid = int(pid_file.read_text(encoding="utf-8").strip())
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -426,7 +427,7 @@ class NavigTray:
         try:
             daemon_pid_file = paths.config_dir() / "daemon" / "supervisor.pid"
             if daemon_pid_file.exists():
-                pid = int(daemon_pid_file.read_text().strip())
+                pid = int(daemon_pid_file.read_text(encoding="utf-8").strip())
                 if sys.platform == "win32":
                     import ctypes
 
@@ -743,9 +744,9 @@ class NavigTray:
                     ),
                     pystray.Menu.SEPARATOR,
                     pystray.MenuItem(
-                        "Open Config Folder", _bg(lambda: os.startfile(str(NAVIG_DIR)))
+                        "Open Config Folder", _bg(lambda: open_path(NAVIG_DIR))
                     ),
-                    pystray.MenuItem("Open Log Folder", _bg(lambda: os.startfile(str(LOG_DIR)))),
+                    pystray.MenuItem("Open Log Folder", _bg(lambda: open_path(LOG_DIR))),
                 ),
             ),
             pystray.Menu.SEPARATOR,
@@ -862,7 +863,7 @@ def main():
 
     if lock_file.exists():
         try:
-            pid = int(lock_file.read_text().strip())
+            pid = int(lock_file.read_text(encoding="utf-8").strip())
             # Check if PID is still alive
             if sys.platform == "win32":
                 import ctypes
@@ -883,7 +884,7 @@ def main():
             pass  # Stale lock, continue
 
     # Write lock
-    lock_file.write_text(str(os.getpid()))
+    lock_file.write_text(str(os.getpid()), encoding="utf-8")
 
     try:
         app = NavigTray()

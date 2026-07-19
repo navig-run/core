@@ -29,13 +29,19 @@ logger = logging.getLogger("navig.agents.inbox_router")
 
 # ── Constants ───────────────────────────────────────────────
 
-CONTENT_TYPES = ("task_roadmap", "brief", "wiki_knowledge", "memory_log", "other")
+CONTENT_TYPES = (
+    "task_roadmap", "brief", "wiki_knowledge", "memory_log",
+    "idea", "prompt", "code", "other",
+)
 
 TARGET_FOLDERS: dict[str, str | None] = {
     "task_roadmap": ".navig/plans",
     "brief": ".navig/plans/briefs",
     "wiki_knowledge": ".navig/wiki",
     "memory_log": ".navig/memory",
+    "idea": ".navig/ideas",              # raw idea backlog (slug.idea.md)
+    "prompt": ".navig/brain/prompts",    # reusable LLM prompts
+    "code": ".navig/refs/notes/code",    # liftable code snippets / techniques
     "other": None,
 }
 
@@ -61,7 +67,7 @@ INBOX_ROUTER_SYSTEM_PROMPT = (
     "## Output Contract\n"
     "Respond with ONLY a JSON object (no markdown fences, no commentary):\n"
     "{\n"
-    '  "content_type": "task_roadmap|brief|wiki_knowledge|memory_log|other",\n'
+    '  "content_type": "task_roadmap|brief|wiki_knowledge|memory_log|idea|prompt|code|other",\n'
     '  "space": "project|career|health|finance|learning|life|human|residence|company",\n'
     '  "confidence": 0.0,\n'
     '  "target_filename": "003-feature-auth-plan.md",\n'
@@ -90,6 +96,21 @@ INBOX_ROUTER_SYSTEM_PROMPT = (
     "Session logs, transcripts, debug notes, daily logs, decision records.\n"
     "Target: .navig/memory/\n"
     "Transform: Date-prefixed filename, frontmatter (date, session_id).\n"
+    "\n"
+    "### idea\n"
+    "Raw ideas, sparks, brainstorms, half-baked concepts — not yet a plan or a spec.\n"
+    "Target: .navig/ideas/\n"
+    "Transform: filename `<slug>.idea.md`, frontmatter (type: idea, created).\n"
+    "\n"
+    "### prompt\n"
+    "Reusable LLM prompts, system prompts, personas, instruction templates.\n"
+    "Target: .navig/brain/prompts/\n"
+    "Transform: filename `<slug>.prompt.md`, frontmatter (type: prompt, tags).\n"
+    "\n"
+    "### code\n"
+    "Code snippets / techniques worth lifting (fenced code, functions, queries) — not a whole repo.\n"
+    "Target: .navig/refs/notes/code/\n"
+    "Transform: frontmatter (type: code, lang), keep the fenced code intact.\n"
     "\n"
     "### other\n"
     "Cannot classify confidently. Keep in inbox for human review.\n"
@@ -195,6 +216,14 @@ _HINT_PATTERNS: dict[str, re.Pattern] = {
     "memory_log": re.compile(
         r"(?:session|log|transcript|journal|meeting|notes|debug)", re.IGNORECASE
     ),
+    "idea": re.compile(
+        r"(?:\bidea\b|what if|brainstorm|half-baked|maybe we could|rough concept)", re.IGNORECASE
+    ),
+    "prompt": re.compile(
+        r"(?:you are (?:a|an|the)|system prompt|act as|respond only with|## input contract|persona:)",
+        re.IGNORECASE,
+    ),
+    "code": re.compile(r"(?:```|^\s*def |^\s*class |^\s*function |^\s*import |^\s*#!/)", re.IGNORECASE),
 }
 
 
@@ -255,6 +284,32 @@ _EXEMPLARS: dict[str, list[str]] = {
         "## Session Log 2025-02-10\nInvestigated slow API responses.\nFound N+1 query "
         "in user endpoint.\nApplied eager loading fix.\n\n## Decision Record\n"
         "ADR: Use Redis for caching.\nContext: response times exceed SLA.",
+    ],
+    "idea": [
+        "A rough idea worth capturing before it's lost. What if we let agents propose their own "
+        "tasks? Half-baked concept, not a plan yet — just a spark. Maybe we could cache the hot "
+        "path in memory. Brainstorm: a recursive self-improvement loop. A speculative direction "
+        "to explore later. Nothing committed, no scope, no timeline — just the seed of a thought.",
+        "Idea: a decision ledger that records every non-obvious choice. Rough concept, needs more "
+        "thought. What if memory paged like an operating system? Backlog spark — sleep-time "
+        "computation. Not a spec, not a task; jotting it down so we don't forget the possibility.",
+    ],
+    "prompt": [
+        "You are the NAVIG classifier. Respond ONLY with a JSON object, no commentary. Act as a "
+        "senior engineer. This is a system prompt for the routing agent. Persona: calm, technical, "
+        "zero filler. ## Input Contract — you receive a JSON object. Instruction: classify the "
+        "document into exactly one category. Output contract: return the fields listed below.",
+        "System prompt. You are an assistant that distils media into a tight markdown briefing. "
+        "Respond only with markdown. Act as a document classifier for the inbox. Your task is to "
+        "extract the essence. Reusable prompt template with fill-in slots. Effort: low. Persona guide.",
+    ],
+    "code": [
+        "```python\ndef classify(text):\n    return model.predict(text)\n```\nimport numpy as np\n"
+        "class Router:\n    def route(self, doc):\n        ...\nA reusable snippet implementing "
+        "TF-IDF cosine similarity. Liftable technique with key functions and how it ports to the stack.",
+        "function extractFrames(video) { return ffmpeg(video); }\nconst app = express();\n"
+        "SELECT * FROM users WHERE active = true;\n#!/bin/bash\nfor f in *.mp4; do ffmpeg -i \"$f\"; "
+        "done\nA code technique worth keeping — the specific part worth lifting, not the whole repo.",
     ],
 }
 
@@ -654,7 +709,7 @@ class InboxRouterAgent:
         self, content: str, filename: str, metadata: dict[str, Any]
     ) -> dict[str, Any]:
         """Classify via LLM with strict JSON contract."""
-        from navig.llm_generate import llm_generate
+        from navig.llm.generate import llm_generate
 
         user_payload = json.dumps(
             {

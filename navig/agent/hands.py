@@ -582,7 +582,7 @@ class Hands(Component):
 
     async def list_workflows(self) -> CommandResult:
         """List available workflows."""
-        return await self.execute("navig workflow list")
+        return await self.execute("navig task list")  # `navig workflow` is not a registered command
 
     async def list_scripts(self) -> CommandResult:
         """List available scripts."""

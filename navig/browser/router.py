@@ -33,7 +33,8 @@ def get_browser(
     cdp_port: int | None = None,
     browser_config: BrowserConfig | None = None,
     stealth_config: StealthConfig | None = None,
-) -> BrowserController | StealthController:
+    engine: str | None = None,
+):
     """
     Return the appropriate browser controller for the task.
 
@@ -43,9 +44,16 @@ def get_browser(
                         If None, launches a fresh browser instance.
         browser_config: Config for Tier-1 BrowserController (ignored when stealth/cdp)
         stealth_config: Config for Tier-2 StealthController (ignored when stealth=False)
+        engine:         Named engine override — "firefox" for the non-CDP Firefox tier
+                        (Playwright Firefox; sidesteps CDP-surface detection), "camoufox" for
+                        the opt-in C++-stealth Firefox, "chrome" for a REAL system Chrome driven
+                        over CDP (no --enable-automation → navigator.webdriver=false; looks like a
+                        normal browser, for human-driven logins), "hardened" for the max-stealth
+                        C++-patched Chromium (opt-in), "cloud" for the Tier-C cloud browser, "stealth"
+                        for Patchright, "fast"/None for vanilla.
 
     Returns:
-        BrowserController, StealthController, or CDPBridge depending on flags.
+        BrowserController, StealthController, CDPBridge, HardenedController, or CloudBridge.
     """
     if cdp_port is not None:
         from navig.browser.cdp_bridge import CDPBridge
@@ -53,7 +61,42 @@ def get_browser(
         logger.info("[BrowserRouter] CDP attach tier selected (port=%d)", cdp_port)
         return CDPBridge(debug_port=cdp_port)
 
-    if stealth:
+    if engine in ("hardened", "clearcote"):  # "clearcote" = legacy alias (pre-3.24 rename)
+        from navig.browser.hardened import HardenedController
+
+        proxy = stealth_config.proxy if stealth_config else None
+        headless = stealth_config.headless if stealth_config else True
+        logger.info("[BrowserRouter] hardened (max-stealth) engine selected")
+        return HardenedController(headless=headless, proxy=proxy)
+
+    if engine == "cloud":
+        from navig.browser.cloud import CloudBridge
+
+        bridge = CloudBridge.from_config()
+        if bridge is None:
+            raise RuntimeError(
+                "[BrowserRouter] engine='cloud' but browser.cloud.endpoint is not configured."
+            )
+        logger.info("[BrowserRouter] Cloud (Tier-C) engine selected")
+        return bridge
+
+    if engine in ("firefox", "camoufox"):
+        from navig.browser.firefox import FirefoxController
+
+        proxy = stealth_config.proxy if stealth_config else None
+        headless = stealth_config.headless if stealth_config else True
+        logger.info("[BrowserRouter] Firefox (non-CDP) engine selected: %s", engine)
+        return FirefoxController(engine=engine, headless=headless, proxy=proxy)
+
+    if engine in ("chrome", "real-chrome"):
+        from navig.browser.system_chrome import SystemChromeController
+
+        proxy = stealth_config.proxy if stealth_config else None
+        headless = stealth_config.headless if stealth_config else True
+        logger.info("[BrowserRouter] Real system-Chrome (CDP, non-automation) engine selected")
+        return SystemChromeController(headless=headless, proxy=proxy)
+
+    if stealth or engine == "stealth":
         logger.info("[BrowserRouter] Stealth tier selected")
         return StealthController(stealth_config)
 

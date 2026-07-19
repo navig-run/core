@@ -179,3 +179,50 @@ class TestScriptEvolverConstruction:
         ev = ScriptEvolver()
         assert isinstance(ev._system_prompt, str)
         assert len(ev._system_prompt) > 20
+
+
+# ---------------------------------------------------------------------------
+# _scripts_dir — config_dir()/scripts, resolved lazily, no disk touch at construction.
+# REGRESSION: it was navig/scripts (INSIDE the package: site-packages in a real install)
+# and __init__ .mkdir()'d it, so merely constructing ScriptEvolver polluted the installed
+# package or raised on a read-only one — the #189/#271 class, in the scripts evolver.
+# ---------------------------------------------------------------------------
+
+class TestScriptsDir:
+    def test_default_is_config_dir_scripts(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        from navig.platform.paths import config_dir
+
+        assert ScriptEvolver()._scripts_dir == config_dir() / "scripts"
+
+    def test_default_is_not_inside_the_navig_package(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        import navig
+
+        pkg = Path(navig.__file__).resolve().parent
+        assert not str(ScriptEvolver()._scripts_dir.resolve()).startswith(str(pkg))
+
+    def test_construction_touches_no_disk(self, tmp_path, monkeypatch):
+        """The #189 bug was the eager mkdir in __init__. Constructing the evolver must not
+        create the scripts dir (nor anything else) under a fresh config dir."""
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        ScriptEvolver()
+        assert not (tmp_path / "scripts").exists()
+
+    def test_follows_navig_config_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "A"))
+        a = ScriptEvolver()._scripts_dir
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "B"))
+        b = ScriptEvolver()._scripts_dir
+        assert a != b  # two brains never share a scripts dir
+
+    def test_save_writes_where_navig_ahk_reads(self, tmp_path, monkeypatch):
+        """The round-trip: a generated script lands in config_dir()/scripts — the same dir
+        commands/ahk.py reads user scripts from."""
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        from navig.platform.paths import config_dir
+
+        ev = ScriptEvolver()
+        ev._save("make a hello script", "```python\n# filename: hello.py\nprint('hi')\n```")
+        saved = config_dir() / "scripts" / "hello.py"
+        assert saved.exists() and "hi" in saved.read_text(encoding="utf-8")

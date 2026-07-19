@@ -98,8 +98,9 @@ def copilot_ask(
         navig copilot ask "How do I set up a reverse proxy in nginx?"
         navig copilot ask "Explain Python decorators" --model gpt-4o
     """
-    from navig.core import narrator
     import time
+
+    from navig.core import narrator
 
     messages = []
     if system:

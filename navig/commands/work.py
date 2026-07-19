@@ -62,12 +62,19 @@ _DB_NAME = "work.db"
 # shown as a warning when going backwards more than two hops).
 _STAGE_ORDER = {s: i for i, s in enumerate(VALID_STAGES)}
 
-# Root of NAVIG data directory. Overridable in tests via monkeypatch.
-# Respects NAVIG_CONFIG_DIR env var for non-default install paths.
 from navig.core.dict_utils import now_iso
 from navig.platform.paths import config_dir as _config_dir
 
-_NAVIG_ROOT: Path = _config_dir()
+
+def _navig_root() -> Path:
+    """Resolve the NAVIG root at CALL time — never import time.
+
+    ``config_dir()`` honours ``NAVIG_CONFIG_DIR``; a module-level constant
+    would freeze the real user home before test/daemon isolation applies,
+    pointing ``work.db`` and wiki notes at the operator's real data
+    (see ``navig/vault/migrate.py:_legacy_db_path``).
+    """
+    return _config_dir()
 
 
 # ── DB helpers ───────────────────────────────────────────────────────────────
@@ -75,7 +82,7 @@ _NAVIG_ROOT: Path = _config_dir()
 
 def _db_path() -> Path:
     """Return path to the work SQLite database."""
-    return _NAVIG_ROOT / "store" / _DB_NAME
+    return _navig_root() / "store" / _DB_NAME
 
 
 def _get_conn():
@@ -166,7 +173,7 @@ def _create_wiki_note(slug: str, title: str, kind: str, stage: str) -> str | Non
     initialised or the import fails.
     """
     try:
-        data_root = _NAVIG_ROOT
+        data_root = _navig_root()
         wiki_root = data_root / "wiki" / "hub"
 
         if not wiki_root.exists():
@@ -453,7 +460,7 @@ def cmd_move(
 def _update_wiki_stage(notes_path: str, new_stage: str) -> None:
     """Update the ``stage:`` field in the wiki note's frontmatter."""
     try:
-        data_root = _NAVIG_ROOT
+        data_root = _navig_root()
         full_path = data_root / "wiki" / notes_path
         if not full_path.exists():
             return

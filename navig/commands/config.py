@@ -17,6 +17,7 @@ from navig._daemon_defaults import _GATEWAY_PORT
 from navig.cli._callbacks import show_subcommand_help
 from navig.config import get_config_manager
 from navig.console_helper import get_console
+from navig.core.coerce import coerce_bool
 from navig.core.yaml_io import load_yaml_with_lines
 from navig.migration import migrate_all_configs
 from navig.platform import paths
@@ -734,8 +735,11 @@ def _mask_secret(value: str | None) -> str:
     return f"[green]✓[/] [dim]{value[:6]}…{value[-4:]}[/]"
 
 
-def _bool_icon(val: bool) -> str:
-    return "[green]✓[/]" if val else "[red]✗[/]"
+def _bool_icon(val: Any) -> str:
+    # coerce_bool: these rows read raw config values, and `navig config set x false`
+    # stores the STRING "false" (truthy) — without coercion a disabled flag rendered a
+    # green ✓, actively lying about the setting. Real bools pass through unchanged.
+    return "[green]✓[/]" if coerce_bool(val) else "[red]✗[/]"
 
 
 def _section_table(rows: list[tuple[str, str, str]], gc: dict, defaults: dict) -> Table:
@@ -944,6 +948,122 @@ _SENSITIVE_CFG_TO_VAULT: dict[str, tuple[str, str]] = {
 }
 
 
+def _read_config_key(config_manager, key: str) -> tuple[bool, Any]:
+    """(exists, deep-copied value) for a dotted *key* in the global config.
+
+    The copy matters: the write below mutates the same tree in place, and the
+    captured pre-state must describe what was there BEFORE.
+    """
+    import copy
+
+    node: Any = config_manager.global_config
+    for part in key.split("."):
+        if isinstance(node, dict) and part in node:
+            node = node[part]
+        else:
+            return False, None
+    return True, copy.deepcopy(node)
+
+
+def _record_config_set(key: str, old_value: Any, old_exists: bool, new_value: Any) -> None:
+    """Record a config write to the operations ledger with undo_data (T-068).
+
+    Green seam for `navig undo`: captures the previous value at execution
+    time. Secret-bearing keys (vault write-through map + name heuristic) are
+    captured WITHOUT plaintext — a vault reference only — and their command
+    string is redacted, so no secret ever lands on the ledger. Enriches the
+    CLI middleware's in-flight record when there is one (one ledger line per
+    invocation); falls back to a standalone entry for library calls.
+    Best-effort by design: recording must never break the config write.
+    """
+    try:
+        import time
+
+        from navig.operation_recorder import (
+            OperationType,
+            claim_cli_operation,
+            get_operation_recorder,
+        )
+        from navig.reversibility import is_sensitive_config_key
+
+        vault_entry = _SENSITIVE_CFG_TO_VAULT.get(key.lower())
+        sensitive = bool(vault_entry) or is_sensitive_config_key(key)
+        if sensitive:
+            undo_data: dict[str, Any] = {
+                "key": key,
+                "sensitive": True,
+                "old_exists": old_exists,
+                "scope": "global",
+            }
+            if vault_entry:
+                undo_data["vault_ref"] = f"{vault_entry[0]}/{vault_entry[1]}"
+            command = f"navig config set {key} ***"
+        else:
+            undo_data = {
+                "key": key,
+                "old_value": old_value,
+                "old_exists": old_exists,
+                "new_value": new_value,
+                "scope": "global",
+            }
+            command = f"navig config set {key} {new_value}"
+
+        recorder = get_operation_recorder()
+        record, start = claim_cli_operation(match=("config set", "env set"))
+        if record is None:
+            record = recorder.start_operation(
+                command=command, operation_type=OperationType.CONFIG_CHANGE
+            )
+        else:
+            record.operation_type = OperationType.CONFIG_CHANGE
+            if sensitive:
+                # Never leave the plaintext argv on the ledger.
+                record.command = command
+        record.args = {**(record.args or {}), "key": key}
+        duration_ms = (time.time() - start) * 1000 if start else 0.0
+        recorder.complete_operation(
+            record, success=True, duration_ms=duration_ms, undo_data=undo_data
+        )
+    except Exception as exc:  # noqa: BLE001 — recording must never break the write
+        import logging
+
+        logging.getLogger(__name__).debug("config-set ledger capture skipped: %s", exc)
+
+
+def _record_host_switch(previous_host: str | None, new_host: str) -> None:
+    """Record an active-host switch with undo_data (green when a previous host exists)."""
+    try:
+        import time
+
+        from navig.operation_recorder import (
+            OperationType,
+            claim_cli_operation,
+            get_operation_recorder,
+        )
+
+        undo_data = (
+            {"previous_host": previous_host, "new_host": new_host} if previous_host else {}
+        )
+        recorder = get_operation_recorder()
+        record, start = claim_cli_operation(match=("config set", "env set"))
+        if record is None:
+            record = recorder.start_operation(
+                command=f"navig config set active_host {new_host}",
+                operation_type=OperationType.HOST_SWITCH,
+            )
+        else:
+            record.operation_type = OperationType.HOST_SWITCH
+        record.args = {**(record.args or {}), "key": "active_host"}
+        duration_ms = (time.time() - start) * 1000 if start else 0.0
+        recorder.complete_operation(
+            record, success=True, duration_ms=duration_ms, undo_data=undo_data or None
+        )
+    except Exception as exc:  # noqa: BLE001 — recording must never break the write
+        import logging
+
+        logging.getLogger(__name__).debug("host-switch ledger capture skipped: %s", exc)
+
+
 def set_config(key: str, value: str):
     """
     Set a global configuration value.
@@ -969,10 +1089,15 @@ def set_config(key: str, value: str):
             )
             raise typer.Exit(1)
 
+        previous_host = config_manager.global_config.get("active_host")
         config_manager.set_active_host(value, local=False)
         config_manager.update_global_config({"active_host": value})
         ch.success(f"Set {key} = {value}")
+        _record_host_switch(previous_host, value)
         return
+
+    # Capture the pre-state BEFORE mutating — this is what `navig undo` restores.
+    old_exists, old_value = _read_config_key(config_manager, key)
 
     # Handle nested keys (e.g., execution.mode)
     if "." in key:
@@ -992,6 +1117,7 @@ def set_config(key: str, value: str):
         config_manager.update_global_config({key: value})
 
     ch.success(f"Set {key} = {value}")
+    _record_config_set(key, old_value, old_exists, value)
 
     # Best-effort vault write-through for known sensitive config keys (#62)
     vault_entry = _SENSITIVE_CFG_TO_VAULT.get(key.lower())
@@ -1163,6 +1289,7 @@ def config_validate(
     strict: bool = typer.Option(False, "--strict", help="Treat warnings as errors"),
     json_out: bool = typer.Option(False, "--json", help="Output validation results as JSON"),
 ):
+    """Validate configuration for a host, the project, the global scope, or all."""
     validate(host=host, options=_validation_opts_from_ctx(ctx, scope=scope, strict=strict, json_out=json_out))
 
 
@@ -1223,6 +1350,7 @@ def config_set_mode(
     ctx: typer.Context,
     mode: str = typer.Argument(..., help="Execution mode: 'interactive' or 'auto'"),
 ):
+    """Set the execution mode: interactive or auto."""
     set_mode(mode)
 
 
@@ -1233,6 +1361,7 @@ def config_set_confirmation_level(
         ..., help="Confirmation level: 'critical', 'standard', or 'verbose'"
     ),
 ):
+    """Set the confirmation level: critical, standard, or verbose."""
     set_confirmation_level(level)
 
 
@@ -1285,6 +1414,7 @@ def config_backup_cmd(
         None, "--password", "-p", help="Encryption password (prompted if not provided)"
     ),
 ):
+    """Back up NAVIG configuration to an archive or JSON file."""
     obj = ctx.obj or {}
     from navig.commands.config_backup import export_config
 
@@ -1306,6 +1436,7 @@ def config_backup_cmd(
 def config_migrate(
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without saving"),
 ):
+    """Migrate the global configuration to the current schema."""
     import yaml
 
     from navig.core.migrations import migrate_config
@@ -1345,6 +1476,7 @@ def config_migrate(
 def config_audit_cmd(
     fix: bool = typer.Option(False, "--fix", help="Attempt to fix issues automatically"),
 ):
+    """Audit configuration for security issues (optionally auto-fix with --fix)."""
     from navig.commands.security import config_audit as security_config_audit
 
     security_config_audit({"fix": fix})
@@ -1354,6 +1486,7 @@ def config_audit_cmd(
 def config_show_cmd(
     scope: str = typer.Argument("global", help="Scope: global or host name"),
 ):
+    """Show the current configuration (global scope or a host)."""
     cm = get_config_manager()
 
     if scope == "global":
@@ -1371,6 +1504,7 @@ def config_show_cmd(
 def config_get_cmd(
     key: str = typer.Argument(..., help="Configuration key (e.g. ai.default_provider)"),
 ):
+    """Read a configuration value by dotted key (e.g. ai.default_provider)."""
     cm = get_config_manager()
     config = cm._load_global_config()
     keys = key.split(".")
@@ -1414,6 +1548,8 @@ def config_set_legacy_raw(
 ):
     import yaml
 
+    from navig.core.yaml_io import load_yaml_for_update
+
     try:
         try:
             parsed_value = yaml.safe_load(value)
@@ -1427,8 +1563,9 @@ def config_set_legacy_raw(
             ch.error("No global configuration found.")
             raise typer.Exit(1)
 
-        with open(global_config_file, encoding="utf-8") as file_handle:
-            config = yaml.safe_load(file_handle) or {}
+        # Read-modify-write through the shared guard — refuses an unreadable-but-populated
+        # config instead of overwriting it with {} (config-wipe class).
+        config = load_yaml_for_update(global_config_file)
 
         keys = key.split(".")
         target = config

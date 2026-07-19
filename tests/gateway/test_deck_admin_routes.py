@@ -65,7 +65,7 @@ class TestLoadLlmProviders:
             assert item["icon"], f"Empty icon for {item['key']}"
 
     def test_returns_empty_list_on_import_failure(self):
-        with patch.dict(sys.modules, {"navig.routing.router": None}):
+        with patch.dict(sys.modules, {"navig.llm.routing.router": None}):
             result = _load_llm_providers()
         assert result == []
 
@@ -106,7 +106,7 @@ class TestLoadSearchProviders:
             assert isinstance(item["requires_api_key"], bool)
 
     def test_returns_empty_on_import_failure(self):
-        with patch.dict(sys.modules, {"navig.routing.router": None}):
+        with patch.dict(sys.modules, {"navig.llm.routing.router": None}):
             result = _load_search_providers()
         assert result == {"search": [], "crawlers": []}
 
@@ -137,7 +137,7 @@ class TestLoadImageProviders:
         assert "openai" in keys
 
     def test_returns_empty_on_import_failure(self):
-        with patch.dict(sys.modules, {"navig.routing.router": None}):
+        with patch.dict(sys.modules, {"navig.llm.routing.router": None}):
             result = _load_image_providers()
         assert result == []
 
@@ -172,7 +172,7 @@ class TestLoadVoiceProviders:
         assert "whisper" in keys
 
     def test_returns_empty_on_import_failure(self):
-        with patch.dict(sys.modules, {"navig.routing.router": None}):
+        with patch.dict(sys.modules, {"navig.llm.routing.router": None}):
             result = _load_voice_providers()
         assert result == {"stt": [], "tts": []}
 

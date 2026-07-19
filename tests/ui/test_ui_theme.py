@@ -74,5 +74,6 @@ class TestStyleConstants:
 
     def test_console_is_rich_console(self):
         from rich.console import Console
+
         from navig.ui.theme import console
         assert isinstance(console, Console)

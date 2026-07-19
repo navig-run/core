@@ -89,3 +89,51 @@ def test_bake_lighthouse_noop_without_sentinel(tmp_path):
     (src / "index.html").write_text("no sentinel here", encoding="utf-8")
     # No sentinel → original dir returned unchanged (deck uses runtime Settings).
     assert m._bake_lighthouse_into_prebuilt(src, "https://edge.example.dev") == src
+
+
+# ── Telegram Mini App cache-bust (the button URL must change when the deck does) ─
+
+
+def _fake_cm(key: str = ""):
+    class _CM:
+        global_config = {"deck": {"api_key": key}}
+
+    return lambda: _CM()
+
+
+def test_connect_url_appends_version_after_key(monkeypatch):
+    monkeypatch.setattr("navig.config.get_config_manager", _fake_cm("SECRET"))
+    u = m._connect_url("https://deck.example.dev/", version="abc123")
+    assert u == "https://deck.example.dev/connect?key=SECRET&v=abc123"
+
+
+def test_connect_url_appends_version_to_bare_url_when_no_key(monkeypatch):
+    monkeypatch.setattr("navig.config.get_config_manager", _fake_cm(""))
+    u = m._connect_url("https://deck.example.dev", version="abc123")
+    assert u == "https://deck.example.dev?v=abc123"
+
+
+def test_connect_url_without_version_is_unchanged(monkeypatch):
+    monkeypatch.setattr("navig.config.get_config_manager", _fake_cm("K"))
+    u = m._connect_url("https://deck.example.dev")
+    assert u == "https://deck.example.dev/connect?key=K"
+    assert "v=" not in u
+
+
+def test_deck_bundle_signature_is_deterministic_and_content_sensitive(tmp_path):
+    chunks = tmp_path / "_next" / "static" / "chunks"
+    chunks.mkdir(parents=True)
+    (chunks / "a-111.js").write_text("x", encoding="utf-8")
+    (chunks / "b-222.js").write_text("y", encoding="utf-8")
+
+    sig = m._deck_bundle_signature(tmp_path)
+    assert sig and len(sig) == 12
+    assert m._deck_bundle_signature(tmp_path) == sig  # stable for same bundle
+
+    # A new content-hashed chunk name (a fresh build) must change the signature.
+    (chunks / "c-333.js").write_text("z", encoding="utf-8")
+    assert m._deck_bundle_signature(tmp_path) != sig
+
+
+def test_deck_bundle_signature_empty_when_no_bundle(tmp_path):
+    assert m._deck_bundle_signature(tmp_path) == ""

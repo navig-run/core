@@ -197,7 +197,7 @@ class SessionMemoryExtractor:
 
     def _sync_extract_notes(self, messages: list[object]) -> str | None:
         try:
-            from navig.llm_generate import run_llm
+            from navig.llm.generate import run_llm
 
             # Build a condensed transcript
             excerpt = list(messages)[-60:]

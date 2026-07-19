@@ -16,7 +16,6 @@ from navig.core.yaml_io import (
     safe_load_yaml,
 )
 
-
 # ──────────────────────────────────────────────────────────────
 # safe_load_yaml
 # ──────────────────────────────────────────────────────────────
@@ -191,17 +190,27 @@ class TestLoadYamlWithLines:
 
 
 class TestLogShadowAnomaly:
+    """Patch `_perf_dir` — the LAZY FUNCTION — not a `_PERF_DIR` constant.
+
+    yaml_io replaced the module-level `_PERF_DIR` constant with `_perf_dir()`
+    ("resolved lazily so env overrides apply"). These tests still patched the dead
+    constant, so `monkeypatch.setattr` raised AttributeError and every one of them
+    failed. Same refactor-not-propagated break as `_GW` -> `_gw()` (flux) and
+    `KEY_FACTS_DB_PATH` -> `get_key_facts_db_path()` (memory paths).
+    """
+
     def test_does_not_raise(self, tmp_path, monkeypatch):
         from navig.core import yaml_io
-        monkeypatch.setattr(yaml_io, "_PERF_DIR", tmp_path / "perf")
+        monkeypatch.setattr(yaml_io, "_perf_dir", lambda: tmp_path / "perf")
         # Must not raise
         log_shadow_anomaly("test_log", "divergence", {"key": "value"})
 
     def test_writes_jsonl_file(self, tmp_path, monkeypatch):
         import json
+
         from navig.core import yaml_io
         perf_dir = tmp_path / "perf"
-        monkeypatch.setattr(yaml_io, "_PERF_DIR", perf_dir)
+        monkeypatch.setattr(yaml_io, "_perf_dir", lambda: perf_dir)
         log_shadow_anomaly("mylog", "test_event", {"detail": 42})
         log_file = perf_dir / "mylog.jsonl"
         assert log_file.exists()
@@ -212,17 +221,17 @@ class TestLogShadowAnomaly:
     def test_appends_multiple_events(self, tmp_path, monkeypatch):
         from navig.core import yaml_io
         perf_dir = tmp_path / "perf"
-        monkeypatch.setattr(yaml_io, "_PERF_DIR", perf_dir)
+        monkeypatch.setattr(yaml_io, "_perf_dir", lambda: perf_dir)
         log_shadow_anomaly("multi", "evt1", {})
         log_shadow_anomaly("multi", "evt2", {})
         lines = (perf_dir / "multi.jsonl").read_text(encoding="utf-8").splitlines()
         assert len(lines) == 2
 
     def test_silently_ignores_write_failure(self, tmp_path, monkeypatch):
-        # Make _PERF_DIR a path inside a file (impossible to mkdir)
+        # Point the perf dir INSIDE a regular file, so mkdir is impossible.
         file_not_dir = tmp_path / "a_file"
         file_not_dir.write_text("block")
         from navig.core import yaml_io
-        monkeypatch.setattr(yaml_io, "_PERF_DIR", file_not_dir / "subdir")
-        # Should not raise
+        monkeypatch.setattr(yaml_io, "_perf_dir", lambda: file_not_dir / "subdir")
+        # Should not raise — anomaly logging must never break the caller.
         log_shadow_anomaly("fail", "event", {})

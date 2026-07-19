@@ -37,19 +37,32 @@ from navig.platform import paths
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-NAVIG_HOME = paths.config_dir()
-DAEMON_DIR = NAVIG_HOME / "daemon"
-PID_FILE = DAEMON_DIR / "supervisor.pid"
-STATE_FILE = DAEMON_DIR / "state.json"
 _PROC_GRACEFUL_TIMEOUT: int = 5  # Seconds to wait for a process to exit cleanly
+
+# Test seams — when ``None`` (the normal state), the resolvers below evaluate
+# ``paths.config_dir()`` at CALL time so NAVIG_CONFIG_DIR isolation set after
+# import still applies. Frozen module constants meant a test could read (or
+# unlink!) the operator's REAL supervisor.pid / state.json
+# (see navig/vault/migrate.py:_legacy_db_path).
+PID_FILE: Path | None = None
+STATE_FILE: Path | None = None
+
+
+def _daemon_dir() -> Path:
+    return paths.config_dir() / "daemon"
+
+
+def _pid_file() -> Path:
+    return PID_FILE if PID_FILE is not None else _daemon_dir() / "supervisor.pid"
+
+
+def _state_file() -> Path:
+    return STATE_FILE if STATE_FILE is not None else _daemon_dir() / "state.json"
 
 
 def _resolve_log_dir() -> Path:
     """Resolve log directory using navig.platform.paths (respects OS conventions)."""
     return paths.log_dir()
-
-
-LOG_DIR = _resolve_log_dir()
 
 MAX_RESTART_DELAY = 120  # seconds
 INITIAL_RESTART_DELAY = 2
@@ -57,8 +70,8 @@ HEALTH_CHECK_INTERVAL = 30  # seconds
 
 
 def _ensure_dirs() -> None:
-    DAEMON_DIR.mkdir(parents=True, exist_ok=True)
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    _daemon_dir().mkdir(parents=True, exist_ok=True)
+    _resolve_log_dir().mkdir(parents=True, exist_ok=True)
 
 
 def _make_logger(name: str, log_file: Path, level: int = logging.INFO) -> logging.Logger:
@@ -126,7 +139,7 @@ class ChildProcess:
             # Redirect child output directly to a log file (avoids PIPE
             # buffering and the duplicate-line problem where a child
             # writes to both stdout and stderr).
-            child_log = LOG_DIR / f"{self.name}.log"
+            child_log = _resolve_log_dir() / f"{self.name}.log"
             self._log_fh = open(child_log, "a", encoding="utf-8", errors="replace")
 
             kwargs: dict[str, Any] = {
@@ -249,8 +262,8 @@ class NavigDaemon:
 
     def __init__(self, *, health_port: int = 0):
         _ensure_dirs()
-        self.logger = _make_logger("navig.daemon", LOG_DIR / "daemon.log")
-        self.child_logger = _make_logger("navig.daemon.children", LOG_DIR / "children.log")
+        self.logger = _make_logger("navig.daemon", _resolve_log_dir() / "daemon.log")
+        self.child_logger = _make_logger("navig.daemon.children", _resolve_log_dir() / "children.log")
         self.children: list[ChildProcess] = []
         self._running = False
         self._health_port = health_port
@@ -338,17 +351,17 @@ class NavigDaemon:
     # -- PID management ----------------------------------------------------
 
     def _write_pid(self) -> None:
-        atomic_write_text(PID_FILE, str(os.getpid()))
+        atomic_write_text(_pid_file(), str(os.getpid()))
 
     def _remove_pid(self) -> None:
-        if PID_FILE.exists():
-            PID_FILE.unlink(missing_ok=True)
+        if _pid_file().exists():
+            _pid_file().unlink(missing_ok=True)
 
     @staticmethod
     def read_pid() -> int | None:
-        if PID_FILE.exists():
+        if _pid_file().exists():
             try:
-                return int(PID_FILE.read_text(encoding="utf-8").strip())
+                return int(_pid_file().read_text(encoding="utf-8").strip())
             except (ValueError, OSError):
                 return None
         return None
@@ -369,14 +382,14 @@ class NavigDaemon:
                 handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
                 if not handle:
                     # Process does not exist — clean up stale PID file
-                    PID_FILE.unlink(missing_ok=True)
+                    _pid_file().unlink(missing_ok=True)
                     return False
                 # Verify the process hasn't exited (STILL_ACTIVE = 259 = 0x103)
                 exit_code = ctypes.wintypes.DWORD()
                 kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
                 if exit_code.value != 259:  # process has exited
                     kernel32.CloseHandle(handle)
-                    PID_FILE.unlink(missing_ok=True)
+                    _pid_file().unlink(missing_ok=True)
                     return False
                 # Verify the PID belongs to a Python process (not a reused PID)
                 # QueryFullProcessImageNameW is fast — no subprocess needed
@@ -387,14 +400,14 @@ class NavigDaemon:
                 exe_name = Path(buf.value).name.lower() if buf.value else ""
                 if exe_name not in ("python.exe", "pythonw.exe", "python3.exe"):
                     # PID reused by a non-Python process — stale PID file
-                    PID_FILE.unlink(missing_ok=True)
+                    _pid_file().unlink(missing_ok=True)
                     return False
                 return True
             else:
                 os.kill(pid, 0)
                 return True
         except (OSError, ProcessLookupError):
-            PID_FILE.unlink(missing_ok=True)
+            _pid_file().unlink(missing_ok=True)
             return False
 
     @staticmethod
@@ -418,7 +431,7 @@ class NavigDaemon:
             else:
                 cmdline_path = Path(f"/proc/{pid}/cmdline")
                 if cmdline_path.exists():
-                    cmdline = cmdline_path.read_text()
+                    cmdline = cmdline_path.read_text(encoding="utf-8")
                     return "navig" in cmdline and "daemon" in cmdline
                 return False
         except Exception:
@@ -434,15 +447,15 @@ class NavigDaemon:
             "children": [c.to_dict() for c in self.children],
         }
         try:
-            atomic_write_text(STATE_FILE, json.dumps(state, indent=2))
+            atomic_write_text(_state_file(), json.dumps(state, indent=2))
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
     @staticmethod
     def read_state() -> dict[str, Any] | None:
-        if STATE_FILE.exists():
+        if _state_file().exists():
             try:
-                return json.loads(STATE_FILE.read_text())
+                return json.loads(_state_file().read_text(encoding="utf-8"))
             except Exception:
                 return None
         return None
@@ -575,8 +588,8 @@ class NavigDaemon:
         for child in self.children:
             child.stop(self.logger)
         self._remove_pid()
-        if STATE_FILE.exists():
-            STATE_FILE.unlink(missing_ok=True)
+        if _state_file().exists():
+            _state_file().unlink(missing_ok=True)
         self.logger.info("=== NAVIG Daemon stopped ===")
 
     # -- external control --------------------------------------------------
@@ -606,7 +619,9 @@ class NavigDaemon:
                             " | Where-Object {"
                             "  $_.CommandLine -and ("
                             "    $_.CommandLine -like '*navig.daemon*' -or"
-                            "    $_.CommandLine -like '*navig\\\\daemon\\\\entry*'"
+                            "    $_.CommandLine -like '*navig\\\\daemon\\\\entry*' -or"
+                            "    $_.CommandLine -like '*navig gateway start*' -or"
+                            "    $_.CommandLine -like '*telegram_worker*'"
                             "  )"
                             " }"
                             " | Select-Object -ExpandProperty ProcessId"
@@ -638,7 +653,7 @@ class NavigDaemon:
             try:
                 import signal as _signal
                 result = subprocess.run(
-                    ["pgrep", "-f", "navig.daemon"],
+                    ["pgrep", "-f", r"navig\.daemon|navig gateway start|telegram_worker"],
                     capture_output=True,
                     text=True,
                     timeout=5,
@@ -683,7 +698,7 @@ class NavigDaemon:
                 tk_out = (r.stdout + r.stderr).lower()
                 if r.returncode != 0 and b"not found" in tk_out:
                     # Process already gone — clean up stale PID file
-                    PID_FILE.unlink(missing_ok=True)
+                    _pid_file().unlink(missing_ok=True)
                     NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
                     return True
             else:
@@ -692,7 +707,7 @@ class NavigDaemon:
             for _ in range(20):
                 time.sleep(0.5)
                 if not NavigDaemon.is_running():
-                    PID_FILE.unlink(missing_ok=True)
+                    _pid_file().unlink(missing_ok=True)
                     NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
                     return True
             # Force kill
@@ -704,13 +719,13 @@ class NavigDaemon:
                 )
                 tk_out = (r.stdout + r.stderr).lower()
                 if r.returncode != 0 and b"not found" in tk_out:
-                    PID_FILE.unlink(missing_ok=True)
+                    _pid_file().unlink(missing_ok=True)
                     NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
                     return True
                 if r.returncode == 0:
                     # Force-kill succeeded — process is gone
                     time.sleep(0.5)
-                    PID_FILE.unlink(missing_ok=True)
+                    _pid_file().unlink(missing_ok=True)
                     NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
                     return True
             else:
@@ -720,23 +735,23 @@ class NavigDaemon:
             for _ in range(10):
                 time.sleep(0.2)
                 if not NavigDaemon.is_running():
-                    PID_FILE.unlink(missing_ok=True)
+                    _pid_file().unlink(missing_ok=True)
                     NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
                     return True
             NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
             return False
         except ProcessLookupError:
             # Process already gone
-            if PID_FILE.exists():
-                PID_FILE.unlink(missing_ok=True)
+            if _pid_file().exists():
+                _pid_file().unlink(missing_ok=True)
             NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
             return True
         except PermissionError:
             return False
         except OSError:
             if not NavigDaemon.is_running():
-                if PID_FILE.exists():
-                    PID_FILE.unlink(missing_ok=True)
+                if _pid_file().exists():
+                    _pid_file().unlink(missing_ok=True)
                 NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
                 return True
             return False

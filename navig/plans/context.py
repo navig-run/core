@@ -81,7 +81,7 @@ class PlanContext:
         ``Path.cwd()``.
     """
 
-    space_root: str = field(default_factory=lambda: str(paths.config_dir() / "spaces"))
+    space_root: str = field(default_factory=lambda: str(paths.spaces_dir()))
     mcp_enabled: bool = False
     cwd: Path = field(default_factory=Path.cwd)
 

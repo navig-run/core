@@ -11,7 +11,7 @@ pytestmark = pytest.mark.integration
 
 class TestAliasResolution:
     def test_canonical_names(self):
-        from navig.llm_router import LLMModeRouter
+        from navig.llm.router import LLMModeRouter
 
         r = LLMModeRouter({})
         assert r.resolve_mode("small_talk") == "small_talk"
@@ -21,49 +21,49 @@ class TestAliasResolution:
         assert r.resolve_mode("research") == "research"
 
     def test_small_talk_aliases(self):
-        from navig.llm_router import LLMModeRouter
+        from navig.llm.router import LLMModeRouter
 
         r = LLMModeRouter({})
         for alias in ("small", "chat", "casual", "talk", "hi", "hello"):
             assert r.resolve_mode(alias) == "small_talk", f"{alias} should map to small_talk"
 
     def test_big_tasks_aliases(self):
-        from navig.llm_router import LLMModeRouter
+        from navig.llm.router import LLMModeRouter
 
         r = LLMModeRouter({})
         for alias in ("big", "complex", "plan", "reason", "think"):
             assert r.resolve_mode(alias) == "big_tasks", f"{alias} should map to big_tasks"
 
     def test_coding_aliases(self):
-        from navig.llm_router import LLMModeRouter
+        from navig.llm.router import LLMModeRouter
 
         r = LLMModeRouter({})
         for alias in ("code", "dev", "debug", "program", "script"):
             assert r.resolve_mode(alias) == "coding", f"{alias} should map to coding"
 
     def test_summarize_aliases(self):
-        from navig.llm_router import LLMModeRouter
+        from navig.llm.router import LLMModeRouter
 
         r = LLMModeRouter({})
         for alias in ("sum", "summary", "tl;dr", "tldr", "digest"):
             assert r.resolve_mode(alias) == "summarize", f"{alias} should map to summarize"
 
     def test_research_aliases(self):
-        from navig.llm_router import LLMModeRouter
+        from navig.llm.router import LLMModeRouter
 
         r = LLMModeRouter({})
         for alias in ("research", "analysis", "compare", "sources", "analyze", "study"):
             assert r.resolve_mode(alias) == "research", f"{alias} should map to research"
 
     def test_unknown_defaults_to_big_tasks(self):
-        from navig.llm_router import LLMModeRouter
+        from navig.llm.router import LLMModeRouter
 
         r = LLMModeRouter({})
         assert r.resolve_mode("unknown_thing") == "big_tasks"
         assert r.resolve_mode("") == "big_tasks"
 
     def test_case_insensitive(self):
-        from navig.llm_router import LLMModeRouter
+        from navig.llm.router import LLMModeRouter
 
         r = LLMModeRouter({})
         assert r.resolve_mode("CHAT") == "small_talk"
@@ -75,7 +75,7 @@ class TestAliasResolution:
 
 class TestDetectMode:
     def test_code_snippets(self):
-        from navig.llm_router import detect_mode
+        from navig.llm.router import detect_mode
 
         assert detect_mode("```python\nprint('hello')\n```") == "coding"
         assert detect_mode("def calculate_total(items):") == "coding"
@@ -84,7 +84,7 @@ class TestDetectMode:
         assert detect_mode("debug the python module") == "coding"
 
     def test_greetings_small_talk(self):
-        from navig.llm_router import detect_mode
+        from navig.llm.router import detect_mode
 
         assert detect_mode("hey") == "small_talk"
         assert detect_mode("Hi there!") == "small_talk"
@@ -92,7 +92,7 @@ class TestDetectMode:
         assert detect_mode("good morning") == "small_talk"
 
     def test_casual_small_talk(self):
-        from navig.llm_router import detect_mode
+        from navig.llm.router import detect_mode
 
         assert detect_mode("thanks") == "small_talk"
         assert detect_mode("ok") == "small_talk"
@@ -100,14 +100,14 @@ class TestDetectMode:
         assert detect_mode("lol") == "small_talk"
 
     def test_summarize_keywords(self):
-        from navig.llm_router import detect_mode
+        from navig.llm.router import detect_mode
 
         assert detect_mode("summarize this document for me") == "summarize"
         assert detect_mode("tl;dr of the meeting notes") == "summarize"
         assert detect_mode("give me a brief overview of this") == "summarize"
 
     def test_research_keywords(self):
-        from navig.llm_router import detect_mode
+        from navig.llm.router import detect_mode
 
         assert detect_mode("research the latest AI trends") == "research"
         assert detect_mode("analyze this data set and compare") == "research"
@@ -115,7 +115,7 @@ class TestDetectMode:
         assert detect_mode("investigate the performance issue") == "research"
 
     def test_ambiguous_defaults_to_big_tasks(self):
-        from navig.llm_router import detect_mode
+        from navig.llm.router import detect_mode
 
         assert (
             detect_mode(
@@ -125,12 +125,12 @@ class TestDetectMode:
         )
 
     def test_short_question_small_talk(self):
-        from navig.llm_router import detect_mode
+        from navig.llm.router import detect_mode
 
         assert detect_mode("what time is it?") == "small_talk"
 
     def test_empty_input(self):
-        from navig.llm_router import detect_mode
+        from navig.llm.router import detect_mode
 
         assert detect_mode("") == "small_talk"
 
@@ -140,7 +140,7 @@ class TestDetectMode:
 
 class TestUncensoredRouting:
     def _make_router(self):
-        from navig.llm_router import LLMModeRouter
+        from navig.llm.router import LLMModeRouter
 
         config = {
             "llm_modes": {
@@ -160,8 +160,8 @@ class TestUncensoredRouting:
         }
         return LLMModeRouter(config)
 
-    @patch("navig.llm_router._check_ollama_models")
-    @patch("navig.llm_router._has_api_key")
+    @patch("navig.llm.router._check_ollama_models")
+    @patch("navig.llm.router._has_api_key")
     def test_uncensored_routes_to_local_ollama(self, mock_has_key, mock_ollama):
         """When use_uncensored=True + censored provider → selects local Ollama model."""
         mock_ollama.return_value = {"dolphin-llama3:8b": True, "dolphin-llama3": True}
@@ -175,8 +175,8 @@ class TestUncensoredRouting:
         assert resolved.is_uncensored is True
         assert "local" in resolved.resolution_reason.lower()
 
-    @patch("navig.llm_router._check_ollama_models")
-    @patch("navig.llm_router._has_api_key")
+    @patch("navig.llm.router._check_ollama_models")
+    @patch("navig.llm.router._has_api_key")
     def test_uncensored_fallback_to_api(self, mock_has_key, mock_ollama):
         """When local not available → falls back to API uncensored model."""
         mock_ollama.return_value = {}  # No local models
@@ -189,8 +189,8 @@ class TestUncensoredRouting:
         assert resolved.is_uncensored is True
         assert "api" in resolved.resolution_reason.lower()
 
-    @patch("navig.llm_router._check_ollama_models")
-    @patch("navig.llm_router._has_api_key")
+    @patch("navig.llm.router._check_ollama_models")
+    @patch("navig.llm.router._has_api_key")
     def test_uncensored_disabled_uses_standard(self, mock_has_key, mock_ollama):
         """When prefer_uncensored=False → standard route."""
         mock_ollama.return_value = {"dolphin-llama3:8b": True}
@@ -204,7 +204,7 @@ class TestUncensoredRouting:
 
     def test_resolution_reason_always_populated(self):
         """Every resolution has a non-empty resolution_reason."""
-        from navig.llm_router import CANONICAL_MODES, LLMModeRouter
+        from navig.llm.router import CANONICAL_MODES, LLMModeRouter
 
         router = LLMModeRouter({})
         for mode in CANONICAL_MODES:
@@ -217,7 +217,7 @@ class TestUncensoredRouting:
 
 class TestResolvedLLMConfig:
     def test_to_dict(self):
-        from navig.llm_router import ResolvedLLMConfig
+        from navig.llm.router import ResolvedLLMConfig
 
         cfg = ResolvedLLMConfig(
             provider="openai",
@@ -231,7 +231,7 @@ class TestResolvedLLMConfig:
         assert d["mode"] == "big_tasks"
 
     def test_repr(self):
-        from navig.llm_router import ResolvedLLMConfig
+        from navig.llm.router import ResolvedLLMConfig
 
         cfg = ResolvedLLMConfig(provider="ollama", model="dolphin:8b", mode="small_talk")
         assert "ollama" in repr(cfg)
@@ -239,7 +239,7 @@ class TestResolvedLLMConfig:
 
 
 def test_resolve_api_key_xai_accepts_grok_key_env(monkeypatch):
-    from navig.llm_router import _resolve_api_key
+    from navig.llm.router import _resolve_api_key
 
     monkeypatch.setenv("GROK_KEY", "grok-test-key")
 
@@ -247,7 +247,7 @@ def test_resolve_api_key_xai_accepts_grok_key_env(monkeypatch):
 
 
 def test_default_provider_override_keeps_provider_compatible_model():
-    from navig.llm_router import LLMModeRouter
+    from navig.llm.router import LLMModeRouter
 
     router = LLMModeRouter(
         {
@@ -269,7 +269,7 @@ def test_default_provider_override_keeps_provider_compatible_model():
 
 
 def test_class_and_module_detect_mode_match_for_research():
-    from navig.llm_router import LLMModeRouter, detect_mode
+    from navig.llm.router import LLMModeRouter, detect_mode
 
     text = "please research and compare these two approaches"
     router = LLMModeRouter({})

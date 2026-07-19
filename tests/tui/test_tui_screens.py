@@ -1,6 +1,8 @@
 """Tests for navig.tui.screens.* — using a comprehensive textual stub."""
 from __future__ import annotations
-import sys, types
+
+import sys
+import types
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -86,7 +88,9 @@ def _install_stub():
         ):
             _mod(name)
 
-        import navig as _navig_pkg, os as _os
+        import os as _os
+
+        import navig as _navig_pkg
         _tui_path = [_os.path.join(_navig_pkg.__path__[0], "tui")]
         navig_tui = _mod("navig.tui")
         navig_tui.__path__ = _tui_path

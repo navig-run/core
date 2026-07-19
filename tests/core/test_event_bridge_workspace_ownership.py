@@ -11,7 +11,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 # ============================================================================
 # navig.event_bridge — Severity
 # ============================================================================
@@ -295,10 +294,10 @@ class TestIsProjectWorkspacePath:
         assert is_project_workspace_path(other_path, project_root=tmp_path) is False
 
     def test_user_workspace_not_project_path(self):
-        from navig.workspace_ownership import USER_WORKSPACE_DIR, is_project_workspace_path
+        from navig.workspace_ownership import is_project_workspace_path, user_workspace_dir
 
         # ~/.navig/workspace is not a project workspace path
-        result = is_project_workspace_path(USER_WORKSPACE_DIR, project_root=Path.cwd())
+        result = is_project_workspace_path(user_workspace_dir(), project_root=Path.cwd())
         # Result depends on whether cwd has a .navig/workspace — just check type
         assert isinstance(result, bool)
 
@@ -381,17 +380,17 @@ class TestWorkspaceDuplicate:
 
 class TestResolvePersonalWorkspacePath:
     def test_none_returns_canonical(self):
-        from navig.workspace_ownership import USER_WORKSPACE_DIR, resolve_personal_workspace_path
+        from navig.workspace_ownership import resolve_personal_workspace_path, user_workspace_dir
 
         canonical, legacy = resolve_personal_workspace_path(None)
-        assert canonical == USER_WORKSPACE_DIR
+        assert canonical == user_workspace_dir()
         assert legacy is None
 
     def test_canonical_path_no_legacy(self):
-        from navig.workspace_ownership import USER_WORKSPACE_DIR, resolve_personal_workspace_path
+        from navig.workspace_ownership import resolve_personal_workspace_path, user_workspace_dir
 
-        canonical, legacy = resolve_personal_workspace_path(USER_WORKSPACE_DIR)
-        assert canonical == USER_WORKSPACE_DIR
+        canonical, legacy = resolve_personal_workspace_path(user_workspace_dir())
+        assert canonical == user_workspace_dir()
         assert legacy is None
 
     def test_non_canonical_path_sets_legacy(self, tmp_path):
@@ -399,7 +398,7 @@ class TestResolvePersonalWorkspacePath:
 
         custom_ws = tmp_path / "workspace"
         canonical, legacy = resolve_personal_workspace_path(custom_ws)
-        # canonical is always USER_WORKSPACE_DIR; legacy holds custom_ws
-        from navig.workspace_ownership import USER_WORKSPACE_DIR
-        assert canonical == USER_WORKSPACE_DIR
+        # canonical is always user_workspace_dir(); legacy holds custom_ws
+        from navig.workspace_ownership import user_workspace_dir
+        assert canonical == user_workspace_dir()
         assert legacy is not None

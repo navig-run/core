@@ -4,6 +4,7 @@ import sys
 from types import SimpleNamespace
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 import navig.commands.db as db_mod
@@ -11,7 +12,16 @@ import navig.commands.db as db_mod
 pytestmark = pytest.mark.integration
 
 
-def test_resolve_host_discovery_handles_missing_active_host(monkeypatch):
+# ---------------------------------------------------------------------------
+# _resolve_host_discovery no longer returns a None sentinel — it emits the error
+# AND raises typer.Exit so the command exits non-zero (exit 2 = named host does
+# not exist, exit 1 = its config is present but unusable). This closes the
+# silent-failure loop that PR #345 exposed: `navig db tables --host missing`
+# printed "Host not found" and still exited 0, recording SUCCESS in the ledger.
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_host_discovery_raises_on_missing_active_host(monkeypatch):
     errors: list[str] = []
 
     monkeypatch.setattr(db_mod.ch, "error", lambda msg: errors.append(str(msg)))
@@ -33,13 +43,14 @@ def test_resolve_host_discovery_handles_missing_active_host(monkeypatch):
         SimpleNamespace(ServerDiscovery=lambda *_a, **_kw: None),
     )
 
-    result = db_mod._resolve_host_discovery({})
+    with pytest.raises(typer.Exit) as exc:
+        db_mod._resolve_host_discovery({})
 
-    assert result is None
+    assert exc.value.exit_code == 1
     assert any("No active host" in e for e in errors)
 
 
-def test_resolve_host_discovery_handles_missing_host_config(monkeypatch):
+def test_resolve_host_discovery_raises_on_missing_host_config(monkeypatch):
     errors: list[str] = []
 
     monkeypatch.setattr(db_mod.ch, "error", lambda msg: errors.append(str(msg)))
@@ -61,13 +72,14 @@ def test_resolve_host_discovery_handles_missing_host_config(monkeypatch):
         SimpleNamespace(ServerDiscovery=lambda *_a, **_kw: None),
     )
 
-    result = db_mod._resolve_host_discovery({})
+    with pytest.raises(typer.Exit) as exc:
+        db_mod._resolve_host_discovery({})
 
-    assert result is None
+    assert exc.value.exit_code == 2  # not found → exit 2 (matches ai.py peers)
     assert any("Host not found: prod" in e for e in errors)
 
 
-def test_resolve_host_discovery_handles_missing_host_field(monkeypatch):
+def test_resolve_host_discovery_raises_on_missing_host_field(monkeypatch):
     errors: list[str] = []
 
     monkeypatch.setattr(db_mod.ch, "error", lambda msg: errors.append(str(msg)))
@@ -89,9 +101,10 @@ def test_resolve_host_discovery_handles_missing_host_field(monkeypatch):
         SimpleNamespace(ServerDiscovery=lambda *_a, **_kw: None),
     )
 
-    result = db_mod._resolve_host_discovery({})
+    with pytest.raises(typer.Exit) as exc:
+        db_mod._resolve_host_discovery({})
 
-    assert result is None
+    assert exc.value.exit_code == 1  # config present but unusable → exit 1
     assert any("missing required 'host' or 'hostname'" in e for e in errors)
 
 
@@ -158,20 +171,25 @@ def test_db_callback_initializes_ctx_obj_for_subcommands(monkeypatch):
     assert isinstance(captured["options"], dict)
 
 
-def test_db_dump_uses_host_discovery_guard(monkeypatch, tmp_path):
-    errors: list[str] = []
+def test_db_dump_propagates_host_discovery_exit(monkeypatch, tmp_path):
+    """When host resolution fails, db_dump_cmd must propagate the non-zero exit
+    (the guard raises typer.Exit now, instead of returning a None sentinel that
+    the command silently swallowed into a 0 exit)."""
 
-    monkeypatch.setattr(db_mod.ch, "error", lambda msg: errors.append(str(msg)))
-    monkeypatch.setattr(db_mod, "_resolve_host_discovery", lambda _options: None)
+    def _raise(_options):
+        raise typer.Exit(2)
 
-    db_mod.db_dump_cmd(
-        database="mydb",
-        output=tmp_path / "backup.sql",
-        container=None,
-        user="root",
-        password=None,
-        db_type=None,
-        options={},
-    )
+    monkeypatch.setattr(db_mod, "_resolve_host_discovery", _raise)
 
-    assert errors == []
+    with pytest.raises(typer.Exit) as exc:
+        db_mod.db_dump_cmd(
+            database="mydb",
+            output=tmp_path / "backup.sql",
+            container=None,
+            user="root",
+            password=None,
+            db_type=None,
+            options={},
+        )
+
+    assert exc.value.exit_code == 2

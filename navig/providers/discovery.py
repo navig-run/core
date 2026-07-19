@@ -129,7 +129,7 @@ def _probe_connection(manifest: ProviderManifest) -> tuple[bool, str]:
 def _get_active_provider() -> str:
     """Return the currently active provider id from the LLM mode router."""
     try:
-        from navig.llm_router import get_llm_router
+        from navig.llm.router import get_llm_router
 
         lr = get_llm_router()
         if lr:
@@ -148,7 +148,7 @@ def _get_current_tier_assignments() -> dict[str, tuple[str, str]]:
     """
     assignments: dict[str, tuple[str, str]] = {}
     try:
-        from navig.llm_router import get_llm_router
+        from navig.llm.router import get_llm_router
 
         lr = get_llm_router()
         if not lr:

@@ -5,7 +5,7 @@ Coverage targets:
   remediation.py: RemediationType, RemediationStatus, RemediationAction (dataclass, to_dict, from_dict)
   doctor.py:      _check, _gateway_reachable, _count_yaml_files, _find_browser_agent,
                   check_config, check_cache_dir, check_storage, check_sockets,
-                  check_formations, check_skills, check_gateway, check_env_keys,
+                  check_formations, check_skills, check_gateway, check_ai_providers,
                   check_browser_agent, check_python_deps
 """
 
@@ -33,9 +33,9 @@ from navig.commands.doctor import (
     _check,
     _count_yaml_files,
     _gateway_reachable,
+    check_ai_providers,
     check_cache_dir,
     check_config,
-    check_env_keys,
     check_formations,
     check_gateway,
     check_python_deps,
@@ -43,7 +43,6 @@ from navig.commands.doctor import (
     check_sockets,
     check_storage,
 )
-
 
 # ===========================================================================
 # RemediationType
@@ -528,52 +527,149 @@ class TestCheckGateway:
         _, ok, _ = results[0]
         assert ok is False
 
-    def test_reads_port_from_config(self, tmp_path):
-        cfg = tmp_path / "config.yaml"
-        cfg.write_text("gateway:\n  port: 9999\n", encoding="utf-8")
+    def test_resolves_live_port_when_not_given(self, tmp_path):
+        # No explicit port → follows the live resolver (discovery file first,
+        # config fallback), NOT a hardcoded default.
         called_ports = []
 
         def capture(host, port):
             called_ports.append(port)
             return False
 
-        with patch("navig.commands.doctor.config_dir", return_value=tmp_path):
+        with patch("navig.gateway_client.gateway_live_defaults", return_value=(9999, "127.0.0.1")):
             with patch("navig.commands.doctor._gateway_reachable", side_effect=capture):
                 check_gateway()
         assert 9999 in called_ports
 
+    def test_explicit_port_bypasses_resolver(self, tmp_path):
+        called_ports = []
+
+        def capture(host, port):
+            called_ports.append(port)
+            return False
+
+        with patch("navig.commands.doctor._gateway_reachable", side_effect=capture):
+            check_gateway(port=4242)
+        assert called_ports == [4242]
+
 
 # ===========================================================================
-# doctor.check_env_keys
+# doctor.check_ai_providers
+#
+# This check used to look ONLY at three environment variables. That is not where
+# NAVIG keeps provider auth — `navig connect add` / `navig vault` put keys in the
+# vault/auth-profiles, and a Claude Pro/Max subscription is an OAuth token, not a
+# key at all. So doctor told users "OPENAI_API_KEY: some models unavailable" while
+# their OpenAI key sat in their vault, and "Claude models unavailable" while three
+# Claude connections worked fine. It now resolves the way every other consumer does.
 # ===========================================================================
 
 
-class TestCheckEnvKeys:
-    def test_returns_list(self, tmp_path):
-        with patch("navig.commands.doctor.config_dir", return_value=tmp_path):
-            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "", "OPENAI_API_KEY": "", "ANTHROPIC_API_KEY": ""}):
-                results = check_env_keys()
-        assert isinstance(results, list)
-        assert len(results) >= 3
+def _providers(monkeypatch, *, keys: dict[str, str] | None = None, report: dict | None = None):
+    """Stub the two sources check_ai_providers reads (it must not touch real state)."""
+    import navig.providers as providers_mod
+    from navig.providers import connect as connect_mod
 
-    def test_set_key_returns_ok(self, tmp_path):
-        with patch("navig.commands.doctor.config_dir", return_value=tmp_path):
-            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-real-key-123"}):
-                results = check_env_keys()
-        # First result should be OPENROUTER_API_KEY, which should be OK
-        _, ok, msg = results[0]
-        assert ok is True
+    keys = keys or {}
 
-    def test_unset_key_returns_warn(self, tmp_path):
-        env = {"OPENROUTER_API_KEY": "", "OPENAI_API_KEY": "", "ANTHROPIC_API_KEY": ""}
-        with patch("navig.commands.doctor.config_dir", return_value=tmp_path):
-            with patch.dict(os.environ, env, clear=False):
-                # remove key entirely
-                env_copy = {k: v for k, v in os.environ.items() if k not in env}
-                with patch.dict(os.environ, env_copy, clear=True):
-                    results = check_env_keys()
-        _, ok, _ = results[0]
-        assert ok is False
+    class _FakeAuth:
+        def resolve_auth(self, pid):
+            return (keys.get(pid), f"vault:{pid}") if pid in keys else (None, "not_found")
+
+    monkeypatch.setattr(providers_mod, "AuthProfileManager", _FakeAuth)
+    monkeypatch.setattr(
+        connect_mod,
+        "diagnostics_report",
+        lambda *_a, **_k: report or {"connections": [], "pending_logins": 0},
+    )
+
+
+class TestCheckAiProviders:
+    def test_a_vaulted_key_is_not_reported_as_missing(self, monkeypatch):
+        """THE BUG: a key in the vault was reported as an unset env var."""
+        _providers(monkeypatch, keys={"openai": "sk-in-the-vault"})
+        results = check_ai_providers()
+
+        openai = [r for r in results if "openai" in r[2]]
+        assert openai, "a configured provider should be reported"
+        assert openai[0][1] is True, "a vaulted key was reported as missing"
+        assert "vault" in openai[0][2]
+
+    def test_no_provider_at_all_is_an_actionable_warning(self, monkeypatch):
+        _providers(monkeypatch)
+        results = check_ai_providers()
+
+        assert any(not ok for _n, ok, _d in results)
+        assert any("navig connect add" in d for _n, _ok, d in results)
+
+    def test_a_dead_default_connection_is_surfaced_as_failing(self, monkeypatch):
+        """The brain cannot run AI at all if its default can't route — that used to
+        be completely silent."""
+        _providers(
+            monkeypatch,
+            report={
+                "connections": [
+                    {
+                        "connection_id": "c1",
+                        "name": "OpenAI",
+                        "is_default": True,
+                        "is_routable": False,
+                        "ui_state": "needs_reauth",
+                    }
+                ],
+                "pending_logins": 0,
+            },
+        )
+        results = check_ai_providers()
+
+        default = [r for r in results if "Default" in r[2]]
+        assert default, "the default connection must be reported"
+        assert default[0][1] is False
+        assert "cannot run AI" in default[0][2]
+
+    def test_a_healthy_default_is_reported_ready(self, monkeypatch):
+        _providers(
+            monkeypatch,
+            report={
+                "connections": [
+                    {
+                        "connection_id": "c1",
+                        "name": "Claude — me@x.com",
+                        "is_default": True,
+                        "is_routable": True,
+                        "ui_state": "ready",
+                    }
+                ],
+                "pending_logins": 0,
+            },
+        )
+        results = check_ai_providers()
+        default = [r for r in results if "Default" in r[2]]
+        assert default and default[0][1] is True
+
+    def test_in_flight_logins_are_surfaced(self, monkeypatch):
+        _providers(
+            monkeypatch,
+            report={
+                "connections": [
+                    {"connection_id": "c1", "name": "X", "is_default": True, "is_routable": True}
+                ],
+                "pending_logins": 2,
+            },
+        )
+        results = check_ai_providers()
+        assert any("Logins in progress: 2" in d for _i, _ok, d in results)
+
+    def test_never_raises_when_the_provider_stack_is_unavailable(self, monkeypatch):
+        """Doctor must diagnose a broken system, not become part of the breakage."""
+        import navig.providers as providers_mod
+
+        def _boom():
+            raise RuntimeError("provider stack is on fire")
+
+        monkeypatch.setattr(providers_mod, "AuthProfileManager", _boom)
+        results = check_ai_providers()  # must not raise
+        assert isinstance(results, list) and results
 
 
 # ===========================================================================

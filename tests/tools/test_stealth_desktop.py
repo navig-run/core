@@ -15,7 +15,6 @@ import pytest
 from navig.browser.stealth import StealthConfig, _get_patchright
 from navig.desktop.controller import DesktopConfig, _init_pyautogui
 
-
 # ===========================================================================
 # _get_patchright (lazy import helper)
 # ===========================================================================

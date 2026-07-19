@@ -6,18 +6,17 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 # ─────────────────────────────────────────────────────────────
 # navig.core.retry_utils
 # ─────────────────────────────────────────────────────────────
-
 from navig.core.retry_utils import (
-    jittered_backoff,
     RetryConfig,
     async_retry,
+    jittered_backoff,
     retry_sync,
 )
 
@@ -154,7 +153,7 @@ class TestRetrySync:
         def flaky():
             calls.append(1)
             if len(calls) < 3:
-                raise IOError("not yet")
+                raise OSError("not yet")
             return "done"
 
         with patch("time.sleep"):
@@ -172,7 +171,7 @@ class TestRetrySync:
 
     def test_no_reraise_returns_none(self):
         def always_fails():
-            raise IOError("fail")
+            raise OSError("fail")
 
         with patch("time.sleep"):
             result = retry_sync(always_fails, config=RetryConfig(max_attempts=2, reraise_last=False, base_delay=0.001))
@@ -263,7 +262,6 @@ class TestValidateItemDict:
 # ─────────────────────────────────────────────────────────────
 
 from navig.importers.base import BaseImporter
-from navig.importers.models import ImportedItem
 
 
 class ConcreteImporter(BaseImporter):

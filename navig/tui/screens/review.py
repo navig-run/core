@@ -265,23 +265,36 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
         self._cfg = cfg
 
     def _deferred_commands(self) -> list[str]:
+        """Real commands to finish the integrations the operator skipped.
+
+        This used to hardcode `navig matrix setup` / `navig social setup` — verbs that do
+        not exist (`navig matrix setup` exits 2). It was a hand-copied twin of the
+        onboarding runner's map, and it rotted after the runner was fixed. Now it reads the
+        SINGLE canonical map (`INTEGRATION_FIX_HINTS`), so the two cannot drift again, and
+        de-dupes: matrix/email/social all finish via `navig init --reconfigure`, so the
+        screen shows one actionable line instead of three identical ones.
+        """
+        from navig.onboarding.runner import INTEGRATION_FIX_HINTS
+
         tier = getattr(self._cfg, "onboarding_tier", "recommended")
-        cmds: list[str] = []
-
         if tier in ("essential", "recommended"):
-            cmds.extend([
-                "navig matrix setup",
-                "navig email setup",
-                "navig social setup",
-            ])
-            return cmds
+            skipped = ("matrix", "email", "social-networks")
+        else:
+            skipped = tuple(
+                sid
+                for sid, flag in (
+                    ("matrix", "setup_matrix"),
+                    ("email", "setup_email"),
+                    ("social-networks", "setup_social"),
+                )
+                if not getattr(self._cfg, flag, False)
+            )
 
-        if not getattr(self._cfg, "setup_matrix", False):
-            cmds.append("navig matrix setup")
-        if not getattr(self._cfg, "setup_email", False):
-            cmds.append("navig email setup")
-        if not getattr(self._cfg, "setup_social", False):
-            cmds.append("navig social setup")
+        cmds: list[str] = []
+        for sid in skipped:
+            hint = INTEGRATION_FIX_HINTS.get(sid)
+            if hint and hint[0] not in cmds:  # dedupe, preserve order
+                cmds.append(hint[0])
         return cmds
 
     def compose(self):  # type: ignore[override]

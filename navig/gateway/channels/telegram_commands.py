@@ -1591,14 +1591,18 @@ class TelegramCommandsMixin:
 
         greeting: str | None = None
         try:
-            from navig.llm_generate import run_llm
+            from navig.llm.generate import run_llm
 
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(recent_msgs)
             messages.append({"role": "user", "content": "/start"})
             if narrator is not None:
                 narrator.step(f"calling LLM (mode=summary, context={len(recent_msgs)} msgs)", icon="radio")
-            result = run_llm(messages, mode="summary", effort="low")
+            # SYNC run_llm — offload off the gateway event loop so /start doesn't
+            # freeze the whole daemon while the greeting LLM call runs.
+            import asyncio as _asyncio
+
+            result = await _asyncio.to_thread(run_llm, messages, mode="summary", effort="low")
             text = (getattr(result, "content", "") or "").strip()
             if text:
                 greeting = text
@@ -1680,6 +1684,7 @@ class TelegramCommandsMixin:
             "",
             "Tap a category to explore commands.",
             "Type naturally any time — no commands needed.",
+            "Reply a keyword (translate · summarize · music …) to any message — 🎛 below.",
         ]
         text = "\n".join(lines)
 
@@ -1698,9 +1703,18 @@ class TelegramCommandsMixin:
                 row = []
         if row:
             rows.append(row)
+        # Reply-keyword actions (translate / summarize / music / … — not slash commands)
+        rows.append([{"text": "🎛 Reply keywords", "callback_data": "help:t"}])
         # Close button
         rows.append([{"text": "✕ Close", "callback_data": "help:close"}])
         return text, rows
+
+    @staticmethod
+    def _build_help_transforms() -> tuple[str, list[list[dict[str, str]]]]:
+        """The reply-keyword actions screen (/help transforms) — sourced from reply_actions."""
+        from navig.telegram import reply_actions
+
+        return reply_actions.help_text(), [[{"text": "◀ Back", "callback_data": "help:home"}]]
 
     @staticmethod
     def _build_help_category(cat_key: str) -> tuple[str, list[list[dict[str, str]]]] | None:
@@ -1892,6 +1906,9 @@ class TelegramCommandsMixin:
         if len(parts) >= 2 and parts[1] == "home":
             result = TelegramCommandsMixin._build_help_home()
 
+        elif len(parts) >= 2 and parts[1] == "t":
+            result = TelegramCommandsMixin._build_help_transforms()
+
         elif len(parts) >= 3 and parts[1] == "c":
             result = TelegramCommandsMixin._build_help_category(parts[2])
 
@@ -1926,17 +1943,20 @@ class TelegramCommandsMixin:
         """
         result = None
         if topic:
-            result = TelegramCommandsMixin._build_help_category(topic.lower())
-            if result is None:
-                # Unknown topic — try matching by label (case-insensitive)
-                result = next(
-                    (
-                        TelegramCommandsMixin._build_help_category(cat.key)
-                        for cat in _HELP_CATEGORIES
-                        if cat.label.lower() == topic.lower()
-                    ),
-                    None,
-                )
+            if topic.lower() in ("transforms", "keywords", "reply", "keys"):
+                result = TelegramCommandsMixin._build_help_transforms()
+            else:
+                result = TelegramCommandsMixin._build_help_category(topic.lower())
+                if result is None:
+                    # Unknown topic — try matching by label (case-insensitive)
+                    result = next(
+                        (
+                            TelegramCommandsMixin._build_help_category(cat.key)
+                            for cat in _HELP_CATEGORIES
+                            if cat.label.lower() == topic.lower()
+                        ),
+                        None,
+                    )
         text, keyboard = result if result is not None else TelegramCommandsMixin._build_help_home()
         sent = await self.send_message(chat_id, text, parse_mode="HTML", keyboard=keyboard)
         # Track the message so future nav: callbacks can edit it
@@ -1954,26 +1974,22 @@ class TelegramCommandsMixin:
         user_id: int = 0,
         message_id: int | None = None,
     ) -> None:
-        """Session dashboard for the current user — context, AI, readiness, progression (/status)."""
+        """Session dashboard for the current user — context, AI, readiness (/status)."""
         from navig.spaces import get_default_space
-        from navig.spaces.progress import (
-            collect_spaces_progress,
-            format_spaces_progress_lines,
-        )
 
         selected_space = get_default_space()
-        rows = collect_spaces_progress()
 
-        # ── Active host ──────────────────────────────────────────────────────
-        # Use the canonical config-manager resolution chain (env → project →
-        # cache → global).  When nothing is configured the user is operating
-        # locally, so fall back explicitly to "localhost".
+        # ── Host the brain runs on ───────────────────────────────────────────
+        # The session lives wherever the daemon runs — the operator's own machine.
+        # This is NOT the active SSH target (that's an ops destination shown in
+        # /hosts); showing the SSH host here read as "connected to a remote box"
+        # and confused operators who expected to see their own PC.
+        import platform as _platform
+
         try:
-            from navig.config import get_config_manager
-
-            active_host: str = get_config_manager().get_active_host() or "localhost"
+            host_label = _platform.node() or "this machine"
         except Exception:
-            active_host = "localhost"
+            host_label = "this machine"
 
         # ── Model tier ───────────────────────────────────────────────────────
         if hasattr(self, "_get_user_tier_pref"):
@@ -2028,13 +2044,6 @@ class TelegramCommandsMixin:
         reminder_str = str(reminder_count) if reminder_count is not None else "—"
         reminder_dot = "🔔" if reminder_count else "🔕"
 
-        # Space progression summary
-        prog_lines: list[str] = []
-        if rows:
-            prog_lines = format_spaces_progress_lines(rows, max_items=3)
-        else:
-            prog_lines = ["   <i>No spaces yet — run /space to create one</i>"]
-
         # Pending fix hints (max 2, compact)
         fix_hint_lines: list[str] = []
         if status_fix_issues:
@@ -2055,7 +2064,7 @@ class TelegramCommandsMixin:
             f"<i>{now_utc}</i>",
             "",
             "<b>📍 Context</b>",
-            f"  Host     <code>{html.escape(active_host)}</code>",
+            f"  Host     <code>{html.escape(host_label)}</code>",
             f"  Space    <code>{html.escape(selected_space)}</code>",
             "",
             "<b>🤖 AI</b>",
@@ -2070,11 +2079,6 @@ class TelegramCommandsMixin:
             msg_parts.append("  <b>Pending fixes:</b>")
             msg_parts.extend(fix_hint_lines)
 
-        msg_parts += [
-            "",
-            "<b>📈 Progression</b>",
-        ] + prog_lines
-
         text = "\n".join(msg_parts)
 
         # ── Inline keyboard ───────────────────────────────────────────────────
@@ -2088,16 +2092,16 @@ class TelegramCommandsMixin:
                 label = label[:31] + "…"
             fix_buttons.append([{"text": f"🛠 {label}", "callback_data": f"stfix:{code}"}])
 
+        # Session-scoped actions only. Deck-oriented buttons (Spaces, Switch AI,
+        # Home) were removed — they belong to the Deck/app surface, not the
+        # brain's own session card. Reminders used "slash:/reminders" (leading
+        # slash) which matched no registered command; the correct id is
+        # "slash:reminders" (as every other reminders button uses).
         nav_keyboard: list[list[dict[str, str]]] = fix_buttons + [
             [
                 {"text": "🔄 Refresh", "callback_data": "nav:open:status"},
-                {"text": "🗺️ Spaces", "callback_data": "nav:cmd:/spaces"},
                 {"text": "📋 Briefing", "callback_data": "nav:open:briefing"},
-            ],
-            [
-                {"text": "🤖 Switch AI", "callback_data": "nav:models"},
-                {"text": "⏰ Reminders", "callback_data": "slash:/reminders"},
-                {"text": "🏠 Home", "callback_data": "nav:home"},
+                {"text": "⏰ Reminders", "callback_data": "slash:reminders"},
             ],
         ]
 
@@ -3647,7 +3651,7 @@ class TelegramCommandsMixin:
         # Active provider from LLM router
         active_prov = ""
         try:
-            from navig.llm_router import get_llm_router
+            from navig.llm.router import get_llm_router
 
             lr = get_llm_router()
             if lr:
@@ -3700,62 +3704,46 @@ class TelegramCommandsMixin:
         await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
 
     async def _handle_mode(self, chat_id: int, text: str = "", user_id: int = 0) -> None:
-        """Set focus/behavior mode. Uses MOOD_REGISTRY with fuzzy matching."""
+        """Set the focus mode — the LIVE ``chat_mode`` preference the agent reads and that
+        gates do-not-disturb (deep-focus / sleep hold notifications).
+
+        Was crashing on a removed ``navig.agent.soul.MOOD_REGISTRY`` import, and even before
+        that set ``chat_mode`` to mood ids (``balance`` …) the preference store rejected, so
+        it never actually changed the mode. Now driven by the single source of truth in
+        ``navig.gateway.channels.focus_modes``, keyed on the real ``_VALID_MODES`` vocabulary.
+        """
+        from navig.gateway.channels.focus_modes import DEFAULT_MODE, FOCUS_MODES, normalize
+
         mode_arg = (
             text[len("/mode") :].strip() if text.lower().startswith("/mode") else text.strip()
         )
-        from navig.agent.soul import MOOD_REGISTRY, get_mood_profile
-
         _uid = user_id or chat_id
+        _is_grp = chat_id != _uid
 
-        if not mode_arg or mode_arg in ("help", "list"):
+        def _current() -> str:
+            try:
+                from navig.agent.proactive.user_state import get_user_state_tracker
+
+                return get_user_state_tracker().get_preference("chat_mode", DEFAULT_MODE)
+            except Exception:  # noqa: BLE001
+                return DEFAULT_MODE
+
+        if not mode_arg or mode_arg.lower() in ("help", "list"):
+            current = _current()
             lines = ["<b>Focus Modes</b>\n"]
-            current = "balance"
-            if _HAS_SESSIONS:
-                try:
-                    sm = get_session_manager()
-                    _is_grp = chat_id != _uid
-                    current = sm.get_session_metadata(
-                        chat_id, _uid, "focus_mode", "balance", is_group=_is_grp
-                    )
-                except Exception:  # noqa: BLE001
-                    pass  # best-effort; failure is non-critical
-            for mid, mp in MOOD_REGISTRY.items():
-                active_marker = " <b>- active</b>" if mid == current else ""
-                lines.append(f"{mp.emoji} <code>{mid}</code>{active_marker}\n<i>{mp.character}</i>")
+            for mid, fm in FOCUS_MODES.items():
+                active_marker = " <b>· active</b>" if mid == current else ""
+                lines.append(f"{fm.emoji} <code>{mid}</code>{active_marker}\n<i>{fm.description}</i>")
             lines.append(
-                "\n<code>/mode &lt;name&gt;</code> to switch  -  "
-                "<code>/mode auto</code> to let NAVIG decide"
+                "\n<code>/mode &lt;name&gt;</code> to switch  ·  "
+                "<code>/mode auto</code> to reset"
             )
             await self.send_message(chat_id, "\n\n".join(lines), parse_mode="HTML")
             return
 
-        if mode_arg.lower() == "auto":
-            if _HAS_SESSIONS:
-                try:
-                    sm = get_session_manager()
-                    sm.set_session_metadata(
-                        chat_id,
-                        _uid,
-                        "focus_mode",
-                        "balance",
-                        is_group=chat_id != _uid,
-                    )
-                except Exception as e:
-                    logger.debug("Failed to clear focus mode: %s", e)
-            try:
-                from navig.agent.proactive.user_state import get_user_state_tracker
-
-                get_user_state_tracker().set_preference("chat_mode", "auto")
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-            await self.send_message(chat_id, "- auto. reading the room.", parse_mode=None)
-            return
-
-        try:
-            mood = get_mood_profile(mode_arg)
-        except KeyError:
-            available = "  ".join(f"<code>{k}</code>" for k in MOOD_REGISTRY)
+        canonical = normalize(mode_arg)
+        if canonical is None:
+            available = "  ".join(f"<code>{k}</code>" for k in FOCUS_MODES)
             await self.send_message(
                 chat_id,
                 f"Unknown mode: <code>{html.escape(mode_arg)}</code>\n\nAvailable: {available}",
@@ -3763,26 +3751,25 @@ class TelegramCommandsMixin:
             )
             return
 
+        fm = FOCUS_MODES[canonical]
+        # focus_mode (session, drives the settings keyboard chip) + chat_mode (user-state,
+        # drives agent behaviour + DND) — both set to the SAME canonical id.
         if _HAS_SESSIONS:
             try:
                 sm = get_session_manager()
                 sm.set_session_metadata(
-                    chat_id,
-                    _uid,
-                    "focus_mode",
-                    mood.id,
-                    is_group=chat_id != _uid,
+                    chat_id, _uid, "focus_mode", canonical, is_group=_is_grp
                 )
             except Exception as e:
                 logger.debug("Failed to persist focus_mode: %s", e)
         try:
             from navig.agent.proactive.user_state import get_user_state_tracker
 
-            get_user_state_tracker().set_preference("chat_mode", mood.id)
+            get_user_state_tracker().set_preference("chat_mode", canonical)
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
-        await self.send_message(chat_id, mood.transition_message, parse_mode=None)
+        await self.send_message(chat_id, fm.confirmation, parse_mode=None)
 
     async def _handle_tier_override(
         self,
@@ -3997,7 +3984,7 @@ class TelegramCommandsMixin:
         # Detect active provider
         active_prov = ""
         try:
-            from navig.llm_router import get_llm_router
+            from navig.llm.router import get_llm_router
 
             lr = get_llm_router()
             if lr:
@@ -4113,7 +4100,7 @@ class TelegramCommandsMixin:
         # Get current assignments from LLM Mode Router
         current: dict[str, str] = {"small": "—", "big": "—", "coder_big": "—"}
         try:
-            from navig.llm_router import get_llm_router
+            from navig.llm.router import get_llm_router
 
             lr = get_llm_router()
             if lr:
@@ -4245,7 +4232,7 @@ class TelegramCommandsMixin:
         # Detect current model for this tier
         current_model = ""
         try:
-            from navig.llm_router import get_llm_router
+            from navig.llm.router import get_llm_router
 
             lr = get_llm_router()
             if lr:
@@ -4338,7 +4325,7 @@ class TelegramCommandsMixin:
         # Quick model summary from LLM Mode Router
         model_summary = ""
         try:
-            from navig.llm_router import get_llm_router
+            from navig.llm.router import get_llm_router
 
             lr = get_llm_router()
             if lr:
@@ -4454,7 +4441,7 @@ class TelegramCommandsMixin:
         # Fallback: legacy llm_router modes (pre-UnifiedRouter path)
         if not active_prov:
             try:
-                from navig.llm_router import get_llm_router
+                from navig.llm.router import get_llm_router
 
                 lr = get_llm_router()
                 if lr:
@@ -4526,7 +4513,7 @@ class TelegramCommandsMixin:
 
         # Compact model routing summary
         try:
-            from navig.llm_router import get_llm_router
+            from navig.llm.router import get_llm_router
 
             llm_router = get_llm_router()
             if llm_router:
@@ -5101,7 +5088,7 @@ class TelegramCommandsMixin:
     def _refresh_ai_runtime_after_router_update(self) -> None:
         """Best-effort refresh of router/client singletons after provider/model updates."""
         try:
-            from navig.routing.router import reset_router
+            from navig.llm.routing.router import reset_router
 
             reset_router()
         except Exception:  # noqa: BLE001
@@ -5121,7 +5108,7 @@ class TelegramCommandsMixin:
             logger.debug("Failed to flush ConversationalAgent cache", exc_info=True)
 
         try:
-            from navig.llm_router import get_llm_router
+            from navig.llm.router import get_llm_router
 
             get_llm_router(force_new=True)
         except Exception:  # noqa: BLE001
@@ -5151,7 +5138,7 @@ class TelegramCommandsMixin:
         """
         try:
             from navig.config import get_config_manager
-            from navig.llm_router import get_llm_router
+            from navig.llm.router import get_llm_router
 
             router = get_llm_router()
             if not router:
@@ -5190,7 +5177,7 @@ class TelegramCommandsMixin:
         """
         try:
             from navig.config import get_config_manager
-            from navig.llm_router import get_llm_router
+            from navig.llm.router import get_llm_router
 
             router = get_llm_router()
             if not router:
@@ -5289,7 +5276,7 @@ class TelegramCommandsMixin:
         # Priority 2: LLM Mode Router (written on every activation, even without hybrid)
         if any(v is None for v in current.values()):
             try:
-                from navig.llm_router import get_llm_router
+                from navig.llm.router import get_llm_router
 
                 lr = get_llm_router()
                 if lr:
@@ -5416,7 +5403,7 @@ class TelegramCommandsMixin:
         # Show Activate / Deactivate button depending on live router state
         _is_active_prov = False
         try:
-            from navig.llm_router import get_llm_router as _glr
+            from navig.llm.router import get_llm_router as _glr
 
             _lr = _glr()
             if _lr:
@@ -6101,7 +6088,7 @@ class TelegramCommandsMixin:
 
         if self._is_debug_mode(user_id):
             try:
-                from navig.llm_router import get_llm_router
+                from navig.llm.router import get_llm_router
 
                 llm_router = get_llm_router()
                 _TIER_NAMES = {
@@ -6201,19 +6188,27 @@ class TelegramCommandsMixin:
         lines.append(SEP)
 
         # -- Daemon log warnings ------------------------------------------------
+        # debug.log lives at debug_log_path() = log_dir()/debug.log (on Windows
+        # %LOCALAPPDATA%\navig\logs), NEVER ~/.navig. Reading ~/.navig/debug.log was the
+        # #192 decoy — a 0-byte file the logger never writes; two hardcoded copies of it
+        # lingered here after that sweep because os.path.expanduser is a spelling the
+        # hardcoded-home guard couldn't see (fixed now: test_no_hardcoded_home also flags
+        # expanduser("~/.navig...")).
         try:
             from navig.platform.paths import debug_log_path as _debug_log_path
+            from navig.platform.paths import log_dir as _log_dir
 
-            _primary_debug_log = str(_debug_log_path())
+            _log_candidates = [
+                str(_debug_log_path()),
+                str(_log_dir() / "daemon.log"),
+                "/var/log/navig/daemon.log",
+                "/var/log/navig-daemon.log",
+            ]
         except Exception:
-            _primary_debug_log = os.path.expanduser("~/.navig/debug.log")
-
-        _log_candidates = [
-            _primary_debug_log,
-            os.path.expanduser("~/.navig/debug.log"),
-            "/var/log/navig/daemon.log",
-            "/var/log/navig-daemon.log",
-        ]
+            _log_candidates = [
+                "/var/log/navig/daemon.log",
+                "/var/log/navig-daemon.log",
+            ]
 
         daemon_issues: list = []
         for _log_path in _log_candidates:
@@ -7382,7 +7377,8 @@ class TelegramCommandsMixin:
                 result_line = "\U0001f7e2 <b>localhost</b> \u2014 local host, no SSH needed"
             else:
                 ip = server_config.get("host", host_name)
-                proc = subprocess.run(
+                proc = await asyncio.to_thread(  # blocking CLI call — never on the loop
+                    subprocess.run,
                     [_sys.executable, "-m", "navig", "host", "test", host_name],
                     capture_output=True, text=True, timeout=20,
                 )
@@ -7432,7 +7428,8 @@ class TelegramCommandsMixin:
             import subprocess
             import sys as _sys
             try:
-                proc = subprocess.run(
+                proc = await asyncio.to_thread(  # blocking CLI call — never on the loop
+                    subprocess.run,
                     [_sys.executable, "-m", "navig", "host", "use", arg],
                     capture_output=True, text=True, timeout=10,
                 )
@@ -7546,7 +7543,8 @@ class TelegramCommandsMixin:
             import subprocess
             import sys as _sys
             try:
-                proc = subprocess.run(
+                proc = await asyncio.to_thread(  # blocking CLI call — never on the loop
+                    subprocess.run,
                     [_sys.executable, "-m", "navig", "app", "use", arg],
                     capture_output=True, text=True, timeout=10,
                 )
@@ -7656,7 +7654,8 @@ class TelegramCommandsMixin:
         else:
             # ── Remote: use navig file list ──────────────────────────────────
             try:
-                proc = subprocess.run(
+                proc = await asyncio.to_thread(  # blocking CLI call — never on the loop
+                    subprocess.run,
                     [_sys.executable, "-m", "navig", "file", "list", target, "--plain"],
                     capture_output=True, text=True, timeout=15,
                 )
@@ -7748,7 +7747,8 @@ class TelegramCommandsMixin:
                 body = f"{header}\n❌ {html.escape(str(exc))}\n\n<i>─ {now} ─</i>"
         else:
             try:
-                proc = subprocess.run(
+                proc = await asyncio.to_thread(  # blocking CLI call — never on the loop
+                    subprocess.run,
                     [_sys.executable, "-m", "navig", "file", "show", arg, "--plain"],
                     capture_output=True, text=True, timeout=15,
                 )
@@ -7826,7 +7826,8 @@ class TelegramCommandsMixin:
             message_id = (ack or {}).get("message_id")
 
         try:
-            proc = subprocess.run(
+            proc = await asyncio.to_thread(  # blocking CLI call — never on the loop
+                subprocess.run,
                 [_sys.executable, "-m", "navig", "run", arg, "--plain"],
                 capture_output=True, text=True, timeout=30,
             )
@@ -7876,7 +7877,8 @@ class TelegramCommandsMixin:
         now = datetime.now(timezone.utc).strftime("%H:%M UTC")
 
         try:
-            proc = subprocess.run(
+            proc = await asyncio.to_thread(  # blocking CLI call — never on the loop
+                subprocess.run,
                 [_sys.executable, "-m", "navig", "backup", "show", "--plain"],
                 capture_output=True, text=True, timeout=15,
             )
@@ -8018,28 +8020,24 @@ class TelegramCommandsMixin:
 
         if is_local:
             try:
-                import psutil
+                # NEVER psutil.disk_partitions() here: it blocks indefinitely on a
+                # cold/disconnected network drive and does not release the GIL —
+                # inside the gateway that freezes EVERY endpoint, not just this
+                # command. get_disk_info probes drives concurrently under a
+                # timeout and serves a cached partition list.
+                from navig.commands.monitor import get_disk_info
 
-                partitions = psutil.disk_partitions(all=False)
                 shown = 0
-                for part in partitions:
-                    if shown >= 6:
-                        break
-                    try:
-                        usage = psutil.disk_usage(part.mountpoint)
-                        pct = usage.percent
-                        icon = self._mon_status_icon(pct)
-                        bar = self._mon_bar(pct)
-                        used_gb = usage.used / (1024 ** 3)
-                        total_gb = usage.total / (1024 ** 3)
-                        lines.append(
-                            f"\n{icon} <b>{html.escape(part.mountpoint)}</b>  {pct:.0f}%\n"
-                            f"<code>{bar}</code>\n"
-                            f"  {used_gb:.1f} GB used / {total_gb:.1f} GB total"
-                        )
-                        shown += 1
-                    except (PermissionError, OSError):
-                        pass
+                for d in await asyncio.to_thread(get_disk_info, 6):
+                    pct = float(d["percent"])
+                    icon = self._mon_status_icon(pct)
+                    bar = self._mon_bar(pct)
+                    lines.append(
+                        f"\n{icon} <b>{html.escape(str(d['mountpoint']))}</b>  {pct:.0f}%\n"
+                        f"<code>{bar}</code>\n"
+                        f"  {d['used_gb']:.1f} GB used / {d['total_gb']:.1f} GB total"
+                    )
+                    shown += 1
                 if not shown:
                     lines.append("<i>No accessible partitions found</i>")
             except ImportError:
@@ -8159,72 +8157,61 @@ class TelegramCommandsMixin:
         message_id: int | None = None,
     ) -> None:
         """Rich CPU & load card (/cpu /top)."""
-        import platform as _pf
-
         host_name, _server_config, is_local = self._mon_host_ctx()
         lines: list = [self._mon_header("⚡", "CPU & Load", host_name)]
 
         if is_local:
+            # Shared collector, off the loop. This card used to sample with
+            # `psutil.cpu_percent(interval=0.5)` — a half-second SLEEP on the event
+            # loop — and then walk every process. `monitor.get_cpu_info` does the same
+            # work from a non-blocking delta sample, and the thread hop keeps the
+            # daemon answering while it runs.
             try:
-                import psutil
+                from navig.commands.monitor import get_cpu_info
 
-                cpu_pct = psutil.cpu_percent(interval=0.5)
+                cpu = await asyncio.to_thread(get_cpu_info, 5)
+                cpu_pct = float(cpu.get("overall_percent") or 0.0)
                 cpu_icon = self._mon_status_icon(cpu_pct)
                 cpu_bar = self._mon_bar(cpu_pct)
-                cpu_count = psutil.cpu_count(logical=True)
-                cpu_phys = psutil.cpu_count(logical=False)
 
                 lines.append(
                     f"\n{cpu_icon} <b>CPU</b>  {cpu_pct:.0f}%\n"
                     f"<code>{cpu_bar}</code>\n"
-                    f"  {cpu_phys} physical / {cpu_count} logical cores"
+                    f"  {cpu.get('physical_cores', 0)} physical / {cpu.get('logical_cores', 0)} logical cores"
                 )
 
                 # Per-core (up to 8)
-                per_core = psutil.cpu_percent(percpu=True)
-                if per_core and len(per_core) > 1:
+                per_core = cpu.get("per_core") or []
+                if len(per_core) > 1:
                     core_strs = []
                     for i, pct in enumerate(per_core[:8]):
                         c_icon = "🔴" if pct >= 80 else ("🟡" if pct >= 50 else "🟢")
                         core_strs.append(f"[{i}{c_icon}{pct:.0f}%]")
                     lines.append(f"\n<b>Cores:</b> {'  '.join(core_strs)}")
 
-                # CPU frequency
-                try:
-                    freq = psutil.cpu_freq()
-                    if freq:
-                        lines.append(
-                            f"\n<b>Freq:</b> {freq.current:.0f} MHz"
-                            + (f"  (max {freq.max:.0f} MHz)" if freq.max else "")
-                        )
-                except Exception:
-                    pass
+                freq = cpu.get("freq_mhz")
+                if freq:
+                    freq_max = cpu.get("freq_max_mhz")
+                    lines.append(
+                        f"\n<b>Freq:</b> {freq:.0f} MHz"
+                        + (f"  (max {freq_max:.0f} MHz)" if freq_max else "")
+                    )
 
-                # Load average (not on Windows)
-                if _pf.system() != "Windows":
-                    try:
-                        load = psutil.getloadavg()
-                        lines.append(
-                            f"\n<b>Load avg:</b> <code>{load[0]:.2f}  {load[1]:.2f}  {load[2]:.2f}</code>  (1m 5m 15m)"
-                        )
-                    except Exception:
-                        pass
+                load = cpu.get("load_avg")  # None on Windows
+                if load:
+                    lines.append(
+                        f"\n<b>Load avg:</b> <code>{load[0]:.2f}  {load[1]:.2f}  {load[2]:.2f}</code>  (1m 5m 15m)"
+                    )
 
-                # Top 5 CPU-hungry processes
-                try:
-                    procs = sorted(
-                        psutil.process_iter(["pid", "name", "cpu_percent"]),
-                        key=lambda p: p.info.get("cpu_percent") or 0,
-                        reverse=True,
-                    )[:5]
-                    if procs:
-                        lines.append("\n<b>Top processes:</b>")
-                        for p in procs:
-                            pname = html.escape((p.info.get("name") or "?")[:20])
-                            ppct = p.info.get("cpu_percent") or 0.0
-                            lines.append(f"  <code>{p.info['pid']:>6}  {pname:<20}  {ppct:.1f}%</code>")
-                except Exception:
-                    pass
+                top = cpu.get("top_processes") or []
+                if top:
+                    lines.append("\n<b>Top processes:</b>")
+                    for p in top:
+                        pname = html.escape(str(p.get("name") or "?")[:20])
+                        ppct = float(p.get("cpu_percent") or 0.0)
+                        lines.append(
+                            f"  <code>{str(p.get('pid', '?')):>6}  {pname:<20}  {ppct:.1f}%</code>"
+                        )
 
             except ImportError:
                 lines.append("<i>psutil not available — install it with: pip install psutil</i>")
@@ -8346,55 +8333,29 @@ class TelegramCommandsMixin:
         message_id: int | None = None,
     ) -> None:
         """Running services card (/services)."""
-        import platform as _pf
-        import subprocess
-
         host_name, _server_config, is_local = self._mon_host_ctx()
         lines: list = [self._mon_header("⚙️", "Running Services", host_name)]
 
         if is_local:
-            if _pf.system() == "Windows":
-                try:
-                    import psutil
+            # ONE collector for both platforms — `monitor` already owns the Windows
+            # (psutil) and Linux (systemctl) paths, running-first and capped. Run it
+            # OFF the loop: win_service_iter walks every service and systemctl shells
+            # out, which inline stalled every other request (deck, OS, webhook).
+            try:
+                from navig.commands.monitor import get_services_info
 
-                    svcs = [s for s in psutil.win_service_iter() if s.status() == "running"]
-                    svcs_sorted = sorted(svcs, key=lambda s: s.name())[:20]
-                    lines.append(f"\n🟢 <b>{len(svcs)} running services</b> (showing up to 20)\n")
-                    for svc in svcs_sorted:
-                        try:
-                            lines.append(f"  • {html.escape(svc.display_name()[:44])}")
-                        except Exception:
-                            pass
-                except ImportError:
-                    lines.append("<i>psutil not available — install it with: pip install psutil</i>")
-                except Exception as exc:
-                    lines.append(f"<i>Service list error: {html.escape(str(exc))}</i>")
-            else:
-                # Local Linux: systemctl
-                try:
-                    result = subprocess.run(
-                        [
-                            "systemctl",
-                            "list-units",
-                            "--type=service",
-                            "--state=running",
-                            "--no-pager",
-                            "--no-legend",
-                        ],
-                        capture_output=True,
-                        text=True,
-                        timeout=_PROBE_TIMEOUT,
-                    )
-                    svc_lines = [
-                        ln.split()[0]
-                        for ln in result.stdout.strip().splitlines()
-                        if ln.strip()
-                    ][:20]
-                    lines.append(f"\n🟢 <b>{len(svc_lines)} running services</b>\n")
-                    for svc in svc_lines:
-                        lines.append(f"  • {html.escape(svc)}")
-                except Exception as exc:
-                    lines.append(f"<i>Service list error: {html.escape(str(exc))}</i>")
+                info = await asyncio.to_thread(get_services_info, 20)
+                svcs = info.get("services") or []
+                if not svcs:
+                    lines.append("\n<i>No running services found</i>")
+                else:
+                    total = info.get("count", len(svcs))
+                    lines.append(f"\n🟢 <b>{total} running services</b> (showing up to 20)\n")
+                    for svc in svcs:
+                        name = str(svc.get("display_name") or svc.get("name") or "")
+                        lines.append(f"  • {html.escape(name[:44])}")
+            except Exception as exc:
+                lines.append(f"<i>Service list error: {html.escape(str(exc))}</i>")
         else:
             await self._handle_cli_command(
                 chat_id,
@@ -8433,39 +8394,28 @@ class TelegramCommandsMixin:
         lines: list = [self._mon_header("🔌", "Listening Ports", host_name)]
 
         if is_local:
+            # Shared collector, off the loop: net_connections() plus a Process(pid)
+            # name lookup per socket is slow enough to stall the daemon inline, and
+            # `monitor` already resolves names, marks *-bound addresses and caps the
+            # list.
             try:
-                import psutil
+                from navig.commands.monitor import get_ports_info
 
-                conns = [c for c in psutil.net_connections(kind="inet") if c.status == "LISTEN"]
-                conns_sorted = sorted(
-                    conns, key=lambda c: c.laddr.port if c.laddr else 0
-                )[:20]
-
-                if not conns_sorted:
+                ports = await asyncio.to_thread(get_ports_info, 20)
+                if not ports:
                     lines.append("\n<i>No listening ports found</i>")
                 else:
-                    lines.append(f"\n🟢 <b>{len(conns)} listening ports</b> (showing up to 20)\n")
+                    lines.append(f"\n🟢 <b>{len(ports)} listening ports</b> (showing up to 20)\n")
                     lines.append("<code>PORT      ADDR               PID   PROCESS</code>")
                     lines.append("<code>──────────────────────────────────────────</code>")
-                    for c in conns_sorted:
-                        try:
-                            port = c.laddr.port if c.laddr else "?"
-                            addr = c.laddr.ip if c.laddr else "?"
-                            pid = c.pid or "?"
-                            pname = ""
-                            if c.pid:
-                                try:
-                                    pname = psutil.Process(c.pid).name()[:14]
-                                except Exception:
-                                    pass
-                            addr_str = addr if addr and addr not in ("0.0.0.0", "::") else "*"
-                            lines.append(
-                                f"<code>{str(port):<9} {addr_str:<18} {str(pid):<5}</code> {html.escape(pname)}"
-                            )
-                        except Exception:
-                            pass
-            except ImportError:
-                lines.append("<i>psutil not available — install it with: pip install psutil</i>")
+                    for p in ports:
+                        pname = str(p.get("process_name") or "")[:14]
+                        addr_str = str(p.get("address") or "*")
+                        pid = p.get("pid") or "?"
+                        lines.append(
+                            f"<code>{str(p.get('port', '?')):<9} {addr_str:<18} {str(pid):<5}</code>"
+                            f" {html.escape(pname)}"
+                        )
             except Exception as exc:
                 lines.append(f"<i>Ports error: {html.escape(str(exc))}</i>")
         else:
@@ -8638,38 +8588,60 @@ class TelegramCommandsMixin:
         """Live system-health briefing — infrastructure telemetry, no session data (/briefing)."""
         now = datetime.now(timezone.utc)
         ts = now.strftime("%H:%M UTC, %d %b %Y")
+        # The briefing gathers LOCAL telemetry (daemon, bridge on 127.0.0.1, disk,
+        # uptime) — i.e. the machine the brain runs on. Name it so the reader knows
+        # which host these numbers describe.
+        try:
+            import platform as _pf
+
+            _brief_host = _pf.node() or "this machine"
+        except Exception:
+            _brief_host = "this machine"
         lines: list = [
             "📋 <b>System Briefing</b>",
             f"<i>{ts}</i>",
             "",
             "<b>🔧 Infrastructure</b>",
+            f"  🖥️ Host: <code>{html.escape(_brief_host)}</code>",
         ]
 
-        try:
-            p = await asyncio.wait_for(
-                asyncio.create_subprocess_exec(
-                    "systemctl",
-                    "show",
-                    "navig-daemon",
-                    "--property=ActiveState,ActiveEnterTimestamp",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                ),
-                timeout=3.0,
-            )
-            stdout, _ = await p.communicate()
-            state, since = "unknown", ""
-            for ln in stdout.decode().splitlines():
-                if ln.startswith("ActiveState="):
-                    state = ln.split("=", 1)[1].strip()
-                if ln.startswith("ActiveEnterTimestamp="):
-                    raw = ln.split("=", 1)[1].strip()
-                    if raw and raw != "n/a":
-                        since = f", since {raw.split()[-2]}"
-            icon = "🟢" if state == "active" else "🔴"
-            lines.append(f"  {icon} Daemon: <code>{state}{since}</code>")
-        except Exception:
-            lines.append("  ❓ Daemon: status unavailable")
+        # Daemon status. systemctl is Linux/systemd-only — on Windows/macOS it does
+        # not exist, so the old code fell through to "status unavailable" on every
+        # run of a perfectly healthy install. But this briefing is SERVED BY the
+        # daemon (we're running inside the gateway process), so reaching here means
+        # the daemon is up. Report that truthfully rather than a false "unavailable".
+        import shutil as _shutil
+
+        if _shutil.which("systemctl") is None:
+            lines.append("  🟢 Daemon: <code>running (this process)</code>")
+        else:
+            try:
+                p = await asyncio.wait_for(
+                    asyncio.create_subprocess_exec(
+                        "systemctl",
+                        "show",
+                        "navig-daemon",
+                        "--property=ActiveState,ActiveEnterTimestamp",
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    ),
+                    timeout=3.0,
+                )
+                stdout, _ = await p.communicate()
+                state, since = "unknown", ""
+                for ln in stdout.decode().splitlines():
+                    if ln.startswith("ActiveState="):
+                        state = ln.split("=", 1)[1].strip()
+                    if ln.startswith("ActiveEnterTimestamp="):
+                        raw = ln.split("=", 1)[1].strip()
+                        if raw and raw != "n/a":
+                            since = f", since {raw.split()[-2]}"
+                icon = "🟢" if state == "active" else "🔴"
+                lines.append(f"  {icon} Daemon: <code>{state}{since}</code>")
+            except Exception:
+                # systemd present but the query failed — we're still inside the
+                # running daemon, so it's up; flag that the unit query didn't answer.
+                lines.append("  🟢 Daemon: <code>running (unit query failed)</code>")
 
         try:
             from navig.providers.bridge_grid_reader import (
@@ -8762,18 +8734,19 @@ class TelegramCommandsMixin:
         except Exception:  # noqa: BLE001
             # Fallback for Windows (no `df` command)
             try:
-                import platform as _pf
+                # System drive only, off the loop — the shared collector already
+                # knows which drive that is and never enumerates (enumeration is
+                # what froze the daemon; see monitor.get_system_disk).
+                from navig.commands.monitor import get_system_disk
 
-                import psutil as _psutil
-
-                _root = "C:\\" if _pf.system() == "Windows" else "/"
-                _du = _psutil.disk_usage(_root)
-                _used_gb = _du.used / (1024 ** 3)
-                _free_gb = _du.free / (1024 ** 3)
-                _disk_icon = "🔴" if _du.percent >= 90 else ("🟡" if _du.percent >= 75 else "🟢")
-                lines.append(
-                    f"  {_disk_icon} Disk: <code>{_used_gb:.1f} GB used · {_free_gb:.1f} GB free · {_du.percent:.0f}%</code>"
-                )
+                _rows = await asyncio.to_thread(get_system_disk)
+                for _d in _rows:
+                    _pct = float(_d["percent"])
+                    _disk_icon = "🔴" if _pct >= 90 else ("🟡" if _pct >= 75 else "🟢")
+                    lines.append(
+                        f"  {_disk_icon} Disk: <code>{_d['used_gb']:.1f} GB used · "
+                        f"{_d['free_gb']:.1f} GB free · {_pct:.0f}%</code>"
+                    )
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -8805,16 +8778,14 @@ class TelegramCommandsMixin:
 
         # NOTE: Spaces/progression data lives in /status — not repeated here
 
+        # System-health actions only. Deck-oriented buttons (Spaces, Switch AI,
+        # Home) were removed — they belong to the Deck/app surface, not the
+        # infrastructure briefing card.
         keyboard = [
             [
                 {"text": "🔄 Refresh", "callback_data": "nav:open:briefing"},
                 {"text": "📊 Status", "callback_data": "nav:open:status"},
-                {"text": "🗺️ Spaces", "callback_data": "nav:cmd:/spaces"},
-            ],
-            [
                 {"text": "📋 Plans", "callback_data": "nav:cmd:/plans"},
-                {"text": "🤖 Switch AI", "callback_data": "nav:models"},
-                {"text": "🏠 Home", "callback_data": "nav:home"},
             ],
         ]
         result = await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
@@ -8840,9 +8811,13 @@ class TelegramCommandsMixin:
         # Check config
         try:
             from navig.config import get_config_manager
+            from navig.core.coerce import coerce_bool
 
             tg = get_config_manager().get("telegram") or {}
-            if not tg.get("auto_pin_briefings", True):
+            # coerce_bool: `navig config set telegram.auto_pin_briefings false` stores the
+            # STRING "false" (truthy in Python) — without this, setting it false never
+            # disabled pinning.
+            if not coerce_bool(tg.get("auto_pin_briefings", True), default=True):
                 return
         except Exception:  # noqa: BLE001
             pass  # default: enabled
@@ -9616,12 +9591,11 @@ class TelegramCommandsMixin:
     async def _handle_persona_info(self, chat_id: int, user_id: int) -> None:
         """Show details about the currently active persona."""
         try:
-            from navig.personas.loader import load_persona
             from navig.personas.manager import get_active_persona_config
             from navig.personas.renderer import render_persona_info
 
-            config = await get_active_persona_config(user_id, chat_id)
-            _, soul_text = load_persona(config.name)
+            # get_active_persona_config is sync and returns (config, soul) — not awaitable.
+            config, soul_text = get_active_persona_config(user_id, chat_id)
             msg = render_persona_info(config, soul_text)
             await self.send_message(chat_id, msg)
         except Exception as e:
@@ -9662,7 +9636,7 @@ class TelegramCommandsMixin:
                 )
             if not llm_text:
                 # Minimal fallback: call llm_router directly
-                from navig.llm_router import get_llm_router
+                from navig.llm.router import get_llm_router
 
                 lr = get_llm_router()
                 if lr is None:
@@ -9950,17 +9924,11 @@ class TelegramCommandsMixin:
 
     async def _handle_habits(self, chat_id: int, user_id: int) -> None:
         """List active habit cron jobs in a formatted Telegram message."""
-        import json as _json
-        from pathlib import Path as _Path
-
-        _HABIT_PREFIX = "habit:"
         try:
-            p = _Path.home() / ".navig" / "daemon" / "cron_jobs.json"
-            if not p.exists():
-                await self.send_message(chat_id, "No habits configured yet.\n\nUse <code>navig habit add workout</code> to add one.", parse_mode="HTML")
-                return
-            data = _json.loads(p.read_text(encoding="utf-8"))
-            habits = [j for j in data.get("jobs", []) if j.get("name", "").startswith(_HABIT_PREFIX)]
+            # Live scheduler store (the in-process service inside the gateway).
+            from navig.scheduler import habit_store
+
+            habits = habit_store.list_habit_jobs()
         except Exception:
             await self.send_message(chat_id, "⚠️ Could not read habit data.")
             return
@@ -9999,15 +9967,14 @@ class TelegramCommandsMixin:
 
     async def _handle_health(self, chat_id: int, user_id: int) -> None:
         """Show health space status: active habits, reminder count, space."""
-        import json as _json
         from datetime import datetime as _dt
-        from pathlib import Path as _Path
 
-        _HABIT_PREFIX = "habit:"
         try:
-            p = _Path.home() / ".navig" / "daemon" / "cron_jobs.json"
-            data = _json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"jobs": []}
-            habit_count = sum(1 for j in data.get("jobs", []) if j.get("name", "").startswith(_HABIT_PREFIX) and j.get("enabled", True))
+            from navig.scheduler import habit_store
+
+            habit_count = sum(
+                1 for j in habit_store.list_habit_jobs() if j.get("enabled", True)
+            )
         except Exception:
             habit_count = 0
 
@@ -10064,47 +10031,19 @@ class TelegramCommandsMixin:
             schedule = f"{m} {h} * * 1-5"
             try:
                 import base64 as _b64
-                import json as _json
-                import os as _os
-                import tempfile as _tmp
-                from pathlib import Path as _Path
 
+                from navig.scheduler import habit_store
                 from navig.spaces.health import get_habit_template as _ght
+
                 tmpl = _ght("workout")
                 b64_msg = _b64.b64encode(tmpl.reminder_message.encode()).decode()
                 command = f"NAVIG_HABIT_REMINDER:{chat_id}:{b64_msg}"
 
-                p = _Path.home() / ".navig" / "daemon" / "cron_jobs.json"
-                p.parent.mkdir(parents=True, exist_ok=True)
-                data = _json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"counter": 0, "jobs": []}
-
-                # Remove existing workout habit if present
-                data["jobs"] = [j for j in data.get("jobs", []) if j.get("name") != "habit:workout"]
-                data["counter"] = data.get("counter", 0) + 1
-                from navig.scheduler.cron_service import CronParser as _CP
-                data["jobs"].append({
-                    "id": f"job_{data['counter']}",
-                    "name": "habit:workout",
-                    "schedule": schedule,
-                    "command": command,
-                    "enabled": True,
-                    "timeout_seconds": 30,
-                    "retry_count": 0,
-                    "max_retries": 1,
-                    "last_run": None,
-                    "next_run": _CP.calculate_next(schedule).isoformat(),
-                    "last_status": None,
-                    "last_output": None,
-                    "created_at": _dt.now().isoformat(),
-                })
-                _fd, _tmp_name = _tmp.mkstemp(dir=p.parent, suffix=".tmp")
-                try:
-                    with _os.fdopen(_fd, "w", encoding="utf-8") as fh:
-                        fh.write(_json.dumps(data, indent=2))
-                    _os.replace(_tmp_name, p)
-                except Exception:
-                    _Path(_tmp_name).unlink(missing_ok=True)
-                    raise
+                # Live scheduler store — replaces any existing workout habit and
+                # starts firing without a daemon restart.
+                habit_store.create_job(
+                    "habit:workout", schedule, command, timeout_seconds=30, replace=True
+                )
 
                 await self.send_message(
                     chat_id,

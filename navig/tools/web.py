@@ -2,7 +2,9 @@
 
 Provides web content fetching and search capabilities:
 - web_fetch: HTTP GET + HTML→markdown/text extraction
-- web_search: Firecrawl-first routing with Brave/Tavily/DuckDuckGo fallback
+- web_search: Firecrawl-first routing with Brave/Tavily keys, then keyless
+  Mojeek→DuckDuckGo fallback (Mojeek is the reliable no-key engine; DuckDuckGo's
+  keyless endpoints return HTTP 202 anti-bot challenges for flagged IPs)
 
 Modeled after advanced web tools implementation.
 """
@@ -10,11 +12,14 @@ Modeled after advanced web tools implementation.
 import hashlib
 import html
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # HTTP library (requests for sync, aiohttp for async)
 try:
@@ -47,8 +52,20 @@ DEFAULT_USER_AGENT = (
 )
 
 BRAVE_SEARCH_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
+# api.duckduckgo.com is the *Instant Answer* API: it only answers "instant answer"
+# entities (mostly Wikipedia-backed), returns HTTP 202 (anti-bot) for most automated
+# requests, and is NOT a general web search. The html/lite endpoints below return real
+# keyless SERP results for arbitrary queries — that is the free-tier search path.
 DUCKDUCKGO_ENDPOINT = "https://api.duckduckgo.com/"
+DUCKDUCKGO_HTML_ENDPOINT = "https://html.duckduckgo.com/html/"
+DUCKDUCKGO_LITE_ENDPOINT = "https://lite.duckduckgo.com/lite/"
+# Mojeek — an independent, keyless search engine that serves plain server-rendered
+# HTML and does not gate automated requests behind a JS anti-bot challenge (unlike
+# DuckDuckGo's html/lite endpoints, which return HTTP 202 for flagged IPs). This is
+# the primary free-tier engine; DuckDuckGo is the secondary keyless fallback.
+MOJEEK_ENDPOINT = "https://www.mojeek.com/search"
 TAVILY_SEARCH_ENDPOINT = "https://api.tavily.com/search"
+SERPAPI_SEARCH_ENDPOINT = "https://serpapi.com/search.json"
 
 _WEB_PROVIDER_ALIASES: dict[str, str] = {
     "": "auto",
@@ -59,6 +76,7 @@ _WEB_PROVIDER_ALIASES: dict[str, str] = {
     "brave-search": "brave",
     "duckduckgo": "duckduckgo",
     "ddg": "duckduckgo",
+    "mojeek": "mojeek",
     "perplexity": "perplexity",
     "gemini": "gemini",
     "google": "gemini",
@@ -67,6 +85,9 @@ _WEB_PROVIDER_ALIASES: dict[str, str] = {
     "kimi": "kimi",
     "moonshot": "kimi",
     "tavily": "tavily",
+    "serpapi": "serpapi",
+    "serp": "serpapi",
+    "google-serp": "serpapi",
 }
 
 _WEB_PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
@@ -77,22 +98,35 @@ _WEB_PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
     "grok": ("XAI_API_KEY", "GROK_KEY"),
     "kimi": ("KIMI_API_KEY", "MOONSHOT_API_KEY"),
     "tavily": ("TAVILY_API_KEY",),
+    "serpapi": ("SERPAPI_KEY", "SERPAPI_API_KEY"),
 }
 
+# Vault label candidates per provider, checked in order. The BARE provider name
+# (e.g. "brave") is first: that is the canonical PROVIDER-kind label `navig vault
+# add <provider>` creates, and where real keys actually live. The compound labels
+# are legacy/alternate conventions kept for backward compatibility. (Omitting the
+# bare name is why the operator's real brave/tavily keys were never found.)
 _WEB_PROVIDER_VAULT_LABELS: dict[str, tuple[str, ...]] = {
     "firecrawl": (
+        "firecrawl",
         "FIRECRAWL_API_KEY",
         "firecrawl/api_key",
         "firecrawl/api-key",
         "firecrawl_api_key",
         "web/firecrawl_api_key",
     ),
-    "brave": ("web/brave_api_key", "brave/api_key", "brave_api_key"),
-    "perplexity": ("web/perplexity_api_key", "perplexity/api_key", "pplx/api_key"),
-    "gemini": ("web/gemini_api_key", "google/api_key", "google_api_key"),
-    "grok": ("web/grok_api_key", "xai/api_key", "xai_api_key"),
-    "kimi": ("web/kimi_api_key", "moonshot/api_key", "moonshot_api_key"),
-    "tavily": ("web/tavily_api_key", "tavily/api_key", "tavily_api_key"),
+    "brave": ("brave", "web/brave_api_key", "brave/api_key", "brave_api_key"),
+    "perplexity": (
+        "perplexity",
+        "web/perplexity_api_key",
+        "perplexity/api_key",
+        "pplx/api_key",
+    ),
+    "gemini": ("gemini", "web/gemini_api_key", "google/api_key", "google_api_key"),
+    "grok": ("grok", "xai", "web/grok_api_key", "xai/api_key", "xai_api_key"),
+    "kimi": ("kimi", "web/kimi_api_key", "moonshot/api_key", "moonshot_api_key"),
+    "tavily": ("tavily", "web/tavily_api_key", "tavily/api_key", "tavily_api_key"),
+    "serpapi": ("serpapi", "serpapi/api_key", "serpapi_api_key", "web/serpapi_api_key"),
 }
 
 
@@ -561,42 +595,124 @@ def _search_brave(
         )
 
 
-def _search_duckduckgo(
+def _ddg_unwrap_url(href: str) -> str:
+    """Unwrap DuckDuckGo's redirect wrapper (``//duckduckgo.com/l/?uddg=<encoded>``)."""
+    from urllib.parse import parse_qs, unquote, urlsplit
+
+    if not href:
+        return ""
+    href = html.unescape(href.strip())
+    if href.startswith("//"):
+        href = "https:" + href
+    try:
+        parts = urlsplit(href)
+        if parts.netloc.endswith("duckduckgo.com") and parts.path.startswith("/l/"):
+            target = parse_qs(parts.query).get("uddg", [""])[0]
+            if target:
+                return unquote(target)
+    except Exception:  # noqa: BLE001
+        pass  # best-effort unwrap; fall through to the raw href
+    return href
+
+
+# html.duckduckgo.com organic result anchors + snippets. The class/href attribute
+# order is not guaranteed (lite puts href first), so assert the class via lookahead
+# and capture href from anywhere in the tag.
+_DDG_HTML_ANCHOR_RE = re.compile(
+    r'<a\b(?=[^>]*\bclass=["\'][^"\']*result__a)[^>]*\bhref="([^"]+)"[^>]*>([\s\S]*?)</a>',
+    re.IGNORECASE,
+)
+_DDG_HTML_SNIPPET_RE = re.compile(
+    r'<a\b(?=[^>]*\bclass=["\'][^"\']*result__snippet)[^>]*>([\s\S]*?)</a>',
+    re.IGNORECASE,
+)
+# lite.duckduckgo.com organic result anchors + snippets (table layout).
+_DDG_LITE_ANCHOR_RE = re.compile(
+    r'<a\b(?=[^>]*\bclass=["\'][^"\']*result-link)[^>]*\bhref="([^"]+)"[^>]*>([\s\S]*?)</a>',
+    re.IGNORECASE,
+)
+_DDG_LITE_SNIPPET_RE = re.compile(
+    r'<td\b(?=[^>]*\bclass=["\'][^"\']*result-snippet)[^>]*>([\s\S]*?)</td>',
+    re.IGNORECASE,
+)
+
+
+def _ddg_serp_results(
+    query: str,
+    count: int,
+    timeout_seconds: int,
+    endpoint: str,
+) -> tuple[list["SearchResult"], int]:
+    """Scrape one DuckDuckGo HTML SERP endpoint. Returns (results, http_status)."""
+    headers = {
+        "User-Agent": DEFAULT_USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://duckduckgo.com/",
+        "Origin": "https://duckduckgo.com",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    # POST is the form DuckDuckGo's own search UI submits and is throttled less than GET.
+    response = requests.post(
+        endpoint,
+        data={"q": query, "kl": "wt-wt"},
+        headers=headers,
+        timeout=timeout_seconds,
+    )
+    if response.status_code != 200:
+        return [], response.status_code
+
+    body = response.text
+    if endpoint == DUCKDUCKGO_LITE_ENDPOINT:
+        anchors = _DDG_LITE_ANCHOR_RE.findall(body)
+        snippets = _DDG_LITE_SNIPPET_RE.findall(body)
+    else:
+        anchors = _DDG_HTML_ANCHOR_RE.findall(body)
+        snippets = _DDG_HTML_SNIPPET_RE.findall(body)
+
+    results: list[SearchResult] = []
+    for idx, (href, title_html) in enumerate(anchors):
+        url = _ddg_unwrap_url(href)
+        # Drop DuckDuckGo's own internal / ad-redirect links.
+        if not url or "duckduckgo.com/y.js" in url or url.startswith("https://duckduckgo.com"):
+            continue
+        title = _normalize_whitespace(_strip_tags(title_html))
+        snippet = (
+            _normalize_whitespace(_strip_tags(snippets[idx])) if idx < len(snippets) else ""
+        )
+        results.append(SearchResult(title=title, url=url, snippet=snippet))
+        if len(results) >= count:
+            break
+    return results, response.status_code
+
+
+def _search_duckduckgo_instant(
     query: str,
     count: int = 5,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
 ) -> WebSearchResult:
-    """Search using DuckDuckGo (limited, instant answer API)."""
-    try:
-        params = {
-            "q": query,
-            "format": "json",
-            "no_redirect": "1",
-            "no_html": "1",
-        }
+    """DuckDuckGo *Instant Answer* API — only answers known entities (Wikipedia-backed).
 
+    Kept as a last-resort supplement to the SERP scrape; it is NOT a general web search.
+    """
+    try:
         response = requests.get(
             DUCKDUCKGO_ENDPOINT,
-            params=params,
+            params={"q": query, "format": "json", "no_redirect": "1", "no_html": "1"},
             timeout=timeout_seconds,
             headers={"User-Agent": DEFAULT_USER_AGENT},
         )
-
         if response.status_code != 200:
             return WebSearchResult(
                 success=False,
                 query=query,
                 provider="duckduckgo",
-                error=f"DuckDuckGo API error {response.status_code}",
+                error=f"DuckDuckGo Instant Answer API error {response.status_code}",
             )
 
         data = response.json()
-        results = []
+        results: list[SearchResult] = []
 
-        # DuckDuckGo Instant Answer API returns different formats
-        # We'll try to extract useful results
-
-        # Abstract (main result)
         if data.get("Abstract"):
             results.append(
                 SearchResult(
@@ -605,8 +721,6 @@ def _search_duckduckgo(
                     snippet=data.get("Abstract", ""),
                 )
             )
-
-        # Related topics
         for topic in data.get("RelatedTopics", [])[: count - len(results)]:
             if isinstance(topic, dict) and topic.get("FirstURL"):
                 results.append(
@@ -616,8 +730,6 @@ def _search_duckduckgo(
                         snippet=topic.get("Text", ""),
                     )
                 )
-
-        # Results
         for item in data.get("Results", [])[: count - len(results)]:
             results.append(
                 SearchResult(
@@ -632,18 +744,166 @@ def _search_duckduckgo(
                 success=False,
                 query=query,
                 provider="duckduckgo",
-                error="No results found. DuckDuckGo Instant Answer API is limited. Try Brave Search for better results.",
+                error="No instant answer for this query.",
             )
-
         return WebSearchResult(success=True, results=results, query=query, provider="duckduckgo")
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return WebSearchResult(
             success=False,
             query=query,
             provider="duckduckgo",
-            error=f"DuckDuckGo search failed: {str(e)}",
+            error=f"DuckDuckGo instant-answer failed: {str(e)}",
         )
+
+
+def _search_duckduckgo(
+    query: str,
+    count: int = 5,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+) -> WebSearchResult:
+    """Keyless DuckDuckGo web search via its HTML SERP endpoints (real results, no key).
+
+    Tries the ``html`` endpoint, then the ``lite`` endpoint (a different anti-bot
+    posture), then the Instant Answer API as a supplement. This replaces the old
+    Instant-Answer-only path, which returned HTTP 202 (anti-bot) for automated
+    requests and could not answer general queries at all — the exact failure that
+    made every free-tier search come back "skipped".
+    """
+    last_status: int | None = None
+    for endpoint in (DUCKDUCKGO_HTML_ENDPOINT, DUCKDUCKGO_LITE_ENDPOINT):
+        try:
+            results, status = _ddg_serp_results(query, count, timeout_seconds, endpoint)
+        except requests.RequestException as exc:
+            logger.debug("DuckDuckGo SERP %s request failed: %s", endpoint, exc)
+            continue
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("DuckDuckGo SERP %s parse failed: %s", endpoint, exc)
+            continue
+        if status and status != 200:
+            last_status = status
+            logger.debug("DuckDuckGo SERP %s returned HTTP %s", endpoint, status)
+        if results:
+            return WebSearchResult(
+                success=True, results=results, query=query, provider="duckduckgo"
+            )
+
+    # Supplement: Instant Answer abstract (only fires for known entities).
+    instant = _search_duckduckgo_instant(query, count, timeout_seconds)
+    if instant.success:
+        return instant
+
+    detail = f" (HTTP {last_status})" if last_status else ""
+    return WebSearchResult(
+        success=False,
+        query=query,
+        provider="duckduckgo",
+        error=(
+            f"DuckDuckGo returned no results{detail}. It may be rate-limiting automated "
+            "requests — configure a search key with `navig config` (Brave/Tavily/Firecrawl) "
+            "for reliable results."
+        ),
+    )
+
+
+# Mojeek organic results: <h2><a class="title" href="URL">Title</a></h2><p class="s">Snippet</p>
+_MOJEEK_TITLE_RE = re.compile(
+    r'<a\b(?=[^>]*\bclass=["\'][^"\']*\btitle\b)[^>]*\bhref="(https?://[^"]+)"[^>]*>([\s\S]*?)</a>',
+    re.IGNORECASE,
+)
+_MOJEEK_SNIPPET_RE = re.compile(
+    r'<p\b(?=[^>]*\bclass=["\'][^"\']*\bs\b)[^>]*>([\s\S]*?)</p>',
+    re.IGNORECASE,
+)
+
+
+def _search_mojeek(
+    query: str,
+    count: int = 5,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+) -> WebSearchResult:
+    """Keyless web search via Mojeek's independent index (real results, no API key)."""
+    try:
+        headers = {
+            "User-Agent": DEFAULT_USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        response = requests.get(
+            MOJEEK_ENDPOINT,
+            params={"q": query},
+            headers=headers,
+            timeout=timeout_seconds,
+        )
+        if response.status_code != 200:
+            return WebSearchResult(
+                success=False,
+                query=query,
+                provider="mojeek",
+                error=f"Mojeek returned HTTP {response.status_code}",
+            )
+
+        body = response.text
+        # Restrict to the organic results list so the infobox link isn't miscounted.
+        start = body.find("results-standard")
+        section = body[start:] if start >= 0 else body
+
+        titles = _MOJEEK_TITLE_RE.findall(section)
+        snippets = _MOJEEK_SNIPPET_RE.findall(section)
+
+        results: list[SearchResult] = []
+        for idx, (url, title_html) in enumerate(titles[:count]):
+            results.append(
+                SearchResult(
+                    title=_normalize_whitespace(_strip_tags(title_html)),
+                    url=html.unescape(url),
+                    snippet=(
+                        _normalize_whitespace(_strip_tags(snippets[idx]))
+                        if idx < len(snippets)
+                        else ""
+                    ),
+                )
+            )
+
+        if not results:
+            return WebSearchResult(
+                success=False,
+                query=query,
+                provider="mojeek",
+                error="Mojeek returned no results.",
+            )
+        return WebSearchResult(success=True, results=results, query=query, provider="mojeek")
+
+    except Exception as e:  # noqa: BLE001
+        return WebSearchResult(
+            success=False,
+            query=query,
+            provider="mojeek",
+            error=f"Mojeek search failed: {str(e)}",
+        )
+
+
+def _search_keyless(
+    query: str,
+    count: int = 5,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+) -> WebSearchResult:
+    """No-API-key web search: Mojeek first (reliable), DuckDuckGo second.
+
+    This is the fallback the agent hits whenever no Firecrawl/Brave/Tavily key is
+    configured — the free-tier path. Mojeek serves real results without a JS
+    anti-bot gate, so the agent gets grounded facts instead of an empty result
+    that gets confabulated into "not much here".
+    """
+    result = _search_mojeek(query, count, timeout_seconds)
+    if result.success:
+        return result
+    logger.debug("Mojeek keyless search failed (%s); trying DuckDuckGo", result.error)
+    ddg = _search_duckduckgo(query, count, timeout_seconds)
+    if ddg.success:
+        return ddg
+    # Both keyless engines failed — return the more actionable error.
+    return ddg if "navig config" in (ddg.error or "") else result
 
 
 def _search_tavily(
@@ -704,6 +964,79 @@ def _search_tavily(
             query=query,
             provider="tavily",
             error=f"Tavily search failed: {str(e)}",
+        )
+
+
+def _search_serpapi(
+    query: str,
+    api_key: str,
+    count: int = 5,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+) -> WebSearchResult:
+    """Search using SerpApi (real Google organic results via API)."""
+    try:
+        params = {
+            "engine": "google",
+            "q": query,
+            "num": min(count, 10),
+            "api_key": api_key,
+        }
+        response = requests.get(
+            SERPAPI_SEARCH_ENDPOINT,
+            params=params,
+            timeout=timeout_seconds,
+        )
+
+        if response.status_code == 401:
+            return WebSearchResult(
+                success=False,
+                query=query,
+                provider="serpapi",
+                error="SerpApi key is invalid or expired.",
+            )
+        if response.status_code != 200:
+            return WebSearchResult(
+                success=False,
+                query=query,
+                provider="serpapi",
+                error=f"SerpApi error {response.status_code}: {response.text[:300]}",
+            )
+
+        data = response.json()
+        if data.get("error"):
+            return WebSearchResult(
+                success=False,
+                query=query,
+                provider="serpapi",
+                error=f"SerpApi: {data['error']}",
+            )
+
+        results = [
+            SearchResult(
+                title=item.get("title", ""),
+                url=item.get("link", ""),
+                snippet=item.get("snippet", ""),
+                age=item.get("date") if isinstance(item.get("date"), str) else None,
+            )
+            for item in (data.get("organic_results") or [])[:count]
+            if item.get("link")
+        ]
+
+        if not results:
+            return WebSearchResult(
+                success=False,
+                query=query,
+                provider="serpapi",
+                error="SerpApi returned no organic results.",
+            )
+        return WebSearchResult(success=True, results=results, query=query, provider="serpapi")
+
+    except Exception as e:  # noqa: BLE001
+        return WebSearchResult(
+            success=False,
+            query=query,
+            provider="serpapi",
+            error=f"SerpApi search failed: {str(e)}",
         )
 
 
@@ -788,7 +1121,9 @@ def web_search(
     Args:
         query: Search query string
         count: Number of results to return (1-10)
-        provider: 'brave', 'duckduckgo', or 'auto'
+        provider: 'auto', 'mojeek', 'duckduckgo', 'brave', 'tavily', 'serpapi', or 'firecrawl'.
+            'auto' tries Firecrawl→Tavily→Brave→SerpApi (whichever are keyed), then
+            keyless Mojeek→DuckDuckGo.
         api_key: API key for Brave Search (optional if BRAVE_API_KEY env var set)
         timeout_seconds: Request timeout
         use_cache: Whether to use caching
@@ -820,14 +1155,13 @@ def web_search(
 
     def _resolve_vault_key(provider_name: str) -> str:
         try:
-            from navig.vault.core import get_vault
+            from navig.vault.core import get_vault, reveal_secret
 
             vault = get_vault()
             for label in _WEB_PROVIDER_VAULT_LABELS.get(provider_name, ()):
-                try:
-                    value = (vault.get_secret(label) or "").strip()
-                except Exception:
-                    continue
+                # reveal_secret unwraps the SecretStr (the bare .strip() the old code
+                # used raised and was swallowed, silently discarding every vault key).
+                value = reveal_secret(vault, label)
                 if value:
                     return value
         except Exception:
@@ -873,15 +1207,41 @@ def web_search(
 
     selected_key = _resolve_key(selected_provider, search_cfg)
 
-    # Runtime engine supports Firecrawl, Brave, DuckDuckGo, and Tavily.
-    if selected_provider not in ("firecrawl", "brave", "duckduckgo", "tavily"):
-        brave_key = _resolve_key("brave", search_cfg)
-        if brave_key:
-            selected_provider = "brave"
-            selected_key = brave_key
-        else:
-            selected_provider = "duckduckgo"
-            selected_key = ""
+    def _best_keyed_or_keyless() -> WebSearchResult:
+        """Auto fallback: the best keyed engine that actually succeeds, else keyless.
+
+        Cascades on *failure*, not just key presence — a keyed engine that errors
+        (bad key, quota, network) falls through to the next instead of dead-ending.
+        Order favors grounding quality while respecting free-tier quotas: Tavily
+        (RAG-optimized) → Brave (large free tier) → SerpApi (Google, small quota,
+        used last) → keyless Mojeek/DuckDuckGo.
+        """
+        for prov, runner in (
+            ("tavily", lambda k: _search_tavily(query, k, count, timeout_seconds)),
+            ("brave", lambda k: _search_brave(query, k, count, timeout_seconds)),
+            ("serpapi", lambda k: _search_serpapi(query, k, count, timeout_seconds)),
+        ):
+            key = _resolve_key(prov, search_cfg)
+            if not key:
+                continue
+            candidate = runner(key)
+            if candidate.success:
+                return candidate
+            logger.debug("Keyed provider %s failed (%s); trying next", prov, candidate.error)
+        return _search_keyless(query, count, timeout_seconds)
+
+    # Runtime engine supports Firecrawl, Brave, DuckDuckGo, Mojeek, Tavily, SerpApi.
+    if selected_provider not in (
+        "firecrawl",
+        "brave",
+        "duckduckgo",
+        "mojeek",
+        "tavily",
+        "serpapi",
+    ):
+        # Unknown/unsupported provider → best available keyed engine, else keyless.
+        selected_provider = "auto-keyed"
+        selected_key = ""
 
     # Perform search
     if selected_provider == "firecrawl":
@@ -889,27 +1249,33 @@ def web_search(
         if not result.success:
             if requested_provider == "firecrawl":
                 return result
-
-            tavily_key = _resolve_key("tavily", search_cfg)
-            brave_key = _resolve_key("brave", search_cfg)
-            if tavily_key:
-                result = _search_tavily(query, tavily_key, count, timeout_seconds)
-            elif brave_key:
-                result = _search_brave(query, brave_key, count, timeout_seconds)
-            else:
-                result = _search_duckduckgo(query, count, timeout_seconds)
+            result = _best_keyed_or_keyless()
     elif selected_provider == "tavily":
-        if not selected_key:
-            result = _search_duckduckgo(query, count, timeout_seconds)
-        else:
-            result = _search_tavily(query, selected_key, count, timeout_seconds)
+        result = (
+            _search_tavily(query, selected_key, count, timeout_seconds)
+            if selected_key
+            else _search_keyless(query, count, timeout_seconds)
+        )
     elif selected_provider == "brave":
-        if not selected_key:
-            result = _search_duckduckgo(query, count, timeout_seconds)
-        else:
-            result = _search_brave(query, selected_key, count, timeout_seconds)
-    else:
+        result = (
+            _search_brave(query, selected_key, count, timeout_seconds)
+            if selected_key
+            else _search_keyless(query, count, timeout_seconds)
+        )
+    elif selected_provider == "serpapi":
+        result = (
+            _search_serpapi(query, selected_key, count, timeout_seconds)
+            if selected_key
+            else _search_keyless(query, count, timeout_seconds)
+        )
+    elif selected_provider == "mojeek":
+        result = _search_mojeek(query, count, timeout_seconds)
+    elif selected_provider == "duckduckgo":
         result = _search_duckduckgo(query, count, timeout_seconds)
+    elif selected_provider == "auto-keyed":
+        result = _best_keyed_or_keyless()
+    else:  # "keyless" — no API key configured
+        result = _search_keyless(query, count, timeout_seconds)
 
     # Cache successful results
     if use_cache and result.success:

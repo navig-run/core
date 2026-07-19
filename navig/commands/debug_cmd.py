@@ -4,7 +4,7 @@ from __future__ import annotations
 import typer
 
 from navig.console_helper import get_console
-from navig.platform.paths import config_dir
+from navig.platform.paths import config_dir, debug_log_path, log_dir
 
 debug_app = typer.Typer(help="Debug mode and observability tools", no_args_is_help=False)
 console = get_console()
@@ -15,23 +15,33 @@ def debug_default(ctx: typer.Context):
     """Show debug log info."""
     if ctx.invoked_subcommand:
         return
-    log_dir = config_dir() / "logs"
-    debug_log = config_dir() / "debug.log"
+    debug_log = debug_log_path()
     if debug_log.exists():
         size = debug_log.stat().st_size
         console.print(f"[cyan]debug.log[/cyan]  {size:,} bytes  [dim]{debug_log}[/dim]")
     else:
         console.print("[dim]No debug.log found.[/dim]")
-    if log_dir.exists():
-        logs = sorted(log_dir.glob("*.json")) + sorted(log_dir.glob("*.log"))
-        for f in logs[:10]:
+    # Two log dirs genuinely exist: the canonical one (log_dir(), where debug/daemon logs
+    # are written) and config_dir()/logs (crash reports, remediation.log). List both —
+    # this command previously listed only the latter and reported the debug log from a
+    # path nothing writes to, so it always said "No debug.log found".
+    seen: set = set()
+    for d in (log_dir(), config_dir() / "logs"):
+        if not d.exists() or d in seen:
+            continue
+        seen.add(d)
+        entries = sorted(d.glob("*.json")) + sorted(d.glob("*.log")) + sorted(d.glob("*.jsonl"))
+        if not entries:
+            continue
+        console.print(f"[dim]{d}[/dim]")
+        for f in entries[:10]:
             console.print(f"  [dim]{f.name}[/dim]  {f.stat().st_size:,} B")
 
 
 @debug_app.command("tail")
 def debug_tail(lines: int = typer.Option(50, "--lines", "-n", help="Lines to tail")):
     """Tail the NAVIG debug log."""
-    debug_log = config_dir() / "debug.log"
+    debug_log = debug_log_path()
     if not debug_log.exists():
         console.print("[yellow]No debug.log found.[/yellow]")
         return
@@ -45,7 +55,7 @@ def debug_clear(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
     """Clear the NAVIG debug log."""
-    debug_log = config_dir() / "debug.log"
+    debug_log = debug_log_path()
     if not debug_log.exists():
         console.print("[dim]Nothing to clear.[/dim]")
         return

@@ -84,8 +84,10 @@ def _parse_active_tasks(text: str) -> list[str]:
 class CurrentPhaseManager:
     """Read and mutate ``CURRENT_PHASE.md`` in ``.navig/plans/phases/``.
 
-    Falls back to ``.navig/CURRENT_PHASE.md`` if the phases subdirectory
-    does not contain the file.
+    Falls back to ``.navig/plans/CURRENT_PHASE.md`` (the layout every
+    ``navig space``-scaffolded project uses) and then ``.navig/
+    CURRENT_PHASE.md`` (legacy) if the phases subdirectory does not
+    contain the file.
 
     Parameters
     ----------
@@ -103,6 +105,9 @@ class CurrentPhaseManager:
         primary = self._phases_dir / "CURRENT_PHASE.md"
         if primary.is_file():
             return primary
+        plans_level = self._navig_dir / "plans" / "CURRENT_PHASE.md"
+        if plans_level.is_file():
+            return plans_level
         fallback = self._navig_dir / "CURRENT_PHASE.md"
         if fallback.is_file():
             return fallback

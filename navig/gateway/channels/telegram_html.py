@@ -5,7 +5,7 @@ All Telegram bot messages in NAVIG use ``parse_mode="HTML"`` exclusively.
 This module provides helpers to build properly escaped HTML strings for
 Telegram's supported HTML tag set and to convert LLM Markdown output to HTML.
 
-Supported Telegram HTML tags (as of Bot API 7.x):
+Supported Telegram HTML tags (through Bot API 10.2, July 2026):
   <b>, <strong>          bold
   <i>, <em>              italic
   <u>, <ins>             underline
@@ -14,7 +14,15 @@ Supported Telegram HTML tags (as of Bot API 7.x):
   <pre>                  pre-formatted code block
   <a href="…">           inline link / text mention (tg://user?id=…)
   <tg-spoiler>           spoiler
-  <blockquote>           blockquote (optional expandable attribute)
+  <blockquote>           blockquote
+  <blockquote expandable> collapsible quote — folds behind a native "Show More"
+
+``md_to_html`` emits ``<blockquote expandable>`` for long or ``>!``-marked quotes.
+For document-grade output (tables, section headings, dividers, collapsible detail
+blocks) and the 32,768-char / "Show More" message capacity, use the rich-message
+API instead — ``TelegramChannel.send_rich_message`` (Bot API 10.2 ``sendRichMessage``).
+``split_html_for_telegram`` keeps formatting tags balanced when an HTML body must be
+split across the classic 4,096-char ``sendMessage`` limit.
 
 Only <, >, & and " must be escaped inside attribute values;
 plain text nodes need <, > and & escaped.
@@ -50,7 +58,14 @@ __all__ = [
     "blockquote",
     "link",
     "mention",
+    "split_html_for_telegram",
+    "MAX_MESSAGE_UTF16",
 ]
+
+# Classic Bot API sendMessage/editMessageText text limit (UTF-16 code units).
+# Rich messages (sendRichMessage, Bot API 10.2) carry far more (32,768) and are the
+# vehicle for long document-grade replies — see TelegramChannel.send_rich_message.
+MAX_MESSAGE_UTF16 = 4096
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -203,23 +218,34 @@ def md_to_html(text: str) -> str:
     # ── 3. Line-level transforms ────────────────────────────────────────────
     lines_out: list[str] = []
     blockquote_buf: list[str] = []
+    blockquote_expand = False  # a leading "> !" marker forces an expandable quote
 
     def _flush_blockquote() -> None:
+        nonlocal blockquote_expand
         if blockquote_buf:
             joined = "\n".join(blockquote_buf)
-            lines_out.append(f"<blockquote>{joined}</blockquote>")
+            # Fold long quotes behind Telegram's native "Show More" (Bot API 10.2):
+            # an explicit "> !" marker, or a quote big enough to be worth collapsing.
+            expand = blockquote_expand or joined.count("\n") >= 3 or len(joined) >= 300
+            lines_out.append(blockquote(joined, expandable=expand))
             blockquote_buf.clear()
+        blockquote_expand = False
 
     for line in text.split("\n"):
         stripped = line.lstrip()
 
-        # Blockquote  > text
-        if stripped.startswith("&gt; ") or stripped == "&gt;":
-            # html.escape already turned > into &gt;
-            blockquote_buf.append(stripped[5:] if stripped.startswith("&gt; ") else "")
-            continue
-        else:
-            _flush_blockquote()
+        # Blockquote  "> text"  (a leading "> !" forces an expandable quote)
+        if stripped.startswith("&gt;"):
+            rest = stripped[4:]  # drop the escaped ">"
+            forced = rest[:1] == "!"
+            if forced:
+                rest = rest[1:]
+            if forced or rest == "" or rest[:1] == " ":
+                if forced:
+                    blockquote_expand = True
+                blockquote_buf.append(rest[1:] if rest[:1] == " " else rest)
+                continue
+        _flush_blockquote()
 
         # ATX headings  # / ## / ###
         heading_m = re.match(r"^(#{1,3})\s+(.*)", stripped)
@@ -298,3 +324,68 @@ def v1_to_html(text: str) -> str:
     # Links [text](url)
     text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
     return text
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tag-safe splitting for over-length HTML messages
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Telegram formatting tags whose open/close balance must survive a split boundary.
+_TG_BALANCE_TAGS = frozenset({
+    "pre", "code", "blockquote", "b", "strong", "i", "em",
+    "u", "ins", "s", "strike", "del", "tg-spoiler", "a",
+})
+_TAG_RE = re.compile(r"<(/?)([a-zA-Z][\w-]*)([^>]*)>")
+
+
+def _open_tag_stack(chunk: str) -> list[tuple[str, str]]:
+    """Return the stack of still-open ``(tag_name, full_open_tag)`` at end of *chunk*.
+
+    Only Telegram formatting tags are tracked; unknown tags are ignored. A closing
+    tag pops the most recent matching open, tolerating mismatched/overlapping nesting.
+    """
+    stack: list[tuple[str, str]] = []
+    for m in _TAG_RE.finditer(chunk):
+        closing, name = m.group(1), m.group(2).lower()
+        if name not in _TG_BALANCE_TAGS:
+            continue
+        if closing:
+            for i in range(len(stack) - 1, -1, -1):
+                if stack[i][0] == name:
+                    del stack[i]
+                    break
+        else:
+            stack.append((name, m.group(0)))
+    return stack
+
+
+def split_html_for_telegram(
+    html: str, *, max_utf16: int = MAX_MESSAGE_UTF16
+) -> list[str]:
+    """Split *html* into chunks under *max_utf16* UTF-16 units, keeping tags balanced.
+
+    Breaks at newline boundaries where possible (via
+    :func:`navig.gateway.channels.base.utf16_safe_split`), then closes any Telegram
+    formatting tag left open at a boundary and re-opens it at the start of the next
+    chunk — so no chunk is sent with a half-open ``<pre>``/``<blockquote>``/``<b>`` …
+    tag that would trip Telegram's HTML parser. Empty input returns ``[]``.
+    """
+    from navig.gateway.channels.base import utf16_safe_split
+
+    if not html:
+        return []
+    # Reserve a little headroom so re-opened tags + closers can't push a chunk over.
+    budget = max(256, max_utf16 - 128)
+    raw = utf16_safe_split(html, max_utf16=budget)
+    if len(raw) <= 1:
+        return [html] if html else []
+
+    out: list[str] = []
+    reopen: list[str] = []
+    for piece in raw:
+        chunk = "".join(reopen) + piece
+        stack = _open_tag_stack(chunk)
+        closer = "".join(f"</{name}>" for name, _ in reversed(stack))
+        out.append(chunk + closer)
+        reopen = [full for _, full in stack]
+    return out

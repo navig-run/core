@@ -19,8 +19,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from navig.store.base import BaseStore, _utcnow
 from navig.platform.paths import config_dir
+from navig.store.base import BaseStore, _utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +207,17 @@ class AuditStore(BaseStore):
         )
 
     # ── Read ──────────────────────────────────────────────────
+    #
+    # Time-window filters must build their threshold in the SAME lexical shape the
+    # rows are stored in — ISO-8601 with a 'T' separator and 'Z' suffix (see
+    # ``_utcnow`` and the column DEFAULT). SQLite's ``datetime('now', …)`` returns a
+    # *space-separated*, suffix-less string ("2026-07-18 12:00:00"), and ``timestamp``
+    # comparisons are plain string compares. At column 10 a stored value has 'T' (0x54)
+    # while such a threshold has ' ' (0x20), so 'T' > ' ' makes **every** row on the
+    # threshold's calendar date compare as greater regardless of its time-of-day —
+    # over-counting a whole boundary day. ``strftime`` with the stored format keeps the
+    # comparison homogeneous.
+    _WINDOW_HOURS = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ? || ' hours')"
 
     def query_events(
         self,
@@ -259,11 +270,11 @@ class AuditStore(BaseStore):
     ) -> list[dict[str, Any]]:
         """Get recent failures (uses partial index)."""
         rows = self._read_all(
-            """
+            f"""
             SELECT id, timestamp, action, actor, target, details, status
             FROM audit_events
             WHERE status != 'success'
-              AND timestamp > datetime('now', ? || ' hours')
+              AND timestamp > {self._WINDOW_HOURS}
             ORDER BY timestamp DESC
             LIMIT ?
             """,
@@ -284,7 +295,7 @@ class AuditStore(BaseStore):
             clauses.append("action = ?")
             params.append(action)
         if hours:
-            clauses.append("timestamp > datetime('now', ? || ' hours')")
+            clauses.append(f"timestamp > {self._WINDOW_HOURS}")
             params.append(str(-hours))
 
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
@@ -297,7 +308,8 @@ class AuditStore(BaseStore):
 
         total = conn.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0]
         today_count = conn.execute(
-            "SELECT COUNT(*) FROM audit_events WHERE timestamp > datetime('now', '-24 hours')"
+            "SELECT COUNT(*) FROM audit_events "
+            "WHERE timestamp > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-24 hours')"
         ).fetchone()[0]
         failure_count = conn.execute(
             "SELECT COUNT(*) FROM audit_events WHERE status != 'success'"
@@ -327,9 +339,17 @@ class AuditStore(BaseStore):
     # ── Retention ─────────────────────────────────────────────
 
     def prune(self, days: int = 90) -> int:
-        """Delete events older than *days*. Returns count deleted."""
+        """Delete events older than *days*. Returns count deleted.
+
+        Same ISO-shape threshold as the read queries (see the Read section note). The
+        old ``datetime('now', …)`` form mis-compared here too, but in the *safe*
+        direction — a boundary-date row always sorts greater, so ``<`` under-deleted
+        (kept rows up to a day longer) and never dropped anything it should keep. The
+        strftime form makes the retention cutoff exact.
+        """
         cursor = self._write(
-            "DELETE FROM audit_events WHERE timestamp < datetime('now', ? || ' days')",
+            "DELETE FROM audit_events "
+            "WHERE timestamp < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ? || ' days')",
             (str(-days),),
         )
         return cursor.rowcount

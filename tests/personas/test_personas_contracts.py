@@ -12,7 +12,6 @@ from navig.personas.contracts import (
     validate_persona_name,
 )
 
-
 # ---------------------------------------------------------------------------
 # PersonaConfig — __post_init__ validation
 # ---------------------------------------------------------------------------

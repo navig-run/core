@@ -19,8 +19,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # navig/blackbox/types.py — EventType, BlackboxEvent, Bundle
 # ---------------------------------------------------------------------------
-
-from navig.blackbox.types import BlackboxEvent, Bundle, EventType, _SEVERITY
+from navig.blackbox.types import _SEVERITY, BlackboxEvent, Bundle, EventType
 
 
 class TestEventType:

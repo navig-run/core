@@ -18,7 +18,6 @@ from typer.testing import CliRunner
 # ---------------------------------------------------------------------------
 # navig.commands._async_utils
 # ---------------------------------------------------------------------------
-
 from navig.commands._async_utils import run_sync
 
 
@@ -67,17 +66,17 @@ _runner = CliRunner()
 
 class TestBootCmd:
     def test_boot_show(self):
-        with patch.object(_ch, "warn", create=True):
+        with patch.object(_ch, "warning"):
             result = _runner.invoke(boot_app, ["show"])
         assert result.exit_code == 0
 
     def test_boot_run(self):
-        with patch.object(_ch, "warn", create=True):
+        with patch.object(_ch, "warning"):
             result = _runner.invoke(boot_app, ["run"])
         assert result.exit_code == 0
 
     def test_boot_run_dry_run(self):
-        with patch.object(_ch, "warn", create=True):
+        with patch.object(_ch, "warning"):
             result = _runner.invoke(boot_app, ["run", "--dry-run"])
         assert result.exit_code == 0
 
@@ -98,17 +97,17 @@ _wrunner = CliRunner()
 
 class TestWatchCmd:
     def test_watch_start_default_path(self):
-        with patch.object(_ch, "warn", create=True):
+        with patch.object(_ch, "warning"):
             result = _wrunner.invoke(watch_app, ["start"])
         assert result.exit_code == 0
 
     def test_watch_start_custom_path(self):
-        with patch.object(_ch, "warn", create=True):
+        with patch.object(_ch, "warning"):
             result = _wrunner.invoke(watch_app, ["start", "/tmp"])
         assert result.exit_code == 0
 
     def test_watch_list(self):
-        with patch.object(_ch, "warn", create=True):
+        with patch.object(_ch, "warning"):
             result = _wrunner.invoke(watch_app, ["list"])
         assert result.exit_code == 0
 

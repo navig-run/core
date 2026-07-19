@@ -1,10 +1,6 @@
 """Tests for navig.core.migrations — MigrationManager and migrate_config."""
 from __future__ import annotations
 
-from unittest.mock import patch
-
-import pytest
-
 from navig.core.migrations import (
     CURRENT_VERSION,
     Migration,
@@ -59,39 +55,26 @@ class TestGetPendingMigrations:
         assert isinstance(pending, list)
 
 
-def _silent():
-    """Context manager that silences console_helper output during migrations."""
-    return patch.multiple(
-        "navig.console_helper",
-        info=lambda *a, **kw: None,
-        dim=lambda *a, **kw: None,
-        error=lambda *a, **kw: None,
-    )
-
-
 class TestApplyMigrations:
     def test_no_change_when_at_current_version(self):
         mgr = MigrationManager()
-        with _silent():
-            config = {"version": CURRENT_VERSION, "key": "val"}
-            result, modified = mgr.apply_migrations(config.copy())
+        config = {"version": CURRENT_VERSION, "key": "val"}
+        result, modified = mgr.apply_migrations(config.copy())
         assert modified is False
         assert result["key"] == "val"
 
     def test_applies_migration_from_0_9(self):
         mgr = MigrationManager()
-        with _silent():
-            config = {"version": "0.9", "ai_model_preference": "gpt-4"}
-            result, modified = mgr.apply_migrations(config)
+        config = {"version": "0.9", "ai_model_preference": "gpt-4"}
+        result, modified = mgr.apply_migrations(config)
         assert modified is True
         assert result["ai"]["model_preference"] == "gpt-4"
         assert "ai_model_preference" not in result
 
     def test_sets_version_to_current_after_migration(self):
         mgr = MigrationManager()
-        with _silent():
-            config = {"version": "0.9"}
-            result, _ = mgr.apply_migrations(config)
+        config = {"version": "0.9"}
+        result, _ = mgr.apply_migrations(config)
         assert result["version"] == CURRENT_VERSION
 
     def test_failed_migration_stops_processing(self):
@@ -106,11 +89,64 @@ class TestApplyMigrations:
             description="bad migration",
             apply=bad_apply,
         ))
-        with _silent():
-            config = {"version": "0.5"}
-            result, modified = mgr.apply_migrations(config)
+        config = {"version": "0.5"}
+        result, modified = mgr.apply_migrations(config)
         # Should not raise; result should have version set to CURRENT_VERSION
         assert result["version"] == CURRENT_VERSION
+
+
+class TestNarrationStream:
+    """Migration narration must go to stderr, never stdout.
+
+    Migrations run mid-config-load, deep inside whatever command is executing —
+    including ``--json`` commands whose stdout must carry exactly one
+    machine-readable document. Regression guard for the PR #229 finding:
+    "Applying N configuration migrations..." used to print to stdout and
+    corrupt every machine-readable invocation that loaded a pre-1.0 config.
+    """
+
+    def test_narration_goes_to_stderr_not_stdout(self, capsys):
+        mgr = MigrationManager()
+        mgr.register(Migration(
+            from_version="0.5",
+            to_version="0.6",
+            description="stream-test migration",
+            apply=lambda c: c,
+        ))
+
+        mgr.apply_migrations({"version": "0.5"})
+
+        captured = capsys.readouterr()
+        assert captured.out == "", f"stdout must stay clean, got: {captured.out!r}"
+        assert "configuration migrations" in captured.err
+        assert "stream-test migration" in captured.err
+
+    def test_failure_narration_goes_to_stderr_not_stdout(self, capsys):
+        mgr = MigrationManager()
+
+        def bad_apply(config):
+            raise RuntimeError("migration exploded")
+
+        mgr.register(Migration(
+            from_version="0.5",
+            to_version="0.6",
+            description="bad migration",
+            apply=bad_apply,
+        ))
+
+        mgr.apply_migrations({"version": "0.5"})
+
+        captured = capsys.readouterr()
+        assert captured.out == "", f"stdout must stay clean, got: {captured.out!r}"
+        assert "migration exploded" in captured.err
+
+    def test_no_narration_at_all_when_nothing_pending(self, capsys):
+        mgr = MigrationManager()
+        mgr.apply_migrations({"version": CURRENT_VERSION})
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err == ""
 
 
 class TestMigrate0_9To1_0:
@@ -143,7 +179,6 @@ class TestMigrate0_9To1_0:
 
 class TestMigrateConfigHelper:
     def test_migrate_config_returns_tuple(self):
-        with _silent():
-            result, modified = migrate_config({"version": CURRENT_VERSION})
+        result, modified = migrate_config({"version": CURRENT_VERSION})
         assert isinstance(result, dict)
         assert isinstance(modified, bool)

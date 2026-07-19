@@ -10,11 +10,10 @@ include CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md SUPPORT.md
 # Default configuration templates
 recursive-include config *.yaml *.yml *.txt *.json
 
-# Runtime asset stores (skills, templates, formations, etc.)
-recursive-include store *.md *.json *.txt *.yaml *.yml *.py
-
-# Package manifests / pre-bundled packs
-recursive-include packages *.json *.yaml *.yml *.md *.py
+# Built-in content store (skills, prompts, templates, formations, agents, tools).
+# It lives INSIDE the package (navig/builtin) so it reaches the *wheel* via
+# [tool.setuptools.package-data]; a top-level tree would only reach the sdist.
+recursive-include navig/builtin *
 
 # Skills
 recursive-include skills *.md *.yaml *.yml *.json *.txt *.py

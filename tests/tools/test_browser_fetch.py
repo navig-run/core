@@ -6,7 +6,6 @@ import pytest
 
 from navig.tools.browser_fetch import BrowserFetchTool, _extract_text, _is_js_gated
 
-
 # ---------------------------------------------------------------------------
 # _is_js_gated
 # ---------------------------------------------------------------------------

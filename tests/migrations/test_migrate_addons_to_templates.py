@@ -18,7 +18,6 @@ from navig.migrations.migrate_addons_to_templates import (
     migrate_addons_to_templates_cmd,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

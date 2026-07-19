@@ -18,7 +18,11 @@ import typer
 from navig import console_helper as ch
 
 # Asset-type prefixes we accept in a spec (`<type>:owner/repo`).
-_KNOWN_TYPES = {"skill", "space", "plugin", "formation", "prompt", "playbook", "workflow"}
+_KNOWN_TYPES = {"skill", "space", "plugin", "formation", "prompt", "playbook", "workflow", "webapp", "block"}
+
+# Legacy install types that normalize INTO the block format (no breaking rename —
+# a `playbook:`/`workflow:` spec installs as a block with a minimal generated manifest).
+_TYPE_ALIASES = {"playbook": "block", "workflow": "block"}
 
 # ============================================================================
 # Business-logic stubs — not yet implemented
@@ -50,13 +54,14 @@ def _parse_spec(spec: str, default_type: str = "skill") -> dict:
         s, ref = s.rsplit("@", 1)
 
     asset_type = default_type
+    explicit = False  # an explicit `skill:`/`space:`/… scheme wins over path inference
     if ":" in s:
         prefix, rest = s.split(":", 1)
         prefix = prefix.lower()
         if prefix == "github":
             s = rest
         elif prefix in _KNOWN_TYPES:
-            asset_type, s = prefix, rest
+            asset_type, s, explicit = prefix, rest, True
         else:
             s = rest  # unknown scheme — treat remainder as a path
 
@@ -68,8 +73,10 @@ def _parse_spec(spec: str, default_type: str = "skill") -> dict:
     subpath = parts[2:]
     asset_id = subpath[-1] if subpath else repo
 
-    # Infer type from the community pillar segment when present.
-    if subpath:
+    # Infer type from the community pillar segment when present — but only when
+    # the caller did NOT pin the type via a scheme prefix (e.g. `skill:`). A path
+    # like `.../packages/.../skills-registry/x` must not be mis-read as a package.
+    if subpath and not explicit:
         head = subpath[0].lower()
         if "space" in head:
             asset_type = "space"
@@ -81,20 +88,49 @@ def _parse_spec(spec: str, default_type: str = "skill") -> dict:
             asset_type = "package"
         elif "prompt" in head:
             asset_type = "prompt"
+        elif "formation" in head:
+            asset_type = "formation"
+        elif "webapp" in head:
+            asset_type = "webapp"
+        elif "block" in head or "playbook" in head or "workflow" in head:
+            asset_type = "block"
+
+    # Normalize legacy types into the block format (playbook/workflow → block).
+    asset_type = _TYPE_ALIASES.get(asset_type, asset_type)
 
     return {"type": asset_type, "owner": owner, "repo": repo, "ref": ref, "subpath": subpath, "id": asset_id}
 
 
-def _dest_for(asset_type: str, asset_id: str) -> Path:
-    """Resolve the install destination so the relevant loader will discover it."""
-    from navig.platform.paths import config_dir, packages_dir, store_dir
+def _dest_for(asset_type: str, asset_id: str, install_root: Path | None = None) -> Path:
+    """Resolve the install destination so the relevant loader will discover it.
+
+    ``install_root`` overrides the global user store with a caller-chosen dir
+    (e.g. a project's ``.navig/skills`` for a project-local install — which
+    ``skills.loader.get_skill_dirs`` scans via ``find_app_root``).
+    """
+    if install_root is not None:
+        return install_root / asset_id
+
+    from navig.platform.paths import config_dir, packages_dir, spaces_dir, store_dir
 
     if asset_type == "space":
-        return config_dir() / "spaces" / asset_id
+        return spaces_dir() / asset_id
     if asset_type == "persona":
         return config_dir() / "personas" / asset_id
     if asset_type == "package":
         return packages_dir() / asset_id
+    if asset_type == "formation":
+        return store_dir() / "formations" / asset_id
+    if asset_type == "prompt":
+        return store_dir() / "prompts" / asset_id
+    if asset_type == "webapp":
+        # config_dir(), not Path.home() — every other asset type here honours the
+        # configured NAVIG dir (via store_dir()); only webapp hardcoded the real home, so
+        # an install under a custom NAVIG_CONFIG_DIR landed in ~/.navig anyway. Identical
+        # for a default install (config_dir() IS ~/.navig), so nothing moves.
+        return config_dir() / "webapps" / asset_id
+    if asset_type == "block":
+        return store_dir() / "blocks" / asset_id
     # skills (and unknown types) live in the user content store under skills/
     return store_dir() / "skills" / asset_id
 
@@ -104,7 +140,9 @@ def _safe_extract(tar: tarfile.TarFile, dest: Path) -> None:
     dest = dest.resolve()
     for member in tar.getmembers():
         target = (dest / member.name).resolve()
-        if not str(target).startswith(str(dest)):
+        # Strict containment — a bare prefix check passes sibling dirs
+        # (e.g. `<dest>-evil`), is_relative_to does not.
+        if not target.is_relative_to(dest):
             raise ValueError(f"unsafe path in archive: {member.name}")
     tar.extractall(dest)  # noqa: S202 — members validated above
 
@@ -206,6 +244,7 @@ def install_asset(
     default_type: str = "skill",
     *,
     upgrade: bool = False,
+    install_root: Path | None = None,
 ):
     """Install a community asset from GitHub into the local store.
 
@@ -213,9 +252,13 @@ def install_asset(
     refreshed and merged into the registry, but ``memory``/``plans``/``inbox``/
     ``state`` are never destroyed or overwritten. ``upgrade=True`` refreshes
     capabilities only and leaves all state untouched.
+
+    ``install_root`` installs into a caller-chosen dir (``install_root/<id>``)
+    instead of the global user store — e.g. a project's ``.navig/skills`` for a
+    project-local install.
     """
     info = _parse_spec(spec, default_type)
-    dest = _dest_for(info["type"], info["id"])
+    dest = _dest_for(info["type"], info["id"], install_root=install_root)
     additive = info["type"] in _ADDITIVE_TYPES
 
     # Non-additive (skills): keep the "already installed → need --force" guard.
@@ -300,15 +343,61 @@ def install_asset(
                 ch.warning(f"Installed to {dest}, but SKILL.md did not parse — check the asset.")
         except Exception:  # noqa: BLE001
             ch.info(f"✓ Installed → {dest}")
+    elif info["type"] == "block":
+        _finalize_block_install(dest, info["id"])
     else:
         ch.info(f"✓ Installed {info['type']} '{info['id']}' → {dest}")
 
 
+def _finalize_block_install(dest: Path, asset_id: str) -> None:
+    """Post-install for blocks: normalize legacy assets, pin the digest in the
+    project lockfile, and generate the SKILL.md shim so the block is discoverable
+    as a skill by NAVIG's skill surfaces (and, in a wired project, under .claude/)."""
+    from navig.blocks.loader import normalize_legacy_asset, parse_block_file, write_skill_shim
+
+    try:
+        if not (dest / "BLOCK.md").exists():
+            normalize_legacy_asset(dest, asset_id)  # playbook/workflow → minimal block
+        block = parse_block_file(dest / "BLOCK.md")
+    except Exception as exc:  # noqa: BLE001
+        ch.warning(f"Installed to {dest}, but BLOCK.md did not parse — {exc}")
+        return
+
+    if block is None:
+        ch.warning(f"Installed to {dest}, but no BLOCK.md was found.")
+        return
+
+    # Pin the digest into the project lockfile (tamper evidence on re-apply).
+    try:
+        from datetime import datetime, timezone
+
+        from navig.blocks.policy import write_lock_entry
+        from navig.platform.paths import find_app_root
+
+        root = find_app_root()
+        if root is not None:
+            write_lock_entry(
+                root, block.id, version=block.version, digest=block.digest,
+                source=f"store:{dest.name}", trust="first-party",
+                installed_at=datetime.now(timezone.utc).isoformat(),
+            )
+    except Exception as exc:  # noqa: BLE001
+        ch.dim(f"  (lockfile not updated: {exc})")
+
+    try:
+        write_skill_shim(dest)
+    except Exception:  # noqa: BLE001
+        pass
+
+    ch.info(f"✓ Installed block '{block.name}' ({block.id} v{block.version}) → {dest}")
+    ch.dim(f"  apply: navig apply {block.id}")
+
+
 def list_assets(plain: bool = False):
     """List community assets installed into the local store."""
-    from navig.platform.paths import config_dir, store_dir
+    from navig.platform.paths import spaces_dir, store_dir
 
-    roots = [("skill", store_dir() / "skills"), ("space", config_dir() / "spaces")]
+    roots = [("skill", store_dir() / "skills"), ("space", spaces_dir())]
     found: list[tuple[str, str, Path]] = []
     for typ, root in roots:
         if root.exists():
@@ -329,10 +418,10 @@ def list_assets(plain: bool = False):
 
 def remove_asset(spec: str, force: bool = False):
     """Remove an installed asset by id (or full spec)."""
-    from navig.platform.paths import config_dir, store_dir
+    from navig.platform.paths import spaces_dir, store_dir
 
     name = spec.split(":")[-1].strip("/").split("/")[-1]
-    for dest in (store_dir() / "skills" / name, config_dir() / "spaces" / name):
+    for dest in (store_dir() / "skills" / name, spaces_dir() / name):
         if dest.exists():
             shutil.rmtree(dest)
             ch.info(f"✓ Removed '{name}' ({dest})")
@@ -529,19 +618,17 @@ def install_search(
     results = search_assets(query, asset_type=type_filter, force_refresh=refresh)
 
     if json_out:
-        import json as _json
-
-        ch.print(_json.dumps(results, indent=2, ensure_ascii=False))
+        ch.emit_json(results, ensure_ascii=False)
         return
 
     if not results:
-        ch.warn(f"No assets found matching {query!r}.")
+        ch.warning(f"No assets found matching {query!r}.")
         ch.dim("  Try 'navig install browse' to see all available assets.")
         return
 
     if plain:
         for asset in results:
-            ch.print(
+            ch.console.print(
                 f"{asset.get('type', '?')}:{asset.get('repo', asset.get('name', '?'))}"
                 f"  — {asset.get('description', '')}"
             )
@@ -592,20 +679,18 @@ def install_browse(
     assets = browse_assets(asset_type=type_filter, force_refresh=refresh)
 
     if json_out:
-        import json as _json
-
-        ch.print(_json.dumps(assets, indent=2, ensure_ascii=False))
+        ch.emit_json(assets, ensure_ascii=False)
         return
 
     if not assets:
         label = f" of type {type_filter!r}" if type_filter else ""
-        ch.warn(f"Registry is empty{label}.")
+        ch.warning(f"Registry is empty{label}.")
         ch.dim("  Check your internet connection or run with --refresh.")
         return
 
     if plain:
         for asset in assets:
-            ch.print(
+            ch.console.print(
                 f"{asset.get('type', '?')}  {asset.get('name', '?')}  "
                 f"{asset.get('description', '')}"
             )

@@ -48,7 +48,7 @@ def get_active_working_dir(cwd: Path | None = None) -> Path:
         ep = Path(env).expanduser()
         if ep.is_dir():
             return ep
-        cand = paths.config_dir() / "spaces" / env
+        cand = paths.spaces_dir() / env
         if cand.is_dir():
             return cand
 

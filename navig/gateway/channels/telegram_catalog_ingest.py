@@ -52,14 +52,11 @@ def catalog_config() -> dict[str, Any]:
 
 
 def _coerce_bool(v: Any, default: bool = False) -> bool:
-    """Tolerant bool: handles real bools and the string values `navig config set`
-    stores (it writes the CLI argument verbatim, so ``"false"`` would otherwise
-    read as truthy)."""
-    if isinstance(v, bool):
-        return v
-    if v is None:
-        return default
-    return str(v).strip().lower() in ("1", "true", "yes", "on")
+    """Tolerant bool for the `navig config set` string gotcha — delegates to the
+    canonical :func:`navig.core.coerce.coerce_bool` (one shared truth table)."""
+    from navig.core.coerce import coerce_bool
+
+    return coerce_bool(v, default)
 
 
 # Cache the "a Telegram token is configured" probe — it can touch the vault, and

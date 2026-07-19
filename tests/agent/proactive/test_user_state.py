@@ -10,12 +10,11 @@ Covers:
 - UserStateTracker.record_interaction stats update
 """
 
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 import time
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # Patch config_dir and debug logger before import
 with (

@@ -33,7 +33,16 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_RESULT_CHARS: int = 30_000
 
 #: Directory for spillover files (full results that exceeded the cap).
-SPILLOVER_DIR: Path = config_dir() / "tmp" / "tool_spillover"
+#: Test seam — when ``None`` (the normal state), :func:`_spillover_dir`
+#: resolves at CALL time so ``NAVIG_CONFIG_DIR`` isolation set after import
+#: still applies (see ``navig/vault/migrate.py:_legacy_db_path``).
+SPILLOVER_DIR: Path | None = None
+
+
+def _spillover_dir() -> Path:
+    """Resolve the spillover dir at call time (honours the test seam)."""
+    return SPILLOVER_DIR if SPILLOVER_DIR is not None else config_dir() / "tmp" / "tool_spillover"
+
 
 #: Time-to-live for spillover files, in seconds (default 1 hour).
 SPILLOVER_TTL: int = 3600
@@ -129,12 +138,13 @@ def cleanup_spillover(max_age: int = SPILLOVER_TTL) -> int:
     Returns:
         Number of files removed.
     """
-    if not SPILLOVER_DIR.exists():
+    spillover_dir = _spillover_dir()
+    if not spillover_dir.exists():
         return 0
 
     now = time.time()
     removed = 0
-    for fpath in SPILLOVER_DIR.iterdir():
+    for fpath in spillover_dir.iterdir():
         if not fpath.is_file():
             continue
         try:
@@ -157,7 +167,8 @@ def _write_spillover(content: str, tool_name: str) -> Path | None:
     Returns the written path, or ``None`` on failure.
     """
     try:
-        SPILLOVER_DIR.mkdir(parents=True, exist_ok=True)
+        spillover_dir = _spillover_dir()
+        spillover_dir.mkdir(parents=True, exist_ok=True)
         hash_id = hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest()[:12]
         if tool_name:
             prefix = re.sub(r"[^A-Za-z0-9._-]+", "_", tool_name).strip("._")
@@ -165,7 +176,7 @@ def _write_spillover(content: str, tool_name: str) -> Path | None:
                 prefix = "tool"
         else:
             prefix = "tool"
-        spill_file = SPILLOVER_DIR / f"{prefix}_{hash_id}.txt"
+        spill_file = spillover_dir / f"{prefix}_{hash_id}.txt"
 
         # Avoid re-writing identical content
         if spill_file.exists():
@@ -173,7 +184,7 @@ def _write_spillover(content: str, tool_name: str) -> Path | None:
 
         _tmp_spill: Path | None = None
         try:
-            _fd_sp, _tmp_sp = tempfile.mkstemp(dir=SPILLOVER_DIR, suffix=".tmp")
+            _fd_sp, _tmp_sp = tempfile.mkstemp(dir=spillover_dir, suffix=".tmp")
             _tmp_spill = Path(_tmp_sp)
             with os.fdopen(_fd_sp, "w", encoding="utf-8") as _fh_sp:
                 _fh_sp.write(content)

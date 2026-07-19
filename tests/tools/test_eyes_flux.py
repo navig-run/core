@@ -3,11 +3,12 @@ Batch 126 — tests for navig.agent.eyes and navig.commands.flux
 
 Coverage targets:
   eyes.py:  SystemMetrics (dataclass, to_dict), Alert (dataclass, to_dict)
-  flux.py:  module constants, _daemon_offline_msg, _lan_ip, _table
+  flux.py:  _gw (live gateway resolver), timeouts, _daemon_offline_msg, _lan_ip, _table
 """
 
 from __future__ import annotations
 
+import re
 import socket
 from datetime import datetime
 from io import StringIO
@@ -19,12 +20,11 @@ from navig.agent.eyes import Alert, SystemMetrics
 from navig.commands.flux import (
     _FLUX_READ_TIMEOUT,
     _FLUX_WRITE_TIMEOUT,
-    _GW,
     _daemon_offline_msg,
+    _gw,
     _lan_ip,
     _table,
 )
-
 
 # ===========================================================================
 # SystemMetrics
@@ -143,11 +143,25 @@ class TestAlert:
 
 
 class TestFluxConstants:
-    def test_gw_is_localhost(self):
-        assert "127.0.0.1" in _GW or "localhost" in _GW
+    """`_gw()` replaced the old `_GW` constant (e0affb5c).
 
-    def test_gw_has_port(self):
-        assert "8789" in _GW
+    The gateway self-heals onto a free port when its configured one is taken, so
+    every client must resolve the base URL **per call** (``~/.navig/gateway.json``)
+    instead of trusting a literal. These tests pin that contract.
+    """
+
+    def test_gw_is_a_loopback_http_url(self):
+        assert re.fullmatch(r"http://(127\.0\.0\.1|localhost):\d+", _gw())
+
+    def test_gw_follows_the_live_resolver_not_a_hardcoded_port(self):
+        # Regression: the old test asserted `"8789" in _GW`. WinNAT reserves TCP 8789
+        # on Windows 11 — which is precisely why the bind self-heals — so a hardcoded
+        # port re-breaks the contract. `_gw()` must report wherever the gateway landed.
+        with patch(
+            "navig.gateway_client.gateway_live_defaults",
+            return_value=(56564, "127.0.0.1"),
+        ):
+            assert _gw() == "http://127.0.0.1:56564"
 
     def test_flux_read_timeout_positive(self):
         assert _FLUX_READ_TIMEOUT > 0

@@ -5,7 +5,7 @@ import types
 
 import pytest
 
-from navig import llm_generate
+from navig.llm import generate as llm_generate
 
 pytestmark = pytest.mark.integration
 

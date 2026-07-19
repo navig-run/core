@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from navig.messaging.adapter import (
+    DeliveryReceipt,
+    DeliveryStatus,
+    InboundEvent,
+    ResolvedTarget,
+)
 
 # ---------------------------------------------------------------------------
 # navig.messaging.adapters.whatsapp_cloud
@@ -11,12 +19,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from navig.messaging.adapters.whatsapp_cloud import (
     _GRAPH_API,
     WhatsAppCloudAdapter,
-)
-from navig.messaging.adapter import (
-    DeliveryReceipt,
-    DeliveryStatus,
-    InboundEvent,
-    ResolvedTarget,
 )
 
 

@@ -35,7 +35,7 @@ def _resolve_deck_url() -> str:
     try:
         gc = get_config_manager().global_config or {}
         cloud = gc.get("cloud", {}) if isinstance(gc, dict) else {}
-        url = str((cloud.get("public_url") or cloud.get("lighthouse_url") or "")).strip().rstrip("/")
+        url = str(cloud.get("public_url") or cloud.get("lighthouse_url") or "").strip().rstrip("/")
         if url:
             return url
     except Exception:  # noqa: BLE001

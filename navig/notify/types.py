@@ -36,9 +36,10 @@ NOTIFICATION_TYPES: list[dict] = [
     {"key": "security_alert",   "label": "Security alerts",    "category": "System",   "default_channels": ["deck", "telegram", "sms"]},
     {"key": "invoice_due",      "label": "Invoices due",       "category": "Finance",  "default_channels": ["deck", "telegram", "email"]},
     {"key": "finance_alert",    "label": "Finance alerts",     "category": "Finance",  "default_channels": ["deck", "telegram"]},
-    # Privacy — local device-sensor monitors (webcam/mic/screen). Opt-in producers.
+    # Privacy — local device-sensor monitors (webcam/mic/screen) + Telegram-manager events.
     {"key": "webcam_on",        "label": "Webcam in use",      "category": "Privacy",  "default_channels": ["deck", "telegram"]},
     {"key": "webcam_off",       "label": "Webcam released",    "category": "Privacy",  "default_channels": ["deck"]},
+    {"key": "message_deleted",  "label": "Message deleted",    "category": "Privacy",  "default_channels": ["telegram"]},
     # Signals — inbound public ingest (your websites → deck + Telegram). One generic
     # row for now; per-source rows (signal:<source>) are a fast-follow.
     {"key": "signal_event",     "label": "Signal / webhook",   "category": "Signals",  "default_channels": ["deck", "telegram"]},
@@ -46,6 +47,9 @@ NOTIFICATION_TYPES: list[dict] = [
     {"key": "self_error",       "label": "NAVIG errors",       "category": "NAVIG",    "default_channels": ["deck", "telegram"]},
     {"key": "deploy",           "label": "Deployments",        "category": "NAVIG",    "default_channels": ["deck", "telegram"]},
     {"key": "connectivity",     "label": "Brain reachability", "category": "NAVIG",    "default_channels": ["deck", "telegram"]},
+    {"key": "config_incident",  "label": "Config rescues",     "category": "NAVIG",    "default_channels": ["deck", "telegram"]},
+    # Games — free-game claims (navig-games plugin).
+    {"key": "free_game",        "label": "Free games",         "category": "Games",    "default_channels": ["deck", "telegram"]},
     {"key": "custom",           "label": "Custom / other",     "category": "Other",    "default_channels": ["deck"]},
 ]
 TYPE_KEYS: list[str] = [t["key"] for t in NOTIFICATION_TYPES]
@@ -64,6 +68,8 @@ def emoji_for_type(type_key: str) -> str:
         "approval": "🔔", "agent_message": "🤖", "system_alert": "🚨",
         "node_status": "🛰️", "security_alert": "🛡️", "invoice_due": "🧾",
         "finance_alert": "💸", "webcam_on": "📷", "webcam_off": "📷",
+        "message_deleted": "🗑",
         "signal_event": "📡", "self_error": "💥", "deploy": "🚀",
-        "connectivity": "📶", "custom": "📢",
+        "connectivity": "📶", "config_incident": "🩺", "free_game": "🎮",
+        "custom": "📢",
     }.get(type_key, "📢")

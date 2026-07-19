@@ -5,15 +5,15 @@ Batch 82: navig/memory/_util.py, navig/memory/paths.py,
 from __future__ import annotations
 
 import os
-import pytest
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # memory/_util.py
 # ---------------------------------------------------------------------------
-from navig.memory._util import _debug_log, _atomic_write_text
+from navig.memory._util import _atomic_write_text, _debug_log
 
 
 class TestDebugLog:
@@ -45,7 +45,7 @@ class TestAtomicWriteTextShim:
 # ---------------------------------------------------------------------------
 # memory/paths.py
 # ---------------------------------------------------------------------------
-from navig.memory.paths import navig_home, memory_dir
+from navig.memory.paths import memory_dir, navig_home
 
 
 class TestNavigHome:

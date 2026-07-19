@@ -1,30 +1,30 @@
 """Tests for navig.adapters.os.factory — detect_os, get_os_adapter, get_os_adapter_for_remote."""
 from __future__ import annotations
 
-import platform
 from unittest.mock import patch
 
 import pytest
 
-from navig.adapters.os.factory import detect_os, get_os_adapter, get_os_adapter_for_remote
 from navig.adapters.os.base import OSAdapter
+from navig.adapters.os.factory import detect_os, get_os_adapter, get_os_adapter_for_remote
 
 
 class TestDetectOs:
     def test_windows(self) -> None:
-        with patch.object(platform, "system", return_value="Windows"):
+        with patch("navig.platform.paths.current_os", return_value="windows"):
             assert detect_os() == "windows"
 
     def test_macos(self) -> None:
-        with patch.object(platform, "system", return_value="Darwin"):
+        with patch("navig.platform.paths.current_os", return_value="macos"):
             assert detect_os() == "macos"
 
     def test_linux(self) -> None:
-        with patch.object(platform, "system", return_value="Linux"):
+        with patch("navig.platform.paths.current_os", return_value="linux"):
             assert detect_os() == "linux"
 
-    def test_unknown_falls_back_to_linux(self) -> None:
-        with patch.object(platform, "system", return_value="FreeBSD"):
+    def test_wsl_collapses_to_linux(self) -> None:
+        # detect_os must map WSL to a concrete adapter — get_os_adapter has no 'wsl'.
+        with patch("navig.platform.paths.current_os", return_value="wsl"):
             assert detect_os() == "linux"
 
 

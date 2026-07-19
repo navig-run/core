@@ -14,7 +14,6 @@ from typing import Any
 
 import pytest
 
-
 # --------------- helpers ---------------
 
 def _policy(**kw) -> "ContinuationPolicy":
@@ -118,7 +117,7 @@ class TestPolicyFromContext:
         assert p.profile == "conservative"
 
     def test_balanced_profile_defaults(self) -> None:
-        from navig.core.continuation import policy_from_context, _PROFILE_DEFAULTS
+        from navig.core.continuation import _PROFILE_DEFAULTS, policy_from_context
         p = policy_from_context({"continuation": {"profile": "balanced"}})
         assert p.cooldown_seconds == _PROFILE_DEFAULTS["balanced"][0]
         assert p.max_turns == _PROFILE_DEFAULTS["balanced"][1]
@@ -128,7 +127,11 @@ class TestPolicyFromContext:
 
 class TestPolicyToContext:
     def test_roundtrip(self) -> None:
-        from navig.core.continuation import ContinuationPolicy, policy_to_context, policy_from_context
+        from navig.core.continuation import (
+            ContinuationPolicy,
+            policy_from_context,
+            policy_to_context,
+        )
         original = ContinuationPolicy(profile="aggressive", enabled=True, turns_used=2, max_turns=5)
         ctx = {"continuation": policy_to_context(original)}
         restored = policy_from_context(ctx)

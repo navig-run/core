@@ -44,32 +44,35 @@ except ImportError:
 
 
 def _monitor_disk_local_windows(app_name: str, threshold: int, options: dict) -> None:
-    """Disk monitoring for the local Windows machine via psutil (no SSH)."""
-    import psutil
+    """Disk monitoring for the local Windows machine.
+
+    Uses ``monitor.get_disk_info`` — a raw ``psutil.disk_partitions()`` loop
+    blocks indefinitely when a mapped network drive is cold (measured on this
+    machine: never returned), and it does not release the GIL. The shared
+    collector probes drives concurrently under an overall timeout.
+    """
+    from navig.commands.monitor import get_disk_info
 
     disks: list = []
     alerts: list = []
-    for part in psutil.disk_partitions(all=False):
-        try:
-            usage = psutil.disk_usage(part.mountpoint)
-        except (PermissionError, OSError):
-            continue
-        pct = int(usage.percent)
+    gb = 1024 ** 3
+    for d in get_disk_info():
+        pct = int(d["percent"])
         disks.append(
             {
-                "device": part.device,
-                "mount": part.mountpoint,
-                "size": _fmt_bytes(usage.total),
-                "used": _fmt_bytes(usage.used),
-                "available": _fmt_bytes(usage.free),
+                "device": d["mountpoint"],
+                "mount": d["mountpoint"],
+                "size": _fmt_bytes(d["total_gb"] * gb),
+                "used": _fmt_bytes(d["used_gb"] * gb),
+                "available": _fmt_bytes(d["free_gb"] * gb),
                 "usage_percent": pct,
             }
         )
         if pct > threshold:
-            alerts.append(f"{part.mountpoint} is {pct}% full (threshold: {threshold}%)")
+            alerts.append(f"{d['mountpoint']} is {pct}% full (threshold: {threshold}%)")
 
     if options.get("json_output"):
-        console.print(
+        console.console.print(
             json.dumps(
                 {
                     "timestamp": datetime.now().isoformat(),
@@ -105,13 +108,13 @@ def _monitor_disk_local_windows(app_name: str, threshold: int, options: dict) ->
             f"{d['usage_percent']}%",
             _disk_status(d["usage_percent"], threshold),
         )
-    console.print(table)
+    console.console.print(table)
     if alerts:
-        console.print(f"\n[red]{_safe_symbol(chr(0x26A0), '!')} {len(alerts)} Alert(s):[/red]")
+        console.console.print(f"\n[red]{_safe_symbol(chr(0x26A0), '!')} {len(alerts)} Alert(s):[/red]")
         for a in alerts:
-            console.print(f"  [red]\u2022[/red] {a}")
+            console.console.print(f"  [red]\u2022[/red] {a}")
     else:
-        console.print("\n[green]\u2713[/green] All drives within normal range")
+        console.console.print("\n[green]\u2713[/green] All drives within normal range")
 
 
 def _monitor_resources_local_windows(app_name: str, options: dict) -> None:
@@ -164,7 +167,7 @@ def _monitor_resources_local_windows(app_name: str, options: dict) -> None:
             metrics["uptime"] = "N/A"
 
     if options.get("json_output"):
-        console.print(
+        console.console.print(
             json.dumps(
                 {
                     "timestamp": datetime.now().isoformat(),
@@ -201,15 +204,15 @@ def _monitor_resources_local_windows(app_name: str, options: dict) -> None:
         _traffic_light(disk_val),
     )
     table.add_row("Uptime", metrics.get("uptime", "N/A"), _info)
-    console.print(table)
+    console.console.print(table)
     if alerts:
-        console.print(
+        console.console.print(
             f"\n[yellow]{_safe_symbol(chr(0x26A0), '!')} Alerts ({len(alerts)}):[/yellow]"
         )
         for a in alerts:
-            console.print(f"  [yellow]\u2022[/yellow] {a}")
+            console.console.print(f"  [yellow]\u2022[/yellow] {a}")
     else:
-        console.print("\n[green]\u2713[/green] All metrics within normal range")
+        console.console.print("\n[green]\u2713[/green] All metrics within normal range")
 
 
 def _traffic_light(val: float, high: int = 80, med: int = 60) -> str:
@@ -262,10 +265,10 @@ def monitor_resources(options: dict[str, Any]) -> None:
     remote = RemoteOperations(config)
 
     if options.get("dry_run"):
-        console.print("[yellow]DRY RUN:[/yellow] Would monitor resources on", app_name)
+        console.console.print("[yellow]DRY RUN:[/yellow] Would monitor resources on", app_name)
         return
 
-    console.print(
+    console.console.print(
         f"\n[cyan]{_safe_symbol(chr(0x1F4CA), '>>')} Monitoring Resources:[/cyan] {app_name}\n"
     )
 
@@ -367,7 +370,7 @@ def monitor_resources(options: dict[str, Any]) -> None:
             "metrics": metrics,
             "alerts": alerts,
         }
-        console.print(json.dumps(output, indent=2))
+        console.console.print(json.dumps(output, indent=2))
     else:
         # Create metrics table
         table = Table(title="Resource Usage", show_header=True, header_style="bold cyan")
@@ -410,17 +413,17 @@ def monitor_resources(options: dict[str, Any]) -> None:
         # Uptime
         table.add_row("Uptime", metrics.get("uptime", "N/A"), _info)
 
-        console.print(table)
+        console.console.print(table)
 
         # Display alerts
         if alerts:
-            console.print(
+            console.console.print(
                 f"\n[yellow]{_safe_symbol(chr(0x26A0), '!')} Alerts ({len(alerts)}):[/yellow]"
             )
             for alert in alerts:
-                console.print(f"  [yellow]\u2022[/yellow] {alert}")
+                console.console.print(f"  [yellow]\u2022[/yellow] {alert}")
         else:
-            console.print("\n[green]\u2713[/green] All metrics within normal range")
+            console.console.print("\n[green]\u2713[/green] All metrics within normal range")
 
 
 def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
@@ -438,12 +441,12 @@ def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
     remote = RemoteOperations(config)
 
     if options.get("dry_run"):
-        console.print(
+        console.console.print(
             f"[yellow]DRY RUN:[/yellow] Would check disk space on {app_name} (threshold: {threshold}%)"
         )
         return
 
-    console.print(
+    console.console.print(
         f"\n[cyan]{_safe_symbol(chr(0x1F4BE), '>>')} Disk Space Monitoring:[/cyan] {app_name}\n"
     )
 
@@ -457,7 +460,7 @@ def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
     result = remote.execute_command(disk_cmd, server_config)
 
     if result.returncode != 0:
-        console.print("[red]\u2717[/red] Failed to retrieve disk information")
+        console.console.print("[red]\u2717[/red] Failed to retrieve disk information")
         return
 
     disks = []
@@ -492,7 +495,7 @@ def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
             "disks": disks,
             "alerts": alerts,
         }
-        console.print(json.dumps(output, indent=2))
+        console.console.print(json.dumps(output, indent=2))
     else:
         table = Table(
             title=f"Disk Space (Threshold: {threshold}%)",
@@ -521,14 +524,14 @@ def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
                 status,
             )
 
-        console.print(table)
+        console.console.print(table)
 
         if alerts:
-            console.print(f"\n[red]{_safe_symbol(chr(0x26A0), '!')} {len(alerts)} Alert(s):[/red]")
+            console.console.print(f"\n[red]{_safe_symbol(chr(0x26A0), '!')} {len(alerts)} Alert(s):[/red]")
             for alert in alerts:
-                console.print(f"  [red]\u2022[/red] {alert}")
+                console.console.print(f"  [red]\u2022[/red] {alert}")
         else:
-            console.print(f"\n[green]\u2713[/green] All disks below {threshold}% threshold")
+            console.console.print(f"\n[green]\u2713[/green] All disks below {threshold}% threshold")
 
 
 def monitor_services(options: dict[str, Any]) -> None:
@@ -547,10 +550,10 @@ def monitor_services(options: dict[str, Any]) -> None:
     remote = RemoteOperations(server_config)
 
     if options.get("dry_run"):
-        console.print(f"[yellow]DRY RUN:[/yellow] Would check services on {app_name}")
+        console.console.print(f"[yellow]DRY RUN:[/yellow] Would check services on {app_name}")
         return
 
-    console.print(
+    console.console.print(
         f"\n[cyan]{_safe_symbol(chr(0x1F527), '>>')} Service Health Check:[/cyan] {app_name}\n"
     )
 
@@ -627,7 +630,7 @@ def monitor_services(options: dict[str, Any]) -> None:
             "services": service_status,
             "inactive_count": len(inactive_services),
         }
-        console.print(json.dumps(output, indent=2))
+        console.console.print(json.dumps(output, indent=2))
     else:
         table = Table(title="Service Status", show_header=True, header_style="bold cyan")
         table.add_column("Service", style="cyan")
@@ -652,16 +655,16 @@ def monitor_services(options: dict[str, Any]) -> None:
 
             table.add_row(svc["name"], status_icon, health_icon)
 
-        console.print(table)
+        console.console.print(table)
 
         if inactive_services:
-            console.print(
+            console.console.print(
                 f"\n[yellow]{_safe_symbol(chr(0x26A0), '!')} {len(inactive_services)} service(s) inactive:[/yellow]"
             )
             for svc in inactive_services:
-                console.print(f"  [yellow]\u2022[/yellow] {svc}")
+                console.console.print(f"  [yellow]\u2022[/yellow] {svc}")
         else:
-            console.print("\n[green]\u2713[/green] All installed services are running")
+            console.console.print("\n[green]\u2713[/green] All installed services are running")
 
 
 def monitor_network(options: dict[str, Any]) -> None:
@@ -684,10 +687,10 @@ def monitor_network(options: dict[str, Any]) -> None:
     remote = RemoteOperations(server_config)
 
     if options.get("dry_run"):
-        console.print(f"[yellow]DRY RUN:[/yellow] Would check network stats on {app_name}")
+        console.console.print(f"[yellow]DRY RUN:[/yellow] Would check network stats on {app_name}")
         return
 
-    console.print(
+    console.console.print(
         f"\n[cyan]{_safe_symbol(chr(0x1F310), '>>')} Network Statistics:[/cyan] {app_name}\n"
     )
 
@@ -743,12 +746,12 @@ def monitor_network(options: dict[str, Any]) -> None:
             "server": app_name,
             "metrics": metrics,
         }
-        console.print(json.dumps(output, indent=2))
+        console.console.print(json.dumps(output, indent=2))
     else:
         # Connection summary panel
         conn_text = metrics.get("connection_summary", "No data")
         panel = Panel(conn_text, title="[cyan]Connection Summary[/cyan]", border_style="cyan")
-        console.print(panel)
+        console.console.print(panel)
 
         # Stats table
         table = Table(show_header=False, box=None)
@@ -761,7 +764,7 @@ def monitor_network(options: dict[str, Any]) -> None:
         if "interfaces" in metrics:
             table.add_row("Network Interfaces", ", ".join(metrics["interfaces"]))
 
-        console.print("\n", table)
+        console.console.print("\n", table)
 
 
 def health_check(options: dict[str, Any]) -> None:
@@ -781,29 +784,29 @@ def health_check(options: dict[str, Any]) -> None:
     app_name = require_active_server(options, config)
 
     if options.get("dry_run"):
-        console.print(
+        console.console.print(
             f"[yellow]DRY RUN:[/yellow] Would run comprehensive health check on {app_name}"
         )
         return
 
-    console.print(
+    console.console.print(
         f"\n[bold cyan]{_safe_symbol(chr(0x1F3E5), '>>')} Comprehensive Health Check:[/bold cyan] {app_name}\n"
     )
 
     # Run all monitoring checks
-    console.print(f"[cyan]{_safe_symbol(chr(0x2192), '->')}[/cyan] Checking resources...")
+    console.console.print(f"[cyan]{_safe_symbol(chr(0x2192), '->')}[/cyan] Checking resources...")
     monitor_resources(options)
 
-    console.print(f"\n[cyan]{_safe_symbol(chr(0x2192), '->')}[/cyan] Checking services...")
+    console.console.print(f"\n[cyan]{_safe_symbol(chr(0x2192), '->')}[/cyan] Checking services...")
     monitor_services(options)
 
-    console.print(f"\n[cyan]{_safe_symbol(chr(0x2192), '->')}[/cyan] Checking disk space...")
+    console.console.print(f"\n[cyan]{_safe_symbol(chr(0x2192), '->')}[/cyan] Checking disk space...")
     monitor_disk(80, options)
 
-    console.print(f"\n[cyan]{_safe_symbol(chr(0x2192), '->')}[/cyan] Checking network...")
+    console.console.print(f"\n[cyan]{_safe_symbol(chr(0x2192), '->')}[/cyan] Checking network...")
     monitor_network(options)
 
-    console.print(f"\n[green]{_safe_symbol(chr(0x2713), 'OK')}[/green] Health check complete")
+    console.console.print(f"\n[green]{_safe_symbol(chr(0x2713), 'OK')}[/green] Health check complete")
 
 
 def run_health_check(options: dict[str, Any]) -> None:
@@ -817,7 +820,7 @@ def view_service_logs(service: str, tail: bool, lines: int, options: dict[str, A
     app_name = require_active_server(options, config)
 
     if not re.fullmatch(r"[A-Za-z0-9@_.-]+", service):
-        console.print(f"[red]Invalid service name:[/red] {service}")
+        console.console.print(f"[red]Invalid service name:[/red] {service}")
         return
 
     server_config = config.load_server_config(app_name)
@@ -829,10 +832,10 @@ def view_service_logs(service: str, tail: bool, lines: int, options: dict[str, A
     result = remote.execute_command(cmd, server_config)
 
     if result.returncode == 0:
-        console.print(result.stdout)
+        console.console.print(result.stdout)
     else:
         error_text = (result.stderr or result.stdout or "Failed to read service logs").strip()
-        console.print(f"[red]{error_text}[/red]")
+        console.console.print(f"[red]{error_text}[/red]")
 
 
 def restart_remote_service(service: str, options: dict[str, Any]) -> None:
@@ -841,7 +844,7 @@ def restart_remote_service(service: str, options: dict[str, Any]) -> None:
     app_name = require_active_server(options, config)
 
     if not re.fullmatch(r"[A-Za-z0-9@_.-]+", service):
-        console.print(f"[red]Invalid service name:[/red] {service}")
+        console.console.print(f"[red]Invalid service name:[/red] {service}")
         return
 
     server_config = config.load_server_config(app_name)
@@ -851,10 +854,10 @@ def restart_remote_service(service: str, options: dict[str, Any]) -> None:
     result = remote.execute_command(cmd, server_config)
 
     if result.returncode == 0:
-        console.print(f"[green]Restarted service:[/green] {service}")
+        console.console.print(f"[green]Restarted service:[/green] {service}")
     else:
         error_text = (result.stderr or result.stdout or "Service restart failed").strip()
-        console.print(f"[red]{error_text}[/red]")
+        console.console.print(f"[red]{error_text}[/red]")
 
 
 def generate_report(options: dict[str, Any]) -> None:
@@ -880,10 +883,10 @@ def generate_report(options: dict[str, Any]) -> None:
     remote = RemoteOperations(server_config)
 
     if options.get("dry_run"):
-        console.print(f"[yellow]DRY RUN:[/yellow] Would generate report for {app_name}")
+        console.console.print(f"[yellow]DRY RUN:[/yellow] Would generate report for {app_name}")
         return
 
-    console.print(
+    console.console.print(
         f"\n[cyan]{_safe_symbol(chr(0x1F4DD), '[report]')} Generating Health Report:[/cyan] {app_name}\n"
     )
 
@@ -1004,19 +1007,19 @@ def generate_report(options: dict[str, Any]) -> None:
         json.dump(report, indent=2, fp=f)
 
     # Display summary
-    console.print(
+    console.console.print(
         f"\n[green]{_safe_symbol(chr(0x2713), 'OK')}[/green] Report generated: {report_file}"
     )
-    console.print("\n[cyan]Summary:[/cyan]")
-    console.print(f"  {_safe_symbol(chr(0x2022), '-')} Server: {app_name}")
-    console.print(f"  {_safe_symbol(chr(0x2022), '-')} Timestamp: {report['timestamp']}")
-    console.print(f"  {_safe_symbol(chr(0x2022), '-')} Alerts: {len(report['alerts'])}")
+    console.console.print("\n[cyan]Summary:[/cyan]")
+    console.console.print(f"  {_safe_symbol(chr(0x2022), '-')} Server: {app_name}")
+    console.console.print(f"  {_safe_symbol(chr(0x2022), '-')} Timestamp: {report['timestamp']}")
+    console.console.print(f"  {_safe_symbol(chr(0x2022), '-')} Alerts: {len(report['alerts'])}")
 
     if report["alerts"]:
-        console.print(f"\n[yellow]{_safe_symbol(chr(0x26A0), '!')} Alerts:[/yellow]")
+        console.console.print(f"\n[yellow]{_safe_symbol(chr(0x26A0), '!')} Alerts:[/yellow]")
         for alert in report["alerts"]:
-            console.print(f"  [yellow]{_safe_symbol(chr(0x2022), '-')}[/yellow] {alert}")
+            console.console.print(f"  [yellow]{_safe_symbol(chr(0x2022), '-')}[/yellow] {alert}")
     else:
-        console.print(
+        console.console.print(
             f"\n[green]{_safe_symbol(chr(0x2713), 'OK')}[/green] No alerts - system healthy"
         )

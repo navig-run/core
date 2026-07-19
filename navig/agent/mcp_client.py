@@ -593,21 +593,12 @@ class MCPClientPool:
         """Read MCP server configs from navig config."""
         configs: list[MCPServerConfig] = []
         try:
-            from navig.config import config
+            from navig.config import get as _cfg_get
 
-            agent_cfg = getattr(config, "agent", None)
-            if agent_cfg is None:
+            mcp_cfg = _cfg_get("agent.mcp", {}) or {}
+            if not isinstance(mcp_cfg, dict):
                 return configs
-            mcp_cfg = (
-                agent_cfg.get("mcp", {})
-                if hasattr(agent_cfg, "get")
-                else getattr(agent_cfg, "mcp", {}) or {}
-            )
-            servers = (
-                mcp_cfg.get("servers", [])
-                if isinstance(mcp_cfg, dict)
-                else getattr(mcp_cfg, "servers", []) or []
-            )
+            servers = mcp_cfg.get("servers", [])
             for srv in servers:
                 if isinstance(srv, dict):
                     configs.append(

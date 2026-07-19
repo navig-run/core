@@ -12,12 +12,55 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-__all__ = ["MigrationReport", "migrate_from_legacy", "check_legacy_exists"]
+__all__ = [
+    "MigrationReport",
+    "migrate_from_legacy",
+    "check_legacy_exists",
+    "legacy_migration_done",
+    "migration_marker_path",
+]
 
 from navig.platform.paths import config_dir as _navig_config_dir
+from navig.platform.paths import vault_dir as _navig_vault_dir
 
-# Default paths
-_LEGACY_DB = _navig_config_dir() / "credentials" / "vault.db"
+
+def _legacy_db_path() -> Path:
+    """Resolve the legacy credentials DB path at CALL time — never import time.
+
+    This must not be a module-level constant: ``config_dir()`` honours the
+    ``NAVIG_CONFIG_DIR`` environment variable, and this module can be imported
+    before the environment is finalized (a daemon setting its config dir after
+    startup imports, or pytest collection importing test modules before the
+    session isolation fixture runs). A path frozen at import would then point
+    at the REAL user home, and ``get_vault()``'s auto-migration would silently
+    copy the operator's real credentials into whatever vault is active.
+    """
+    return _navig_config_dir() / "credentials" / "vault.db"
+
+
+# Marker files ``get_vault()``'s auto-migration touches inside the vault
+# directory to record that the legacy DB has been dealt with. Current installs
+# write the first name; historical installs may still carry the second.
+_MIGRATION_MARKERS: tuple[str, ...] = (".migrated_legacy", ".migrated_v1")
+
+
+def migration_marker_path(vault_dir: Path) -> Path:
+    """Return the marker file a completed migration touches in *vault_dir*."""
+    return vault_dir / _MIGRATION_MARKERS[0]
+
+
+def legacy_migration_done(vault_dir: Path | None = None) -> bool:
+    """Return True when a completed legacy migration is recorded for *vault_dir*.
+
+    Single source of truth for the marker semantics — both ``get_vault()``'s
+    auto-migration and the ``navig doctor`` Vault row resolve "has the legacy
+    DB been migrated?" through here. The default directory is resolved at CALL
+    time (same reason as :func:`_legacy_db_path`): a path frozen at import
+    would ignore a later ``NAVIG_CONFIG_DIR`` and report another vault's state.
+    """
+    if vault_dir is None:
+        vault_dir = _navig_vault_dir()
+    return any((vault_dir / name).exists() for name in _MIGRATION_MARKERS)
 
 
 @dataclass
@@ -28,7 +71,7 @@ class MigrationReport:
     skipped: int = 0
     errors: list[str] = field(default_factory=list)
     dry_run: bool = False
-    source: Path = _LEGACY_DB
+    source: Path = field(default_factory=_legacy_db_path)
 
     def ok(self) -> bool:
         return len(self.errors) == 0
@@ -43,7 +86,7 @@ class MigrationReport:
 
 def check_legacy_exists(legacy_path: Path | None = None) -> bool:
     """Return True if the legacy credentials DB exists."""
-    return (legacy_path or _LEGACY_DB).exists()
+    return (legacy_path or _legacy_db_path()).exists()
 
 
 def migrate_from_legacy(
@@ -74,7 +117,7 @@ def migrate_from_legacy(
     from navig.vault.storage import VaultStorage
     from navig.vault.types import VaultItemKind
 
-    src = legacy_path or _LEGACY_DB
+    src = legacy_path or _legacy_db_path()
     report = MigrationReport(dry_run=dry_run, source=src)
 
     if not src.exists():

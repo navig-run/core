@@ -8,7 +8,6 @@ import pytest
 
 from navig.memory.fact_extractor import ExtractionResult, extract_rules
 
-
 # ─── ExtractionResult ─────────────────────────────────────────────────────────
 
 

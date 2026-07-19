@@ -53,7 +53,6 @@ def test_load_env(monkeypatch):
             return self
 
     monkeypatch.setattr(tw, "Path", MockPath)
-    monkeypatch.setattr(tw, "NAVIG_HOME", MockPath())
 
     loaded = []
 

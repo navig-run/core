@@ -315,9 +315,12 @@ class EventBridge:
         # Client registry: ws → filter
         self._clients: dict[int, tuple[WebSocketLike, SubscriptionFilter]] = {}
 
-        # Recent envelopes (for debounce + dedup)
+        # Recent emit time per topic — backs the severity-based rate limiter in
+        # push(): DEBUG/INFO suppressed within debounce_seconds, WARNING within
+        # 0.2 s, ERROR/CRITICAL never. (A vestigial `_dedup_window` constant was
+        # removed 2026-07-16 — it was assigned here and never read; this map +
+        # the severity switch IS the dedup mechanism.)
         self._recent: dict[str, float] = {}  # topic → last_emit_time
-        self._dedup_window: float = 0.3  # seconds
 
         # History ring buffer — deque(maxlen) is O(1) on append and auto-evicts
         self._history: deque[EventEnvelope] = deque(maxlen=500)

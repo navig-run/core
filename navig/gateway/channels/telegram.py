@@ -112,15 +112,9 @@ try:
 except ImportError:
     HAS_VOICE = False
 
-# Reaction Intelligence — message_reaction в†’ AI actions
-try:
-    from navig.gateway.channels.telegram_reactions import (
-        TelegramReactionsMixin as _TelegramReactionsMixin,  # noqa: F401
-    )
-
-    HAS_REACTIONS = True
-except ImportError:
-    HAS_REACTIONS = False
+# Emoji reactions were removed as an action trigger (they were never delivered in
+# business chats and the old reaction mixin was never bound to the channel).
+# Actions are now triggered by REPLY keywords — see navig.telegram.reply_actions.
 
 # Inline mode — @botname query in any chat
 try:
@@ -177,6 +171,17 @@ _EXPLORE_SUFFIX: str = (
     "prompt (e.g. \"List all films by this director\", \"Compare with similar works\"). "
     "Each item \u22648 words, separated by ` | `, no period at end, no text after this line. "
     "Omitting this line or writing fewer than 5 items is an error."
+)
+
+# Injected when a query needs live web grounding but the web lookup returned nothing
+# (search failed, rate-limited, or empty). Tells the model to admit the gap in one
+# line instead of confabulating \u2014 the failure the "Not much on X here" reply showed.
+# Script-neutral: the model still answers in the user's language.
+_NO_WEB_GROUNDING_HINT: str = (
+    "\n\n[Grounding note] A live web search for this just returned no results. "
+    "If you do not have reliable, specific knowledge about the named subject, say so "
+    "plainly in one short line and offer to try the search again \u2014 do NOT invent "
+    "facts, history, numbers, dates, or details."
 )
 
 
@@ -292,6 +297,12 @@ class TelegramChannel:
         # None = not yet started; health monitor skips None channels so the
         # process-uptime value of monotonic() doesn't trigger a false stale.
         self._last_event_at: float | None = None
+        # The boot greeting announces the brain coming online — it must fire once
+        # per process, NOT on every channel (auto-)restart. The health monitor can
+        # restart a channel internally; that is an operational event the operator
+        # should not be greeted about. Survives stop()/start() (same instance is
+        # reused by _restart_channel), so an auto-restart never re-greets.
+        self._boot_announced = False
         self._poll_task: asyncio.Task | None = None
         self._reminder_task: asyncio.Task | None = None
         self._notifier = None
@@ -474,6 +485,12 @@ class TelegramChannel:
             # Small delay so the HTTP server is fully up before we hit the API.
             await asyncio.sleep(0.5)
             await self._register_commands()
+            # Announce online ONCE per process. A health-monitor auto-restart (or
+            # any other restart) reuses this same channel instance, so the flag
+            # stays set and the operator is not greeted on every restart.
+            if self._boot_announced:
+                return
+            self._boot_announced = True
             try:
                 from navig.boot_messages import get_boot_message
 
@@ -655,18 +672,14 @@ class TelegramChannel:
         """Long-poll for updates from Telegram."""
         while self._running:
             try:
+                from navig.telegram.updates import ALLOWED_UPDATES
+
                 updates = await self._api_call(
                     "getUpdates",
                     {
                         "offset": self._last_update_id + 1,
                         "timeout": 30,
-                        "allowed_updates": [
-                            "message", "edited_message", "channel_post", "edited_channel_post",
-                            "callback_query", "message_reaction", "inline_query",
-                            # Telegram Business (owner's business-profile conversations)
-                            "business_connection", "business_message",
-                            "edited_business_message", "deleted_business_messages",
-                        ],
+                        "allowed_updates": ALLOWED_UPDATES,
                     },
                 )
 
@@ -824,6 +837,74 @@ class TelegramChannel:
 
     # в”Ђв”Ђ Webhook mode в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
+    def _heal_stale_tenant(self) -> bool:
+        """Repair a webhook URL left pointing at a dead lighthouse tenant.
+
+        ``telegram.webhook_url`` embeds ``sha256(deck.api_key)`` — the Durable Object
+        the edge routes updates to. Rotating ``deck.api_key`` silently orphans it: the
+        edge keeps receiving Telegram's POSTs on the OLD tenant, whose DO has no uplink
+        socket, so it queues them and acks 202 — while the brain, attached to the NEW
+        tenant, reports "uplink online". Inbound dies completely with every light green.
+
+        Re-registering the stale URL every boot is what makes it permanent, so we
+        correct it here, before setWebhook, and persist it for the next boot.
+
+        Returns True when a rotation was detected and healed — the caller then also
+        re-points the OTHER derivatives the same rotation orphaned (the Mini App
+        button). The gateway rotates ``deck.api_key`` itself (mints one when missing,
+        force-upgrades a weak one), so this path is the only thing standing between a
+        self-inflicted rotation and a dead bot.
+        """
+        try:
+            from navig.telegram.updates import corrected_webhook_url
+
+            fixed = corrected_webhook_url(self.webhook_url)
+            if not fixed:
+                return False
+            logger.warning(
+                "Telegram webhook pointed at a stale lighthouse tenant (deck.api_key "
+                "was rotated) — every inbound update was being queued at the edge and "
+                "never delivered. Self-healing to the live tenant."
+            )
+            self.webhook_url = fixed
+            from navig.core import Config
+
+            cfg = Config()
+            cfg.set("telegram.webhook_url", fixed, scope="global")
+            cfg.save(scope="global")
+            return True
+        except Exception:  # noqa: BLE001 — never block startup on the self-heal
+            logger.debug("webhook tenant self-heal skipped", exc_info=True)
+            return False
+
+    async def _heal_menu_button(self) -> None:
+        """The SAME rotation that orphaned the webhook also orphaned the Mini App button.
+
+        The button's URL embeds the RAW ``deck.api_key`` (``/connect?key=…``), which the
+        deck seeds into localStorage to reach the brain. After a rotation it seeds a dead
+        key, so the Mini App opens to a blank screen / 401. Only run on the heal path —
+        we don't touch a healthy button on every boot.
+        """
+        try:
+            from navig.cloud.rotation import menu_button_url
+
+            url = menu_button_url()
+            if not url:
+                return  # no deck deployed — no button to fix
+            await self._api_call(
+                "setChatMenuButton",
+                {
+                    "menu_button": {
+                        "type": "web_app",
+                        "text": "NAVIG Deck",
+                        "web_app": {"url": url},
+                    }
+                },
+            )
+            logger.info("Mini App menu button re-pointed at the live key.")
+        except Exception:  # noqa: BLE001 — never block startup on this
+            logger.debug("menu button self-heal skipped", exc_info=True)
+
     async def _setup_webhook(self):
         """Register the webhook URL with Telegram and delete any pending updates.
 
@@ -835,14 +916,15 @@ class TelegramChannel:
         (which, in lighthouse mode, also bypasses the edge uplink). If the edge is
         genuinely unreachable, we still fall back to polling so the bot keeps working.
         """
+        if self._heal_stale_tenant():
+            # A rotation was detected. It orphaned the Mini App button too.
+            await self._heal_menu_button()
+
+        from navig.telegram.updates import ALLOWED_UPDATES
+
         params: dict[str, Any] = {
             "url": self.webhook_url,
-            "allowed_updates": [
-                "message", "edited_message", "channel_post", "edited_channel_post",
-                "callback_query", "message_reaction", "inline_query",
-                "business_connection", "business_message",
-                "edited_business_message", "deleted_business_messages",
-            ],
+            "allowed_updates": ALLOWED_UPDATES,
             "drop_pending_updates": True,
         }
         if self.webhook_secret:
@@ -899,6 +981,12 @@ class TelegramChannel:
         if not self._running:
             return False
 
+        # Stamp the health clock on every accepted webhook update — the poll loop
+        # does the same per cycle (see _poll_updates). Keeps _last_event_at honest
+        # in webhook mode for status/observability (the health monitor itself no
+        # longer flags webhook channels on silence).
+        self._last_event_at = time.monotonic()
+
         try:
             await self._process_update(update)
             return True
@@ -939,18 +1027,9 @@ class TelegramChannel:
         except Exception as _biz_exc:  # noqa: BLE001
             logger.warning("Telegram business update handling failed: %s", _biz_exc)
 
-        # в”Ђв”Ђ Handle message reactions (рџ‘Ќ рџ‘Ћ рџ”Ґ рџ¤” рџ’Ї) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-        if reaction_update := update.get("message_reaction"):
-            if HAS_REACTIONS:
-                try:
-                    import functools
-
-                    fn = functools.partial(
-                        _TelegramReactionsMixin._on_message_reaction, self
-                    )
-                    await fn(reaction_update)
-                except Exception as _rxn_exc:  # noqa: BLE001
-                    logger.warning("Reaction dispatch failed: %s", _rxn_exc)
+        # Message reactions are no longer an action trigger — replaced by reply
+        # keywords (see navig.telegram.reply_actions). Ignore them quietly.
+        if update.get("message_reaction"):
             return
 
         # в”Ђв”Ђ Handle inline queries (@botname query) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
@@ -1193,6 +1272,51 @@ class TelegramChannel:
                     except Exception as e:
                         logger.debug("Decoy responder error: %s", e)
             return
+
+        # ── Reply-keyword actions (replaced emoji reactions) ────────────────────
+        # Reply to a message with a bare keyword (translate/summarize/explain/
+        # context/save/refine/pin/tiktok) → run that action on the replied-to
+        # message. The portable action trigger that works where reactions never did
+        # (reactions aren't delivered in business chats and the old reaction mixin
+        # was never even bound). Intercept BEFORE normal dispatch so "summarize"
+        # isn't sent to the chat model; any failure falls through to normal handling.
+        if reply_to_msg and text and reply_to_message_id:
+            try:
+                from navig.telegram import reply_actions as _rk
+
+                _rk_action, _rk_arg = _rk.parse(text)
+                if _rk_action:
+                    logger.info(
+                        "reply-keyword action %r (arg=%r) on message %s (chat %s)",
+                        _rk_action, _rk_arg, reply_to_message_id, chat_id,
+                    )
+                    if await _rk.run_bot_reply(
+                        self,
+                        action=_rk_action,
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        reply_to_msg=reply_to_msg,
+                        reply_to_message_id=reply_to_message_id,
+                        is_group=is_group,
+                        arg=_rk_arg,
+                    ):
+                        return
+            except Exception as _rk_exc:  # noqa: BLE001
+                logger.warning("reply-keyword action errored, falling through: %s", _rk_exc)
+
+        # ── Music link → cross-platform links (song.link) ───────────────────────
+        # A bare music-service link (Spotify/Apple/Deezer/…) in a 1:1 chat gets the
+        # same track on every platform. DM-only (never groups → no spam), owns the
+        # message so the agent doesn't also answer, and a no-op unless the message is
+        # essentially just the link. Optional via telegram.music_links.enabled.
+        if text and not is_group:
+            try:
+                from navig.telegram import music_actions
+
+                if await music_actions.offer_links(self, chat_id, message_id, text):
+                    return
+            except Exception as _ml_exc:  # noqa: BLE001
+                logger.debug("music offer_links skipped: %s", _ml_exc)
 
         # Session management
         session = None
@@ -1454,6 +1578,8 @@ class TelegramChannel:
                     if _cmd_bare:
                         from .telegram_commands import (
                             LOCKED_COMMANDS as _LOCKED,
+                        )
+                        from .telegram_commands import (
                             get_disabled_commands as _get_disabled,
                         )
                         if _cmd_bare not in _LOCKED and _cmd_bare in _get_disabled():
@@ -1940,6 +2066,12 @@ class TelegramChannel:
                     text, explore_qs = extract_explore_questions(text)
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; never block the reply
+            # A block-rich reply (table / heading / divider / long quote) can't be
+            # rendered inside an edited HTML bubble — Telegram HTML has no tables.
+            # Signal the caller to delete the placeholder and route through
+            # _send_response, which sends it via sendRichMessage (rich fallback→HTML).
+            if self._rich_messages_enabled() and self._reply_is_block_rich(text):
+                return False
             text = TelegramChannel._md_to_html(text)
             parts = None
             if HAS_TEMPLATES:
@@ -2380,6 +2512,8 @@ class TelegramChannel:
         # person references so the model grounds factual questions instead
         # of confabulating.
         _enriched_text = text
+        _grounded = False
+        _read_urls: list[str] = []
         if HAS_CLASSIFIER and entity_signal:
             try:
                 from navig.tools import get_pipeline_registry as _get_pipeline_registry
@@ -2403,14 +2537,41 @@ class TelegramChannel:
                             )
                             _ctx.append(_line)
                         _enriched_text = "\n".join(_ctx) + "\n\nUser message: " + text
+                        _grounded = True
+                        _read_urls = [str(_h.get("url") or "").strip() for _h in _hits[:3]]
             except Exception:  # noqa: BLE001
                 pass  # silent; never surface search errors in REASON mode
 
-        debug_krow = (
+            # Search was warranted (entity signal) but returned nothing usable —
+            # tell the model to hedge honestly instead of confabulating.
+            if not _grounded:
+                _enriched_text = _enriched_text + _NO_WEB_GROUNDING_HINT
+
+        _extra_krow: list[dict[str, str]] = (
             [{"text": "🔍 Debug", "callback_data": "dbg_trace"}]
             if self._is_debug_mode(user_id)
-            else None
+            else []
         )
+        # Read-site buttons from the (silent) enrichment search — the same one-tap
+        # "read the source" ACT offers, now for factual questions that reference a
+        # site. Read buttons lead the row; the debug button (if any) trails.
+        if HAS_KEYBOARDS and _read_urls:
+            try:
+                from navig.gateway.channels.telegram_keyboards import build_read_site_buttons
+
+                # Room for 3 read buttons on their own; 2 when the debug button
+                # shares the row (debug mode only).
+                _rmax = 2 if _extra_krow else 3
+                _rbtns = build_read_site_buttons(_read_urls, max_n=_rmax, query=text)
+                if _rbtns:
+                    _extra_krow = _rbtns + _extra_krow
+                    _enriched_text = (
+                        f"{_enriched_text}\n\n[UI note] '🔎 Read …' button(s) are attached "
+                        "that open and read the source for the user on tap. Do NOT offer to "
+                        "fetch or open a site yourself — tell them to tap one."
+                    )
+            except Exception:  # noqa: BLE001
+                pass  # buttons are best-effort; never block the reply
         # Stream live like TALK. The EXPLORE_Q line the model appends is
         # turned into explore-question buttons by _finalize_streamed_message.
         response = await self._stream_reply(
@@ -2420,7 +2581,7 @@ class TelegramChannel:
             metadata,
             original_text=text,
             is_group=is_group,
-            extra_krow=debug_krow,
+            extra_krow=(_extra_krow or None),
         )
         if response:
             self._persist_updated_language(metadata, chat_id, user_id, session_manager, is_group)
@@ -2610,6 +2771,50 @@ class TelegramChannel:
                 f"[Tool results]\n{tool_context.strip()}"
             )
 
+        # Honest-hedge: a web search was attempted but yielded nothing usable
+        # (skipped / rate-limited / empty) → tell the model to admit the gap
+        # instead of confabulating an answer from thin training-data memory.
+        if "search" in tool_names_run:
+            _search_grounded = any(
+                r.name == "search" and isinstance(r.output, dict) and r.output.get("results")
+                for r in tool_results
+            )
+            if not _search_grounded:
+                augmented_message = f"{augmented_message}{_NO_WEB_GROUNDING_HINT}"
+
+        # Read-site buttons: when the search surfaced result URLs, attach a row of
+        # "🔎 <site>" buttons (top few, deduped by domain) that web_fetch on tap —
+        # and tell the model NOT to offer to open/fetch a site itself. A "yes, dig in"
+        # reply routes to the tool-less conversational tier, which is exactly what
+        # answered "can't access web directly"; the buttons ARE that capability.
+        _read_krow: list[dict[str, str]] | None = None
+        if HAS_KEYBOARDS:
+            _urls: list[str] = []
+            for r in tool_results:
+                if r.name == "search" and isinstance(r.output, dict):
+                    _urls = [
+                        str(h.get("url") or "").strip()
+                        for h in (r.output.get("results") or [])
+                    ]
+                    break
+            if any(_urls):
+                try:
+                    from navig.gateway.channels.telegram_keyboards import (
+                        build_read_site_buttons,
+                    )
+
+                    _btns = build_read_site_buttons(_urls, max_n=3, query=text)
+                    if _btns:
+                        _read_krow = _btns
+                        augmented_message = (
+                            f"{augmented_message}\n\n[UI note] '🔎 Read …' button(s) are "
+                            "attached that open and read the top result(s) for the user on "
+                            "tap. Do NOT offer to fetch, open, browse, or 'dig into' a site "
+                            "yourself — if more detail would help, tell them to tap one."
+                        )
+                except Exception:  # noqa: BLE001
+                    pass  # buttons are best-effort; never block the reply
+
         typing_task = asyncio.create_task(self._keep_typing(chat_id))
         try:
             llm_response = await self.on_message(
@@ -2674,9 +2879,18 @@ class TelegramChannel:
                     logger.warning("Failed to send screenshot artifact: %s", _ep)
 
         if llm_response:
-            # Send full analysis as a properly-formatted HTML message
-            await self.send_message(
-                chat_id, TelegramChannel._md_to_html(llm_response), parse_mode="HTML"
+            # Route through _send_response so an EXPLORE_Q: line the model appends
+            # is stripped into inline explore BUTTONS (not shown as raw text) and the
+            # same formatting / action-card / voice pipeline as REASON and TALK
+            # applies. The old direct send_message bypassed all of that — which is
+            # why ACT-mode replies leaked "EXPLORE_Q: …" as literal text.
+            await self._send_response(
+                chat_id,
+                llm_response,
+                text,
+                user_id=user_id,
+                is_group=is_group,
+                extra_krow=_read_krow,
             )
             self._record_assistant_msg(
                 session, session_manager, chat_id, user_id, llm_response, is_group
@@ -2805,52 +3019,23 @@ class TelegramChannel:
 
     @staticmethod
     def _md_to_html(text: str) -> str:
-        """Convert lightweight LLM markdown to Telegram HTML (parse_mode='HTML').
+        """Convert LLM markdown to Telegram HTML (parse_mode='HTML').
 
-        Handles: **bold**, *italic*, # headings, * / - / + bullet lists.
-        Unrecognised patterns are left as plain text.
+        Delegates to the canonical, full-featured converter
+        :func:`navig.gateway.channels.telegram_html.md_to_html` so the main reply
+        renders the same rich set as every other surface \u2014 fenced code blocks,
+        links, blockquotes (incl. expandable), strikethrough, spoilers \u2014 not just
+        the bold/italic/heading/bullet subset this used to handle. Never raises:
+        on any failure it degrades to HTML-escaped text so the reply still sends.
         """
-        import html as _html
+        try:
+            from navig.gateway.channels.telegram_html import md_to_html
 
-        # 1. Escape HTML special chars so we can safely inject tags
-        escaped = _html.escape(str(text or ""), quote=False)
+            return md_to_html(text)
+        except Exception:  # noqa: BLE001 \u2014 the reply path must never break on formatting
+            import html as _html
 
-        lines_out: list[str] = []
-        for line in escaped.split("\n"):
-            stripped = line.lstrip()
-
-            # ATX headings  # / ## / ###
-            heading_m = re.match(r"^(#{1,3})\s+(.*)", stripped)
-            if heading_m:
-                lines_out.append(f"<b>{heading_m.group(2).strip()}</b>")
-                continue
-
-            # Bullet lines  * text  /  - text
-            if re.match(r"^[*\-]\s+", stripped):
-                lines_out.append(f"\u2022 {stripped[2:].strip()}")
-                continue
-
-            # Sub-bullet lines  + text  (LLM often uses + for nested items)
-            if re.match(r"^\+\s+", stripped):
-                lines_out.append(f"  \u25e6 {stripped[2:].strip()}")
-                continue
-
-            lines_out.append(line)
-
-        result = "\n".join(lines_out)
-
-        # Inline **bold** в†’ <b>bold</b>  (non-greedy, no newlines inside)
-        result = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", result)
-        # Inline *italic* (after bold consumed, so single * remaining)
-        result = re.sub(r"(?<!\*)\*([^*\n]+?)\*(?!\*)", r"<i>\1</i>", result)
-        # Inline __bold__ alternative
-        result = re.sub(r"__(.+?)__", r"<b>\1</b>", result)
-
-        # Collapse 3+ blank lines в†’ 2
-        result = re.sub(r"\n{3,}", "\n\n", result)
-
-        # Strip only leading/trailing newlines — preserve sub-bullet indentation
-        return result.strip("\n")
+            return _html.escape(str(text or ""), quote=False)
 
     # в”Ђв”Ђ Shared helpers в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
@@ -3134,11 +3319,13 @@ class TelegramChannel:
 
                 manifest = get_provider(provider_id)
                 if manifest and manifest.vault_keys:
-                    from navig.vault import get_vault
+                    from navig.vault import get_vault, reveal_secret
 
                     vault = get_vault()
                     for vk in manifest.vault_keys:
-                        api_key = vault.get_secret(vk) or ""
+                        # reveal_secret unwraps the SecretStr; `get_secret() or ""`
+                        # handed a SecretStr into the HTTP payload → auth failed.
+                        api_key = reveal_secret(vault, vk)
                         if api_key:
                             break
             except Exception:  # noqa: BLE001
@@ -3200,7 +3387,7 @@ class TelegramChannel:
         if not api_key:
             try:
                 from navig.providers.registry import get_provider as _get_prov
-                from navig.vault import get_vault
+                from navig.vault import get_vault, reveal_secret
 
                 vault = get_vault()
                 _manifest = _get_prov("anthropic")
@@ -3209,7 +3396,7 @@ class TelegramChannel:
                     if _manifest
                     else ["anthropic/api-key", "anthropic/api_key"]
                 ):
-                    api_key = vault.get_secret(_vk) or ""
+                    api_key = reveal_secret(vault, _vk)
                     if api_key:
                         break
             except Exception:  # noqa: BLE001
@@ -3271,7 +3458,7 @@ class TelegramChannel:
         if not api_key:
             try:
                 from navig.providers.registry import get_provider as _get_prov
-                from navig.vault import get_vault
+                from navig.vault import get_vault, reveal_secret
 
                 vault = get_vault()
                 _manifest = _get_prov("google")
@@ -3280,7 +3467,7 @@ class TelegramChannel:
                     if _manifest
                     else ["google/api-key", "google/api_key", "gemini/api-key"]
                 ):
-                    api_key = vault.get_secret(_vk) or ""
+                    api_key = reveal_secret(vault, _vk)
                     if api_key:
                         break
             except Exception:  # noqa: BLE001
@@ -3662,6 +3849,36 @@ class TelegramChannel:
             text = text[:max_chars].rsplit(" ", 1)[0] + "…"
         return text
 
+    @staticmethod
+    def _reply_is_block_rich(md: str) -> bool:
+        """True when *md* carries block structure that rich messages render better
+        than flat HTML — a table, a horizontal divider, a section heading, or a
+        long/expandable blockquote.
+
+        Drives the ``sendRichMessage`` routing in :meth:`_send_response`; that call
+        falls back to this same HTML render on servers without rich support, so a
+        false positive costs nothing and a false negative just keeps the HTML path.
+        """
+        if not md or len(md) > 32768:
+            return False
+        # Markdown table: several pipes plus a |---|--- separator row.
+        if (
+            md.count("|") >= 4
+            and re.search(r"^\s*\|", md, re.M)
+            and re.search(r"^[\s|:-]*-{2,}[\s|:-]*$", md, re.M)
+        ):
+            return True
+        # Horizontal divider  ---  ***  ___
+        if re.search(r"^\s*([-*_])\1{2,}\s*$", md, re.M):
+            return True
+        # Section heading  ## Heading
+        if re.search(r"^#{1,6}\s+\S", md, re.M):
+            return True
+        # Explicit ">!" expandable marker, or a 4+ line blockquote
+        if ">! " in md or re.search(r"(?:^\s*>.*\n){4,}", md, re.M):
+            return True
+        return False
+
     async def _send_response(
         self,
         chat_id: int,
@@ -3685,6 +3902,10 @@ class TelegramChannel:
                 response, _explore_qs = extract_explore_questions(response)
             except Exception:  # noqa: BLE001
                 pass  # best-effort; never block the reply
+        # Keep the raw markdown for the rich-message path — sendRichMessage renders
+        # it natively (tables, headings, dividers, collapsible detail); the HTML
+        # render below is both the classic path and the rich fallback.
+        response_md = response
         # Convert standard Markdown (**bold**, ## heading) to Telegram HTML
         response = TelegramChannel._md_to_html(response)
         parts = None
@@ -3717,31 +3938,43 @@ class TelegramChannel:
                 keyboard = {"inline_keyboard": [extra_krow]}
 
         last_result: dict | None = None
-        if parts and len(parts) > 1:
-            for i, part in enumerate(parts):
-                is_last = i == len(parts) - 1
-                r = await self._send_html_with_fallback(
-                    chat_id,
-                    part,
-                    keyboard=keyboard if is_last else None,
+        rich_sent = False
+        # Document-grade path: a single, block-structured reply (table / divider /
+        # heading / long quote) goes via sendRichMessage, which renders the markdown
+        # natively and, on servers without rich support, degrades to the same HTML
+        # send (learned + cached, so only the first such reply pays a round-trip).
+        # Verbosity-split replies (parts > 1) keep the classic multi-part HTML path.
+        if (
+            (not parts or len(parts) <= 1)
+            and self._rich_messages_enabled()
+            and self._reply_is_block_rich(response_md)
+        ):
+            try:
+                last_result = await self.send_rich_message(
+                    chat_id, markdown=response_md, keyboard=keyboard,
                 )
-                if is_last:
-                    last_result = r
-        elif len(response) > 4000:
-            chunks = [response[i : i + 4000] for i in range(0, len(response), 4000)]
-            for i, chunk in enumerate(chunks):
-                is_last = i == len(chunks) - 1
-                r = await self._send_html_with_fallback(
-                    chat_id,
-                    chunk,
-                    keyboard=keyboard if is_last else None,
+                rich_sent = last_result is not None
+            except Exception as exc:  # noqa: BLE001 — never let rich break the reply
+                logger.debug("rich reply failed, using HTML: %r", exc)
+
+        if not rich_sent:
+            if parts and len(parts) > 1:
+                for i, part in enumerate(parts):
+                    is_last = i == len(parts) - 1
+                    r = await self._send_html_with_fallback(
+                        chat_id,
+                        part,
+                        keyboard=keyboard if is_last else None,
+                    )
+                    if is_last:
+                        last_result = r
+            else:
+                # Single send. send_message's length guard splits an over-length HTML
+                # body tag-safely at the 4096 limit (keyboard rides the last part), so
+                # no naive character slicing that could sever a <pre>/<blockquote> tag.
+                last_result = await self._send_html_with_fallback(
+                    chat_id, response, keyboard=keyboard
                 )
-                if is_last:
-                    last_result = r
-        else:
-            last_result = await self._send_html_with_fallback(
-                chat_id, response, keyboard=keyboard
-            )
 
         # Record (sent_msg_id в†’ original_query, reply_text) for reaction lookups
         if HAS_SESSIONS and last_result and isinstance(last_result, dict) and original_text:
@@ -3769,7 +4002,7 @@ class TelegramChannel:
 
         # 2. LLMModeRouter
         try:
-            from navig.llm_router import get_llm_router
+            from navig.llm.router import get_llm_router
 
             router = get_llm_router()
             if router:
@@ -4729,9 +4962,14 @@ class TelegramChannel:
             system_prompt += f" Hint: {ai_hint}"
 
         try:
-            from navig.llm_generate import run_llm
+            import asyncio as _asyncio
 
-            result = run_llm(
+            from navig.llm.generate import run_llm
+
+            # run_llm is SYNC — never call it directly on the gateway event loop
+            # (it blocks the whole daemon for the full LLM round-trip). Offload it.
+            result = await _asyncio.to_thread(
+                run_llm,
                 [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": clean},
@@ -4769,6 +5007,21 @@ class TelegramChannel:
         if parse_mode == "HTML":
             text = self._auto_markdown_to_html(text)
 
+        # Proactive length guard — never hand Telegram an over-length body. The
+        # classic sendMessage limit is 4096 UTF-16 units; long document-grade
+        # replies belong on send_rich_message (32k + native "Show More") instead.
+        try:
+            from navig.gateway.channels.base import utf16_len
+            from navig.gateway.channels.telegram_html import MAX_MESSAGE_UTF16
+
+            if utf16_len(text) > MAX_MESSAGE_UTF16:
+                return await self._send_long(
+                    chat_id, text, parse_mode,
+                    reply_to_message_id=reply_to_message_id, keyboard=keyboard,
+                )
+        except Exception:  # noqa: BLE001 — the length guard must never block a send
+            pass
+
         data = {
             "chat_id": chat_id,
             "text": text,
@@ -4787,6 +5040,53 @@ class TelegramChannel:
             retry_data = {k: v for k, v in data.items() if k != "parse_mode"}
             result = await self._api_call("sendMessage", retry_data)
         return result
+
+    async def _send_long(
+        self,
+        chat_id: int,
+        text: str,
+        parse_mode: str | None,
+        *,
+        reply_to_message_id: int | None = None,
+        keyboard: list[list[dict]] | None = None,
+    ) -> dict | None:
+        """Split an over-length body into ordered messages and send them.
+
+        HTML bodies split tag-safely (no half-open ``<pre>``/``<blockquote>`` across
+        a boundary); other bodies split newline-aligned. The reply anchor rides the
+        first part, the keyboard the last. ``text`` is already parse-mode-rendered —
+        this does not re-convert it. Returns the last message result.
+        """
+        from navig.gateway.channels.base import utf16_safe_split
+        from navig.gateway.channels.telegram_html import (
+            MAX_MESSAGE_UTF16,
+            split_html_for_telegram,
+        )
+
+        if parse_mode == "HTML":
+            parts = split_html_for_telegram(text, max_utf16=MAX_MESSAGE_UTF16)
+        else:
+            parts = utf16_safe_split(text, max_utf16=MAX_MESSAGE_UTF16)
+        if not parts:
+            return None
+
+        last: dict | None = None
+        for i, part in enumerate(parts):
+            is_first = i == 0
+            is_last = i == len(parts) - 1
+            data: dict = {"chat_id": chat_id, "text": part}
+            if parse_mode:
+                data["parse_mode"] = parse_mode
+            if is_first and reply_to_message_id:
+                data["reply_to_message_id"] = reply_to_message_id
+            if is_last and keyboard:
+                data["reply_markup"] = {"inline_keyboard": keyboard}
+            res = await self._api_call("sendMessage", data)
+            if res is None and parse_mode:
+                retry = {k: v for k, v in data.items() if k != "parse_mode"}
+                res = await self._api_call("sendMessage", retry)
+            last = res
+        return last
 
     @staticmethod
     def _auto_markdown_to_html(text: str) -> str:
@@ -5059,40 +5359,120 @@ class TelegramChannel:
             logger.warning("send_voice fallback failed: %s", e)
             return None
 
+    @staticmethod
+    def _caption_to_html(caption: str) -> str:
+        """Render a media caption for ``parse_mode=HTML``.
+
+        Captions the caller already built as HTML pass through untouched; anything
+        else is rendered markdown→HTML (which ALSO escapes bare ``&``/``<``/``>``),
+        so a plain caption — a URL with a query string, "Tips & Tricks" — is valid
+        HTML and never trips Telegram's parser, while ``**bold**`` / links / code
+        render just like they do in text messages.
+        """
+        if re.search(r"<\s*/?\s*[a-zA-Z][^>]*>", caption):
+            return caption
+        try:
+            from navig.gateway.channels.telegram_html import md_to_html
+
+            return md_to_html(caption) or caption
+        except Exception:  # noqa: BLE001 — a caption must never break the upload
+            return caption
+
+    @staticmethod
+    def _is_caption_parse_error(desc: str) -> bool:
+        """True when a Bot API error description looks like an HTML-parse failure."""
+        d = (desc or "").lower()
+        return "parse" in d or "entit" in d or "tag" in d
+
+    async def _post_media(
+        self,
+        method: str,
+        chat_id: int,
+        media_field: str,
+        media_bytes: bytes,
+        *,
+        filename: str,
+        content_type: str,
+        caption: str | None = None,
+        parse_mode: str | None = "HTML",
+        reply_to_message_id: int | None = None,
+        extra_fields: dict[str, str] | None = None,
+    ) -> dict | None:
+        """Upload media via a multipart Bot API call (sendPhoto/Video/Document/…).
+
+        Shared by every media sender so caption handling is uniform:
+        * when ``parse_mode == "HTML"`` the caption is rendered like a text message
+          (markdown → HTML, with special characters escaped);
+        * a caption that STILL trips Telegram's HTML parser is resent once WITHOUT
+          ``parse_mode`` so the media goes out with a plain caption instead of being
+          silently dropped — the previous behaviour returned ``None`` and lost the
+          whole upload on any caption parse error.
+        """
+        if not self._session or not aiohttp:
+            return None
+        if caption and parse_mode == "HTML":
+            caption = self._caption_to_html(caption)
+            # Telegram caps media captions at 1024 UTF-16 units. Rendering markdown
+            # can push a near-limit caption over, and "caption too long" is NOT a
+            # parse error (no retry) — so keep it in-bounds tag-safely.
+            from navig.gateway.channels.base import utf16_len
+
+            if utf16_len(caption) > 1024:
+                from navig.gateway.channels.telegram_html import split_html_for_telegram
+
+                parts = split_html_for_telegram(caption, max_utf16=1024)
+                caption = parts[0] if parts else caption
+
+        def _build(pm: str | None):
+            form = aiohttp.FormData()
+            form.add_field("chat_id", str(chat_id))
+            form.add_field(media_field, media_bytes, filename=filename, content_type=content_type)
+            if caption:
+                form.add_field("caption", caption)
+            if pm:
+                form.add_field("parse_mode", pm)
+            for key, value in (extra_fields or {}).items():
+                form.add_field(key, value)
+            if reply_to_message_id:
+                form.add_field("reply_to_message_id", str(reply_to_message_id))
+            return form
+
+        url = f"{self.base_url}/{method}"
+        try:
+            async with self._session.post(url, data=_build(parse_mode)) as resp:
+                result = await resp.json()
+            if result.get("ok"):
+                return result.get("result")
+            desc = result.get("description") or ""
+            if caption and parse_mode and self._is_caption_parse_error(desc):
+                # Rebuild the form (aiohttp FormData is single-use) without the
+                # parse mode and resend, so the media still lands.
+                async with self._session.post(url, data=_build(None)) as resp2:
+                    result = await resp2.json()
+                if result.get("ok"):
+                    return result.get("result")
+                desc = result.get("description") or desc
+            logger.warning("%s API error: %s", method, desc)
+            return None
+        except Exception as e:  # noqa: BLE001
+            logger.warning("%s failed: %s", method, e)
+            return None
+
     async def send_photo(
         self,
         chat_id: int,
         photo_data: bytes,
         caption: str | None = None,
+        parse_mode: str | None = "HTML",
         reply_to_message_id: int | None = None,
     ) -> dict | None:
-        """Send a photo message to a chat."""
-        if not self._session or not aiohttp:
-            return None
-        url = f"{self.base_url}/sendPhoto"
-        try:
-            form = aiohttp.FormData()
-            form.add_field("chat_id", str(chat_id))
-            form.add_field(
-                "photo",
-                photo_data,
-                filename="image.jpeg",
-                content_type="image/jpeg",
-            )
-            if caption:
-                form.add_field("caption", caption)
-            if reply_to_message_id:
-                form.add_field("reply_to_message_id", str(reply_to_message_id))
-
-            async with self._session.post(url, data=form) as resp:
-                result = await resp.json()
-                if result.get("ok"):
-                    return result.get("result")
-                logger.warning("sendPhoto API error: %s", result.get("description"))
-                return None
-        except Exception as e:
-            logger.warning("send_photo failed: %s", e)
-            return None
+        """Send a photo message to a chat (caption rendered as HTML)."""
+        return await self._post_media(
+            "sendPhoto", chat_id, "photo", photo_data,
+            filename="image.jpeg", content_type="image/jpeg",
+            caption=caption, parse_mode=parse_mode,
+            reply_to_message_id=reply_to_message_id,
+        )
 
     async def send_document(
         self,
@@ -5104,33 +5484,12 @@ class TelegramChannel:
         reply_to_message_id: int | None = None,
     ) -> dict | None:
         """Send a document/file to a chat (sendDocument Bot API)."""
-        if not self._session or not aiohttp:
-            return None
-        url = f"{self.base_url}/sendDocument"
-        try:
-            form = aiohttp.FormData()
-            form.add_field("chat_id", str(chat_id))
-            form.add_field(
-                "document",
-                document_data,
-                filename=filename,
-                content_type="application/octet-stream",
-            )
-            if caption:
-                form.add_field("caption", caption)
-            if parse_mode:
-                form.add_field("parse_mode", parse_mode)
-            if reply_to_message_id:
-                form.add_field("reply_to_message_id", str(reply_to_message_id))
-            async with self._session.post(url, data=form) as resp:
-                result = await resp.json()
-                if result.get("ok"):
-                    return result.get("result")
-                logger.warning("sendDocument API error: %s", result.get("description"))
-                return None
-        except Exception as e:
-            logger.warning("send_document failed: %s", e)
-            return None
+        return await self._post_media(
+            "sendDocument", chat_id, "document", document_data,
+            filename=filename, content_type="application/octet-stream",
+            caption=caption, parse_mode=parse_mode,
+            reply_to_message_id=reply_to_message_id,
+        )
 
     async def send_video(
         self,
@@ -5144,34 +5503,20 @@ class TelegramChannel:
         reply_to_message_id: int | None = None,
     ) -> dict | None:
         """Send a video to a chat (sendVideo Bot API)."""
-        if not self._session or not aiohttp:
-            return None
-        url = f"{self.base_url}/sendVideo"
-        try:
-            form = aiohttp.FormData()
-            form.add_field("chat_id", str(chat_id))
-            form.add_field("video", video_data, filename="video.mp4", content_type="video/mp4")
-            if caption:
-                form.add_field("caption", caption)
-            if parse_mode:
-                form.add_field("parse_mode", parse_mode)
-            if duration is not None:
-                form.add_field("duration", str(duration))
-            if width is not None:
-                form.add_field("width", str(width))
-            if height is not None:
-                form.add_field("height", str(height))
-            if reply_to_message_id:
-                form.add_field("reply_to_message_id", str(reply_to_message_id))
-            async with self._session.post(url, data=form) as resp:
-                result = await resp.json()
-                if result.get("ok"):
-                    return result.get("result")
-                logger.warning("sendVideo API error: %s", result.get("description"))
-                return None
-        except Exception as e:
-            logger.warning("send_video failed: %s", e)
-            return None
+        extra: dict[str, str] = {}
+        if duration is not None:
+            extra["duration"] = str(duration)
+        if width is not None:
+            extra["width"] = str(width)
+        if height is not None:
+            extra["height"] = str(height)
+        return await self._post_media(
+            "sendVideo", chat_id, "video", video_data,
+            filename="video.mp4", content_type="video/mp4",
+            caption=caption, parse_mode=parse_mode,
+            reply_to_message_id=reply_to_message_id,
+            extra_fields=extra or None,
+        )
 
     # ── Rich messages (sendRichMessage / sendRichMessageDraft) ───────────────
     # Telegram's rich-message API renders full markdown/HTML: headings, tables,
@@ -5307,33 +5652,12 @@ class TelegramChannel:
         reply_to_message_id: int | None = None,
     ) -> dict | None:
         """Send an animation (GIF or H.264/MPEG-4 AVC) to a chat (sendAnimation Bot API)."""
-        if not self._session or not aiohttp:
-            return None
-        url = f"{self.base_url}/sendAnimation"
-        try:
-            form = aiohttp.FormData()
-            form.add_field("chat_id", str(chat_id))
-            form.add_field(
-                "animation",
-                animation_data,
-                filename="animation.gif",
-                content_type="image/gif",
-            )
-            if caption:
-                form.add_field("caption", caption)
-            if parse_mode:
-                form.add_field("parse_mode", parse_mode)
-            if reply_to_message_id:
-                form.add_field("reply_to_message_id", str(reply_to_message_id))
-            async with self._session.post(url, data=form) as resp:
-                result = await resp.json()
-                if result.get("ok"):
-                    return result.get("result")
-                logger.warning("sendAnimation API error: %s", result.get("description"))
-                return None
-        except Exception as e:
-            logger.warning("send_animation failed: %s", e)
-            return None
+        return await self._post_media(
+            "sendAnimation", chat_id, "animation", animation_data,
+            filename="animation.gif", content_type="image/gif",
+            caption=caption, parse_mode=parse_mode,
+            reply_to_message_id=reply_to_message_id,
+        )
 
     async def send_sticker(
         self,

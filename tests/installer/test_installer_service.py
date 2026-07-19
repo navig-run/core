@@ -1,13 +1,14 @@
 """Tests for navig.installer.modules.service — plan/apply/rollback."""
 from __future__ import annotations
 
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 import navig.installer.modules.service as svc_mod
 from navig.installer.contracts import InstallerContext, ModuleState
+
+from ._service_mock import fake_service_manager, no_service_manager
 
 
 def _ctx() -> InstallerContext:
@@ -75,7 +76,7 @@ class TestApply:
 
     def test_skipped_when_service_manager_missing(self):
         with patch.object(svc_mod.sys, "platform", "linux"):
-            with patch.dict(sys.modules, {"navig.daemon": None, "navig.daemon.service_manager": None}):
+            with no_service_manager():
                 result = svc_mod.apply(_action(), _ctx())
         assert result.state == ModuleState.SKIPPED
         assert "service_manager unavailable" in result.message
@@ -84,7 +85,7 @@ class TestApply:
         fake_sm = MagicMock()
         fake_sm.install.return_value = (True, "service registered")
         with patch.object(svc_mod.sys, "platform", "linux"):
-            with patch.dict(sys.modules, {"navig.daemon.service_manager": fake_sm}):
+            with fake_service_manager(fake_sm):
                 result = svc_mod.apply(_action(), _ctx())
         assert result.state == ModuleState.APPLIED
         assert result.undo_data is not None
@@ -93,7 +94,7 @@ class TestApply:
         fake_sm = MagicMock()
         fake_sm.install.return_value = (False, "permission denied")
         with patch.object(svc_mod.sys, "platform", "linux"):
-            with patch.dict(sys.modules, {"navig.daemon.service_manager": fake_sm}):
+            with fake_service_manager(fake_sm):
                 result = svc_mod.apply(_action(), _ctx())
         assert result.state == ModuleState.FAILED
         assert "permission denied" in result.message
@@ -102,10 +103,26 @@ class TestApply:
         fake_sm = MagicMock()
         fake_sm.install.side_effect = RuntimeError("crash")
         with patch.object(svc_mod.sys, "platform", "linux"):
-            with patch.dict(sys.modules, {"navig.daemon.service_manager": fake_sm}):
+            with fake_service_manager(fake_sm):
                 result = svc_mod.apply(_action(), _ctx())
         assert result.state == ModuleState.FAILED
         assert "crash" in result.message
+
+    def test_apply_mock_survives_a_prior_real_import(self):
+        """Regression: the bug that made these fail only under xdist.
+
+        Importing the real submodule first binds it as an attribute of navig.daemon; the
+        old ``patch.dict(sys.modules, {"navig.daemon.service_manager": ...})`` was then
+        ignored and the real installer ran. ``fake_service_manager`` must be immune.
+        """
+        import navig.daemon.service_manager  # noqa: F401 — the poison: attribute-binds it
+        fake_sm = MagicMock()
+        fake_sm.install.return_value = (True, "service registered")
+        with patch.object(svc_mod.sys, "platform", "linux"):
+            with fake_service_manager(fake_sm):
+                result = svc_mod.apply(_action(), _ctx())
+        assert result.state == ModuleState.APPLIED
+        fake_sm.install.assert_called_once()
 
 
 class TestRollback:
@@ -113,7 +130,7 @@ class TestRollback:
         fake_sm = MagicMock()
         action = _action()
         result = MagicMock()
-        with patch.dict(sys.modules, {"navig.daemon.service_manager": fake_sm}):
+        with fake_service_manager(fake_sm):
             svc_mod.rollback(action, result, _ctx())
         fake_sm.uninstall.assert_called_once()
 
@@ -122,6 +139,6 @@ class TestRollback:
         fake_sm.uninstall.side_effect = RuntimeError("uninstall failed")
         action = _action()
         result = MagicMock()
-        with patch.dict(sys.modules, {"navig.daemon.service_manager": fake_sm}):
+        with fake_service_manager(fake_sm):
             # Should not raise
             svc_mod.rollback(action, result, _ctx())

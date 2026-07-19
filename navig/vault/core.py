@@ -23,6 +23,7 @@ cred    = v.get("openai")           # → Credential | None
 from __future__ import annotations
 
 import json
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -928,10 +929,11 @@ class Vault:
             rows = self._store.get_audit(credential_id)
         else:
             try:
-                conn = self._store._connect()
-                rows_raw = conn.execute(
-                    "SELECT * FROM vault_audit ORDER BY ts DESC LIMIT ?", (limit,)
-                ).fetchall()
+                with self._store._lock:  # shared connection — serialize like the store
+                    conn = self._store._connect()
+                    rows_raw = conn.execute(
+                        "SELECT * FROM vault_audit ORDER BY ts DESC LIMIT ?", (limit,)
+                    ).fetchall()
                 rows = [dict(r) for r in rows_raw]
             except Exception:  # noqa: BLE001
                 rows = []
@@ -1000,6 +1002,11 @@ class Vault:
 # ── Module-level singletons ───────────────────────────────────────────────────
 
 _vault: Vault | None = None
+# RLock, not Lock: _auto_migrate → migrate_from_legacy calls get_vault()
+# re-entrantly on the constructing thread. With a plain Lock that self-
+# deadlocks (proven by a faulthandler dump: core.py get_vault →
+# _auto_migrate → migrate.py migrate_from_legacy → get_vault, blocked).
+_vault_lock = threading.RLock()
 
 
 def get_vault(vault_dir: Path | None = None) -> Vault:
@@ -1008,6 +1015,10 @@ def get_vault(vault_dir: Path | None = None) -> Vault:
     On first call, if a legacy database exists and has not yet been
     migrated, a silent migration is triggered automatically.
 
+    Thread-safe: a parallel first use (e.g. several dispatch threads resolving
+    credentials at once) must not construct two Vaults — each would carry its
+    own sqlite connection and run the auto-migration concurrently.
+
     Parameters
     ----------
     vault_dir : Override the storage directory.  Uses ``vault_dir()`` from
@@ -1015,13 +1026,39 @@ def get_vault(vault_dir: Path | None = None) -> Vault:
     """
     global _vault
     if _vault is None:
-        if vault_dir is None:
-            from navig.platform.paths import vault_dir as _vault_dir_fn  # noqa: PLC0415
+        with _vault_lock:
+            if _vault is None:
+                if vault_dir is None:
+                    from navig.platform.paths import vault_dir as _vault_dir_fn  # noqa: PLC0415
 
-            vault_dir = _vault_dir_fn()
-        _vault = Vault(vault_dir)
-        _auto_migrate(_vault)
+                    vault_dir = _vault_dir_fn()
+                # Assign BEFORE migrating (the original order): the migration
+                # path re-enters get_vault() and must receive THIS instance —
+                # assigning after would make the re-entrant call construct a
+                # second Vault and re-run migration recursively.
+                _vault = Vault(vault_dir)
+                _auto_migrate(_vault)
     return _vault
+
+
+def reveal_secret(vault: "Vault", label: str) -> str:
+    """Fetch a vault secret as a plaintext ``str``, or ``""`` if missing/unavailable.
+
+    :meth:`Vault.get_secret` returns a :class:`SecretStr`. Callers repeatedly wrote
+    ``(vault.get_secret(label) or "").strip()`` — but ``.strip()`` on a ``SecretStr``
+    raises ``AttributeError``, which their ``except`` clauses swallowed, so a present
+    key was silently reported as absent (the whole reason vaulted search keys were
+    never used). This unwraps via ``reveal()`` and never raises — a missing label or
+    locked vault yields ``""``, letting callers keep their simple truthiness checks.
+    """
+    try:
+        secret = vault.get_secret(label)
+    except Exception:  # noqa: BLE001 — missing label / locked vault → treat as absent
+        return ""
+    if secret is None:
+        return ""
+    plain = secret.reveal() if hasattr(secret, "reveal") else str(secret)
+    return plain.strip()
 
 
 def _migrate_auth_profiles(vault: "Vault") -> None:
@@ -1118,13 +1155,19 @@ def _maybe_upgrade_fingerprint(vault: Vault) -> None:
 def _auto_migrate(vault: Vault) -> None:
     """Silently migrate legacy credentials to the unified vault if not done yet."""
     _maybe_upgrade_fingerprint(vault)
-    sentinel = vault.vault_dir / ".migrated_legacy"
-    legacy_sentinel = vault.vault_dir / ".migrated_v1"
-    if sentinel.exists() or legacy_sentinel.exists():
-        return
     try:
-        from navig.vault.migrate import check_legacy_exists, migrate_from_legacy  # noqa: PLC0415
+        # Marker names + detection live in navig.vault.migrate (single source of
+        # truth — the `navig doctor` Vault row reads the same helpers).
+        from navig.vault.migrate import (  # noqa: PLC0415
+            check_legacy_exists,
+            legacy_migration_done,
+            migrate_from_legacy,
+            migration_marker_path,
+        )
 
+        if legacy_migration_done(vault.vault_dir):
+            return
+        sentinel = migration_marker_path(vault.vault_dir)
         if not check_legacy_exists():
             sentinel.touch()
             return

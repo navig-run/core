@@ -29,9 +29,15 @@ def get_active_persona_config(
     name = get_active_persona(user_id, chat_id)
     try:
         return load_persona(name, cwd=cwd)
-    except Exception:  # noqa: BLE001
-        # Fallback to default if the stored persona is broken
-        return load_persona("default", cwd=cwd)
+    except Exception as exc:  # noqa: BLE001
+        # Fallback to default if the stored persona is broken — but say so, or an
+        # operator can never discover why their persona silently "doesn't work".
+        logger.warning("Persona '%s' failed to load; falling back to default: %s", name, exc)
+        try:
+            return load_persona("default", cwd=cwd)
+        except Exception as default_exc:  # noqa: BLE001
+            logger.error("Default persona also failed to load: %s", default_exc)
+            raise
 
 
 async def switch_persona(
@@ -85,23 +91,15 @@ async def switch_persona(
 
     try:
         # ── Step 3: load + validate config ───────────────────────────────────
-        config, soul_content = load_persona(name, cwd=cwd)
+        config, _soul = load_persona(name, cwd=cwd)
 
-        # ── Step 4: update ConversationalAgent (best-effort) ─────────────────
-        try:
-
-            # Update the global/singleton agent instance if accessible
-            agent_instance = _get_agent_instance()
-            if agent_instance is not None:
-                agent_instance.set_active_persona(config, soul_content)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Could not update agent persona in-process: %s", exc)
-            # Non-fatal: persona will be picked up on next agent construction
-
-        # ── Step 5: persist ───────────────────────────────────────────────────
+        # ── Step 4: persist ───────────────────────────────────────────────────
+        # The persisted store is the source of truth; the live per-session agents
+        # pick up the new persona on their next construction (persona application
+        # is channel_router's responsibility, not this function's).
         set_active_persona(user_id, chat_id, name)
 
-        # ── Step 6: deliver assets (wallpaper + sound) ────────────────────────
+        # ── Step 5: deliver assets (wallpaper + sound) ────────────────────────
         if deliver_assets and bot_client is not None:
             await deliver(config, chat_id, bot_client, cwd=cwd)
 
@@ -109,27 +107,13 @@ async def switch_persona(
         # ── Rollback ─────────────────────────────────────────────────────────
         try:
             set_active_persona(user_id, chat_id, previous_name)
-            logger.info(
-                "Persona switch to '%s' failed; rolled back to '%s'", name, previous_name
-            )
         except Exception as rollback_exc:  # noqa: BLE001
-            logger.error("Rollback failed for user %s: %s", user_id, rollback_exc)
+            logger.error("Store rollback failed for user %s: %s", user_id, rollback_exc)
 
-        raise PersonaSwitchError(
-            f"Failed to switch to persona '{name}': {exc}"
-        ) from exc
+        logger.info("Persona switch to '%s' failed; rolled back to '%s'", name, previous_name)
+        raise PersonaSwitchError(f"Failed to switch to persona '{name}': {exc}") from exc
 
     return config
-
-
-def _get_agent_instance():
-    """Try to retrieve the live ConversationalAgent instance from the gateway."""
-    try:
-        from navig.gateway.server import get_agent  # noqa: PLC0415
-
-        return get_agent()
-    except Exception:  # noqa: BLE001
-        return None
 
 
 def list_personas(cwd: Path | None = None) -> list[PersonaConfig]:

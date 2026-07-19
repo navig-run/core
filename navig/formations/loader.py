@@ -46,24 +46,40 @@ def _get_formations_roots() -> list[Path]:
     if _FORMATIONS_ROOTS:
         return _FORMATIONS_ROOTS
 
+    from navig.platform.paths import builtin_store_dir
+
     roots: list[Path] = []
 
-    project_root = Path(__file__).resolve().parent.parent.parent
-
-    # Built-in store (canonical location)
-    store_formations = project_root / "store" / "formations"
+    # Built-in store (canonical location). Resolve it through builtin_store_dir() — this
+    # used to count .parents out to <repo>/core/store/formations, a path OUTSIDE the navig
+    # package: it never existed in an installed layout (so a pip-installed navig loaded
+    # ZERO builtin formations) and died outright when the content store moved into the
+    # package. `is_dir()` guards it, so the loss was silent.
+    store_formations = builtin_store_dir() / "formations"
     if store_formations.is_dir():
         roots.append(store_formations)
 
-    # Legacy root-level formations (fallback for older installs / forks)
-    legacy_formations = project_root / "formations"
-    if legacy_formations.is_dir() and legacy_formations not in roots:
-        roots.append(legacy_formations)
+    # User-installed formations. `navig install <formation>` writes to
+    # store_dir()/formations (the user content store, = config_dir()/data/store by
+    # default) — see commands/install.py:_dest_for. config_dir()/formations is a
+    # legacy / hand-placed location. Scan BOTH: the loader used to read only
+    # config_dir()/formations, so an installed formation (which lands under
+    # store_dir()) silently never loaded.
+    from navig.platform.paths import store_dir
 
-    # User-level formations (community-installed)
-    user_formations = config_dir() / "formations"
-    if user_formations.is_dir():
-        roots.append(user_formations)
+    for user_formations in (store_dir() / "formations", config_dir() / "formations"):
+        if user_formations.is_dir() and user_formations not in roots:
+            roots.append(user_formations)
+
+    # Installed CC/NAVIG plugins that declare `formations/` (each subdir with a
+    # formation.json is a formation). The plugin host discovers packages under
+    # ~/.navig/plugins; best-effort so a bad plugin never breaks discovery.
+    try:
+        from navig.plugins.package import plugin_capability_dirs
+
+        roots.extend(plugin_capability_dirs("formations"))
+    except Exception:  # noqa: BLE001
+        pass
 
     return roots
 

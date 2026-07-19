@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from navig.core.yaml_io import atomic_write_text
-from navig.platform.paths import config_dir
+from navig.platform.paths import skills_dir
 
 
 @dataclass
@@ -17,7 +17,7 @@ class SkillDraft:
 
 class SkillDrafter:
     def __init__(self, output_dir: Path | None = None):
-        self.output_dir = Path(output_dir or (config_dir() / "skills"))
+        self.output_dir = Path(output_dir or skills_dir())
 
     def draft(self, pattern) -> SkillDraft:
         sequence = list(getattr(pattern, "sequence", ()) or [])

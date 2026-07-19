@@ -1,7 +1,7 @@
 """Tests for navig.ui.formatters — render_kv_diagnostics, render_command_row, render_section_divider."""
 from __future__ import annotations
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 

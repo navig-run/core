@@ -315,6 +315,45 @@ class TestEventBridge:
         payload = json.loads(ws.sent[0])
         assert payload["params"].get("truncated") is True
 
+    # -- Rate-limit / dedup contract (the severity switch IS the dedup) -----
+
+    async def test_info_duplicates_rate_limited_within_window(self):
+        """A rapid duplicate INFO on the same topic is suppressed within
+        debounce_seconds — the actual dedup mechanism (`_recent` + the severity
+        switch in push())."""
+        bridge = EventBridge(debounce_seconds=60.0)
+        ws = FakeWebSocket()
+        bridge.register_client(ws)
+
+        first = await bridge.push(_make_envelope(severity=Severity.INFO))
+        second = await bridge.push(_make_envelope(severity=Severity.INFO))
+
+        assert first == 1
+        assert second == 0  # suppressed: same topic inside the window
+        assert len(ws.sent) == 1
+        assert bridge.get_stats()["events_filtered"] >= 1
+
+    async def test_error_duplicates_never_rate_limited(self):
+        """ERROR/CRITICAL are never suppressed, no matter how rapid — the
+        documented contract (ws-smoke-report: 'ERROR/CRITICAL never suppressed')."""
+        bridge = EventBridge(debounce_seconds=60.0)
+        ws = FakeWebSocket()
+        bridge.register_client(ws)
+
+        first = await bridge.push(_make_envelope(severity=Severity.ERROR))
+        second = await bridge.push(_make_envelope(severity=Severity.ERROR))
+
+        assert first == 1
+        assert second == 1
+        assert len(ws.sent) == 2
+
+    async def test_vestigial_dedup_window_removed(self):
+        """`_dedup_window` was written once and never read (dead since the
+        monorepo import); the severity switch is the real suppression window.
+        Pin its removal so it doesn't quietly come back half-wired."""
+        bridge = EventBridge()
+        assert not hasattr(bridge, "_dedup_window")
+
 
 # ---------------------------------------------------------------------------
 # Normalisation tests

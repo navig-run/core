@@ -8,7 +8,6 @@ import pytest
 import navig.ui.icons as icons_mod
 from navig.ui.icons import icon, icon_pair, nf_icon
 
-
 # ── icon() ────────────────────────────────────────────────────
 
 

@@ -36,19 +36,16 @@ logger = get_debug_logger()
 
 _mdv2_escape = escape_mdv2
 
-# Local gateway base URL for mesh routes — resolved from navig config at call time
-# so it tracks config changes without requiring a restart.
-# Default port: _GATEWAY_PORT (8789).  Override via ~/.navig/config.yaml: gateway.port
+# Local gateway base URL for mesh routes — resolved at CALL time (not import
+# time) so it follows the live self-healed port from ~/.navig/gateway.json and
+# tracks config changes without requiring a restart.
 def _gateway_base() -> str:
     try:
-        from navig.config import get_config_manager
+        from navig.gateway_client import gateway_base_url
 
-        port = get_config_manager().global_config.get("gateway", {}).get("port", _GATEWAY_PORT)
-        return f"http://127.0.0.1:{port}"
+        return gateway_base_url()
     except Exception:
         return f"http://127.0.0.1:{_GATEWAY_PORT}"
-
-_GATEWAY_BASE = _gateway_base()
 
 class TelegramMeshMixin:
     """
@@ -212,7 +209,7 @@ class TelegramMeshMixin:
         """GET request to local gateway mesh endpoint."""
         import aiohttp  # lazy import — respects navig-core lazy-import rule
 
-        url = f"{_GATEWAY_BASE}{path}"
+        url = f"{_gateway_base()}{path}"
         # self._session exists if TelegramChannel already started; if not,
         # we open a short-lived session as fallback (unit-test friendly).
         session = getattr(self, "_session", None)
@@ -230,7 +227,7 @@ class TelegramMeshMixin:
         """POST request to local gateway mesh endpoint."""
         import aiohttp  # lazy import
 
-        url = f"{_GATEWAY_BASE}{path}"
+        url = f"{_gateway_base()}{path}"
         headers = {"Content-Type": "application/json"}
         session = getattr(self, "_session", None)
         if session and not session.closed:

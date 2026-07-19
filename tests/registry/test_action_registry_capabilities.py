@@ -148,7 +148,7 @@ class TestActionRegistry:
 # ──────────────────────────────────────────────────────────────────────────────
 # routing/capabilities.py — CAPABILITY_TAGS, ModeProfile, MODE_CAPABILITIES
 # ──────────────────────────────────────────────────────────────────────────────
-from navig.routing.capabilities import CAPABILITY_TAGS, MODE_CAPABILITIES, ModeProfile
+from navig.llm.routing.capabilities import CAPABILITY_TAGS, MODE_CAPABILITIES, ModeProfile
 
 
 class TestCapabilityTags:

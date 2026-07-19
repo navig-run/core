@@ -7,8 +7,9 @@ Pure-unit tests: no network, no file I/O.
 
 from __future__ import annotations
 
-import pytest
 from datetime import datetime, timedelta
+
+import pytest
 
 from navig.commands.triggers import (
     ActionType,
@@ -298,6 +299,37 @@ class TestTrigger:
         t.last_fired = past.isoformat()
         assert t.can_fire() is True
 
+    # rate limit (max_fires_per_hour) — enforced over a rolling 60-min window
+    def test_rate_limit_blocks_after_max_fires_in_window(self):
+        now = datetime.now()
+        recent = [(now - timedelta(minutes=m)).isoformat() for m in (1, 2, 3)]
+        t = self._make(max_fires_per_hour=3, cooldown_seconds=0, fire_times=recent)
+        assert t.can_fire() is False
+
+    def test_rate_limit_allows_when_under_max(self):
+        now = datetime.now()
+        recent = [(now - timedelta(minutes=m)).isoformat() for m in (1, 2)]
+        t = self._make(max_fires_per_hour=3, cooldown_seconds=0, fire_times=recent)
+        assert t.can_fire() is True
+
+    def test_rate_limit_ignores_fires_older_than_an_hour(self):
+        now = datetime.now()
+        old = [(now - timedelta(minutes=m)).isoformat() for m in (61, 90, 120)]
+        t = self._make(max_fires_per_hour=3, cooldown_seconds=0, fire_times=old)
+        assert t.can_fire() is True  # all aged out of the window
+
+    def test_rate_limit_disabled_when_max_not_positive(self):
+        now = datetime.now()
+        many = [(now - timedelta(minutes=1)).isoformat() for _ in range(50)]
+        t = self._make(max_fires_per_hour=0, cooldown_seconds=0, fire_times=many)
+        assert t.can_fire() is True  # 0 == no limit
+
+    def test_record_fire_appends_and_prunes_old(self):
+        now = datetime.now()
+        t = self._make(fire_times=[(now - timedelta(hours=2)).isoformat()])  # stale
+        t.record_fire(now)
+        assert t.fire_times == [now.isoformat()]  # stale pruned, this fire kept
+
     # to_dict / from_dict
     def test_to_dict_id(self):
         assert self._make().to_dict()["id"] == "t-001"
@@ -315,6 +347,16 @@ class TestTrigger:
         assert restored.name == original.name
         assert restored.type == original.type
         assert restored.status == original.status
+
+    def test_fire_times_roundtrips(self):
+        t = self._make(fire_times=[datetime.now().isoformat()])
+        assert Trigger.from_dict(t.to_dict()).fire_times == t.fire_times
+
+    def test_fire_times_defaults_empty_for_legacy_configs(self):
+        # Configs written before the field existed have no "fire_times" key.
+        legacy = self._make().to_dict()
+        del legacy["fire_times"]
+        assert Trigger.from_dict(legacy).fire_times == []
 
 
 # ---------------------------------------------------------------------------

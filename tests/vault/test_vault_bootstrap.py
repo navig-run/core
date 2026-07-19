@@ -1,7 +1,7 @@
 """Tests for navig.installer.modules.vault_bootstrap."""
 from __future__ import annotations
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -43,13 +43,17 @@ class TestVaultBootstrapPlan:
 
 class TestVaultBootstrapApply:
     def test_success_when_vault_available(self):
-        with patch("navig.installer.modules.vault_bootstrap.get_vault", create=True):
-            # Patch the local import inside apply()
-            mock_vault = MagicMock()
-            with patch.dict("sys.modules", {"navig.vault.core": MagicMock(get_vault=mock_vault)}):
-                result = vault_mod.apply(_action(), _ctx())
+        # apply() does `from navig.vault.core import get_vault` at call time, so swapping
+        # the module in sys.modules is the whole job. The outer
+        # `patch("...vault_bootstrap.get_vault", create=True)` invented an attribute the
+        # module never had and patched nothing.
+        mock_vault = MagicMock()
+        with patch.dict("sys.modules", {"navig.vault.core": MagicMock(get_vault=mock_vault)}):
+            result = vault_mod.apply(_action(), _ctx())
+
         assert result.state == ModuleState.APPLIED
         assert "initialised" in result.message.lower()
+        assert mock_vault.called, "apply() must actually call get_vault() — that call is what creates the key file"
 
     def test_skipped_on_import_error(self):
         import builtins

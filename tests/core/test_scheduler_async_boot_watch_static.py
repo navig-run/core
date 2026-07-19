@@ -18,7 +18,6 @@ from typer.testing import CliRunner as TyCliRunner
 # ---------------------------------------------------------------------------
 # navig/daemon/scheduler.py
 # ---------------------------------------------------------------------------
-
 from navig.daemon.scheduler import get_scheduler
 
 
@@ -94,32 +93,32 @@ def test_run_sync_returns_none_for_none_coro():
 # navig/commands/boot_cmd.py
 # ---------------------------------------------------------------------------
 
-from navig.commands.boot_cmd import boot_app
 import navig.console_helper as _ch
+from navig.commands.boot_cmd import boot_app
 
 _runner = TyCliRunner()
 
 
 def test_boot_show_exits_ok():
-    with patch.object(_ch, "warn", create=True, return_value=None):
+    with patch.object(_ch, "warning", return_value=None):
         result = _runner.invoke(boot_app, ["show"])
     assert result.exit_code == 0
 
 
 def test_boot_show_warns_not_implemented():
-    with patch.object(_ch, "warn", create=True, return_value=None):
+    with patch.object(_ch, "warning", return_value=None):
         result = _runner.invoke(boot_app, ["show"])
     assert result.exit_code == 0
 
 
 def test_boot_run_exits_ok():
-    with patch.object(_ch, "warn", create=True, return_value=None):
+    with patch.object(_ch, "warning", return_value=None):
         result = _runner.invoke(boot_app, ["run"])
     assert result.exit_code == 0
 
 
 def test_boot_run_dry_run_flag():
-    with patch.object(_ch, "warn", create=True, return_value=None):
+    with patch.object(_ch, "warning", return_value=None):
         result = _runner.invoke(boot_app, ["run", "--dry-run"])
     assert result.exit_code == 0
 
@@ -140,19 +139,19 @@ _watch_runner = TyCliRunner()
 
 
 def test_watch_start_exits_ok():
-    with patch.object(_ch, "warn", create=True, return_value=None):
+    with patch.object(_ch, "warning", return_value=None):
         result = _watch_runner.invoke(watch_app, ["start"])
     assert result.exit_code == 0
 
 
 def test_watch_start_with_path():
-    with patch.object(_ch, "warn", create=True, return_value=None):
+    with patch.object(_ch, "warning", return_value=None):
         result = _watch_runner.invoke(watch_app, ["start", "/tmp"])
     assert result.exit_code == 0
 
 
 def test_watch_list_exits_ok():
-    with patch.object(_ch, "warn", create=True, return_value=None):
+    with patch.object(_ch, "warning", return_value=None):
         result = _watch_runner.invoke(watch_app, ["list"])
     assert result.exit_code == 0
 

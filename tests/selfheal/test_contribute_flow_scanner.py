@@ -22,7 +22,6 @@ from navig.bot.contribute_flow import (
 )
 from navig.selfheal.scanner import ScanFinding
 
-
 # ===========================================================================
 # _escape_md2
 # ===========================================================================

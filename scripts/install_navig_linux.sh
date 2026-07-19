@@ -45,12 +45,12 @@ start_telegram_daemon() {
 }
 
 build_deck() {
-  # Look for navig-deck source in monorepo layout
+  # Look for deck source in monorepo layout
   local deck_src=""
   for candidate in \
+      "${SRC_PATH}/../apps/deck" \
       "${SRC_PATH}/../navig-deck" \
-      "${SRC_PATH}/navig-deck" \
-      "${HOME}/navig/navig-deck"; do
+      "${HOME}/navig/apps/deck"; do
     if [[ -f "${candidate}/package.json" ]]; then
       deck_src="$(cd "$candidate" && pwd)"
       break

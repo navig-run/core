@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from navig.tools.web_fetch import WebFetchTool, _MAX_CHARS
 from navig.tools.registry import ToolResult
+from navig.tools.web_fetch import _MAX_CHARS, WebFetchTool
 
 
 def _make_web_result(

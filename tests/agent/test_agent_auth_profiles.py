@@ -17,7 +17,6 @@ import pytest
 
 from navig.agent.auth_profiles import AuthProfile, AuthProfilePool, ProfileCooldown
 
-
 # ---------------------------------------------------------------------------
 # AuthProfile
 # ---------------------------------------------------------------------------

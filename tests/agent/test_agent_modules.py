@@ -46,6 +46,7 @@ class TestToolsets:
             "git",
             "remote",
             "lsp",
+            "browser",
         }
         assert expected == set(TOOLSETS.keys())
 
@@ -708,7 +709,7 @@ class TestApproval:
 # F-20 — Semantic Routing → suggest_toolsets
 # ═════════════════════════════════════════════════════════════
 
-from navig.llm_router import MODE_TOOLSET_HINTS, suggest_toolsets
+from navig.llm.router import MODE_TOOLSET_HINTS, suggest_toolsets
 
 pytestmark = pytest.mark.integration
 
@@ -841,9 +842,9 @@ class TestConvRunAgenticCompatibility:
 
         monkeypatch.setattr("navig.agent.agent_tool_registry._AGENT_REGISTRY", _FakeRegistry())
 
-        monkeypatch.setattr("navig.llm_router.suggest_toolsets", lambda user_input: [])
+        monkeypatch.setattr("navig.llm.router.suggest_toolsets", lambda user_input: [])
         monkeypatch.setattr(
-            "navig.llm_router.resolve_llm",
+            "navig.llm.router.resolve_llm",
             lambda mode="coding": SimpleNamespace(
                 provider="openrouter",
                 model="openai/gpt-4o",
@@ -878,7 +879,7 @@ class TestConvRunAgenticCompatibility:
 
         monkeypatch.setattr(
             "navig.providers.create_client",
-            lambda provider_cfg, api_key=None, timeout=120.0: _FakeClient(),
+            lambda provider_cfg, api_key=None, timeout=120.0, **kwargs: _FakeClient(),
         )
 
         agent = ConvAgent()

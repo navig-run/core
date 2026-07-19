@@ -38,6 +38,7 @@ from navig import console_helper as ch
 # capability link → source (relative to the workshop root)
 _CLAUDE_LINKS: tuple[tuple[str, str], ...] = (
     (".claude/skills", ".navig/skills"),
+    (".claude/blocks", ".navig/blocks"),
     (".claude/agents", ".navig/agents"),
     (".claude/output-styles", ".navig/personas"),
     (".claude/rules", ".navig/rules"),
@@ -57,7 +58,7 @@ _GITIGNORE_END = "# ── end navig wire (managed) ──"
 _GITIGNORE_BLOCK = (
     "\n" + _GITIGNORE_START + "\n"
     "# linked capability junctions (live under .claude/, sources in .navig/)\n"
-    ".claude/skills\n.claude/agents\n.claude/output-styles\n.claude/rules\n"
+    ".claude/skills\n.claude/blocks\n.claude/agents\n.claude/output-styles\n.claude/rules\n"
     "# machine-local / private — never commit\n"
     ".navig/\n.lab/\n.local/\n.dev/\n.backup/\n.wiki\n.docs\n"
     "# build / cache / IDE artifacts\n"
@@ -206,13 +207,22 @@ def wire_command(
         lab_rule.write_text(_LAB_RULE, encoding="utf-8")
         actions.append("write .claude/rules/lab.md")
 
-    claude_md = target / "CLAUDE.md"
-    if not dry_run and claude_md.is_file():
+    # Prefer the canonical NAVIG.md (into its agent-instructions marker region);
+    # fall back to CLAUDE.md for spaces not yet migrated.
+    _AGENT_MARK = "<!-- navig:agent-instructions:end -->"
+    navig_md = target / "NAVIG.md"
+    note_target = navig_md if navig_md.is_file() else (target / "CLAUDE.md")
+    if not dry_run and note_target.is_file():
         try:
-            existing = claude_md.read_text(encoding="utf-8")
-            if "## The lab" not in existing and ".lab/" not in existing:
-                claude_md.write_text(existing.rstrip("\n") + "\n" + _CLAUDE_LAB_NOTE, encoding="utf-8")
-                actions.append("append .lab note → CLAUDE.md")
+            existing = note_target.read_text(encoding="utf-8")
+            if "## The lab" not in existing and "`.lab/`" not in existing:
+                if note_target.name == "NAVIG.md" and _AGENT_MARK in existing:
+                    # Insert just before the agent-instructions end marker.
+                    updated = existing.replace(_AGENT_MARK, _CLAUDE_LAB_NOTE.strip() + "\n" + _AGENT_MARK, 1)
+                else:
+                    updated = existing.rstrip("\n") + "\n" + _CLAUDE_LAB_NOTE
+                note_target.write_text(updated, encoding="utf-8")
+                actions.append(f"append .lab note → {note_target.name}")
         except OSError:
             pass
 
@@ -242,9 +252,10 @@ def wire_command(
     # 7) Register in the spaces registry (enabled).
     if not no_register and not dry_run:
         try:
+            from navig.platform.paths import config_dir as _config_dir  # noqa: PLC0415
             from navig.spaces import registry as _registry  # noqa: PLC0415
 
-            under_home = str(target).startswith(str(Path.home() / ".navig" / "spaces"))
+            under_home = str(target).startswith(str(_config_dir() / "spaces"))
             _registry.register(
                 target, id=name, name=name,
                 source="root" if under_home else "external", enabled=True,

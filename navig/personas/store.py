@@ -20,7 +20,12 @@ def get_active_persona(user_id: int, chat_id: int | None = None) -> str:
         if state and state.get("persona"):
             return str(state["persona"]).strip() or _DEFAULT_PERSONA
     except Exception as exc:  # noqa: BLE001
-        logger.debug("Could not read active persona for user %s: %s", user_id, exc)
+        # A real store failure (locked/corrupt DB) — not the normal "no state yet"
+        # path, which returns default without raising. Surface it so an operator can
+        # see why a chosen persona silently reverted to default.
+        logger.warning(
+            "Could not read active persona for user %s; using default: %s", user_id, exc
+        )
     return _DEFAULT_PERSONA
 
 

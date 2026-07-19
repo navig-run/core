@@ -53,6 +53,10 @@ _deck_config: dict[str, Any] = {
     "dev_mode": False,
     "auth_max_age": 86400,
     "api_key": "",  # Bearer token accepted from desktop browser
+    # Lock the Deck to the Telegram Mini App only: when true, ONLY valid Telegram
+    # initData is accepted — the api_key Bearer, dev_mode header, and loopback
+    # auto-bypass are all disabled (see _get_user_id).
+    "telegram_only": False,
 }
 
 
@@ -63,6 +67,7 @@ def configure_deck_auth(
     dev_mode: bool = False,
     auth_max_age: int = 3600,
     api_key: str = "",
+    telegram_only: bool = False,
 ) -> None:
     """Set the module-level auth config for Deck API."""
     _deck_config["bot_token"] = bot_token
@@ -71,13 +76,30 @@ def configure_deck_auth(
     _deck_config["dev_mode"] = dev_mode
     _deck_config["auth_max_age"] = auth_max_age
     _deck_config["api_key"] = api_key or ""
+    _deck_config["telegram_only"] = bool(telegram_only)
     logger.info(
-        "Deck auth configured: require_auth=%s, allowed_users=%d, dev_mode=%s, api_key=%s",
+        "Deck auth configured: require_auth=%s, allowed_users=%d, dev_mode=%s, api_key=%s, telegram_only=%s",
         require_auth,
         len(_deck_config["allowed_users"]),
         dev_mode,
         "set" if api_key else "not set",
+        telegram_only,
     )
+
+
+def deck_telegram_only() -> bool:
+    """True when the Deck is locked to the Telegram Mini App (no Bearer/loopback)."""
+    return bool(_deck_config.get("telegram_only"))
+
+
+def deck_bot_token() -> str:
+    """The configured Telegram bot token used to validate initData."""
+    return str(_deck_config.get("bot_token") or "")
+
+
+def deck_auth_max_age() -> int:
+    """Max age (seconds) accepted for Telegram initData auth_date."""
+    return int(_deck_config.get("auth_max_age") or 3600)
 
 
 def validate_init_data(
@@ -169,6 +191,36 @@ def _request_is_local(request: "web.Request") -> bool:
     return remote in _LOOPBACK_REMOTES
 
 
+def _local_desktop_bypass(request: "web.Request") -> bool:
+    """True when a genuinely-local request qualifies for the desktop bypass.
+
+    _request_is_local() has already excluded tunneled traffic (Cloudflare
+    stamps CF-Ray + CF-Connecting-IP beyond the caller's control, and the
+    Lighthouse worker forwards them), so any genuinely-local request is
+    trusted here: a direct same-origin call from the desktop SPA / the OS
+    app's server proxy (no Origin), a cross-origin call from the React dev
+    server (Origin: http://localhost:7432), or that same call relayed by the
+    Next dev-rewrite proxy (X-Forwarded-For: 127.0.0.1).
+
+    The Origin allowlist blocks a malicious WEBSITE's fetch to localhost
+    (which always carries its own http(s) origin). The user's own installed
+    browser extension (NAVIG Dock / web bar) reads its license/entitlement
+    over loopback — the browser sets `chrome-extension://<id>` /
+    `moz-extension://<id>` only for genuine extension contexts, so those
+    origins are safe to trust local-only.
+    """
+    if not _request_is_local(request):
+        return False
+    origin = request.headers.get("Origin", "")
+    return (
+        not origin
+        or origin.startswith("http://localhost:")
+        or origin.startswith("http://127.0.0.1:")
+        or origin.startswith("chrome-extension://")
+        or origin.startswith("moz-extension://")
+    )
+
+
 def _get_user_id(request: "web.Request", bot_token: str = "") -> int | None:
     """Return the authenticated user_id, or None if not authenticated.
 
@@ -177,10 +229,12 @@ def _get_user_id(request: "web.Request", bot_token: str = "") -> int | None:
     """
     token = bot_token or _deck_config["bot_token"]
     max_age = _deck_config["auth_max_age"]
+    telegram_only = bool(_deck_config.get("telegram_only"))
 
-    # Bearer token: accepted from desktop browser (api_key set in deck config)
+    # Bearer token: accepted from desktop browser (api_key set in deck config).
+    # Disabled in telegram_only mode — Telegram initData is then the ONLY credential.
     auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
+    if not telegram_only and auth_header.startswith("Bearer "):
         bearer = auth_header[7:].strip()
         configured_key = _deck_config.get("api_key", "")
         # Constant-time compare to avoid leaking the api_key byte-by-byte via
@@ -195,6 +249,19 @@ def _get_user_id(request: "web.Request", bot_token: str = "") -> int | None:
         if result and result.get("user"):
             return result["user"]["id"]
 
+    # Locked to the Telegram Mini App: valid initData above is the ONLY
+    # *remote* credential — no Bearer api_key, no dev-header. Genuinely-local
+    # requests keep the desktop bypass: the desktop OS app proxies to its own
+    # daemon over plain loopback, so an absolute lock here would cut the
+    # operator's own desktop off whenever the public deck is deployed
+    # (`navig miniapp deploy` sets deck.telegram_only=true). Tunneled traffic
+    # can never claim this path — see _local_desktop_bypass.
+    if telegram_only:
+        if not _deck_config["dev_mode"] and _local_desktop_bypass(request):
+            _log_local_bypass(request.headers.get("Origin", ""))
+            return _DEV_BYPASS_SENTINEL
+        return None
+
     if _deck_config["dev_mode"]:
         user_header = request.headers.get("X-Telegram-User", "")
         if user_header.isdigit():
@@ -202,33 +269,14 @@ def _get_user_id(request: "web.Request", bot_token: str = "") -> int | None:
         # dev_mode with no X-Telegram-User header → deny (return None → 401).
         # The loopback bypass below is intentionally skipped in dev_mode.
 
-    # Auto-bypass for requests that are genuinely local to this machine — the
-    # desktop user talking to their own daemon. Covers two cases:
-    #   a) Cross-origin requests from the React dev server (Origin: http://localhost:*)
-    #   b) Same-origin requests from the SPA served at 127.0.0.1:8789 (no Origin
-    #      header, request.remote == '127.0.0.1')
-    #
-    # SECURITY: this must NEVER fire for tunneled traffic. cloudflared forwards
-    # internet requests to the daemon from 127.0.0.1, so request.remote is
-    # loopback for them too — loopback alone is not proof of local origin. We
-    # therefore refuse the bypass whenever edge/proxy headers are present, which
-    # forces tunneled callers to present a real Bearer api_key or Telegram
-    # initData. Local desktop requests carry none of these headers, so the
-    # desktop experience is unaffected.
-    if not _deck_config["dev_mode"] and _request_is_local(request):
-        # _request_is_local() has already excluded tunneled traffic, so any
-        # genuinely-local request is trusted here: a direct same-origin call from
-        # the desktop SPA (no Origin), a cross-origin call from the React dev
-        # server (Origin: http://localhost:7432), or that same call relayed by
-        # the Next dev-rewrite proxy (X-Forwarded-For: 127.0.0.1).
-        origin = request.headers.get("Origin", "")
-        if (
-            not origin
-            or origin.startswith("http://localhost:")
-            or origin.startswith("http://127.0.0.1:")
-        ):
-            _log_local_bypass(origin)
-            return _DEV_BYPASS_SENTINEL
+    # Auto-bypass for requests genuinely local to this machine — the desktop
+    # user talking to their own daemon. SECURITY: must never fire for tunneled
+    # traffic (cloudflared connects from 127.0.0.1 too) — _local_desktop_bypass
+    # refuses any request carrying edge/proxy headers, forcing tunneled callers
+    # to present a real Bearer api_key or Telegram initData.
+    if not _deck_config["dev_mode"] and _local_desktop_bypass(request):
+        _log_local_bypass(request.headers.get("Origin", ""))
+        return _DEV_BYPASS_SENTINEL
 
     return None
 

@@ -1,9 +1,0 @@
-﻿{
-  "id": "profile",
-  "version": "1.0.0",
-  "description": "Show the Telegram profile of a user.",
-  "provides": [],
-  "depends": {
-    "pip": []
-  }
-}

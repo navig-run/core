@@ -70,9 +70,9 @@ class TestIsProjectWorkspacePath:
         assert is_project_workspace_path(unrelated, project_root=tmp_path) is False
 
     def test_user_workspace_is_not_project_workspace(self, tmp_path):
-        from navig.workspace_ownership import USER_WORKSPACE_DIR, is_project_workspace_path
+        from navig.workspace_ownership import is_project_workspace_path, user_workspace_dir
 
-        assert is_project_workspace_path(USER_WORKSPACE_DIR, project_root=tmp_path) is False
+        assert is_project_workspace_path(user_workspace_dir(), project_root=tmp_path) is False
 
 
 # ---------------------------------------------------------------------------
@@ -82,26 +82,26 @@ class TestIsProjectWorkspacePath:
 
 class TestResolvePersonalWorkspacePath:
     def test_none_requested_returns_canonical(self):
-        from navig.workspace_ownership import USER_WORKSPACE_DIR, resolve_personal_workspace_path
+        from navig.workspace_ownership import resolve_personal_workspace_path, user_workspace_dir
 
         canonical, legacy = resolve_personal_workspace_path(None)
-        assert canonical == USER_WORKSPACE_DIR
+        assert canonical == user_workspace_dir()
         assert legacy is None
 
     def test_canonical_path_returns_no_legacy(self):
-        from navig.workspace_ownership import USER_WORKSPACE_DIR, resolve_personal_workspace_path
+        from navig.workspace_ownership import resolve_personal_workspace_path, user_workspace_dir
 
-        canonical, legacy = resolve_personal_workspace_path(USER_WORKSPACE_DIR)
-        assert canonical == USER_WORKSPACE_DIR
+        canonical, legacy = resolve_personal_workspace_path(user_workspace_dir())
+        assert canonical == user_workspace_dir()
         assert legacy is None
 
     def test_different_path_returned_as_legacy(self, tmp_path):
-        from navig.workspace_ownership import USER_WORKSPACE_DIR, resolve_personal_workspace_path
+        from navig.workspace_ownership import resolve_personal_workspace_path, user_workspace_dir
 
         other = tmp_path / "other_workspace"
         other.mkdir()
         canonical, legacy = resolve_personal_workspace_path(other)
-        assert canonical == USER_WORKSPACE_DIR
+        assert canonical == user_workspace_dir()
         assert legacy is not None
         assert legacy.resolve() == other.resolve()
 

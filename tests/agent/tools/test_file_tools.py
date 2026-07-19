@@ -9,13 +9,12 @@ from pathlib import Path
 import pytest
 
 from navig.agent.tools.file_tools import (
+    _MAX_READ_CHARS,
+    _MAX_WRITE_CHARS,
     ListFilesTool,
     ReadFileTool,
     WriteFileTool,
-    _MAX_READ_CHARS,
-    _MAX_WRITE_CHARS,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

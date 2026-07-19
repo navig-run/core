@@ -1,10 +1,13 @@
 ﻿"""Tests for navig/tui/widgets/status_row.py."""
 from __future__ import annotations
+
 from types import SimpleNamespace
+
 import pytest
 
+
 def _badge(**kw):
-    d = dict(status="ok", label="Svc", detail="up", deep_link=None, color="green", symbol=u"\u2713")
+    d = dict(status="ok", label="Svc", detail="up", deep_link=None, color="green", symbol="\u2713")
     d.update(kw); return SimpleNamespace(**d)
 
 class TestStatusRow:

@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.hooks.events — HookEvent, HookContext, HookResult
 # ---------------------------------------------------------------------------
@@ -171,7 +170,7 @@ class TestFormationRegistry:
         assert mock_d.call_count == 2
 
     def test_get_registry_returns_same_instance(self):
-        from navig.formations.registry import get_registry, FormationRegistry
+        from navig.formations.registry import FormationRegistry, get_registry
         reg = get_registry()
         assert reg is FormationRegistry.get_instance()
 

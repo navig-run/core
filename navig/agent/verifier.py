@@ -132,7 +132,7 @@ class AdversarialVerifier:
         """Run the cheap model and return a thresholded verdict (fail-safe on error)."""
         prompt = f"ACTION TO VERIFY:\n{action_description}\n\nReturn the JSON verdict."
         try:
-            from navig.llm_generate import llm_generate
+            from navig.llm.generate import llm_generate
 
             messages = [
                 {"role": "system", "content": _SYSTEM_PROMPT},

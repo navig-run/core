@@ -8,15 +8,14 @@ Batch tests for:
 """
 from __future__ import annotations
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # navig.messaging.adapters.discord_adapter
 # ---------------------------------------------------------------------------
-
-from navig.messaging.adapters.discord_adapter import DiscordMessagingAdapter, DISCORD_AVAILABLE
+from navig.messaging.adapters.discord_adapter import DISCORD_AVAILABLE, DiscordMessagingAdapter
 
 
 class TestDiscordMessagingAdapter:
@@ -73,7 +72,7 @@ class TestDiscordMessagingAdapter:
 # navig.messaging.adapters.whatsapp_cloud
 # ---------------------------------------------------------------------------
 
-from navig.messaging.adapters.whatsapp_cloud import WhatsAppCloudAdapter, _GRAPH_API
+from navig.messaging.adapters.whatsapp_cloud import _GRAPH_API, WhatsAppCloudAdapter
 
 
 class TestWhatsAppCloudAdapter:
@@ -126,7 +125,7 @@ class TestWhatsAppCloudAdapter:
 # navig.integrations.browser_orchestrator
 # ---------------------------------------------------------------------------
 
-from navig.integrations.browser_orchestrator import _inject_2fa_steps, _TIMEOUT
+from navig.integrations.browser_orchestrator import _TIMEOUT, _inject_2fa_steps
 
 
 class TestBrowserOrchestratorIntegrations:

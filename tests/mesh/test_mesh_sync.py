@@ -186,15 +186,34 @@ async def test_get_state_snapshot_standby_flag():
 # ── _leader_tick ───────────────────────────────────────────────────────────────
 
 
-async def test_leader_tick_calls_send_election_packet():
+async def test_leader_tick_broadcasts_an_awaited_elect_sync_packet():
+    """The leader broadcasts an ELECT_SYNC packet carrying the state hash + epoch.
+
+    This test used to wrap an empty `pass` in
+    `patch("navig.mesh.sync_manager.ELECT_SYNC", create=True)` — inventing the constant on
+    the wrong module, patching nothing — and then assert `mock_send.called or True`, which
+    cannot fail. Behind that tautology sat two real defects, now fixed:
+
+      * `ELECT_SYNC` was never defined in `navig.mesh.discovery`, so `_leader_tick`'s
+        import raised ImportError straight into its own `except Exception`;
+      * `send_election_packet` is `async def` and was called without `await`, so even with
+        the constant it would only have built a coroutine and dropped it.
+
+    AsyncMock, not MagicMock: the call is awaited now, and awaiting a MagicMock's return
+    value is a TypeError — which is exactly how this test proves the `await` is there.
+    """
+    from navig.mesh.discovery import ELECT_SYNC
+
     sm = _make_sm(is_leader=True)
     await sm.start()
-    # Manually invoke tick without the loop
-    with patch.object(sm._discovery, "send_election_packet") as mock_send:
-        with patch("navig.mesh.sync_manager.ELECT_SYNC", "sync_state", create=True):
-            pass  # ELECT_SYNC already imported inside _leader_tick
+    with patch.object(sm._discovery, "send_election_packet", new_callable=AsyncMock) as mock_send:
         await sm._leader_tick()
-        assert mock_send.called or True  # broadcast attempt was made
+
+        mock_send.assert_awaited_once()
+        packet_type, payload = mock_send.call_args[0]
+        assert packet_type == ELECT_SYNC
+        assert payload["sync_hash"] == sm._state_hash
+        assert "epoch" in payload
     await sm.stop()
 
 

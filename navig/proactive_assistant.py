@@ -86,7 +86,7 @@ class ProactiveAssistant:
     def auto_detection(self):
         """Lazy load auto-detection module."""
         if self._auto_detection is None:
-            from navig.modules.auto_detection import AutoDetection
+            from navig.proactive.auto_detection import AutoDetection
 
             self._auto_detection = AutoDetection(self)
         return self._auto_detection
@@ -95,7 +95,7 @@ class ProactiveAssistant:
     def proactive_display(self):
         """Lazy load proactive display module."""
         if self._proactive_display is None:
-            from navig.modules.proactive_display import ProactiveDisplay
+            from navig.proactive.proactive_display import ProactiveDisplay
 
             self._proactive_display = ProactiveDisplay(self)
         return self._proactive_display
@@ -104,7 +104,7 @@ class ProactiveAssistant:
     def error_resolution(self):
         """Lazy load error resolution module."""
         if self._error_resolution is None:
-            from navig.modules.error_resolution import ErrorResolution
+            from navig.proactive.error_resolution import ErrorResolution
 
             self._error_resolution = ErrorResolution(self)
         return self._error_resolution
@@ -113,7 +113,7 @@ class ProactiveAssistant:
     def context_generator(self):
         """Lazy load context generator module."""
         if self._context_generator is None:
-            from navig.modules.context_generator import ContextGenerator
+            from navig.proactive.context_generator import ContextGenerator
 
             self._context_generator = ContextGenerator(self)
         return self._context_generator

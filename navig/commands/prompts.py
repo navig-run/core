@@ -2,7 +2,7 @@
 
 Prompts are a *distinct type* from skills (Claude's commands-vs-skills split).
 Discovery spans every root (user store · packages · active workshop · Claude
-commands) via ``navig.prompt_registry``; ``show``/``edit``/``remove`` operate on
+commands) via ``navig.prompts.registry``; ``show``/``edit``/``remove`` operate on
 the user store at ``~/.navig/store/prompts/``.
 """
 from __future__ import annotations
@@ -17,7 +17,14 @@ from navig.platform.paths import config_dir
 prompts_app = typer.Typer(help="Manage agent system prompts", no_args_is_help=True)
 console = get_console()
 
-_PROMPTS_DIR = config_dir() / "store" / "prompts"
+# Test seam — when ``None`` (the normal state), the resolver below evaluates
+# at CALL time so NAVIG_CONFIG_DIR isolation set after import still applies
+# (see navig/vault/migrate.py:_legacy_db_path).
+_PROMPTS_DIR: Path | None = None
+
+
+def _prompts_dir() -> Path:
+    return _PROMPTS_DIR if _PROMPTS_DIR is not None else config_dir() / "store" / "prompts"
 
 
 @prompts_app.command("list")
@@ -29,13 +36,16 @@ def prompts_list(
     """List discovered prompts across all roots (user · package · space · claude)."""
     from collections import defaultdict
 
-    from navig.prompt_registry import load_all_prompts
+    from navig.prompts.registry import load_all_prompts
 
     prompts = load_all_prompts()
     if not all_scopes:
         prompts = [p for p in prompts if p.scope != "builtin"]
     if not prompts:
-        console.print("[dim]No prompts found. Add one with[/dim] navig prompts new …")
+        # Name a command that EXISTS: there is no `prompts new` (`edit` creates
+        # the file and opens it), and pointing users at a phantom command is how
+        # an empty state turns into a dead end.
+        console.print("[dim]No prompts found. Add one with[/dim] navig prompts edit <name>")
         return
 
     by_scope: dict[str, list] = defaultdict(list)
@@ -61,7 +71,7 @@ def prompts_export(
     force: bool = typer.Option(False, "--force", help="Overwrite an existing export."),
 ):
     """Export a prompt as a Claude slash command (``.claude/commands/<id>.md``)."""
-    from navig.prompt_registry import export_prompt
+    from navig.prompts.registry import export_prompt
 
     try:
         out = export_prompt(name, dest, force=force)
@@ -74,9 +84,9 @@ def prompts_export(
 @prompts_app.command("show")
 def prompts_show(name: str = typer.Argument(..., help="Prompt name")):
     """Show a saved prompt."""
-    _PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
+    _prompts_dir().mkdir(parents=True, exist_ok=True)
     for ext in (".txt", ".md", ""):
-        target = _PROMPTS_DIR / (name + ext)
+        target = _prompts_dir() / (name + ext)
         if target.exists():
             console.print(target.read_text(encoding="utf-8"))
             return
@@ -89,8 +99,8 @@ def prompts_edit(name: str = typer.Argument(..., help="Prompt name")):
     """Open a prompt in the system editor."""
     import os
 
-    _PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
-    target = _PROMPTS_DIR / f"{name}.md"
+    _prompts_dir().mkdir(parents=True, exist_ok=True)
+    target = _prompts_dir() / f"{name}.md"
     editor = os.environ.get("EDITOR", "notepad" if os.name == "nt" else "nano")
     os.execlp(editor, editor, str(target))
 
@@ -99,7 +109,7 @@ def prompts_edit(name: str = typer.Argument(..., help="Prompt name")):
 def prompts_remove(name: str = typer.Argument(..., help="Prompt name")):
     """Delete a prompt."""
     for ext in (".txt", ".md", ""):
-        target = _PROMPTS_DIR / (name + ext)
+        target = _prompts_dir() / (name + ext)
         if target.exists():
             target.unlink()
             console.print(f"[green]Deleted:[/green] {target.name}")

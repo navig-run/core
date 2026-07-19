@@ -19,10 +19,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from navig.tools.api_schema import ApiToolResult
+
 # ---------------------------------------------------------------------------
 # navig/tools/domains/api_pack.py
 # ---------------------------------------------------------------------------
-
 from navig.tools.domains.api_pack import (
     _api_get_json,
     _api_post_json,
@@ -31,7 +32,6 @@ from navig.tools.domains.api_pack import (
     _trading_fetch_ohlc,
     _trading_portfolio,
 )
-from navig.tools.api_schema import ApiToolResult
 
 
 class _FakeResp:
@@ -306,7 +306,7 @@ async def test_plan_approve_runtime_error():
 # navig/onboarding/boot_anim.py
 # ---------------------------------------------------------------------------
 
-from navig.onboarding.boot_anim import _HEX, _MIN_COLS, _ROWS, _FPS, play_boot_animation
+from navig.onboarding.boot_anim import _FPS, _HEX, _MIN_COLS, _ROWS, play_boot_animation
 
 
 def test_boot_anim_constants():

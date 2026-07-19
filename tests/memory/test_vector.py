@@ -17,7 +17,6 @@ import pytest
 import navig.memory.vector as _vec_mod
 from navig.memory.vector import VectorIndex, blob_to_floats, floats_to_blob
 
-
 # ---------------------------------------------------------------------------
 # Helpers: floats_to_blob / blob_to_floats
 # ---------------------------------------------------------------------------

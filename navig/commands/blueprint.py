@@ -12,7 +12,7 @@ def blueprint_list():
     """List available blueprints."""
     from navig import console_helper as ch
 
-    ch.warn("navig blueprint is not yet implemented in this build.")
+    ch.warning("navig blueprint is not yet implemented in this build.")
 
 
 @blueprint_app.command("apply")
@@ -23,4 +23,4 @@ def blueprint_apply(
     """Apply a blueprint to a directory."""
     from navig import console_helper as ch
 
-    ch.warn("navig blueprint apply is not yet implemented in this build.")
+    ch.warning("navig blueprint apply is not yet implemented in this build.")

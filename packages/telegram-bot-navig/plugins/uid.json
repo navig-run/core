@@ -1,9 +1,0 @@
-﻿{
-  "id": "uid",
-  "version": "1.0.0",
-  "description": "Show the Telegram user ID and chat ID.",
-  "provides": [],
-  "depends": {
-    "pip": []
-  }
-}

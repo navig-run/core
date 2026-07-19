@@ -8,9 +8,7 @@ Analyzes:
 - Project type detection
 """
 
-import os
 import re
-import tempfile
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -293,17 +291,14 @@ def show_suggestions(
     suggestions = generate_suggestions(context_filter=context, limit=limit)
 
     if json_out:
-        import json
+        from navig.console_helper import emit_json
 
-        console.print(
-            json.dumps(
-                {
-                    "schema_version": "1.0.0",
-                    "command": "suggest",
-                    "suggestions": suggestions,
-                },
-                indent=2,
-            )
+        emit_json(
+            {
+                "schema_version": "1.0.0",
+                "command": "suggest",
+                "suggestions": suggestions,
+            }
         )
         return
 
@@ -412,18 +407,22 @@ def add_quick_action(name: str, command: str, description: str = "") -> bool:
         True if action was added successfully
     """
     from navig.config import get_config_manager
+    from navig.core.yaml_io import ConfigReadError, atomic_write_yaml, load_yaml_for_update
 
     config_manager = get_config_manager()
     config_dir = Path(config_manager.global_config_dir)
     quick_file = config_dir / "quick_actions.yaml"
 
-    # Load existing actions
-    actions = {}
-    if quick_file.exists():
-        import yaml
-
-        with open(quick_file, encoding='utf-8') as f:
-            actions = yaml.safe_load(f) or {}
+    # Load existing actions for a read-modify-write. A raw `yaml.safe_load(f) or {}`
+    # here would turn a transiently-unreadable (half-written / AV-locked) file into {}
+    # and then WIPE every other action on save; load_yaml_for_update refuses that.
+    try:
+        actions = load_yaml_for_update(quick_file)
+    except ConfigReadError as exc:
+        console.print(
+            f"[red]quick_actions.yaml is unreadable — refusing to overwrite it:[/red] {exc}"
+        )
+        return False
 
     # Add new action
     actions[name] = {
@@ -432,42 +431,31 @@ def add_quick_action(name: str, command: str, description: str = "") -> bool:
         "created": datetime.now().isoformat(),
     }
 
-    # Save
-    import yaml
-
-    _tmp_path: Path | None = None
-    try:
-        _fd, _tmp = tempfile.mkstemp(dir=quick_file.parent, suffix=".tmp")
-        _tmp_path = Path(_tmp)
-        with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
-            yaml.safe_dump(actions, _fh, default_flow_style=False)
-        os.replace(_tmp_path, quick_file)
-        _tmp_path = None
-    finally:
-        if _tmp_path is not None:
-            _tmp_path.unlink(missing_ok=True)
-
+    atomic_write_yaml(actions, quick_file)
     console.print(f"[green]Added quick action:[/green] {name} -> {command}")
     return True
 
 
 def list_quick_actions() -> list[dict[str, Any]]:
-    """List all quick actions."""
+    """List all quick actions, tolerating a missing or corrupt file.
+
+    A hand-edited/damaged ``quick_actions.yaml`` must not crash the listing:
+    ``safe_load_yaml`` returns ``None`` on missing/empty/unreadable, a non-mapping
+    root yields an empty list, and any single malformed (non-mapping) action entry
+    is skipped rather than raising on ``**data``.
+    """
     from navig.config import get_config_manager
+    from navig.core.yaml_io import safe_load_yaml
 
     config_manager = get_config_manager()
     config_dir = Path(config_manager.global_config_dir)
     quick_file = config_dir / "quick_actions.yaml"
 
-    if not quick_file.exists():
+    actions = safe_load_yaml(quick_file)
+    if not isinstance(actions, dict):
         return []
 
-    import yaml
-
-    with open(quick_file, encoding='utf-8') as f:
-        actions = yaml.safe_load(f) or {}
-
-    return [{"name": name, **data} for name, data in actions.items()]
+    return [{"name": name, **data} for name, data in actions.items() if isinstance(data, dict)]
 
 
 def run_quick_action(name: str, dry_run: bool = False) -> bool:
@@ -519,17 +507,14 @@ def show_quick_actions(plain: bool = False, json_out: bool = False) -> None:
     actions = list_quick_actions()
 
     if json_out:
-        import json
+        from navig.console_helper import emit_json
 
-        console.print(
-            json.dumps(
-                {
-                    "schema_version": "1.0.0",
-                    "command": "quick-list",
-                    "actions": actions,
-                },
-                indent=2,
-            )
+        emit_json(
+            {
+                "schema_version": "1.0.0",
+                "command": "quick-list",
+                "actions": actions,
+            }
         )
         return
 
@@ -645,36 +630,24 @@ def quick_remove(
     name: str = typer.Argument(..., help="Quick action name to remove"),
 ):
     """Remove a quick action."""
-    import yaml
-
     from navig.config import get_config_manager
+    from navig.core.yaml_io import ConfigReadError, atomic_write_yaml, load_yaml_for_update
 
     config_manager = get_config_manager()
     quick_file = Path(config_manager.global_config_dir) / "quick_actions.yaml"
 
-    if not quick_file.exists():
-        ch.error(f"Quick action '{name}' not found.")
+    # Refuse to overwrite an unreadable-but-populated file (a raw `yaml.safe_load or {}`
+    # would collapse a transient read failure to {} and wipe the remaining actions).
+    try:
+        actions = load_yaml_for_update(quick_file)
+    except ConfigReadError as exc:
+        ch.error(f"quick_actions.yaml is unreadable — refusing to modify it: {exc}")
         return
-
-    with open(quick_file, encoding="utf-8") as f:
-        actions = yaml.safe_load(f) or {}
 
     if name not in actions:
         ch.error(f"Quick action '{name}' not found.")
         return
 
     del actions[name]
-
-    _tmp_path: Path | None = None
-    try:
-        _fd, _tmp = tempfile.mkstemp(dir=quick_file.parent, suffix=".tmp")
-        _tmp_path = Path(_tmp)
-        with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
-            yaml.safe_dump(actions, _fh, default_flow_style=False)
-        os.replace(_tmp_path, quick_file)
-        _tmp_path = None
-    finally:
-        if _tmp_path is not None:
-            _tmp_path.unlink(missing_ok=True)
-
+    atomic_write_yaml(actions, quick_file)
     ch.success(f"Removed quick action: {name}")

@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.commands.explain
 # ---------------------------------------------------------------------------
@@ -27,7 +26,7 @@ class TestExplainApp:
         assert "Usage" in result.output or "help" in result.output.lower() or "command" in result.output.lower()
 
     def test_command_subcommand_warns(self):
-        with patch("navig.console_helper.warn", create=True) as mock_warn:
+        with patch("navig.console_helper.warning") as mock_warn:
             result = self._invoke(["command", "vault"])
         assert result.exit_code == 0
         mock_warn.assert_called_once()
@@ -35,13 +34,13 @@ class TestExplainApp:
         assert "vault" in args
 
     def test_command_subcommand_includes_not_implemented(self):
-        with patch("navig.console_helper.warn", create=True) as mock_warn:
+        with patch("navig.console_helper.warning") as mock_warn:
             self._invoke(["command", "db"])
         msg = mock_warn.call_args[0][0]
         assert "not yet implemented" in msg
 
     def test_config_subcommand_warns(self):
-        with patch("navig.console_helper.warn", create=True) as mock_warn:
+        with patch("navig.console_helper.warning") as mock_warn:
             result = self._invoke(["config", "llm.provider"])
         assert result.exit_code == 0
         mock_warn.assert_called_once()
@@ -49,7 +48,7 @@ class TestExplainApp:
         assert "llm.provider" in args
 
     def test_concept_subcommand_warns(self):
-        with patch("navig.console_helper.warn", create=True) as mock_warn:
+        with patch("navig.console_helper.warning") as mock_warn:
             result = self._invoke(["concept", "tunnel"])
         assert result.exit_code == 0
         mock_warn.assert_called_once()
@@ -92,6 +91,7 @@ class TestNavigHome:
 
     def test_returns_path_object(self, tmp_path):
         from pathlib import Path
+
         from navig.memory import paths as mp
         with patch.dict(os.environ, {"NAVIG_HOME": str(tmp_path)}):
             result = mp.navig_home()
@@ -105,13 +105,23 @@ class TestMemoryDir:
             result = mp.memory_dir()
         assert result == tmp_path / "memory"
 
-    def test_creates_directory_if_missing(self, tmp_path):
+    def test_does_not_create_the_directory(self, tmp_path):
+        """`memory_dir()` is a PURE resolver — it must not touch the filesystem.
+
+        This test previously asserted the opposite (that the call creates the
+        directory). That side-effect was deliberately removed: creating dirs on a
+        path lookup causes import-time filesystem mutations that break test
+        isolation, which is exactly what the docstring in navig/memory/paths.py
+        now warns about. Every caller (KeyFactStore, MemoryManager, storage,
+        knowledge_base, links_db, …) does its own `mkdir(parents=True,
+        exist_ok=True)`. Do not reintroduce the mkdir here.
+        """
         from navig.memory import paths as mp
         target = tmp_path / "new_home"
         with patch.object(mp, "navig_home", return_value=target):
             result = mp.memory_dir()
-        assert result.exists()
-        assert result.is_dir()
+        assert result == target / "memory"
+        assert not result.exists()  # resolving a path must not mutate the disk
 
     def test_ok_if_already_exists(self, tmp_path):
         from navig.memory import paths as mp
@@ -128,6 +138,7 @@ class TestKeyFactsDbPath:
 
     def test_is_path_object(self):
         from pathlib import Path
+
         from navig.memory.paths import KEY_FACTS_DB_PATH
         assert isinstance(KEY_FACTS_DB_PATH, Path)
 
@@ -139,13 +150,14 @@ class TestKeyFactsDbPath:
 class TestRunWhoami:
     def test_no_entity_prints_onboard_hint(self, capsys):
         with (
-            patch("navig.identity.sigil_store.load_entity", return_value=None, create=True),
-            patch("navig.identity.entity.derive_entity", create=True),
-            patch("navig.identity.renderer.render_sigil_card", create=True),
+            patch("navig.identity.sigil_store.load_entity", return_value=None),
+            patch("navig.identity.entity.derive_entity"),
+            patch("navig.identity.renderer.render_sigil_card"),
         ):
-            from navig.commands.whoami import run_whoami
             import importlib
+
             import navig.commands.whoami as wm
+            from navig.commands.whoami import run_whoami
             importlib.reload(wm)
 
             with patch("navig.commands.whoami.get_console") as mock_console:
@@ -160,12 +172,13 @@ class TestRunWhoami:
         fake_entity = MagicMock()
 
         with (
-            patch("navig.identity.sigil_store.load_entity", return_value=fake_data, create=True),
-            patch("navig.identity.entity.derive_entity", return_value=fake_entity, create=True) as mock_derive,
-            patch("navig.identity.renderer.render_sigil_card", create=True) as mock_render,
+            patch("navig.identity.sigil_store.load_entity", return_value=fake_data),
+            patch("navig.identity.entity.derive_entity", return_value=fake_entity) as mock_derive,
+            patch("navig.identity.renderer.render_sigil_card") as mock_render,
         ):
-            from navig.commands import whoami as wm_module
             import importlib
+
+            from navig.commands import whoami as wm_module
             importlib.reload(wm_module)
 
             wm_module.run_whoami()
@@ -176,12 +189,13 @@ class TestRunWhoami:
     def test_no_entity_returns_early(self):
         """run_whoami returns None (not an error) when no entity is stored."""
         with (
-            patch("navig.identity.sigil_store.load_entity", return_value=None, create=True),
-            patch("navig.identity.entity.derive_entity", create=True),
-            patch("navig.identity.renderer.render_sigil_card", create=True),
+            patch("navig.identity.sigil_store.load_entity", return_value=None),
+            patch("navig.identity.entity.derive_entity"),
+            patch("navig.identity.renderer.render_sigil_card"),
         ):
-            from navig.commands import whoami as wm_module
             import importlib
+
+            from navig.commands import whoami as wm_module
             importlib.reload(wm_module)
 
             with patch("navig.commands.whoami.get_console"):

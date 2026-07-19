@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from navig.notify.monitors.resources import ThresholdTracker, Thresholds, _band
+from navig.notify.monitors.resources import Thresholds, ThresholdTracker, _band
 
 
 def test_alerts_once_on_rising_edge():

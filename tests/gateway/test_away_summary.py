@@ -181,10 +181,10 @@ class TestBuildAwaySummaryMockedLLM:
     """build_away_summary calls run_llm and returns its content."""
 
     # run_llm is imported lazily inside build_away_summary via
-    # `from navig.llm_generate import run_llm`, so the authoritative
-    # patch target is the attribute on navig.llm_generate, not the
+    # `from navig.llm.generate import run_llm`, so the authoritative
+    # patch target is the attribute on navig.llm.generate, not the
     # channel module (which may be loaded under a different sys.modules key).
-    _PATCH = "navig.llm_generate.run_llm"
+    _PATCH = "navig.llm.generate.run_llm"
 
     @pytest.mark.asyncio
     async def test_returns_llm_content(self):

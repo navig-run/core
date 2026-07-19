@@ -34,7 +34,7 @@ from navig.gateway.channels.media_engine.budget import BudgetExceeded, BudgetGua
 from navig.gateway.channels.media_engine.media_cache import MediaCache
 
 try:
-    from navig.llm_router import PROVIDER_RESOURCE_URLS as _PRUL
+    from navig.llm.router import PROVIDER_RESOURCE_URLS as _PRUL
 except Exception:  # pragma: no cover
     _PRUL: dict = {}
 

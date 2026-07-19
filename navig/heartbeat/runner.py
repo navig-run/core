@@ -249,10 +249,54 @@ class HeartbeatRunner:
         if len(self._history) > self._max_history:
             self._history = self._history[-self._max_history :]
 
+        # Scheduled LLM-mode liveness (throttled to once/day): catch a provider
+        # retiring a routing model (410/404) HERE, folded into the same health
+        # report + notify path, instead of when a real run hits it.
+        await self._maybe_probe_llm_modes(result)
+
         # Handle result
         await self._handle_result(result)
 
         return result
+
+    async def _maybe_probe_llm_modes(self, result: HeartbeatResult) -> None:
+        """Once per day, probe every LLM routing mode's model with a 1-token call.
+        A dead/EOL/unauthorised model is appended to the heartbeat's issues (and
+        un-suppresses an otherwise-OK beat) so it flows through the normal
+        notification path. Gated by ``heartbeat.check_llm_modes`` (default on)."""
+        from datetime import date
+
+        cfg = (self.gateway.config_manager.global_config or {}).get("heartbeat", {}) or {}
+        if not cfg.get("check_llm_modes", True):
+            return
+        today = date.today()
+        if getattr(self, "_last_mode_probe_day", None) == today:
+            return
+
+        try:
+            from navig.llm.liveness import dead_modes, probe_modes
+
+            # Sync probe (makes real 1-token calls) → run off the event loop.
+            results = await asyncio.to_thread(probe_modes)
+        except Exception as exc:  # noqa: BLE001 — a probe failure must never break the beat
+            logger.debug("llm-mode liveness probe skipped: %s", exc)
+            return
+
+        self._last_mode_probe_day = today
+        bad = dead_modes(results)
+        if not bad:
+            return
+
+        # A dead model is a real, actionable problem — force this beat to notify.
+        result.suppressed = False
+        if result.issues_found is None:
+            result.issues_found = []
+        for b in bad:
+            result.issues_found.append(
+                f"[HIGH] LLM mode '{b['mode']}' → {b['provider']}:{b['model']} is "
+                f"{b['status']} ({b['detail']}). Fix: "
+                f"navig mode set {b['mode']} --provider <p> --model <m>"
+            )
 
     def _build_heartbeat_prompt(self) -> str:
         """Build the prompt for the heartbeat agent."""
@@ -334,7 +378,7 @@ Begin the health check now. Be thorough but efficient.
         # resolution fails, so a routing edge case never breaks the check.
         fast_model: str | None = None
         try:
-            from navig.llm_router import resolve_llm
+            from navig.llm.router import resolve_llm
 
             cfg = resolve_llm(mode="small_talk")
             if cfg and getattr(cfg, "provider", None) and getattr(cfg, "model", None):

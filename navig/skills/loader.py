@@ -89,9 +89,22 @@ def _validate_install_spec(spec: dict[str, Any]) -> None:
                 go_pkg,
                 "Go module path must not contain a URL scheme (://)",
             )
+        # Same strict charset floor as brew/apt/pip/npm/cargo — block spaces and
+        # shell metacharacters (;, &, |, `, $, leading -) even though no live
+        # executor runs this block today (defense-in-depth).
+        if not _SAFE_VERSIONED_RE.match(go_pkg):
+            raise SkillSecurityError(
+                "install.go",
+                go_pkg,
+                "Go module path contains disallowed characters",
+            )
 
     dl = spec.get("download", {})
-    if isinstance(dl, dict):
+    if isinstance(dl, str):
+        # String form (`download: "https://…"`) — validate it too, not just the dict form.
+        if dl and not dl.startswith("https://"):
+            raise SkillSecurityError("install.download", dl, "download URL must use https://")
+    elif isinstance(dl, dict):
         url = dl.get("url", "")
         if url and not str(url).startswith("https://"):
             raise SkillSecurityError(
@@ -165,8 +178,10 @@ def _load_frontmatter(text: str) -> tuple[dict[str, Any], str]:
         return {}, parts[2].lstrip()
 
     try:
-        fm = yaml.safe_load(parts[1]) or {}
+        fm = yaml.safe_load(parts[1])
     except Exception:
+        fm = {}
+    if not isinstance(fm, dict):  # a list/scalar frontmatter would crash fm.get()
         fm = {}
 
     return fm, parts[2].lstrip()
@@ -394,7 +409,6 @@ def get_skill_dirs() -> list[Path]:
     # Platform roots (builtin store, user store, packages)
     try:
         from navig.platform.paths import (
-            builtin_packages_dir,
             builtin_store_dir,
             packages_dir,
             store_dir,
@@ -405,9 +419,14 @@ def get_skill_dirs() -> list[Path]:
                 d = root_fn() / "skills"
                 if d.exists():
                     candidates.append(d)
+                # Blocks emit a generated SKILL.md shim beside BLOCK.md — scanning
+                # the blocks root makes installed blocks discoverable as skills.
+                b = root_fn() / "blocks"
+                if b.exists():
+                    candidates.append(b)
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
-        for root_fn in (builtin_packages_dir, packages_dir):
+        for root_fn in (packages_dir,):
             try:
                 root = root_fn()
                 if root.exists():
@@ -441,8 +460,23 @@ def get_skill_dirs() -> list[Path]:
             local_skills = root / ".navig" / "skills"
             if local_skills.exists():
                 candidates.append(local_skills)
+            local_blocks = root / ".navig" / "blocks"
+            if local_blocks.exists():
+                candidates.append(local_blocks)  # block shims discoverable as skills
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
+
+    # Installed plugins/packages — a CC/NAVIG plugin's `skills/` dir (the plugin
+    # host discovers packages under ~/.navig/plugins). SKILL.md is the shared
+    # format, so a Claude Code plugin's skills load unchanged.
+    try:
+        from navig.plugins.package import plugin_capability_dirs
+
+        # Both plugin install shapes: package-format (~/.navig/plugins) AND pip
+        # entry-point plugins that bundle skills/ inside their Python package.
+        candidates.extend(plugin_capability_dirs("skills"))
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; plugin host optional
 
     # External agents' skills — navig as a federated hub. SKILL.md is the shared
     # format (Format-4 parser handles Claude Code), so foreign skills "just work".
@@ -450,13 +484,12 @@ def get_skill_dirs() -> list[Path]:
         home = Path.home()
         for ext in (
             home / ".claude" / "skills",
-            home / ".openclaw" / "workspace" / "skills",
             home / ".hermes" / "skills",
         ):
             if ext.exists():
                 candidates.append(ext)
     except Exception:  # noqa: BLE001
-        pass  # best-effort; Claude/OpenClaw/Hermes may not be installed
+        pass  # best-effort; Claude/Hermes may not be installed
 
     # Deduplicate while preserving order
     seen: set[Path] = set()

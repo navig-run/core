@@ -4,14 +4,14 @@ Batch 78: navig/core/dict_utils.py, navig/core/yaml_io.py,
 """
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # core/dict_utils.py
 # ---------------------------------------------------------------------------
-from navig.core.dict_utils import deep_merge, truncate_output, utc_now, now_iso
+from navig.core.dict_utils import deep_merge, now_iso, truncate_output, utc_now
 
 
 class TestDeepMerge:
@@ -98,11 +98,11 @@ class TestUtcNow:
 # core/yaml_io.py
 # ---------------------------------------------------------------------------
 from navig.core.yaml_io import (
-    safe_load_yaml,
-    atomic_write_yaml,
-    atomic_write_text,
-    load_yaml_with_lines,
     YamlDocument,
+    atomic_write_text,
+    atomic_write_yaml,
+    load_yaml_with_lines,
+    safe_load_yaml,
 )
 
 

@@ -104,12 +104,6 @@ class WindowsAdapter(OSAdapter):
     def get_home_directory(self) -> Path:
         return Path(os.environ.get("USERPROFILE", r"C:\Users\Default"))
 
-    def get_config_directory(self) -> Path:
-        appdata = os.environ.get("APPDATA", "")
-        if appdata:
-            return Path(appdata) / "navig"
-        return self.get_home_directory() / ".navig"
-
     # ==================== System Information ====================
 
     def get_system_info_command(self) -> str:

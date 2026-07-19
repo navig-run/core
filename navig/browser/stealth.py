@@ -22,31 +22,52 @@ from navig.debug_logger import get_debug_logger
 logger = get_debug_logger()
 
 _patchright = None
+_engine_is_patchright = False
 
 
-def _get_patchright():
-    """Lazy import of patchright. Falls back to vanilla playwright if not installed."""
-    global _patchright
+def _get_patchright(require: bool = False):
+    """Lazy import of patchright.
+
+    With ``require=True`` this fails LOUDLY instead of silently degrading to vanilla
+    Playwright — vanilla is trivially detected, so a caller that asked for stealth should
+    know it isn't getting it rather than get quietly unmasked.
+    """
+    global _patchright, _engine_is_patchright
     if _patchright is None:
         try:
             from patchright.async_api import async_playwright as _pw
 
             _patchright = _pw
+            _engine_is_patchright = True
             logger.info("Stealth engine: patchright loaded")
         except ImportError:
+            if require:
+                raise ImportError(
+                    "Stealth engine required but Patchright is not installed. "
+                    "Run: pip install patchright && patchright install chromium "
+                    "(or set browser_stealth.require_stealth = false to allow the "
+                    "detectable vanilla-Playwright fallback)."
+                ) from None
             try:
                 from playwright.async_api import async_playwright as _pw
 
                 _patchright = _pw
+                _engine_is_patchright = False
                 logger.warning(
-                    "Patchright not installed — falling back to vanilla Playwright. "
-                    "Install with: pip install patchright && patchright install chromium"
+                    "⚠ Patchright NOT installed — using DETECTABLE vanilla Playwright. "
+                    "Stealth is degraded. Install: pip install patchright && "
+                    "patchright install chromium"
                 )
             except ImportError as _exc:
                 raise ImportError(
                     "Neither patchright nor playwright is installed. "
                     "Run: pip install patchright && patchright install chromium"
                 ) from _exc
+    elif require and not _engine_is_patchright:
+        raise ImportError(
+            "Stealth engine required but only vanilla Playwright is available. "
+            "Run: pip install patchright && patchright install chromium"
+        )
     return _patchright
 
 
@@ -66,6 +87,25 @@ class StealthConfig:
     proxy: str | None = None
     allowed_domains: list[str] = field(default_factory=list)
     blocked_domains: list[str] = field(default_factory=list)
+    # ── Stage 5 stealth-engine options ──
+    require_stealth: bool = False    # fail loudly if Patchright missing (no vanilla fallback)
+    fingerprint: bool = True         # apply coherence-safe context opts (locale/tz/geo)
+    fingerprint_js: bool = False     # apply the JS shim layer (OFF on Patchright — it clashes)
+    webrtc_protection: bool = True   # WebRTC IP-leak launch flags
+    locale: str | None = None        # overrides fingerprint locale (derive from proxy geo)
+    timezone_id: str | None = None
+    geolocation: dict | None = None
+    seed: str | None = None          # deterministic fingerprint (per-profile persona, Stage 7)
+    window_size: tuple[int, int] | None = None  # force a window W,H (no_viewport → page matches
+    #                                              it); use a wide desktop size (e.g. 1280×1000) when
+    #                                              a site's responsive layout must render its desktop
+    #                                              variant (TikTok's comment side-panel only exists
+    #                                              ≥~1024px — narrower gives the immersive layout).
+    window_position: tuple[int, int] | None = None  # place the OS window at X,Y — use a large
+    #                                                  negative (e.g. -2400,-2400) to run a HEADFUL
+    #                                                  browser offscreen: real enough to defeat
+    #                                                  headless bot-detection, invisible to the user.
+    mute_audio: bool = False  # --mute-audio — silence a headful/offscreen window (no page sound).
 
     @classmethod
     def from_config(cls, config: dict) -> "StealthConfig":
@@ -78,6 +118,19 @@ class StealthConfig:
             proxy=stealth_cfg.get("proxy"),
             allowed_domains=stealth_cfg.get("allowed_domains", []),
             blocked_domains=stealth_cfg.get("blocked_domains", []),
+            require_stealth=stealth_cfg.get("require_stealth", False),
+            fingerprint=stealth_cfg.get("fingerprint", True),
+            fingerprint_js=stealth_cfg.get("fingerprint_js", False),
+            webrtc_protection=stealth_cfg.get("webrtc_protection", True),
+            locale=stealth_cfg.get("locale"),
+            timezone_id=stealth_cfg.get("timezone_id"),
+            geolocation=stealth_cfg.get("geolocation"),
+            seed=stealth_cfg.get("seed"),
+            window_size=(tuple(stealth_cfg["window_size"])  # type: ignore[arg-type]
+                         if stealth_cfg.get("window_size") else None),
+            window_position=(tuple(stealth_cfg["window_position"])  # type: ignore[arg-type]
+                             if stealth_cfg.get("window_position") else None),
+            mute_audio=stealth_cfg.get("mute_audio", False),
         )
 
 
@@ -109,6 +162,16 @@ class StealthController:
     def is_running(self) -> bool:
         return self._page is not None
 
+    @property
+    def page(self):
+        """The live Playwright/Patchright page (for advanced use: interception, routing)."""
+        return self._page
+
+    @property
+    def context(self):
+        """The persistent browser context (cookies + pages)."""
+        return self._context
+
     async def start(self):
         """Start a stealth browser session (persistent context)."""
         if self._context:
@@ -116,7 +179,7 @@ class StealthController:
             return
 
         logger.info("Starting stealth browser (patchright)...")
-        async_playwright = _get_patchright()
+        async_playwright = _get_patchright(require=self.config.require_stealth)
         self._playwright = await async_playwright().start()
 
         user_data = Path(self.config.user_data_dir).expanduser()
@@ -130,12 +193,66 @@ class StealthController:
         }
 
         if self.config.proxy:
-            launch_kwargs["proxy"] = {"server": self.config.proxy}
+            # Honour credentials embedded in the proxy URL (user:pass@host) — a bare
+            # {"server": url} silently drops them and the proxy auth-fails.
+            try:
+                from navig.browser.proxy import ProxySpec  # noqa: PLC0415
+
+                launch_kwargs["proxy"] = ProxySpec.from_url(self.config.proxy).to_playwright()
+            except Exception:  # noqa: BLE001 — never let proxy parsing block launch
+                launch_kwargs["proxy"] = {"server": self.config.proxy}
+
+        # ── Stage 5: coherent fingerprint (context opts) + WebRTC leak flags ──
+        self._fingerprint = None
+        if self.config.fingerprint:
+            self._fingerprint = self._build_fingerprint()
+            launch_kwargs.update(self._fingerprint_context_opts(self._fingerprint))
+        if self.config.webrtc_protection:
+            from navig.browser.fingerprint import webrtc_launch_args  # noqa: PLC0415
+
+            launch_kwargs.setdefault("args", [])
+            launch_kwargs["args"] = list(launch_kwargs["args"]) + webrtc_launch_args()
+
+        # Keep the automation Chrome quiet: no first-run/welcome tab, no default-browser nag,
+        # no EU "choose a search engine" screen. Added explicitly because Patchright can strip
+        # Playwright's own default first-run flags.
+        from navig.browser.targets import CHROMIUM_QUIET_ARGS  # noqa: PLC0415
+
+        launch_kwargs.setdefault("args", [])
+        launch_kwargs["args"] = list(launch_kwargs["args"]) + list(CHROMIUM_QUIET_ARGS)
+
+        # Optional fixed window size. With no_viewport=True the page matches the OS window, so a
+        # site that only renders its desktop layout above a width breakpoint (e.g. TikTok's comment
+        # side-panel) needs the window widened here rather than via a (stealth-detectable) viewport.
+        if self.config.window_size:
+            w, h = self.config.window_size
+            launch_kwargs["args"] = [
+                a for a in launch_kwargs["args"] if not str(a).startswith("--window-size=")
+            ] + [f"--window-size={int(w)},{int(h)}"]
+        # Offscreen window (headful-but-hidden) + audio mute. Together these let a HEADFUL browser
+        # run invisibly: real enough to defeat headless bot-detection, never seen or heard.
+        if self.config.window_position:
+            x, y = self.config.window_position
+            launch_kwargs["args"] = [
+                a for a in launch_kwargs["args"] if not str(a).startswith("--window-position=")
+            ] + [f"--window-position={int(x)},{int(y)}"]
+        if self.config.mute_audio and "--mute-audio" not in launch_kwargs["args"]:
+            launch_kwargs["args"] = list(launch_kwargs["args"]) + ["--mute-audio"]
 
         self._context = await self._playwright.chromium.launch_persistent_context(
             str(user_data),
             **launch_kwargs,
         )
+
+        # The JS shim layer is opt-in and applied ONLY off Patchright (it would contradict
+        # Patchright's engine-level patches and *create* an incoherence tell).
+        if self._fingerprint is not None and self.config.fingerprint_js and not _engine_is_patchright:
+            from navig.browser.fingerprint import to_init_script  # noqa: PLC0415
+
+            try:
+                await self._context.add_init_script(to_init_script(self._fingerprint))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("[stealth] fingerprint init-script skipped: %s", exc)
 
         # Reuse existing page or open a new one
         self._page = (
@@ -144,6 +261,23 @@ class StealthController:
         self._page.set_default_timeout(self.config.timeout_ms)
 
         logger.info("Stealth browser ready")
+
+    def _build_fingerprint(self):
+        """Generate the coherent fingerprint for this session (seeded → stable identity)."""
+        from navig.browser.fingerprint import generate  # noqa: PLC0415
+
+        return generate(
+            seed=self.config.seed,
+            locale=self.config.locale,
+            timezone=self.config.timezone_id,
+            geolocation=self.config.geolocation,
+        )
+
+    @staticmethod
+    def _fingerprint_context_opts(fp) -> dict:
+        from navig.browser.fingerprint import to_context_options  # noqa: PLC0415
+
+        return to_context_options(fp)
 
     async def stop(self):
         """Close stealth browser (cookies are persisted to disk)."""

@@ -40,9 +40,21 @@ _log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _DEFAULT_MEMORY_MAX: int = 1_000    # max entries held in memory LRU
 _DEFAULT_FILE_MAX: int = 5_000      # max entries persisted to disk
-_DEFAULT_STORE_PATH: str = os.path.join(
-    os.path.expanduser("~"), ".navig", "dedup_updates.json"
-)
+
+
+def _default_store_path() -> Path:
+    """Resolve the dedupe store path at CALL time — never import time.
+
+    A module-level ``os.path.expanduser("~")`` constant froze the REAL home
+    before ``NAVIG_CONFIG_DIR`` isolation applied (the #179 pattern, swept in
+    #189) — worse, it hardcoded ``~/.navig`` so an isolated gateway shared the
+    live daemon's dedupe store and could mark the operator's real Telegram
+    updates as already-seen. ``config_dir()`` is ``~/.navig`` by default, so
+    the on-disk location is unchanged for a normal install.
+    """
+    from navig.platform.paths import config_dir
+
+    return config_dir() / "dedup_updates.json"
 
 
 class UpdateDedupe:
@@ -56,17 +68,19 @@ class UpdateDedupe:
         Maximum number of update IDs persisted to the JSON store on disk.
     store_path:
         Path for the disk store file.  Parent directories are created if missing.
+        Defaults to ``config_dir() / "dedup_updates.json"``, resolved at
+        construction time so ``NAVIG_CONFIG_DIR`` isolation is honoured.
     """
 
     def __init__(
         self,
         memory_max: int = _DEFAULT_MEMORY_MAX,
         file_max: int = _DEFAULT_FILE_MAX,
-        store_path: str | Path = _DEFAULT_STORE_PATH,
+        store_path: str | Path | None = None,
     ) -> None:
         self._memory_max = memory_max
         self._file_max = file_max
-        self._store_path = Path(store_path)
+        self._store_path = Path(store_path) if store_path is not None else _default_store_path()
 
         # Ordered dict used as LRU (oldest at front)
         self._cache: OrderedDict[str, float] = OrderedDict()

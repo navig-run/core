@@ -72,6 +72,8 @@ def _eval_node(node: ast.AST, variables: dict[str, Any]) -> Any:
     if isinstance(node, ast.Name):
         if node.id in variables:
             return variables[node.id]
+        # Note: True/False/None are represented as ast.Constant on Python 3.8+
+        # and never reach here; these branches guard against unexpected AST variants.
         if node.id == "True":
             return True
         if node.id == "False":
@@ -106,13 +108,24 @@ def _eval_node(node: ast.AST, variables: dict[str, Any]) -> Any:
             left = right
         return True
 
-    # Boolean Ops (and, or)
+    # Boolean Ops (and, or) — evaluated lazily to preserve short-circuit semantics.
+    # All-eager evaluation (e.g. list comprehension + all/any) would cause later
+    # operands to raise even when the result is already determined by earlier ones.
     if isinstance(node, ast.BoolOp):
-        values = [_eval_node(v, variables) for v in node.values]
         if isinstance(node.op, ast.And):
-            return all(values)
+            result: Any = True
+            for v in node.values:
+                result = _eval_node(v, variables)
+                if not result:
+                    return result
+            return result
         if isinstance(node.op, ast.Or):
-            return any(values)
+            result = False
+            for v in node.values:
+                result = _eval_node(v, variables)
+                if result:
+                    return result
+            return result
         raise ValueError(f"Unknown boolean operator: {type(node.op)}")
 
     # Subscript (x[y]) - Allowed for lists/dicts

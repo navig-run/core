@@ -32,4 +32,4 @@ def finance_balance(
     """Show account balances from a beancount ledger."""
     from navig import console_helper as ch
 
-    ch.warn("navig finance balance is not yet implemented in this build.")
+    ch.warning("navig finance balance is not yet implemented in this build.")

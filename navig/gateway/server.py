@@ -69,7 +69,7 @@ from navig.gateway.cooldown import CooldownTracker
 from navig.gateway.policy_gate import PolicyGate
 from navig.gateway.session_manager import Session, SessionManager
 from navig.gateway.system_events import SystemEventQueue
-from navig.workspace_ownership import USER_WORKSPACE_DIR
+from navig.workspace_ownership import user_workspace_dir
 
 # Lazy imports for optional modules
 _approval_manager = None
@@ -80,6 +80,25 @@ _task_queue = None
 _task_worker = None
 
 logger = get_debug_logger()
+
+
+def _bind_candidates(preferred: int, last_bound: int | None) -> list[int]:
+    """Ordered ports for the self-healing bind.
+
+    ``preferred`` and its five neighbours first, then the port the previous
+    run self-healed onto (sticky — keeps the gateway URL stable across
+    restarts when the whole preferred range is OS-reserved), and finally
+    ``0`` (let the OS pick any free port).
+    """
+    candidates = [preferred, *range(preferred + 1, preferred + 6)]
+    if (
+        last_bound is not None
+        and 0 < last_bound < 65536
+        and last_bound not in candidates
+    ):
+        candidates.append(last_bound)
+    candidates.append(0)
+    return candidates
 
 
 class GatewayConfig:
@@ -112,6 +131,19 @@ class GatewayConfig:
         agents_cfg = raw_config.get("agents", {})
         self.default_agent = agents_cfg.get("default", "navig")
         self.agents = agents_cfg.get("list", [])
+
+
+#: The set of values that count as "on" for a monitor toggle. Identical to the deck
+#: route's ``_truthy`` (navig/gateway/deck/routes/notify.py) — the gateway (what runs at
+#: boot) and the deck card (what the operator sees) MUST agree, or the card can show OFF
+#: while the daemon runs the monitor. ``navig config set`` stores raw strings, so
+def _monitor_enabled_truthy(v: object) -> bool:
+    # Canonical coercion — MUST stay identical to the deck's notify._truthy
+    # (enforced by test_monitor_enabled_coercion_matches_the_deck). Handles the
+    # raw-string config gotcha: `config set monitors.x.enabled false` → NOT on.
+    from navig.core.coerce import coerce_bool
+
+    return coerce_bool(v)
 
 
 class NavigGateway:
@@ -373,6 +405,17 @@ class NavigGateway:
         for _h in _console_handlers:
             _h.setLevel(_logging.WARNING)
 
+        # Start the system-event processor. Without this, every emit()
+        # (board_update, council_update, requests_update, …) piles up in an
+        # undrained queue and /api/events serves heartbeats only — live
+        # refresh across deck/OS was silently dead for as long as this call
+        # was missing. replay_pending=False: the persisted backlog predates
+        # the processor ever running, so it is stale by definition.
+        try:
+            await self.system_events.start(replay_pending=False)
+        except Exception as exc:  # noqa: BLE001 — event delivery must never block boot
+            logger.error("System event processor failed to start: %s", exc)
+
         # Initialize config watcher
         self.config_watcher = ConfigWatcher(self)
 
@@ -419,16 +462,33 @@ class NavigGateway:
         logger.debug("[startup] Cron: %.2fs", _dt)
         _boot_step("scheduler / cron", _dt, icon="gear")
 
-        # Start Studio scheduled-post service (fires due social posts).
+        # Start the Studio scheduled-post service (fires due social posts). This
+        # lives in the optional navig-social plugin; the import is soft (core boots
+        # fine without it) and it's skipped when the free "social" module is toggled
+        # off. The async lifecycle stays here (core owns gateway start/stop); the
+        # engine + routes live in the plugin.
+        self.scheduled_post_service = None
         try:
-            from navig.social.scheduler_service import ScheduledPostService
+            from navig.modules.registry import get_registry
 
-            self.scheduled_post_service = ScheduledPostService(self)
-            await self.scheduled_post_service.start()
-            _boot_step("scheduler / studio", icon="gear")
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Studio scheduled-post service skipped: %s", exc)
-            self.scheduled_post_service = None
+            _social_on = get_registry().is_enabled("social")
+        except Exception:  # noqa: BLE001 — registry unavailable → treat as off
+            _social_on = False
+        if _social_on:
+            try:
+                from navig_social.social.scheduler_service import ScheduledPostService
+
+                self.scheduled_post_service = ScheduledPostService(self)
+                await self.scheduled_post_service.start()
+                _boot_step("scheduler / studio", icon="gear")
+            except ImportError as exc:
+                # Benign: `social` is enabled but the plugin isn't installed here.
+                logger.debug("navig-social not installed; Studio scheduler skipped: %s", exc)
+            except Exception as exc:  # noqa: BLE001
+                # Enabled AND installed but failed to start → surface it (scheduled posts
+                # would silently never fire otherwise).
+                logger.warning("Studio scheduler enabled but failed to start: %s", exc)
+                self.scheduled_post_service = None
 
         # Start channel health monitor
         await self._start_health_monitor()
@@ -447,9 +507,17 @@ class NavigGateway:
         logger.debug("[startup] Autonomous modules: %.2fs", _dt)
         _boot_step("autonomous modules", _dt, icon="brain")
 
-        # Start the mission scheduler only when the autonomous loop is enabled.
-        # (The executor itself is always live for the board + manual POSTs.)
-        if self.mission_scheduler and self._missions_autonomous_enabled():
+        # Start the mission scheduler only when the "missions" module is enabled
+        # AND the autonomous loop is turned on. (The executor itself is always live
+        # for the board + manual POSTs; the module toggle gates the autonomous loop
+        # so the surfaceless Missions module has a real on/off.)
+        try:
+            from navig.modules.registry import get_registry
+
+            _missions_module_on = get_registry().is_enabled("missions")
+        except Exception:  # noqa: BLE001
+            _missions_module_on = True
+        if self.mission_scheduler and _missions_module_on and self._missions_autonomous_enabled():
             try:
                 await self.mission_scheduler.start()
                 _boot_step("mission scheduler", icon="brain")
@@ -566,6 +634,12 @@ class NavigGateway:
             pass
         self.running = False
         self._shutdown_t0 = __import__("time").monotonic()
+
+        # Stop the system-event processor (symmetric with start()).
+        try:
+            await self.system_events.stop()
+        except Exception:  # noqa: BLE001 — shutdown must not fail on telemetry
+            pass
 
         # Stop queue processor
         if self._queue_task:
@@ -702,7 +776,6 @@ class NavigGateway:
         # Deck (Telegram Mini App) routes — pass auth config
         try:
             from navig.gateway.deck import register_deck_routes
-            from navig.messaging import is_provider_enabled
             from navig.messaging.secrets import resolve_telegram_bot_token
 
             # Let installed plugins (e.g. the private navig-harbor) register their
@@ -725,13 +798,15 @@ class NavigGateway:
                 or resolve_telegram_bot_token(raw_cfg)
                 or tg_cfg.get("bot_token", "")
             )
-            provider_ready = (
-                bool(telegram_channel)
-                or is_provider_enabled("telegram", raw_cfg)
-                or bool(bot_token)
-            )
-
-            if provider_ready and bot_token and deck_cfg.get("enabled", True):
+            # Mount the deck whenever it is enabled — independent of Telegram.
+            # The deck is the operator's local data + control plane: the desktop
+            # OS app reaches it over loopback (auto-trusted), and a publicly
+            # reachable deck (Lighthouse / Direct / tunnel) is guarded by the
+            # Bearer deck.api_key. Telegram-specific behaviour (Mini App initData
+            # auth, webhook, bot menu button, the polling channel) stays gated on
+            # the bot token, which may be empty here. This lets a fresh install
+            # drive setup from the OS UI before any Telegram token exists.
+            if deck_cfg.get("enabled", True):
                 register_deck_routes(
                     self._app,
                     bot_token=bot_token,
@@ -739,10 +814,12 @@ class NavigGateway:
                     require_auth=tg_cfg.get("require_auth", True),
                     deck_cfg=deck_cfg,
                 )
-            elif not provider_ready:
-                logger.info("Deck not loaded: telegram messaging provider disabled")
-            elif not bot_token:
-                logger.info("Deck not loaded: no Telegram bot_token configured")
+                if not bot_token:
+                    logger.info(
+                        "Deck API mounted without a Telegram bot token — reachable on "
+                        "loopback and via the Bearer deck.api_key. The Telegram Mini App / "
+                        "webhook stay disabled until a bot token is configured."
+                    )
             else:
                 logger.info("Deck disabled in config")
         except Exception as e:
@@ -783,11 +860,85 @@ class NavigGateway:
                 host,
             )
 
-        # Start server
+        # Start server — SELF-HEALING BIND. The preferred port can be
+        # unavailable through no fault of ours: on Windows, WinNAT/Hyper-V
+        # reserves *dynamic* port ranges that can silently swallow it (this is
+        # why a fixed default like 8789 periodically "dies"), or another process
+        # holds it. Rather than crash, try the preferred port, then a few
+        # neighbours, then the port the LAST run self-healed onto (sticky —
+        # keeps the URL stable across restarts on machines where the whole
+        # preferred range is reserved), then let the OS pick ANY free port.
+        # Whatever we land on is recorded to ~/.navig/gateway.json so every
+        # surface (desktop OS sidecar, deck, CLI) discovers the live URL
+        # instead of guessing a hardcoded number.
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
-        site = web.TCPSite(self._runner, self.config.host, self.config.port)
-        await site.start()
+        preferred = int(self.config.port)
+        last_bound: int | None = None
+        try:
+            from navig.gateway_client import read_gateway_discovery
+
+            disc = read_gateway_discovery()
+            if disc is not None:
+                last_bound = disc[0]
+        except Exception:  # noqa: BLE001 — stickiness is a convenience only
+            pass
+        candidates = _bind_candidates(preferred, last_bound)
+        site: "web.TCPSite | None" = None
+        last_err: Exception | None = None
+        for cand in candidates:
+            try:
+                s = web.TCPSite(self._runner, self.config.host, cand)
+                await s.start()
+                site = s
+                break
+            except OSError as exc:  # port reserved / in use — try the next
+                last_err = exc
+        if site is None:
+            raise last_err or OSError("gateway: no bindable port found")
+        # Resolve the port we actually bound (differs from preferred when the
+        # preferred was taken, and is OS-assigned when we fell back to port 0).
+        actual_port = preferred
+        try:
+            socks = getattr(getattr(site, "_server", None), "sockets", None) or []
+            if socks:
+                actual_port = int(socks[0].getsockname()[1])
+        except Exception:  # noqa: BLE001
+            pass
+        if actual_port != preferred:
+            logger.warning(
+                "gateway: preferred port %s unavailable (reserved or in use) — "
+                "bound %s instead; recorded to gateway.json for surface discovery",
+                preferred,
+                actual_port,
+            )
+        self.config.port = actual_port
+        self._write_gateway_discovery(actual_port)
+
+    def _write_gateway_discovery(self, port: int) -> None:
+        """Record the LIVE gateway URL to ``~/.navig/gateway.json`` so surfaces
+        (desktop OS sidecar, deck) discover the actual port instead of hardcoding
+        one — the counterpart to the self-healing bind. Atomic, best-effort;
+        never blocks startup."""
+        try:
+            import json as _json  # noqa: PLC0415
+
+            from navig.platform.paths import config_dir  # noqa: PLC0415
+
+            host = self.config.host or "127.0.0.1"
+            client_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+            payload = {
+                "host": client_host,
+                "port": int(port),
+                "url": f"http://{client_host}:{port}",
+            }
+            path = config_dir() / "gateway.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(_json.dumps(payload), encoding="utf-8")
+            tmp.replace(path)
+        except Exception:  # noqa: BLE001 — discovery is a convenience, not critical
+            logger.debug("gateway discovery write failed", exc_info=True)
 
     # ── Autonomous mission triggers ──────────────────────────────────
 
@@ -1291,6 +1442,11 @@ class NavigGateway:
         Returns ``None`` when the request is allowed (caller proceeds normally).
         Returns a 403/429 ``web.Response`` when the request must be blocked.
 
+        REQUIRE_APPROVAL decisions block on ``approval_manager.request_approval``
+        (deck Inbox / Telegram / /approval routes resolve it) up to the approval
+        policy's ``timeout_seconds``; timeout or denial → 403. No approval
+        manager wired → fail CLOSED (403), never open.
+
         Always writes an audit record.
 
         Usage in a route handler::
@@ -1349,12 +1505,75 @@ class NavigGateway:
                 raw_input=raw_input,
                 metadata={"matched_rule": result.matched_rule},
             )
-            # Currently: log + allow. Future: queue for human approval UI.
+
+            mgr = getattr(self, "approval_manager", None)
+            if mgr is None:
+                # An explicit require_approval rule with no approval channel must
+                # fail CLOSED — proceeding would silently void the operator's policy.
+                self.audit_log.record(
+                    actor=actor,
+                    action=action,
+                    policy=result.decision.value,
+                    status="denied",
+                    raw_input=raw_input,
+                    metadata={
+                        "matched_rule": result.matched_rule,
+                        "reason": "approval_unavailable",
+                    },
+                )
+                return web.json_response(
+                    {
+                        "ok": False,
+                        "error": (
+                            f"Action '{action}' requires approval but no approval "
+                            "manager is available"
+                        ),
+                        "error_code": "approval_unavailable",
+                    },
+                    status=403,
+                )
+
             logger.warning(
-                "[PolicyGate] Action '%s' by %s requires approval (logged, proceeding)",
+                "[PolicyGate] Action '%s' by %s requires approval — waiting for a response",
                 action,
                 actor,
             )
+            try:
+                approved = await mgr.request_approval(
+                    command=action,
+                    description=f"Policy gate: '{action}' requested by {actor}",
+                    user_id=actor,
+                    channel="policy",
+                    session_key=f"policy:{actor}",
+                )
+            except Exception:  # noqa: BLE001 — an approval-flow crash must fail closed
+                logger.exception(
+                    "[PolicyGate] approval flow failed for '%s' — denying", action
+                )
+                approved = False
+
+            self.audit_log.record(
+                actor=actor,
+                action=action,
+                policy=result.decision.value,
+                status="approved" if approved else "denied",
+                raw_input=raw_input,
+                metadata={
+                    "matched_rule": result.matched_rule,
+                    "via": "approval_manager",
+                },
+            )
+            if not approved:
+                return web.json_response(
+                    {
+                        "ok": False,
+                        "error": f"Action '{action}' was not approved",
+                        "error_code": "approval_denied",
+                    },
+                    status=403,
+                )
+            # Approved — the action proceeds, so it counts as a billable event too.
+            self.billing_emitter.emit(actor=actor, action=action)
             return None
 
         # ALLOW — audit + emit billing event
@@ -1375,13 +1594,37 @@ class NavigGateway:
             from navig.approval import ApprovalManager, ApprovalPolicy
             from navig.approval.handlers import GatewayApprovalHandler
 
-            policy = ApprovalPolicy.default()
-            self.approval_manager = ApprovalManager(gateway=self, policy=policy)
+            # Policy comes from the operator's config (`approval:` section);
+            # an empty config yields the same defaults ApprovalPolicy.default()
+            # produced. The audit log MUST be wired here — without it approval
+            # decisions leave no trace and auto-evolve can never be enabled
+            # (is_audit_log_live() gates it).
+            policy = ApprovalPolicy.from_config(self.config_manager.global_config or {})
+            self.approval_manager = ApprovalManager(
+                gateway=self, policy=policy, audit_log=self.audit_log
+            )
             gateway_handler = GatewayApprovalHandler(self.approval_manager)
             self.approval_manager.register_handler("gateway", gateway_handler)
             logger.info("Approval manager initialized")
         except ImportError as e:
             logger.warning("Approval module not available: %s", e)
+
+        # Agent tool-execution gate → ApprovalManager (the #299 twin). Without
+        # this bind the ApprovalGate keeps its single-operator default (approve
+        # dangerous tools with a warning) — fine for a headless CLI, fail-OPEN
+        # inside the gateway where real approval consumers exist. With a live
+        # manager, dangerous agent tool calls prompt the operator (deck Inbox /
+        # Telegram); with none, they are DENIED and audited — never silently run.
+        try:
+            from navig.tools.approval import bind_approval_manager
+
+            bind_approval_manager(self.approval_manager, self.audit_log)
+            logger.info(
+                "Agent ApprovalGate bound to ApprovalManager (fail closed%s)",
+                "" if self.approval_manager is not None else ", no manager: deny-all",
+            )
+        except Exception as e:  # noqa: BLE001 — never block boot on this
+            logger.warning("ApprovalGate binding failed: %s", e)
 
         # Request registry — user-facing questions / route confirmations /
         # operator proposals. Sibling to approval_manager; the deck merges both
@@ -1581,7 +1824,12 @@ class NavigGateway:
                     "stderr": f"Blocked: only navig commands are allowed. Got: {command[:80]}",
                     "returncode": 1,
                 }
-            result = subprocess.run(
+            # OFF the loop. This runs a whole CLI subprocess with a default
+            # 300s timeout — inline it froze the entire gateway (deck, OS,
+            # webhook, uplink) for as long as the command took, up to five
+            # minutes for one queued task.
+            result = await asyncio.to_thread(
+                subprocess.run,
                 shlex.split(command),
                 shell=False,
                 capture_output=True,
@@ -1827,13 +2075,21 @@ class NavigGateway:
             logger.warning("Messaging adapter init failed: %s", exc)
 
     def _setup_webhook_routes(self):
-        """Setup webhook routes from receiver."""
+        """Register the webhook receiver's routes on the app.
+
+        ``get_routes()`` returns aiohttp ``RouteDef`` objects, which are NOT
+        iterable tuples — the previous ``for method, path, handler in …`` raised
+        ``TypeError: cannot unpack non-iterable RouteDef`` the moment it ran with
+        a receiver set. Hand them straight to ``add_routes`` (the idiomatic form
+        the receiver's own docstring documents). NOTE: this method is currently a
+        no-op in practice — it runs from ``_start_http_server`` *before*
+        ``_init_autonomous_modules`` sets ``self.webhook_receiver`` — so the
+        ``/webhook/{source}`` endpoint does not register today. Enabling it is a
+        separate decision (it exposes an external endpoint); this fix just ensures
+        the registration is correct rather than a latent startup crash.
+        """
         if self.webhook_receiver:
-            for method, path, handler in self.webhook_receiver.get_routes():
-                if method == "POST":
-                    self._app.router.add_post(path, handler)
-                elif method == "GET":
-                    self._app.router.add_get(path, handler)
+            self._app.router.add_routes(self.webhook_receiver.get_routes())
 
     def _get_memory_store(self):
         """Get or create conversation store."""
@@ -1905,7 +2161,7 @@ class NavigGateway:
     ) -> dict[str, Any]:
         """Build agent context from workspace files."""
         workspace_dir = self.storage_dir / "workspace"
-        workspace_candidates = [USER_WORKSPACE_DIR, workspace_dir]
+        workspace_candidates = [user_workspace_dir(), workspace_dir]
 
         context = {
             "agent_id": agent_id,
@@ -2203,18 +2459,24 @@ class NavigGateway:
         return resp
 
     async def _handle_approval_request(self, request) -> web.Response:
-        """Route an approval request (API variant: uses 'action' field)."""
+        """Route an approval request (API variant: uses 'action' field).
+
+        ``request_approval`` takes ``command=`` and returns a bool — the old
+        ``action=`` kwarg raised TypeError against the real manager, and the
+        old ``{"request_id": ...}`` body was derived from that bool (always
+        None). Blocks until the approval resolves or times out.
+        """
         from aiohttp import web
 
         try:
             data = await request.json()
         except Exception:
             return web.Response(status=400, text="Invalid JSON")
-        result = await self.approval_manager.request_approval(
-            action=data.get("action"),
+        approved = await self.approval_manager.request_approval(
+            command=data.get("action") or "",
             description=data.get("description", ""),
         )
-        return web.json_response({"request_id": getattr(result, "id", None)})
+        return web.json_response({"approved": bool(approved)})
 
     async def _handle_ws_message(self, ws, data: dict) -> None:
         """Dispatch an incoming WebSocket message dict to the WS handler."""
@@ -2418,15 +2680,34 @@ class NavigGateway:
     # ── Notification monitors / producers ──────────────────────────────────────
 
     #: Toggleable opt-in producers surfaced in the deck "Monitors" card.
-    MONITOR_KEYS = ("webcam", "resources", "self_errors", "connectivity")
+    MONITOR_KEYS = ("webcam", "resources", "self_errors", "connectivity", "config_incidents")
+
+    #: Monitors that default ON (started at boot unless explicitly disabled). The rest are
+    #: opt-in. config_incidents is the one exception because a MISSED config-rescue event —
+    #: a wiped config, a re-identified deck key — is exactly the silent, bot-killing failure
+    #: this whole surface exists to surface; it is noiseless on a healthy install (nothing
+    #: records) and only pushes if a channel is configured. Kept in sync with the deck
+    #: route's _DEFAULT_ON by test_monitor_defaults_agree.
+    MONITORS_DEFAULT_ON = frozenset({"config_incidents"})
 
     def _init_notify_monitors(self) -> None:
-        """Start each enabled monitor at boot (per ``monitors.<name>.enabled``)."""
+        """Start each enabled monitor at boot (per ``monitors.<name>.enabled``).
+
+        The value is COERCED, not read for raw truthiness: ``navig config set`` stores its
+        argument as a string, so ``monitors.x.enabled false`` persists the string
+        ``"false"`` — which is truthy in Python. A raw check here started a monitor the
+        operator had just disabled, while the deck card (which coerces via ``_truthy``)
+        correctly showed it OFF. Matched to the deck's coercion; kept in sync by
+        test_monitor_enabled_coercion_matches_the_deck.
+        """
         self._monitor_tasks = getattr(self, "_monitor_tasks", {})
         cfg = (self.config_manager.global_config or {}).get("monitors", {}) or {}
         for name in self.MONITOR_KEYS:
             try:
-                if (cfg.get(name, {}) or {}).get("enabled", False):
+                raw = (cfg.get(name, {}) or {}).get("enabled")
+                enabled = _monitor_enabled_truthy(raw) if raw is not None \
+                    else name in self.MONITORS_DEFAULT_ON
+                if enabled:
                     self._start_monitor(name)
             except Exception as e:  # noqa: BLE001 — never block boot on a monitor
                 logger.debug("monitor %s start skipped: %s", name, e)
@@ -2451,6 +2732,13 @@ class NavigGateway:
 
             install_self_error_reporter()
             self._monitor_tasks[name] = "installed"
+        elif name == "config_incidents":
+            from navig.notify.producers.config_incidents import (
+                install_config_incident_reporter,
+            )
+
+            install_config_incident_reporter()
+            self._monitor_tasks[name] = "installed"
         elif name == "connectivity":
             # Driven by the uplink listener + a live config check — nothing to spawn.
             self._monitor_tasks[name] = "live"
@@ -2465,6 +2753,12 @@ class NavigGateway:
             from navig.notify.producers.self_errors import uninstall_self_error_reporter
 
             uninstall_self_error_reporter()
+        elif name == "config_incidents":
+            from navig.notify.producers.config_incidents import (
+                uninstall_config_incident_reporter,
+            )
+
+            uninstall_config_incident_reporter()
         elif handle is not None and hasattr(handle, "cancel"):
             handle.cancel()
         logger.info("monitor disabled: %s", name)

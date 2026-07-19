@@ -20,7 +20,7 @@ import re
 from typing import Any
 
 from navig.browser.prompts import CORTEX_A11Y_PROMPT, CORTEX_VISION_PROMPT
-from navig.llm_generate import run_llm
+from navig.llm.generate import run_llm
 
 logger = logging.getLogger("navig.browser.orchestrator")
 

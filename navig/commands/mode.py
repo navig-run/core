@@ -52,7 +52,7 @@ def mode_show(
     if json_output:
         import json as _json
 
-        from navig.llm_router import get_llm_router
+        from navig.llm.router import get_llm_router
 
         router = get_llm_router()
         typer.echo(_json.dumps(router.get_all_modes(), indent=2))
@@ -64,7 +64,7 @@ def _show_modes():
     """Render a Rich table of all LLM modes."""
     from rich.table import Table
 
-    from navig.llm_router import CANONICAL_MODES, _has_api_key, get_llm_router
+    from navig.llm.router import CANONICAL_MODES, _has_api_key, get_llm_router
 
     console = get_console()
     router = get_llm_router()
@@ -142,20 +142,26 @@ def mode_set(
 ):
     """Update a mode's provider, model, or parameters."""
 
-    from navig.llm_router import get_llm_router
+    from navig.llm.router import get_llm_router
 
     console = get_console()
     router = get_llm_router()
 
     canonical = router.resolve_mode(mode)
-    ok = router.update_mode(
-        canonical,
-        provider=provider,
-        model=model,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        use_uncensored=uncensored,
-    )
+    try:
+        ok = router.update_mode(
+            canonical,
+            provider=provider,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            use_uncensored=uncensored,
+        )
+    except ValueError as exc:
+        # Out-of-range temp/max_tokens — reject instead of persisting a value that
+        # would wipe the whole mode config on the next reload.
+        console.print(f"[red]✗ {exc}[/red]")
+        raise typer.Exit(1) from exc
 
     if not ok:
         console.print(f"[red]Unknown mode:[/red] {mode}")
@@ -190,7 +196,10 @@ def _persist_mode_config(router):
         router.uncensored.model_dump() if hasattr(router.uncensored, "model_dump") else {}
     )
 
-    cm.save_global_config(raw)
+    # ConfigManager exposes _save_global_config (there is no public
+    # save_global_config — calling the wrong name silently dropped every
+    # `navig mode set` to memory-only, never persisting to config.yaml).
+    cm._save_global_config(raw)
 
 
 def _normalize_route_tier(tier: str) -> str:
@@ -326,6 +335,69 @@ def mode_route_set(
     console.print("[dim]Routing is enabled in config (ai.routing.enabled: true). Restart daemon if needed.[/dim]")
 
 
+# ── navig mode doctor ────────────────────────────────────
+
+
+@mode_app.command("doctor")
+def mode_doctor(
+    mode: str = typer.Argument(None, help="Mode to probe (default: all modes)."),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
+):
+    """Probe each mode's provider:model with a 1-token call — catches DEAD/EOL
+    models (410), auth failures (401), and unreachable endpoints before they hit
+    you in production. Exits non-zero if any mode is not live (CI-friendly)."""
+    from navig.llm.liveness import probe_modes
+    from navig.llm.router import get_llm_router
+
+    console = get_console()
+    router = get_llm_router()
+    targets = [router.resolve_mode(mode)] if mode else None  # None → all modes
+
+    _ICON = {
+        "live": "[green]● live[/green]",
+        "dead": "[red]✗ DEAD[/red]",
+        "auth": "[yellow]⚠ auth[/yellow]",
+        "nokey": "[yellow]○ no key[/yellow]",
+        "unreachable": "[red]✗ unreachable[/red]",
+        "error": "[red]✗ error[/red]",
+    }
+    if not json_output:
+        console.print("[dim]Probing each mode's model (1 token each)…[/dim]")
+    # probe_modes resolves each mode's ACTUAL route (fast-chat override, default
+    # provider, fallbacks) and runs a real 1-token call — the shared liveness path.
+    rows = probe_modes(targets)
+
+    if json_output:
+        import json as _json
+
+        typer.echo(_json.dumps(rows, indent=2))
+    else:
+        from rich.table import Table
+
+        table = Table(title="🩺 LLM Mode Liveness", border_style="dim", show_header=True,
+                      header_style="bold")
+        table.add_column("Mode", style="cyan", no_wrap=True)
+        table.add_column("Provider", no_wrap=True)
+        table.add_column("Model", no_wrap=True)
+        table.add_column("Status", no_wrap=True)
+        table.add_column("Detail")
+        for r in rows:
+            table.add_row(r["mode"], r["provider"], r["model"],
+                          _ICON.get(r["status"], r["status"]), r["detail"])
+        console.print(table)
+        bad = [r for r in rows if r["status"] != "live"]
+        if bad:
+            dead = [r["mode"] for r in rows if r["status"] == "dead"]
+            hint = (f" Repoint with [cyan]navig mode set {dead[0]} --provider <p> --model <m>[/cyan]"
+                    if dead else "")
+            console.print(f"[yellow]{len(bad)}/{len(rows)} mode(s) not live.[/yellow]{hint}")
+        else:
+            console.print(f"[green]All {len(rows)} modes live.[/green]")
+
+    if any(r["status"] != "live" for r in rows):
+        raise typer.Exit(1)
+
+
 # ── navig mode list ──────────────────────────────────────
 
 
@@ -339,7 +411,7 @@ def mode_list(
     """List available models per provider, with uncensored status."""
     from rich.table import Table
 
-    from navig.llm_router import get_llm_router
+    from navig.llm.router import get_llm_router
 
     console = get_console()
     router = get_llm_router()
@@ -400,7 +472,7 @@ def mode_detect(
 ):
     """Test mode detection on a piece of text."""
 
-    from navig.llm_router import get_llm_router
+    from navig.llm.router import get_llm_router
 
     console = get_console()
     router = get_llm_router()

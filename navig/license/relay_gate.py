@@ -57,7 +57,7 @@ from __future__ import annotations
 
 import datetime as _dt
 from dataclasses import dataclass
-from typing import Literal, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, Optional
 
 if TYPE_CHECKING:
     from navig.license.keys import LicenseStatus

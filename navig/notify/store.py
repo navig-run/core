@@ -12,10 +12,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from navig.notify.types import CHANNEL_KEYS, NOTIFICATION_TYPES
 from navig.platform import paths
 from navig.storage.engine import get_engine
-
-from navig.notify.types import NOTIFICATION_TYPES, CHANNEL_KEYS
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS notify_matrix (

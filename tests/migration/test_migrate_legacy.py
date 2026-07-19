@@ -44,19 +44,21 @@ class TestMigrateLegacyApply:
         ctx = _ctx(tmp_path)
         action = self._action(tmp_path)
 
+        # The `import` statement resolves `__import__` from BUILTINS, never from the
+        # importing module's globals — so the old
+        # `patch("...migrate_legacy.__import__", create=True)` bolted a phantom onto the
+        # module and intercepted nothing. With it gone, both migrations really are
+        # patched, so the result is APPLIED — not the old "APPLIED or SKIPPED" hedge,
+        # which passed either way and so tested nothing.
         with (
-            patch("navig.installer.modules.migrate_legacy.__import__", create=True),
-            patch(
-                "navig.commands.init._migrate_legacy_windows_runtime_layout"
-            ),
-            patch(
-                "navig.commands.init._migrate_legacy_documents_dir"
-            ),
+            patch("navig.commands.init._migrate_legacy_windows_runtime_layout") as mock_win,
+            patch("navig.commands.init._migrate_legacy_documents_dir") as mock_docs,
         ):
             result = ml_mod.apply(action, ctx)
 
-        # Either APPLIED (migrations ran) or SKIPPED (ImportError/exception)
-        assert result.state in (ModuleState.APPLIED, ModuleState.SKIPPED)
+        assert result.state is ModuleState.APPLIED
+        assert mock_win.called
+        assert mock_docs.called
 
     def test_returns_skipped_when_imports_fail(self, tmp_path: Path) -> None:
         ctx = _ctx(tmp_path)

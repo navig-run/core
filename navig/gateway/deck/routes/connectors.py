@@ -394,7 +394,7 @@ async def handle_deck_connectors_act(request: "web.Request") -> "web.Response":
 
 def _get_config_manager(request=None):
     try:
-        from navig.core.shared_config import get_config_manager
+        from navig.config import get_config_manager
         return get_config_manager()
     except Exception:
         return None
@@ -458,7 +458,7 @@ async def handle_deck_mcp_add(request: "web.Request") -> "web.Response":
             server_config["env"] = body["env"]
 
     try:
-        from navig.core.shared_config import get_config_manager
+        from navig.config import get_config_manager
         cfg = get_config_manager()
         raw = dict(cfg.global_config or {})
         mcp = dict(raw.get("mcp", {}))
@@ -484,7 +484,7 @@ async def handle_deck_mcp_remove(request: "web.Request") -> "web.Response":
         return web.json_response({"ok": False, "error": "name required"}, status=400)
 
     try:
-        from navig.core.shared_config import get_config_manager
+        from navig.config import get_config_manager
         cfg = get_config_manager()
         raw = dict(cfg.global_config or {})
         mcp = dict(raw.get("mcp", {}))

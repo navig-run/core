@@ -17,7 +17,6 @@ from navig.blackbox.bundle import (
 )
 from navig.blackbox.types import BlackboxEvent, Bundle, EventType
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

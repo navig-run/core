@@ -33,8 +33,18 @@ from navig.platform.paths import config_dir as _navig_config_dir
 
 UPSTREAM_URL = f"https://github.com/{UPSTREAM_REPO}.git"
 _GITHUB_API = "https://api.github.com"
-_CORE_REPO_DIR = _navig_config_dir() / "core-repo"
 _GIT_TIMEOUT = 120  # seconds — generous for slow connections
+
+
+def core_repo_dir() -> Path:
+    """Resolve the local core clone dir at CALL time — never import time.
+
+    ``config_dir()`` honours ``NAVIG_CONFIG_DIR``; a module-level constant
+    would freeze the real user home before test/daemon isolation applies,
+    pointing clone/patch/push git operations at the operator's real clone
+    (see ``navig/vault/migrate.py:_legacy_db_path``).
+    """
+    return _navig_config_dir() / "core-repo"
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +62,7 @@ def _run_git(
 
     Args:
         *args: Arguments appended after ``git``.
-        cwd: Working directory.  Defaults to ``_CORE_REPO_DIR``.
+        cwd: Working directory.  Defaults to ``core_repo_dir()``.
         ignore_errors: When True, swallow ``CalledProcessError`` and return
             an empty string.  **Use only for idempotent operations** where a
             non-zero exit is expected and harmless — e.g., ``git remote add``
@@ -68,7 +78,7 @@ def _run_git(
             *ignore_errors* is False.
     """
     cmd = ["git"] + list(args)
-    work_dir = cwd or _CORE_REPO_DIR
+    work_dir = cwd or core_repo_dir()
     logger.debug("git {}", " ".join(args[: min(len(args), 4)]))
     try:
         result = subprocess.run(
@@ -206,7 +216,7 @@ def clone_or_update(fork_clone_url: str) -> Path:
     Returns:
         Absolute path to ``~/.navig/core-repo/``.
     """
-    repo_path = _CORE_REPO_DIR
+    repo_path = core_repo_dir()
     if not (repo_path / ".git").exists():
         logger.info("Cloning {} → {}", fork_clone_url, repo_path)
         repo_path.parent.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "_comment": "command → providing plugin. Regenerate: python scripts/gen_command_providers.py. Consumed by navig.cli.providers (suggest-and-activate) and the Store's AVAILABLE rows.",
+  "commands": {
+    "android": {
+      "plugin": "navig-mobile",
+      "module": null,
+      "pip": "navig-mobile",
+      "description": "NAVIG Mobile module — pro-grade Android + iOS device operations (a 3uTools for both platforms): connect, device info, apps, file pull, screenshots, backups, plus forensics / spyware-scan / rooting-jailbreak assist / dev-tools / OSINT, and app UI automation, verification & assertions (a11y snapshots, tap/fill, `ui assert` machine checks, evidence capture, replay via agent-device — powers the app-ui-verify Block). Wired into `navig mobile` (+ `navig android` / `navig ios`). A first-party navig plugin (free, toggleable)."
+    },
+    "antivirus": {
+      "plugin": "navig-antivirus",
+      "module": null,
+      "pip": "navig-antivirus",
+      "description": "NAVIG Antivirus module — browser-extension malware/PUP scanning, Chrome extension-registry auditing, Chrome profile-index recovery, and a system malware scan (Windows Defender; Malwarebytes best-effort). Wired into `navig antivirus`. A first-party navig plugin (free, toggleable)."
+    },
+    "audio": {
+      "plugin": "navig-audio",
+      "module": null,
+      "pip": "navig-audio",
+      "description": "NAVIG Audio module — voice (TTS/STT/wake-word/pipeline) + AI audio generation (music/SFX/TTS). A first-party navig plugin (free, toggleable). Extracted from core navig.voice."
+    },
+    "calendar": {
+      "plugin": "navig-calendar",
+      "module": "calendar",
+      "pip": "navig-calendar",
+      "description": "Calendar view & sync (Google Calendar / CalDAV)"
+    },
+    "devhost": {
+      "plugin": "navig-devhost",
+      "module": null,
+      "pip": "navig-devhost",
+      "description": "NAVIG Dev Host module — give any local dev server a real .test domain over trusted HTTPS in one command (hosts + mkcert + raw TLS relay), wired into `navig devhost`. A first-party navig plugin (free, toggleable)."
+    },
+    "dl": {
+      "alias_of": "download"
+    },
+    "download": {
+      "plugin": "navig-download",
+      "module": "download",
+      "pip": "navig-download",
+      "description": "Universal media downloader (yt-dlp) — video, audio & files"
+    },
+    "email": {
+      "plugin": "navig-email",
+      "module": "email",
+      "pip": "navig-email",
+      "description": "Email triage & sending"
+    },
+    "explore": {
+      "plugin": "navig-explore",
+      "module": null,
+      "pip": "navig-explore",
+      "description": "NAVIG Explore module — a universal local media/data explorer for ANY folder. Buckets files by type (image/gif/video/audio/text/document/archive), auto-reads Telegram exports, previews everything, and organizes by drag-to-class. Non-destructive. A first-party navig plugin (free, toggleable)."
+    },
+    "facebook": {
+      "plugin": "navig-social",
+      "module": "social",
+      "pip": "navig-social",
+      "description": "Manage a Facebook Page — publish, photos, backup"
+    },
+    "fb": {
+      "alias_of": "facebook"
+    },
+    "games": {
+      "plugin": "navig-games",
+      "module": null,
+      "pip": "navig-games",
+      "description": "NAVIG Games — proactively find & auto-claim FREE games (Epic now; GOG/Amazon/Steam next) and manage your game library. A first-party navig plugin (free, toggleable). FREE-ONLY: never spends real money."
+    },
+    "github": {
+      "plugin": "navig-github",
+      "module": "github",
+      "pip": "navig-github",
+      "description": "GitHub tools (repos, issues, PRs, backup, mirror)"
+    },
+    "ios": {
+      "plugin": "navig-mobile",
+      "module": null,
+      "pip": "navig-mobile",
+      "description": "NAVIG Mobile module — pro-grade Android + iOS device operations (a 3uTools for both platforms): connect, device info, apps, file pull, screenshots, backups, plus forensics / spyware-scan / rooting-jailbreak assist / dev-tools / OSINT, and app UI automation, verification & assertions (a11y snapshots, tap/fill, `ui assert` machine checks, evidence capture, replay via agent-device — powers the app-ui-verify Block). Wired into `navig mobile` (+ `navig android` / `navig ios`). A first-party navig plugin (free, toggleable)."
+    },
+    "mobile": {
+      "plugin": "navig-mobile",
+      "module": null,
+      "pip": "navig-mobile",
+      "description": "NAVIG Mobile module — pro-grade Android + iOS device operations (a 3uTools for both platforms): connect, device info, apps, file pull, screenshots, backups, plus forensics / spyware-scan / rooting-jailbreak assist / dev-tools / OSINT, and app UI automation, verification & assertions (a11y snapshots, tap/fill, `ui assert` machine checks, evidence capture, replay via agent-device — powers the app-ui-verify Block). Wired into `navig mobile` (+ `navig android` / `navig ios`). A first-party navig plugin (free, toggleable)."
+    },
+    "mstore": {
+      "plugin": "navig-msstore",
+      "module": null,
+      "pip": "navig-msstore",
+      "description": "navig mstore -- Microsoft Store publishing verbs for NAVIG, wrapping the msstore-publish block."
+    },
+    "pipeline": {
+      "plugin": "navig-pipeline",
+      "module": null,
+      "pip": "navig-pipeline",
+      "description": "NAVIG content assembly line — composes navig-download/-audio/-text/-social into one flow (download → transcribe → script → narrate → fan-out). A first-party navig plugin (free, toggleable)."
+    },
+    "social": {
+      "plugin": "navig-social",
+      "module": "social",
+      "pip": "navig-social",
+      "description": "Compose, schedule & publish across social networks (Studio + fan-out)"
+    },
+    "telegram-exports": {
+      "plugin": "navig-explore",
+      "module": null,
+      "pip": "navig-explore",
+      "description": "NAVIG Explore module — a universal local media/data explorer for ANY folder. Buckets files by type (image/gif/video/audio/text/document/archive), auto-reads Telegram exports, previews everything, and organizes by drag-to-class. Non-destructive. A first-party navig plugin (free, toggleable)."
+    },
+    "text": {
+      "plugin": "navig-text",
+      "module": null,
+      "pip": "navig-text",
+      "description": "NAVIG Text module — AI text generation (drafts/articles/captions/briefs). A first-party navig plugin (free, toggleable). The TEXT facet of the shared media generation engine."
+    },
+    "tiktok": {
+      "plugin": "navig-download",
+      "module": "download",
+      "pip": "navig-download",
+      "description": "TikTok download + metadata & AI briefings"
+    },
+    "tt": {
+      "alias_of": "tiktok"
+    }
+  }
+}

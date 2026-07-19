@@ -36,7 +36,7 @@ def test_bridge_default_port_is_int():
 
 def test_llm_router_mcp_bridge_url_uses_constant():
     """PROVIDER_BASE_URLS['mcp_bridge'] must contain port 42070 (via constant)."""
-    from navig.llm_router import PROVIDER_BASE_URLS
+    from navig.llm.router import PROVIDER_BASE_URLS
 
     url = PROVIDER_BASE_URLS.get("mcp_bridge", "")
     assert "42070" in url, f"mcp_bridge base URL {url!r} does not contain port 42070"

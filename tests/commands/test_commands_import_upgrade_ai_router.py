@@ -131,7 +131,7 @@ def test_import_value_error_exits_1():
 def test_run_version_json_output(capsys):
     from navig.commands.upgrade import run_version
 
-    with patch("navig.cli._callbacks._get_hacker_quotes", return_value=[("q", "a")], create=True):
+    with patch("navig.cli._callbacks._get_hacker_quotes", return_value=[("q", "a")]):
         run_version(json_output=True)
 
     captured = capsys.readouterr()
@@ -144,7 +144,7 @@ def test_run_version_json_output(capsys):
 def test_run_version_json_keys(capsys):
     from navig.commands.upgrade import run_version
 
-    with patch("navig.cli._callbacks._get_hacker_quotes", return_value=[("q", "a")], create=True):
+    with patch("navig.cli._callbacks._get_hacker_quotes", return_value=[("q", "a")]):
         run_version(json_output=True)
 
     data = json.loads(capsys.readouterr().out)
@@ -157,7 +157,7 @@ def test_run_version_no_json_calls_ch_info():
 
     with (
         patch("navig.commands.upgrade.ch") as mock_ch,
-        patch("navig.cli._callbacks._get_hacker_quotes", return_value=[("hello", "world")], create=True),
+        patch("navig.cli._callbacks._get_hacker_quotes", return_value=[("hello", "world")]),
     ):
         run_version(json_output=False)
 
@@ -167,9 +167,9 @@ def test_run_version_no_json_calls_ch_info():
 
 
 def test_run_version_default_is_not_json():
-    from navig.commands.upgrade import run_version
-
     import inspect
+
+    from navig.commands.upgrade import run_version
     sig = inspect.signature(run_version)
     assert sig.parameters["json_output"].default is False
 
@@ -181,8 +181,9 @@ def test_run_version_default_is_not_json():
 
 def test_run_upgrade_check_non_git(tmp_path):
     """Non-git directory: just prints version, no subprocess needed."""
-    from navig.commands.upgrade import run_upgrade
     import subprocess
+
+    from navig.commands.upgrade import run_upgrade
 
     with (
         patch("navig.commands.upgrade.Path") as mock_path_cls,
@@ -219,7 +220,7 @@ def test_run_upgrade_check_git_mode(tmp_path):
 
 
 def test_classify_intent_returns_intent_result():
-    from navig.commands.ai_router import classify_intent, IntentResult
+    from navig.commands.ai_router import IntentResult, classify_intent
 
     result = classify_intent("why is nginx down?")
     assert isinstance(result, IntentResult)
@@ -228,7 +229,7 @@ def test_classify_intent_returns_intent_result():
 
 
 def test_classify_intent_diagnose_high_confidence():
-    from navig.commands.ai_router import classify_intent, CONFIDENCE_THRESHOLD
+    from navig.commands.ai_router import CONFIDENCE_THRESHOLD, classify_intent
 
     result = classify_intent("why is my server crashing with 502 bad gateway?")
     assert result.subcommand == "diagnose"
@@ -236,7 +237,7 @@ def test_classify_intent_diagnose_high_confidence():
 
 
 def test_classify_intent_explain_high_confidence():
-    from navig.commands.ai_router import classify_intent, CONFIDENCE_THRESHOLD
+    from navig.commands.ai_router import CONFIDENCE_THRESHOLD, classify_intent
 
     result = classify_intent("explain what this command does")
     assert result.subcommand == "explain"
@@ -244,7 +245,7 @@ def test_classify_intent_explain_high_confidence():
 
 
 def test_classify_intent_suggest_high_confidence():
-    from navig.commands.ai_router import classify_intent, CONFIDENCE_THRESHOLD
+    from navig.commands.ai_router import CONFIDENCE_THRESHOLD, classify_intent
 
     result = classify_intent("suggest how to optimize and improve performance")
     assert result.subcommand == "suggest"
@@ -282,7 +283,7 @@ def test_confidence_threshold_value():
 
 
 def test_score_all_covers_all_subcommands():
-    from navig.commands.ai_router import _score_all, _WEIGHTS
+    from navig.commands.ai_router import _WEIGHTS, _score_all
 
     results = _score_all("run check show explain suggest ask diagnose")
     result_names = {r.subcommand for r in results}

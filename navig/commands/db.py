@@ -279,12 +279,15 @@ def _execute_db_query(
 
 def _resolve_host_discovery(
     options: dict[str, Any],
-) -> tuple[str, Any, Any] | None:
+) -> tuple[str, Any, Any]:
     """
     Shared bootstrap for DB commands: resolve the active host, build the SSH
     config, and return ``(host_name, config_manager, discovery)``.
 
-    Returns *None* (after emitting an error) when the host cannot be found.
+    Never returns on failure — emits an error and raises ``typer.Exit`` so the
+    command exits non-zero (exit 2 when the named host does not exist, exit 1
+    when its config is present but unusable). Callers can unpack the result
+    unconditionally.
     """
     from navig.cli.recovery import require_active_host
     from navig.config import get_config_manager
@@ -295,16 +298,16 @@ def _resolve_host_discovery(
         host_name = require_active_host(options, config_manager)
     except (FileNotFoundError, ValueError) as exc:
         ch.error(str(exc))
-        return None
+        raise typer.Exit(1) from exc
 
     try:
         host_config = config_manager.load_host_config(host_name)
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
         ch.error(f"Host not found: {host_name}")
-        return None
+        raise typer.Exit(2) from exc
     if not host_config:
         ch.error(f"Host not found: {host_name}")
-        return None
+        raise typer.Exit(2)
 
     debug_logger = options.get("debug_logger")
     ssh_host = host_config.get("host", host_config.get("hostname"))
@@ -312,7 +315,7 @@ def _resolve_host_discovery(
         ch.error(
             f"Host '{host_name}' configuration is missing required 'host' or 'hostname'."
         )
-        return None
+        raise typer.Exit(1)
 
     ssh_config = {
         "host": ssh_host,
@@ -341,10 +344,7 @@ def db_containers_cmd(options: dict[str, Any]):
 
     Usage: navig db containers
     """
-    result = _resolve_host_discovery(options)
-    if result is None:
-        return
-    host_name, _config_manager, discovery = result
+    host_name, _config_manager, discovery = _resolve_host_discovery(options)
 
     spinner_ctx = (
         ch.create_spinner("Scanning for database containers...")
@@ -401,10 +401,7 @@ def db_query_cmd(
 
     Usage: navig db query "SELECT 1" --container mysql_db --user root
     """
-    result = _resolve_host_discovery(options)
-    if result is None:
-        return
-    host_name, config_manager, discovery = result
+    host_name, config_manager, discovery = _resolve_host_discovery(options)
 
     # Resolve credentials from app/host config
     # Only use CLI-provided credentials if they differ from defaults
@@ -434,7 +431,7 @@ def db_query_cmd(
         if not db_type:
             ch.error("Could not detect database type.")
             ch.info("Use --type to specify: mysql, mariadb, or postgresql")
-            return
+            raise typer.Exit(1)
         # Keep JSON/plain/quiet output strictly machine-readable.
         if (
             not options.get("json")
@@ -486,6 +483,10 @@ def db_query_cmd(
                 "stderr": filtered_stderr,
             }
         )
+        # The machine-readable envelope carries success=false, but the exit code
+        # must be truthful too (ledger + shell `&&`), matching db.tables/db.list.
+        if not success:
+            raise typer.Exit(1)
         return
 
     if success:
@@ -540,6 +541,7 @@ def db_query_cmd(
                 ch.dim(
                     "     Instead of root, use a dedicated user with limited permissions"
                 )
+        raise typer.Exit(1)
 
 
 @command_meta(
@@ -567,10 +569,7 @@ def db_list_cmd(
 
     Usage: navig db-databases --container mysql_db
     """
-    result = _resolve_host_discovery(options)
-    if result is None:
-        return
-    host_name, config_manager, discovery = result
+    host_name, config_manager, discovery = _resolve_host_discovery(options)
 
     # Resolve database credentials from config if not provided
     resolved_user, resolved_password, resolved_db_type = (
@@ -596,7 +595,7 @@ def db_list_cmd(
 
         if not resolved_db_type:
             ch.error("Could not detect database type.")
-            return
+            raise typer.Exit(1)
 
     # Build query based on database type
     if resolved_db_type in ("mysql", "mariadb"):
@@ -624,7 +623,7 @@ def db_list_cmd(
         ch.error("Failed to list databases")
         if stderr:
             ch.error(stderr)
-        return
+        raise typer.Exit(1)
 
     # Parse output
     lines = stdout.strip().split("\n")
@@ -692,10 +691,7 @@ def db_tables_cmd(
 
     Usage: navig db-show-tables mydb --container mysql_db
     """
-    result = _resolve_host_discovery(options)
-    if result is None:
-        return
-    host_name, config_manager, discovery = result
+    host_name, config_manager, discovery = _resolve_host_discovery(options)
 
     # Resolve database credentials from config if not provided
     resolved_user, resolved_password, resolved_db_type = (
@@ -714,7 +710,7 @@ def db_tables_cmd(
             resolved_db_type = _detect_db_type(discovery, container)
         if not resolved_db_type:
             ch.error("Could not detect database type.")
-            return
+            raise typer.Exit(1)
 
     # Build query
     if resolved_db_type in ("mysql", "mariadb"):
@@ -742,7 +738,7 @@ def db_tables_cmd(
         ch.error("Failed to list tables")
         if stderr:
             ch.error(stderr)
-        return
+        raise typer.Exit(1)
 
     # Parse output
     lines = stdout.strip().split("\n")
@@ -808,10 +804,7 @@ def db_dump_cmd(
     """
     from datetime import datetime
 
-    result = _resolve_host_discovery(options)
-    if result is None:
-        return
-    host_name, config_manager, discovery = result
+    host_name, config_manager, discovery = _resolve_host_discovery(options)
 
     # Resolve database credentials from config if not provided
     resolved_user, resolved_password, resolved_db_type = (
@@ -825,7 +818,7 @@ def db_dump_cmd(
             resolved_db_type = _detect_db_type(discovery, container)
         if not resolved_db_type:
             ch.error("Could not detect database type.")
-            return
+            raise typer.Exit(1)
 
     # Build dump command with proper shell escaping
     escaped_user = _escape_for_shell(resolved_user)
@@ -877,6 +870,7 @@ def db_dump_cmd(
         ch.error("Backup failed")
         if stderr:
             ch.error(stderr)
+        raise typer.Exit(1)
 
 
 def db_shell_cmd(
@@ -909,7 +903,7 @@ def db_shell_cmd(
     host_config = config_manager.load_host_config(host_name)
     if not host_config:
         ch.error(f"Host not found: {host_name}")
-        return
+        raise typer.Exit(2)
 
     # Resolve database credentials from config if not provided
     resolved_user, resolved_password, resolved_db_type = (
@@ -1340,3 +1334,10 @@ def db_repair_new(
     from navig.commands.database_advanced import repair_table_cmd
 
     repair_table_cmd(table, ctx.obj)
+
+
+# ── Local SQLite store maintenance (formerly top-level `navig store`) ─────────
+# Lazy sub-app mount: `navig db local status|maintenance|backup|migrate|cleanup`.
+from navig.commands.db_local import db_local_app  # noqa: E402
+
+db_app.add_typer(db_local_app, name="local")

@@ -20,7 +20,8 @@ function Show-NavStatus {
         Outputs a single horizontal bar with the following segments:
           [OS icon] NAVIG  |  [status]  |  [model]  |  [task]  |  [speed]  |  [VRAM]
 
-        Glyphs require a Nerd Font.  Run scripts/Install-NerdFont.ps1 first.
+        Glyphs require a Nerd Font.  Run `navig onboard` (it offers to install one), or
+        pwsh navig/builtin/scripts/Install-NerdFont.ps1 from a source checkout.
 
     .PARAMETER Model
         Active LLM model name (e.g. "Qwen3.5-9B").

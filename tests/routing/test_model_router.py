@@ -45,6 +45,28 @@ class TestRoutingConfig:
         assert cfg.coder_big.model == "deepseek-coder"
         assert cfg.is_active is True
 
+    def test_from_dict_preserves_unlisted_gateway_model(self):
+        # Regression: OpenRouter is a gateway to hundreds of models, but its
+        # manifest lists only a curated subset. A valid model the operator
+        # configured that isn't in that subset must be PRESERVED, not silently
+        # rewritten to the provider default (registry substitution is for
+        # fixed-catalog providers like nvidia, not gateways).
+        data = {
+            "enabled": True,
+            "mode": "rules_then_fallback",
+            "models": {
+                "small": {"provider": "ollama", "model": "qwen2.5:3b"},
+                "big": {"provider": "openrouter", "model": "mistralai/mistral-large"},
+                "coder_big": {
+                    "provider": "openrouter",
+                    "model": "qwen/qwen-2.5-coder-32b-instruct",
+                },
+            },
+        }
+        cfg = RoutingConfig.from_dict(data)
+        assert cfg.big.model == "mistralai/mistral-large"
+        assert cfg.coder_big.model == "qwen/qwen-2.5-coder-32b-instruct"
+
     def test_from_dict_legacy_flat(self):
         data = {
             "mode": "heuristic",

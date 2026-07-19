@@ -35,7 +35,7 @@ def snapshot_versions(
     store = get_file_history_store()
 
     if not store._is_enabled():
-        ch.warn(
+        ch.warning(
             "File history is disabled. Set [bold]file_history.enabled: true[/bold] in your config to enable it."
         )
         raise typer.Exit(1)
@@ -101,7 +101,7 @@ def snapshot_diff(
     store = get_file_history_store()
 
     if not store._is_enabled():
-        ch.warn("File history is disabled — no versions to diff.")
+        ch.warning("File history is disabled — no versions to diff.")
         raise typer.Exit(1)
 
     session_id = session or _latest_session()
@@ -125,7 +125,7 @@ def snapshot_diff(
         v1 = v1_matches[0]
     else:
         if len(versions) < 2:
-            ch.warn("Only one stored version — comparing against live file.")
+            ch.warning("Only one stored version — comparing against live file.")
             v1 = versions[-1]
         else:
             v1 = versions[-2]
@@ -165,7 +165,7 @@ def snapshot_restore(
     store = get_file_history_store()
 
     if not store._is_enabled():
-        ch.warn("File history is disabled.")
+        ch.warning("File history is disabled.")
         raise typer.Exit(1)
 
     session_id = session or _latest_session()
@@ -218,7 +218,7 @@ def snapshot_create(
     """
     from navig import console_helper as ch
 
-    ch.warn(
+    ch.warning(
         "Config snapshots are not yet implemented. "
         "To snapshot a specific file, use: [bold]navig snapshot versions <filepath>[/bold]"
     )
@@ -229,15 +229,29 @@ def snapshot_create(
 # ──────────────────────────────────────────────────────────────────────
 
 def _latest_session() -> str | None:
-    """Try to resolve the most recent session ID from the gateway state."""
+    """Resolve the most recently active gateway session key.
+
+    File snapshots are keyed by the gateway session that made the edit
+    (``~/.navig/file-cache/<session_id>/``), so the newest session is the best
+    default when the user omits ``--session``. Queries the gateway's
+    ``/sessions`` endpoint and returns the key with the latest ``updated_at``
+    (ISO timestamps sort chronologically). Returns None when the gateway is
+    unreachable or has no sessions — callers then require an explicit
+    ``--session``.
+    """
     try:
-        from navig.gateway_client import get_active_session_id  # type: ignore[import]
-        return get_active_session_id()
-    except Exception:
-        pass
-    try:
-        from navig.config import get_config_manager
-        cfg = get_config_manager()
-        return cfg.get("session.last_id")  # type: ignore[return-value]
+        from navig.gateway_client import gateway_request
+
+        resp = gateway_request("GET", "/sessions", timeout=2.0)
+        if resp is None or resp.status_code != 200:
+            return None
+        sessions = resp.json().get("sessions", [])
+        if not sessions:
+            return None
+        latest = max(
+            sessions,
+            key=lambda s: s.get("updated_at") or s.get("created_at") or "",
+        )
+        return latest.get("key")
     except Exception:
         return None

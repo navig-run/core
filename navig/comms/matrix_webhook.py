@@ -20,6 +20,8 @@ import logging
 import time
 from typing import Any
 
+from navig.platform.paths import config_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -72,7 +74,7 @@ async def push_matrix_stats(
 
             from navig.comms.matrix_store import MatrixStore
 
-            db_path = os.path.expanduser("~/.navig/matrix.db")
+            db_path = str(config_dir() / "matrix.db")
             if not os.path.exists(db_path):
                 logger.debug("Matrix stats webhook: no store DB, skip")
                 return False

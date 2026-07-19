@@ -11,14 +11,13 @@ from unittest.mock import patch
 
 import pytest
 
+from navig.workspace import WorkspaceManager
 from navig.workspace_ownership import (
-    PERSONAL_STATE_FILES,
     GENERATED_DEFAULT_FILES,
+    PERSONAL_STATE_FILES,
     classify_workspace_file,
     is_project_workspace_path,
 )
-from navig.workspace import WorkspaceManager
-
 
 # ---------------------------------------------------------------------------
 # workspace_ownership — classify_workspace_file
@@ -84,7 +83,7 @@ class TestLoadConfig:
     def test_returns_dict_for_valid_json(self, tmp_path):
         cfg = tmp_path / "navig.json"
         cfg.write_text(json.dumps({"agents": {"defaults": {"workspace": str(tmp_path)}}}))
-        with patch("navig.workspace.USER_WORKSPACE_DIR", tmp_path / "ws"):
+        with patch("navig.workspace.user_workspace_dir", return_value=tmp_path / "ws"):
             wm = WorkspaceManager(workspace_path=tmp_path, config_path=cfg)
         assert isinstance(wm.config, dict)
         assert "agents" in wm.config
@@ -142,7 +141,7 @@ class TestValidatedWorkspaceOverride:
             os.chdir(old_cwd)
 
     def test_rejects_external_path(self, tmp_path):
-        from navig.workspace import USER_WORKSPACE_DIR
+        from navig.workspace import user_workspace_dir  # noqa: F401 — fallback target
         # We need a path that is NOT under home, cwd or tmpdir
         # Use an absolute path in a drive root that isn't allowed
         wm = self._make_wm(tmp_path)
@@ -154,7 +153,7 @@ class TestValidatedWorkspaceOverride:
         # Switch to a predictably short cwd
         os.chdir(tmp_path)
         try:
-            # An absolute path outside home / tmp / cwd should fall back to USER_WORKSPACE_DIR
+            # An absolute path outside home / tmp / cwd should fall back to user_workspace_dir()
             # But this is hard to guarantee cross-platform, so we verify return value type at least
             wm2 = WorkspaceManager(workspace_path=tmp_path, config_path=tmp_path / "no.json")
             result = wm2._validated_workspace_override(tmp_path)

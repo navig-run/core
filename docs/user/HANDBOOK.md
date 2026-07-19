@@ -1,11 +1,7 @@
----
-applyTo: '**'
----
-
 # NAVIG - AI-Optimized Command Reference Guide
 
 > **Primary Knowledge Base for AI Assistants**
-> Version: 2.9.1 | Last Updated: 2026-05-01
+> Version: 3.24.0 | Last Updated: 2026-07-18
 
 ---
 
@@ -428,7 +424,12 @@ Use this to discover topics you can dive into.
 navig help <topic>
 ```
 
-Renders the full Markdown topic file for that resource group.
+Renders the full Markdown topic file for that resource group (rich headings,
+code blocks, and examples in the terminal), ending with a pointer to
+`navig <topic> --help` when the topic is a runnable command. Topics without a
+Markdown guide fall through to the command's own `--help` flag reference.
+`navig <cmd> --help` itself always shows Typer's exhaustive flag dump — the
+guide never replaces it.
 
 **Examples:**
 
@@ -467,11 +468,24 @@ Registry artifacts are generated from command metadata and committed under:
 - `generated/deprecations.json` (deprecation report)
 - `generated/completions/commands.txt` (completion source)
 
-Regenerate locally:
+Regenerate locally **under Python 3.13 with the first-party plugins installed** — the
+committed manifest is built on 3.13, and any other interpreter (or a bare-core install)
+silently shrinks the plugin surface. The generator refuses to overwrite the tracked
+`generated/` files from a non-3.13 interpreter unless you acknowledge it with
+`--allow-interpreter <X.Y>`:
 
 ```bash
 python tools/export_registry.py --validate --format both --deprecations-report
 ```
+
+`npm run ci` (via `scripts/ci-local.mjs`) runs a **command manifest freshness** step that
+regenerates the manifest under Python 3.13 and checks it against the committed copy, so a stale
+catalog fails locally even though CI is billing-blocked. The check is **core-scoped**: the
+committed manifest is a superset snapshot from one machine, but which first-party plugins you have
+installed varies — so **core** commands (whose `module` is the `navig` package) are compared
+strictly (a core command added / removed / renamed / signature-drifted fails, naming it), while a
+difference confined to **plugin** commands (`navig_<plugin>`) is a non-fatal note, not a failure.
+Regenerate under 3.13 with all first-party plugins installed to refresh the plugin portion.
 
 ### Per-Command Help
 
@@ -2722,7 +2736,7 @@ navig security audit
 🔴 CRITICAL (1 issue)
 ┌──────────────────────────────────────────────────────────┐
 │ Package: OpenSSL 1.0.2                                   │
-│ Issue: CVE-2023-XXXX - Remote code execution            │
+│ Issue: CVE-20XX-XXXX - Remote code execution            │
 │ Action: Update to OpenSSL 3.0.12 immediately            │
 └──────────────────────────────────────────────────────────┘
 
@@ -3453,6 +3467,79 @@ navig db-shell --container mysql_db
 
 Common issues and solutions.
 
+### Start here: `navig doctor` (self-diagnostics)
+
+Run the built-in health report before debugging anything by hand. It checks config, storage,
+vault, sockets, formations, skills, the gateway (including the event processor), AI providers,
+and plugin/module wiring — read-only, no state mutated.
+
+```bash
+# Full health report (issues only; passing sections summarize to one line)
+navig doctor
+
+# Show every check, including passing ones
+navig doctor --verbose
+
+# Machine-readable report for scripts and agents — always includes EVERY check
+# (--verbose semantics), plain text only (no colors/glyphs), never prompts.
+# Exit code matches the human mode: 0 only when every check passes.
+navig doctor --json
+
+# Probe a specific gateway port / skip Python dependency checks
+navig doctor --port 8789 --skip-deps
+```
+
+`--json` prints exactly one JSON document on stdout:
+
+```json
+{
+  "ok": false,
+  "sections": [
+    {"name": "Storage", "ok": true, "checks": [
+      {"label": "Vault", "ok": true, "warn": false, "detail": "2 item(s) · encryption OK"}
+    ]}
+  ],
+  "summary": {"passed": 24, "warnings": 2, "failed": 1},
+  "version": "2.9.1",
+  "generated_at": "2026-07-15T12:00:00+00:00"
+}
+```
+
+Row states: `ok=true` = verified healthy (✓) · `ok=false, warn=true` = warning (⚠) ·
+`ok=false, warn=false` = failure (✗). Warnings flip the exit code to 1 just like failures —
+in this report a ✓ means *verified*, never "could not check".
+
+### Fix what doctor found: `navig doctor --heal`
+
+Close the observe→repair loop: `--heal` maps failing checks onto fixes that already exist in
+navig and runs the **safe** ones, then re-checks and shows before/after.
+
+```bash
+# Preview: list failing checks and what WOULD be fixed — executes nothing
+navig doctor --heal --dry-run
+
+# Apply the safe fixes, re-check, print before/after
+navig doctor --heal
+
+# Machine-readable heal run (actions + final report in one JSON document)
+navig doctor --heal --json
+```
+
+What auto-heals (safe, additive):
+- **Gateway not running / MESH_TOKEN unset** → starts the daemon through the normal
+  `navig service start` path — a daemon you stopped deliberately stays stopped.
+- **Legacy credentials unmigrated** → runs the vault migration (legacy DB is read-only,
+  existing items are skipped).
+
+What stays **report-only** (disruptive — you pull the trigger, `--heal` prints the command):
+- a wedged event processor or a stale lighthouse webhook tenant → `navig service restart`;
+- leaked debug browsers → `navig cdp stop --all`.
+
+Anything else failing is listed as "no automatic remediation". Exit code: 0 only when the
+final (post-heal) report is fully green — same parity rule as plain `navig doctor`.
+
+---
+
 ### Issue: "No active host"
 
 **Cause:** No host is currently selected.
@@ -4101,16 +4188,18 @@ navig workflow run server-health --yes
 | `~/.navig/workflows/` | Global | Medium |
 | `navig/resources/workflows/` | Built-in | Lowest |
 
-### 20.3 Built-in Workflows
+### 20.3 Built-in ops workflows → now Blocks
 
-NAVIG includes several example workflows:
+The bundled ops workflows are now **Blocks** — run them with `navig apply` (typed
+inputs, machine verify, `--approve`-gated destructive steps, signed receipt). See
+`docs/blocks-vs-workflows.md`. This engine still runs your own workflows below.
 
-| Workflow | Description |
-|----------|-------------|
-| `safe-deployment` | Deploy with health checks and rollback safety |
-| `db-snapshot` | Export production database for local development |
-| `emergency-debug` | Rapid diagnostics for failing services |
-| `server-health` | Comprehensive server health check |
+| Block | Run | Description |
+|-------|-----|-------------|
+| `safe-deployment` | `navig apply safe-deployment …` | Deploy, backup, config-test, verified by a post-deploy health check |
+| `db-snapshot` | `navig apply db-snapshot …` | Export a DB and pull it local (verified: dump file exists) |
+| `emergency-debug` | `navig apply emergency-debug` | Rapid read-only service/container diagnostics |
+| `server-health` | `navig apply server-health` | Read-only server health sweep |
 
 ### 20.4 Workflow File Format
 
@@ -6126,6 +6215,72 @@ See [AGENT_MODE.md](AGENT_MODE.md) for full SOUL.md documentation.
 - **Safe mode**: Blocks sudo, limits concurrent commands
 - **Configurable patterns**: Add custom confirmation requirements
 
+#### Gateway policy gate (approval + audit)
+
+Every privileged gateway action (`mission.create`, `mission.advance.*`, `system.shutdown`,
+`system.stop`, `formation.start`, `task.add`, `node.register`, …) passes through a single
+policy gate before executing. The decision model is `allow` / `require_approval` / `deny`,
+driven entirely by config — no hardcoded lists:
+
+```yaml
+# ~/.navig/config.yaml
+gateway:
+  policy:
+    default: allow            # decision for unmatched actions
+    rules:                    # first match wins (fnmatch patterns)
+      - pattern: "system.shutdown"
+        action: require_approval
+      - pattern: "mission.*"
+        action: require_approval
+approval:
+  enabled: true               # master switch for the approval flow
+  timeout_seconds: 120        # how long a gated request waits for a human
+  default_action: deny        # timeout resolution (dangerous ops always deny)
+```
+
+- `deny` → rejected immediately (HTTP 403, `policy_denied`).
+- `require_approval` → the request **blocks** until you approve or deny it — from the
+  deck Inbox (Requests card), Telegram, or `POST /approval/{id}/respond`. Timeout, an
+  approval-flow error, or no approval channel at all → denied. The gate fails closed,
+  never open.
+- `allow` → proceeds immediately (still audited).
+
+**Agent tool calls are gated the same way.** When the chat agent (Telegram / deck) wants
+to run a destructive tool (`bash_exec`, `db_query`, `cdp_eval`, …), the gateway routes the
+confirmation through the same approval flow: the prompt lands in the deck Inbox / Telegram,
+timeout follows `approval.default_action`, and the decision is audited as
+`tool.execute.<tool_name>`. If the approval subsystem is unavailable inside the gateway the
+tool call is **denied** — never silently approved. A denied call returns a clean
+`[Denied: …]` result the agent reads and adapts to. Headless CLI runs (no gateway) keep the
+single-operator default — dangerous tools log a loud warning and proceed — and
+`NAVIG_ALLOW_ALL_COMMANDS=1` bypasses the gate for pre-screened automation. To pin a
+specific tool, add an `approval.levels` pattern matching `tool <name>` (e.g.
+`"tool cdp_eval*"` under `dangerous:` makes its timeout always deny).
+
+Every decision is appended to the structured audit log at
+`~/.navig/runtime/audit.jsonl` — who / what / when / decision / matched rule; inputs
+are stored as SHA-256 hashes, never verbatim. Inspect it from the terminal (reads the
+file directly — no daemon required) or over the gateway API:
+
+```bash
+navig audit tail                        # latest 20 records, house table
+navig audit tail -n 50 --status denied  # what was refused, and why
+navig audit tail --action tool.execute  # gated agent tool calls only
+navig audit tail --json                 # machine-readable (path, total, events)
+
+GET  /audit?limit=50&action=mission&actor=telegram:123&status=denied
+GET  /approval/pending                  # requests currently waiting for a human
+POST /approval/{id}/respond             # body: {"approved": true|false}
+```
+
+`navig audit tail` filters mirror `GET /audit`: `--action` is a prefix match,
+`--actor` and `--status` are exact; `--path` inspects a copied/rotated file. A missing
+or empty log is an honest non-failure (exit 0). Pending records are actionable via
+`navig approve list` / `navig approve yes|no <id>`.
+
+Hard-deny patterns (`system.delete_all`, `*.drop_all`) can never be overridden by
+config.
+
 ### 25.7 Self-Healing & Learning
 
 NAVIG agent includes advanced autonomous capabilities:
@@ -6329,6 +6484,10 @@ navig mcp install brave-search
 # Enable the server
 navig mcp enable brave-search
 
+# Inspect one server (type, command, enabled state); add --json for scripts
+navig mcp info brave-search
+navig mcp info brave-search --json   # secret-free JSON (env values never included)
+
 # Set your API key (get from https://brave.com/search/api/)
 navig config set mcp.brave-search.env.BRAVE_API_KEY=your-api-key
 ```
@@ -6415,7 +6574,8 @@ brave-search:
 - Example: "Search for bitcoin price" vs just "bitcoin price"
 
 **No results returned?**
-- Check MCP server status: `navig mcp status`
+- Check all servers at a glance: `navig mcp list`
+- Drill into one: `navig mcp info brave-search` (type · command · enabled) — `--json` for scripts
 - Verify API key is valid
 
 ### 26.7 URL Investigation (Web Fetch)
@@ -7068,6 +7228,168 @@ The history system integrates with:
 - **Agent Mode**: Agent actions fully audited
 - **Memory System**: History informs AI suggestions
 
+### 29.11 Ledger Integrity — `navig ledger verify`
+
+Every entry written to `operations.jsonl` carries hash-chain fields: `prev`
+(the previous entry's fingerprint) and `hash` (sha256 over the previous
+fingerprint plus the entry's canonical JSON). Delete, edit, or reorder any
+line and the fingerprints stop matching.
+
+```bash
+# Re-walk the whole ledger and re-check every link
+navig ledger verify
+
+# ✓ 12,431 operations, chain intact
+# ✗ Chain broken at line 8,204: hash mismatch (entry rewritten or corrupted)
+
+# Machine-readable report (status, counts, breaks by line, restarts, anchor)
+navig ledger verify --json
+
+# Verify a specific file (e.g. the rotated backup)
+navig ledger verify --path ~/.navig/history/operations.jsonl.bak
+```
+
+**Exit codes:** `0` = intact (including honest non-failure states: no ledger
+yet, empty ledger, legacy pre-chain file) · `1` = chain broken.
+
+**Honest scope:** the chain is *tamper-evident, not tamper-proof* — an
+attacker who can rewrite the whole file can recompute the whole chain. What
+you get is integrity evidence: casual edits, lost lines, reordering, and
+corruption are detected and named by line.
+
+**Wrinkles handled:**
+- History rotation keeps recent lines verbatim, so the chain survives it; the
+  first surviving entry still names a rotated-out hash (reported as the
+  *anchor*, not a break).
+- `navig history clear` legitimately ends the chain; the next operation
+  starts a fresh one (a clean restart, never a failure).
+- Entries recorded before the chain existed are counted as *legacy
+  (unchained)* — they cannot be verified retroactively.
+
+**Inspecting the ledger — `navig ledger show`:**
+
+```bash
+# Recent operations with chain state + reversibility labels
+navig ledger show
+navig ledger show --tail 50
+navig ledger show --json     # one machine-readable document
+```
+
+Per entry: hash-chain state (`✓` verified · `○` legacy pre-chain · `✗` broken
+line), the green/yellow/red reversibility label (§29.12), status, and whether
+it was already undone. `show` is a view, not a gate — it always exits 0
+(`verify` carries the exit-code contract), it never appends to the ledger it
+displays, and command text passes through secret redaction before display.
+
+### 29.12 Reversibility & `navig undo`
+
+Every recorded operation carries an honest reversibility label:
+
+| Label | Meaning |
+|-------|---------|
+| `● green` | **Undoable** — the previous state (`undo_data`) was captured at execution time and `navig undo` can replay it |
+| `● yellow` | **Compensable / conditional** — a manual counter-action exists (start the service again, delete the uploaded copy); NAVIG names it but cannot replay it |
+| `● red` | **Irreversible** — data deleted, message sent, arbitrary command. Unknown operation types default to red |
+
+`navig config set` is the first green seam: it records the old value (or
+"did not exist before") so the change can be replayed backwards. Changes to
+secret-bearing keys (API keys, tokens, passwords) are captured **without
+plaintext** — a vault reference only — and are yellow: secrets never sit in
+the ledger and never replay from it.
+
+```bash
+# Preview what could be undone (state: ready / undone / drift)
+navig undo --list
+
+# Undo the LAST green operation — shows exactly what will be restored, asks first
+navig undo
+
+# Undo a specific operation, skipping the prompt
+navig undo op-20260716120000-abcd1234 --yes
+
+# Machine mode (requires --yes; prompts would corrupt the JSON stream)
+navig undo --json --yes
+```
+
+Safety rules (enforced, not advisory):
+
+- **Green only.** Yellow refusals include the compensation hint; red is an
+  honest "cannot be taken back".
+- **Never twice.** Every undo is itself recorded on the hash chain (tagged
+  `undo`, `args.undo_of = <target>`) and capped at yellow, so it never becomes
+  an undo candidate; a target with a successful undo entry is refused forever
+  after. Re-run the original command to redo.
+- **Drift detection.** If the target changed again since the operation (the
+  config key was re-set, the host switched again, the file was modified), the
+  undo is refused with what/why instead of overwriting newer state.
+- **The last green means the last green.** When the most recent green
+  operation is already undone or drifted, `navig undo` refuses with the
+  reason — it never silently skips to an older operation. Target older ones
+  explicitly by id.
+
+`navig history undo <id|index>` uses the same engine with the same rules.
+
+### 29.13 Distilling a skill from history — `navig skill distill`
+
+You do a real task through NAVIG — a dozen commands, two failed attempts before it
+worked. `navig skill distill` reads that slice of the operations ledger and writes the
+recipe: the successful path as ordered steps, the failed attempts as pitfall warnings,
+and reversibility labels (§29.12) as danger annotations — turning work done once into a
+reusable, shareable `SKILL.md`.
+
+```bash
+# Distill the last 2 hours into a draft skill (default window: 2h)
+navig skill distill --last 2h
+
+# Tighter window + an explicit name
+navig skill distill --last 30m --name deploy-hotfix
+
+# Distill exactly these operations (ids from `navig ledger show`)
+navig skill distill --ops op-20260716120000-a1b2c3d4,op-20260716120500-e5f6a7b8
+
+# Write next to your project instead of the user skill store
+navig skill distill --last 1h --out ./skills
+
+# Improve the prose with AI (needs a provider; commands stay verbatim)
+navig skill distill --last 2h --ai
+
+# Machine-readable summary (one JSON document)
+navig skill distill --last 1h --json
+```
+
+**What ends up in the recipe:**
+
+- **Steps** — only operations that *succeeded*. Failed, undone (§29.12), and the
+  distill command's own invocations are excluded; consecutive identical commands
+  collapse into one step with a run count.
+- **Pitfalls** — the failed attempts, with their (redacted) error and exit code, under
+  a "don't repeat these" heading — the "don't do X, it fails with Y" wisdom that only
+  comes from the mistakes.
+- **Danger annotations** — each step is tagged with its reversibility label; the
+  skill's `safety` is the worst step's label (a `red` step ⇒ `destructive`).
+- **Placeholders** — values that look instance-specific are replaced conservatively:
+  `<host>`, `<user>` (home-directory usernames), `<email>`, `<ip>`. When unsure the
+  literal stays, marked for you to review.
+
+**Secrets never leave the machine.** Before anything is written (or sent to the optional
+`--ai` drafter), the command sweeps every step for secrets — known token patterns,
+`--password`/`--token` flag values, sensitive `key=value` pairs, and opaque long tokens
+all become `<secret>` (never with an example value). This runs *first*, before
+placeholder extraction.
+
+**It's a draft, not a finished skill.** Review it, then lint it:
+
+```bash
+navig skill lint <path-it-printed>
+```
+
+The draft always writes real YAML frontmatter with a routing-rich description, so it
+passes the authoring standard out of the box — but the *intent* (name, which steps
+matter) is yours to refine. `--force` overwrites an existing skill of the same name;
+without it, distill refuses rather than clobber. The distill run records its own ledger
+line as a green, undoable `file_create`, so `navig undo` removes the draft if you don't
+want it.
+
 ---
 
 <a id="30-intelligent-suggestions--quick-actions"></a>
@@ -7453,6 +7775,12 @@ Insights derive from operations history:
 ---
 
 ## 33. � Packs System
+
+> **Removed (2026-07).** The `navig pack` / `navig package` command and the built-in pack
+> system have been retired. Shareable, verifiable outcomes are now **Blocks** —
+> `navig apply <id>` (see `docs/blocks-vs-workflows.md`); reusable capability bundles are
+> **plugins** (`navig plugin …`). The examples in this section are historical. Migrate any
+> on-disk packs under `~/.navig/packs` with `navig doctor migrate-packs`.
 
 Packs are shareable operations bundles containing runbooks, checklists, workflows, and templates. Install community packs or create your own reusable operations.
 
@@ -8044,7 +8372,167 @@ Work items are stored in `~/.navig/store/work.db` (SQLite, two tables):
 
 ---
 
-## 38. NAVIG Ecosystem Products
+## 38. Browser Control (`navig cdp`)
+
+Drive any **Chromium-family** surface — Chrome / Edge / Brave **and** Electron apps
+(Discord, Notion, Slack, VS Code) — over the Chrome DevTools Protocol. Screenshot,
+click, type, scroll, move the mouse, run JS, navigate, and read every open tab, from
+the CLI or as agent-callable `cdp_*` MCP tools. Full guide:
+[`docs/automation/cdp-connector.md`](../../../docs/automation/cdp-connector.md).
+
+### Enable, use, disable
+
+```bash
+navig cdp launch chrome          # enable: a debuggable Chrome (dedicated profile)
+navig cdp tabs                   # every open page
+navig cdp snapshot --url github  # read a tab's structure (numeric refs)
+navig cdp click --ref 8 --url github
+navig cdp eval "document.title"  # run JS (confirm-gated)
+navig cdp stop --all             # disable: close every debug browser NAVIG started
+```
+
+### Fresh, isolated browser
+
+```bash
+navig cdp new                    # throwaway profile, auto-allocated port
+navig cdp new --profile research # reusable named profile (logins persist)
+navig cdp new --headless --window-size 1440x900  # windowless + fixed viewport (CI / deterministic shots)
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `navig cdp status` / `targets` | Show launchable apps + live CDP targets (`kind: browser/node`) |
+| `navig cdp launch <app>` | Start an app with a debug port (`--force-restart`, `--user-data-dir`) |
+| `navig cdp new` | Fresh isolated browser — own profile + auto port (`--app`, `--profile`, `--headless`, `--window-size WxH`) |
+| `navig cdp launched` | List browsers NAVIG started and whether each is live |
+| `navig cdp stop` / `detach` | Close (`--port`/`--all`) or just disconnect a debug browser |
+| `navig cdp tabs` / `switch` | List every open page / make one the active target |
+| `navig cdp snapshot` / `screenshot` | a11y tree with refs / capture the page |
+| `navig cdp click` / `type` / `key` / `scroll` / `move` | Interact (by `--ref`, `--xy`, or focused element) |
+| `navig cdp eval` / `nav` | Run JavaScript (gated) / navigate a page |
+| `navig cdp login <domain>` | Auto-login from a vaulted website credential (gated) |
+| `navig cdp inject <script\|@file>` | Register a persistent userscript (runs at document-start) |
+
+Every action targets a tab with `--tab <index>` or `--url <substring>`; all support
+`--port` (default 9222) and `--json`.
+
+### Website auto-login (`navig cdp login`)
+
+Store a website login once, then sign in on any attached browser — session-first, so
+after the first login NAVIG restores the saved session instead of retyping.
+
+```bash
+navig vault login add github.com -u you@example.com          # prompts for the password
+navig vault login add github.com -u you@example.com --totp JBSWY3DPEHPK3PXP  # + 2FA
+navig vault login list                                        # no passwords shown
+navig cdp new                                                 # a visible browser
+navig cdp login github.com --open https://github.com/login   # navigate + sign in
+```
+
+- **Session-first**: on success the authenticated session (cookies + localStorage) is
+  captured to the vault; the next `login` **restores the session** — no password typed —
+  and only re-fills the password when the session is stale.
+- **Origin-bound + https-only**: a credential fills **only** on its registrable domain
+  (eTLD+1, public-suffix aware) after IDN/punycode normalisation — never on a look-alike
+  (`g00gle.com`), a suffix trick (`github.com.evil.com`), or a cross-origin iframe. The
+  password is injected server-side; it never enters an AI's context or a log.
+- **2FA**: if the login stored a `--totp` secret, the engine fills the one-time-code step
+  itself (RFC 6238). SMS / app-approval 2FA (no stored secret) still needs you.
+- Status values: `session_restored`, `logged_in`, `filled` (2FA/captcha pending),
+  `no_credential`, `needs_disambiguation` (pass `--username`), `wrong_origin`.
+
+### Browser profiles (different identities for different projects/cases)
+
+A **profile** is a persistent, isolated, logged-in Chrome identity on a **stable port** — one per
+project, client, or account. Sign in once; it stays logged in (no close/reopen).
+
+```bash
+navig cdp profile new cybesis --note "Cybesis work"   # create (fresh automation profile)
+navig cdp profile list                                 # name · port · running? · active
+navig cdp open cybesis                                 # open (or REUSE if already running)
+navig cdp profile use cybesis                          # make it the active profile
+navig cdp profile new client-acme --note "Acme"        # a second, isolated identity
+navig cdp profile close cybesis  ·  navig cdp profile remove cybesis
+```
+
+- **Reuse, no reopen**: `open` attaches to the already-running profile on its stable port.
+- **Active profile**: after `profile use`, `navig do` and `navig gmail` default to it (no `--port`).
+- **Your real Chrome** (advanced): `navig cdp profile list --real` shows your actual Chrome
+  profiles; `navig cdp profile new mine --real "Profile 3"` registers one. Opening it relaunches
+  the real browser (quit your everyday Chrome first; newest Chrome may block the *default* profile)
+  — the automation profile above is the smooth, recommended path.
+
+### AI browser workflows (`navig do`)
+
+Ask the AI to do a task in your logged-in browser, from the command line:
+
+```bash
+navig do "open gmail and write an email to bob@x.com about Friday's meeting"
+navig do --profile cybesis "summarise my latest 3 GitHub notifications"
+navig do --dry-run "post an update to the team channel"   # plan only, sends nothing
+navig do --yes "reply 'on my way' to the last message"     # allow send/publish
+```
+
+The AI drives the **active profile's visible browser** (you watch it). **Safe by default**: it
+prepares/composes but won't finally send, publish, pay, or delete without `--yes`; `--dry-run`
+plans only. Every run is audited to `~/.navig/history/do.jsonl`.
+
+### Compose Gmail reliably (`navig gmail`)
+
+Deterministic compose+send (no LLM, no fragile clicking) via Gmail's compose deep-link — the
+profile must be signed into Gmail (do that once with `navig cdp open <profile>`):
+
+```bash
+navig gmail compose --to bob@x.com --subject "Hi" --body "Let's meet Friday."   # opens compose
+navig gmail compose --to bob@x.com -s "Hi" -b "…" --send                        # composes + sends
+```
+
+**Several Gmail accounts in one profile** — pick the account by **email** (order-independent) or index:
+```bash
+navig gmail compose --account work@company.com --to bob@x.com -s "Hi" -b "…"     # by email
+navig gmail compose --account me@gmail.com --to bob@x.com -s "Hi" -b "…" --remember  # + save as default
+navig gmail compose --to bob@x.com -s "Hi" -b "…"                                # uses the profile's saved default
+```
+
+**Or one profile per Gmail** (cleaner — a session expiry on one won't cascade to the others):
+```bash
+navig cdp profile new work     --gmail work@company.com --note "Work"
+navig cdp profile new personal --gmail me@gmail.com     --note "Personal"
+navig cdp profile use work                              # switch identity
+navig gmail compose --to bob@x.com -s "Hi" -b "…"       # uses work's Gmail
+```
+
+### Add a Google account (the right way)
+
+Google actively blocks automated password logins (bot checks, device verification, 2FA), so
+**don't rely on filling your Google password**. Two robust paths instead:
+
+1. **Browser tasks (Gmail UI, `navig do`, `navig gmail`)** → *session-first*: `navig cdp open
+   cybesis`, **sign into Google once** in that window. The profile stays logged in; NAVIG reuses the
+   session forever.
+2. **Sending email headlessly** → *app-password + SMTP* (no browser): create a Google **app-password**
+   (https://myaccount.google.com/apppasswords), then `navig email setup gmail` (or
+   `export EMAIL_PASSWORD=<app-password>`) and `navig email send --to … --subject … --body …`.
+
+You *can* still store a web login (`navig vault login add google.com -u you@gmail.com`) for
+`navig cdp login`, but expect Google's bot-wall — prefer option 1 for the browser.
+
+### Security
+
+A debug port means **anything on your machine can drive that browser**. NAVIG binds
+it to loopback only, launches browsers in a **dedicated debug profile** (not your
+main one), tracks what it started (by PID), and routes the powerful verbs
+(`eval`, `launch --force-restart`, `stop`, `login`, `inject`) through the approval
+gate — over the CLI they confirm, over MCP they are classified, audited, and
+deny-able by policy. **Close debug browsers with `navig cdp stop --all` when done**,
+and use `navig cdp new` (throwaway) for untrusted work. Full threat model in the
+guide above.
+
+---
+
+## 39. NAVIG Ecosystem Products
 
 ### Landing Page (`packages/landing`)
 - **Stack**: Next.js 16, React 19, Tailwind v4, static export
@@ -8424,6 +8912,7 @@ Manage *spaces* — contextual namespace bundles that group workspace settings, 
 | `navig space list` | List all available spaces |
 | `navig space init <name>` | Create a new space |
 | `navig space use <name>` | Activate a space |
+| `navig space books [name]` | Show or set the finance BOOK this space keeps its ledger in (`--clear` for the default) |
 | `navig space show [name]` | Show space details |
 | `navig space jump <name>` | Switch to space and `cd` to its root |
 | `navig space clear` | Deactivate the current space |
@@ -8517,27 +9006,17 @@ navig portable disable           # Switch back to local ~/.navig/
 
 ---
 
-## 46. Package Runtime Notes (`navig package`)
+## 46. Package Runtime Notes (`navig package`) — removed
 
-`navig package load <id>` and startup autoload run dependency preflight before `on_load()`.
+The legacy `navig package` runtime (handler.py packs, `navig.package.json`,
+`packages_autoload.json`) and the built-in `core/packages/` tree were **removed** in 2026-07.
+Every capability now lives natively in `core/navig/` or in a first-party `plugins/navig-*`
+package (pyproject entry points).
 
-- Package dependencies in `depends_on.packages` must already be loaded.
-- Missing pip dependencies in `depends_on.pip` are auto-installed before load.
-- Autoload order is preserved exactly as listed in `packages_autoload.json`.
-- Canonical Telegram package is `navig-telegram`.
-- Older Telegram package IDs are auto-normalized to `navig-telegram` by `navig package load` and `navig package autoload`.
-- New packages can be scaffolded directly from CLI: `navig package init <id> --type <commands|workflows|telegram|tools>`.
-- Package quality can be checked across all manifests: `navig package audit` (use `--strict` to fail on warnings).
-
-**Examples:**
-```bash
-navig package load navig-commands
-navig package load navig-telegram
-navig package autoload add navig-commands
-navig package autoload add navig-telegram
-navig package init my-new-pack --type workflows
-navig package audit --strict
-```
+- The one unique pack capability — music-link conversion — is now
+  `navig download music-links <url>` (song.link / Odesli).
+- Migrate any on-disk **user** packs under `~/.navig/packs` with `navig doctor migrate-packs`.
+- Full migration ledger: `docs/legacy-packages-retirement.md`.
 
 ---
 
@@ -8641,3 +9120,66 @@ Mapping:
 - `release:minor` = minor bump (`X.Y.Z` -> `X.(Y+1).0`)
 - `release:big` = major bump (`X.Y.Z` -> `(X+1).0.0`)
 - `release:dry` = preview next patch bump only (no file/git changes)
+
+---
+
+## 50. Multi-Agent Repo Guard (`navig repo`)
+
+When several agents (Claude Code sessions, humans) work on one repository in
+parallel, two hazards appear: merge conflicts that only surface at merge time,
+and a shared main checkout where one agent's `git checkout`/`rebase` can
+destroy another agent's uncommitted edits. `navig repo` surfaces both early —
+read-only, nothing is modified.
+
+```bash
+navig repo conflicts            # simulate merges between EVERY pair of worktrees
+navig repo conflicts --json     # machine-readable; exit 2 when any pair conflicts
+navig repo conflicts --no-dirty # committed state only (default includes dirty)
+navig repo stale                # leftover worktrees / unmerged branches / stashes
+navig repo stale --json
+navig repo lock                 # who holds the main-checkout agent lock
+navig repo lock release [--force]
+```
+
+Details:
+
+- **`conflicts`** runs an in-memory three-way merge (`git merge-tree
+  --write-tree`, requires git >= 2.38) across all worktree pairs. Uncommitted
+  *tracked* changes are included via `git stash create` (writes objects only —
+  the working tree is never touched). Untracked files are not compared.
+- **`stale`** flags worktrees left behind (including forbidden sibling
+  checkouts outside the repo), branches not merged into the default branch
+  (with ahead counts and gone-upstream hints), stashes, and the agent lock.
+- **`lock`** inspects `.dev/agent.lock`, written by the Claude Code hook
+  `scripts/agent-hooks/agent_lock.py` — one session at a time may mutate the
+  main checkout; parallel sessions work under `.dev/worktrees/` (always
+  exempt). The lock auto-expires after 60 minutes without activity. Hook
+  wiring instructions: `scripts/agent-hooks/README.md`.
+
+### Install the guard into any repo
+
+```bash
+navig repo guard install [--repo <path>]    # hooks + Claude Code wiring + .dev/ gitignore
+navig repo guard status [--repo <path>] [--json]
+navig repo guard uninstall [--repo <path>]
+```
+
+`install` writes the two hook scripts (shipped inside navig as the
+`navig.guard` package) to `<repo>/.claude/hooks/`, merges the wiring into
+`<repo>/.claude/settings.json` — idempotent, existing user hooks preserved,
+machine-absolute script paths — and ensures `.dev/` (lock + worktrees home)
+is gitignored. Run once per machine per repo; new Claude Code sessions pick
+it up automatically.
+
+The lock hook also enforces the sibling-worktree rule for every session:
+`git worktree add` targeting a path **outside** the repo is blocked with
+instructions to create it under `.dev/worktrees/` instead.
+
+Full concept page (why it exists, architecture, hard-won rules):
+`docs/repo-guard.md` at the repo root.
+
+The session briefing also runs the cross-worktree merge radar: when two or
+more worktrees exist, every new session starts with either
+`cross-worktree merge check: N pair(s), all clean` or a
+`merge conflict brewing: <a> <-> <b> (files...)` line per colliding pair —
+collisions surface at session start, not at merge time.

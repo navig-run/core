@@ -100,20 +100,29 @@ class MigrationManager:
         modified = False
         migrated_config = config.copy()
 
-        from navig import console_helper as ch
+        # Narration goes to STDERR, never stdout: migrations run mid-config-load,
+        # deep inside whatever command is executing — including `--json` commands
+        # whose stdout must carry exactly one machine-readable document. The
+        # console_helper global console writes to stdout, so a stderr-bound Rich
+        # console is used instead (same pattern as plugin load-failure output in
+        # navig/plugins/__init__.py). Terminals still show it; pipes stay clean.
+        from rich.console import Console
 
-        ch.info(f"Applying {len(pending)} configuration migrations...")
+        err = Console(stderr=True)
+
+        err.print(f"[dim]Applying {len(pending)} configuration migrations...[/dim]")
 
         for migration in pending:
             try:
-                ch.dim(
-                    f"  - [{migration.from_version} -> {migration.to_version}] {migration.description}"
+                err.print(
+                    f"[dim]  - [{migration.from_version} -> {migration.to_version}]"
+                    f" {migration.description}[/dim]"
                 )
                 migrated_config = migration.apply(migrated_config)
                 migrated_config["version"] = migration.to_version
                 modified = True
             except Exception as e:
-                ch.error(f"Migration failed: {e}")
+                err.print(f"[red]✗ Migration failed: {e}[/red]")
                 # Stop processing on failure to avoid corruption
                 break
 

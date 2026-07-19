@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ===========================================================================
 # doctor.py — _check helper
 # ===========================================================================
@@ -135,46 +134,6 @@ class TestCountYamlFiles:
 
 
 # ===========================================================================
-# doctor.py — _find_browser_agent
-# ===========================================================================
-
-class TestFindBrowserAgent:
-    def test_returns_none_when_not_found(self):
-        from navig.commands.doctor import _find_browser_agent
-
-        with patch("shutil.which", return_value=None):
-            # Also ensure none of the candidate paths exist
-            with patch("pathlib.Path.exists", return_value=False):
-                result = _find_browser_agent()
-
-        assert result is None
-
-    def test_returns_path_when_found_in_path(self):
-        from navig.commands.doctor import _find_browser_agent
-
-        with patch("shutil.which", return_value="/usr/bin/navig-browser-agent"):
-            with patch("pathlib.Path.exists", return_value=False):
-                result = _find_browser_agent()
-
-        assert result is not None
-        assert "navig-browser-agent" in str(result)
-
-    def test_returns_path_from_candidate(self, tmp_path):
-        from navig.commands.doctor import _find_browser_agent
-        import sys
-
-        agent_path = tmp_path / "bin" / "navig-browser-agent"
-        agent_path.parent.mkdir(parents=True, exist_ok=True)
-        agent_path.write_text("#!/bin/sh\n", encoding="utf-8")
-
-        with patch("sys.prefix", str(tmp_path)):
-            with patch("shutil.which", return_value=None):
-                result = _find_browser_agent()
-
-        assert result == agent_path
-
-
-# ===========================================================================
 # doctor.py — check_config
 # ===========================================================================
 
@@ -244,8 +203,9 @@ class TestCheckCacheDir:
         assert ok is True
 
     def test_unwritable_cache(self, tmp_path):
-        from navig.commands.doctor import check_cache_dir
         import sys
+
+        from navig.commands.doctor import check_cache_dir
 
         if sys.platform == "win32":
             pytest.skip("chmod not reliable on Windows")
@@ -301,7 +261,13 @@ class TestImageEnums:
 
 class TestImageGenerationConfig:
     def test_defaults(self):
-        from navig.tools.image_generation import ImageGenerationConfig, ImageProvider, ImageSize, ImageQuality, ImageStyle
+        from navig.tools.image_generation import (
+            ImageGenerationConfig,
+            ImageProvider,
+            ImageQuality,
+            ImageSize,
+            ImageStyle,
+        )
 
         cfg = ImageGenerationConfig()
         assert cfg.provider == ImageProvider.OPENAI
@@ -342,7 +308,12 @@ class TestImageGenerationConfig:
         assert cfg.provider == ImageProvider.OPENAI
 
     def test_from_dict_full(self):
-        from navig.tools.image_generation import ImageGenerationConfig, ImageProvider, ImageSize, ImageQuality
+        from navig.tools.image_generation import (
+            ImageGenerationConfig,
+            ImageProvider,
+            ImageQuality,
+            ImageSize,
+        )
 
         data = {
             "provider": "stability",

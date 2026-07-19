@@ -17,7 +17,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # git_tools constants and helpers
 # ---------------------------------------------------------------------------
-
 from navig.agent.tools.git_tools import _GIT_TIMEOUT, _find_git_root, _run_git
 
 
@@ -44,10 +43,17 @@ class TestFindGitRoot:
         result = _find_git_root(nested)
         assert result == tmp_path
 
-    def test_returns_none_when_no_git(self, tmp_path):
-        """No .git anywhere → None."""
-        result = _find_git_root(tmp_path)
-        assert result is None
+    def test_returns_none_when_no_git(self, temp_dir):
+        """No .git anywhere → None.
+
+        Uses `temp_dir` (the conftest fixture — system temp, OUTSIDE the checkout), not
+        pytest's `tmp_path`. `pytest.ini` pins basetemp to core/.pytest_tmp, which lives
+        INSIDE the git checkout, so every `tmp_path` has a .git ancestor and the upward
+        walk *correctly* returns the repo root. Asserting None from `tmp_path` meant
+        asserting it from inside a repository — which is exactly why this failed (it got
+        the worktree root back). See tests/core/test_tmp_dir_repo_boundary.py.
+        """
+        assert _find_git_root(temp_dir) is None
 
     def test_immediate_parent_wins(self, tmp_path):
         """Closest .git wins, not a grandparent."""
@@ -142,8 +148,18 @@ class TestImageProvider:
     def test_local_value(self):
         assert ImageProvider.LOCAL.value == "local"
 
-    def test_three_members(self):
-        assert len(list(ImageProvider)) == 3
+    def test_expected_providers(self):
+        # Pin the full provider set so adding/removing one is a deliberate,
+        # reviewed change (a bare count silently drifted 3 -> 7 as providers grew).
+        assert set(ImageProvider) == {
+            ImageProvider.OPENAI,
+            ImageProvider.OPENAI_GPT_IMAGE,
+            ImageProvider.RECRAFT,
+            ImageProvider.GEMINI_FLASH,
+            ImageProvider.GEMINI_PRO,
+            ImageProvider.STABILITY,
+            ImageProvider.LOCAL,
+        }
 
 
 class TestImageSize:
@@ -162,8 +178,14 @@ class TestImageSize:
     def test_portrait(self):
         assert ImageSize.PORTRAIT.value == "1024x1792"
 
-    def test_five_members(self):
-        assert len(list(ImageSize)) == 5
+    def test_all_sizes(self):
+        assert set(ImageSize) == {
+            ImageSize.SQUARE_SMALL,
+            ImageSize.SQUARE_MEDIUM,
+            ImageSize.SQUARE_LARGE,
+            ImageSize.LANDSCAPE,
+            ImageSize.PORTRAIT,
+        }
 
 
 class TestImageQuality:
@@ -173,8 +195,8 @@ class TestImageQuality:
     def test_hd_value(self):
         assert ImageQuality.HD.value == "hd"
 
-    def test_two_members(self):
-        assert len(list(ImageQuality)) == 2
+    def test_all_qualities(self):
+        assert set(ImageQuality) == {ImageQuality.STANDARD, ImageQuality.HD}
 
 
 class TestImageStyle:
@@ -184,8 +206,8 @@ class TestImageStyle:
     def test_natural_value(self):
         assert ImageStyle.NATURAL.value == "natural"
 
-    def test_two_members(self):
-        assert len(list(ImageStyle)) == 2
+    def test_all_styles(self):
+        assert set(ImageStyle) == {ImageStyle.VIVID, ImageStyle.NATURAL}
 
 
 # ---------------------------------------------------------------------------

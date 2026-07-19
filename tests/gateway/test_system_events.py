@@ -4,12 +4,12 @@ Tests for navig.gateway.system_events — SystemEvent dataclass and EventPriorit
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 
 import pytest
 
 from navig.gateway.system_events import EventPriority, SystemEvent, SystemEventQueue
-
 
 # ─── EventPriority ────────────────────────────────────────────────────────────
 
@@ -167,3 +167,101 @@ def test_system_event_queue_get_events_path(tmp_path):
     p = q._get_events_path()
     assert p.parent == tmp_path
     assert p.name == "events.json"
+
+
+# ── Processor lifecycle (regression: start() was never called by the gateway,
+#    so every emitted event piled up undrained and /api/events served
+#    heartbeats only — live refresh across deck/OS was silently dead) ─────────
+
+
+async def test_start_without_replay_discards_stale_pending(tmp_path):
+    q = SystemEventQueue(storage_path=tmp_path)
+    await q.emit("board_update", {"kind": "stale"})
+    await q.emit("council_update", {"type": "stale"})
+    assert len(q._pending) == 2
+
+    q2 = SystemEventQueue(storage_path=tmp_path)  # reload persisted backlog
+    assert len(q2._pending) == 2
+    try:
+        await q2.start(replay_pending=False)
+        assert q2._pending == {}
+        discarded = [e for e in q2._history if (e.error or "").startswith("discarded")]
+        assert len(discarded) == 2
+        assert all(e.processed for e in discarded)
+    finally:
+        await q2.stop()
+
+
+async def test_started_queue_dispatches_to_wildcard_subscriber(tmp_path):
+    q = SystemEventQueue(storage_path=tmp_path)
+    received = []
+    q.subscribe("*", lambda evt: received.append(evt))
+    try:
+        await q.start(replay_pending=False)
+        await q.emit("council_update", {"type": "round_started", "round": 1})
+        for _ in range(200):
+            if received:
+                break
+            await asyncio.sleep(0.01)
+        assert received, "wildcard subscriber never received the emitted event"
+        assert received[0].event_type == "council_update"
+        assert received[0].payload["type"] == "round_started"
+    finally:
+        await q.stop()
+
+
+# ── Public health accessors (running / pending_count / history_count) —
+#    what /api/deck/status and the `navig doctor` "Event processor" row read ──
+
+
+def test_queue_health_accessors_default(tmp_path):
+    q = SystemEventQueue(storage_path=tmp_path)
+    assert q.running is False
+    assert q.pending_count == 0
+    assert q.history_count == 0
+
+
+async def test_queue_health_accessors_track_lifecycle(tmp_path):
+    q = SystemEventQueue(storage_path=tmp_path)
+    await q.emit("board_update", {"n": 1})
+    # Not running: emit() succeeds silently while the backlog grows — exactly
+    # the state the accessors exist to make visible.
+    assert q.running is False
+    assert q.pending_count == 1
+    assert q.history_count == 0
+
+    try:
+        await q.start(replay_pending=False)
+        assert q.running is True
+        # Stale backlog was discarded into history, not dropped.
+        assert q.pending_count == 0
+        assert q.history_count == 1
+
+        await q.emit("council_update", {"type": "round_started"})
+        for _ in range(200):
+            if q.pending_count == 0 and q.history_count == 2:
+                break
+            await asyncio.sleep(0.01)
+        assert q.pending_count == 0
+        assert q.history_count == 2
+    finally:
+        await q.stop()
+    assert q.running is False
+
+
+async def test_start_with_replay_requeues_pending(tmp_path):
+    q = SystemEventQueue(storage_path=tmp_path)
+    await q.emit("board_update", {"kind": "carry-over"})
+
+    q2 = SystemEventQueue(storage_path=tmp_path)
+    received = []
+    q2.subscribe("*", lambda evt: received.append(evt))
+    try:
+        await q2.start(replay_pending=True)
+        for _ in range(200):
+            if received:
+                break
+            await asyncio.sleep(0.01)
+        assert [e.event_type for e in received] == ["board_update"]
+    finally:
+        await q2.stop()

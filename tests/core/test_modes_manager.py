@@ -7,17 +7,18 @@ import hashlib
 import pytest
 
 from navig.modes.manager import (
-    ModeProfile,
     _DEFAULT_MODE,
+    ModeProfile,
     _hash_pin,
     _verify_pin_hash,
     all_modes,
+    get_active_mode_name,
     get_mode,
     has_pin,
+    set_active_mode,
     set_pin,
     verify_pin,
 )
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ModeProfile
@@ -210,3 +211,38 @@ class TestPinFilesystem:
     def test_verify_pin_no_file_returns_false(self, tmp_path, monkeypatch):
         monkeypatch.setattr("navig.modes.manager._pin_path", lambda: tmp_path / "absent")
         assert verify_pin("0000") is False
+
+
+class TestSetActiveMode:
+    """set_active_mode is a read-modify-write of ~/.navig/config.yaml — it must set
+    active_mode WITHOUT wiping the rest of the config (it now goes through the shared
+    load_yaml_for_update guard)."""
+
+    def _isolate(self, tmp_path, monkeypatch):
+        cfg = tmp_path / "config.yaml"
+        monkeypatch.setattr("navig.modes.manager._config_path", lambda: cfg)
+        monkeypatch.setattr("navig.modes.manager._navig_home", lambda: tmp_path)
+        return cfg
+
+    def test_preserves_other_keys(self, tmp_path, monkeypatch):
+        import yaml
+
+        cfg = self._isolate(tmp_path, monkeypatch)
+        cfg.write_text(
+            yaml.safe_dump({"deck": {"api_key": "identity"}, "active_mode": "builder"}),
+            encoding="utf-8",
+        )
+
+        set_active_mode("operator")
+
+        survived = yaml.safe_load(cfg.read_text(encoding="utf-8"))
+        assert survived["active_mode"] == "operator"  # updated
+        assert survived["deck"]["api_key"] == "identity"  # NOT wiped
+
+    def test_creates_config_on_a_fresh_install(self, tmp_path, monkeypatch):
+        cfg = self._isolate(tmp_path, monkeypatch)
+        assert not cfg.exists()
+
+        set_active_mode("architect")
+
+        assert get_active_mode_name() == "architect"

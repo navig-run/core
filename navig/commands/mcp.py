@@ -21,10 +21,17 @@ def search_mcp_cmd(query: str, options: dict[str, Any]):
         ch.warning(f"No MCP servers found matching: {query}")
         return
 
-    # Create table
+    # create_table takes COLUMN DICTS, not bare strings — passing strings made
+    # it crash with "'str' object has no attribute 'get'", so `navig mcp search`
+    # blew up the moment it found a result. (Nothing caught it because the only
+    # caller was the legacy interactive shell.)
     table = ch.create_table(
         title=f"🔍 MCP Server Search Results: {query}",
-        columns=["Name", "Type", "Description"],
+        columns=[
+            {"name": "Name", "style": "cyan"},
+            {"name": "Type", "style": "magenta"},
+            {"name": "Description"},
+        ],
         show_header=True,
     )
 
@@ -79,12 +86,39 @@ def uninstall_mcp_cmd(name: str, options: dict[str, Any]):
     mcp_manager = _get_mcp_manager()
 
     if not options.get("yes"):
-        confirm = ch.confirm(f"Uninstall MCP server '{name}'?")
-        if not confirm:
+        # ch.confirm_action() does not exist — this raised AttributeError, so `remove`
+        # crashed instead of asking. The helper is confirm_action().
+        if not ch.confirm_action(f"Uninstall MCP server '{name}'?", default=False):
             ch.warning("Cancelled")
             return
 
     mcp_manager.uninstall_server(name)
+
+
+def _server_public_dict(server) -> dict[str, Any]:
+    """A secret-free, machine-readable view of a configured MCP server.
+
+    Deliberately omits `running`/`pid`: an MCP server's process is spawned by the
+    CLIENT that uses it (an editor, the agent), so from a one-shot CLI `is_running()`
+    is always False — reporting it would be a lie, not a status (see `list_mcp_cmd`).
+    And it exposes only the env KEY NAMES, never the values — server `env` routinely
+    holds API keys (BRAVE_API_KEY, …); secrets never leave via `--json`.
+    """
+    cfg = server.config
+    out: dict[str, Any] = {
+        "name": server.name,
+        "enabled": server.is_enabled(),
+        "type": cfg.get("type"),
+        "command": cfg.get("command"),
+    }
+    if cfg.get("package"):
+        out["package"] = cfg["package"]
+    if cfg.get("args"):
+        out["args"] = cfg["args"]
+    env = cfg.get("env") or {}
+    if env:
+        out["env_keys"] = sorted(env.keys())  # names only — never values
+    return out
 
 
 def list_mcp_cmd(options: dict[str, Any]):
@@ -92,6 +126,12 @@ def list_mcp_cmd(options: dict[str, Any]):
     mcp_manager = _get_mcp_manager()
 
     servers = mcp_manager.list_servers()
+
+    if options.get("json"):
+        import json
+
+        ch.raw_print(json.dumps([_server_public_dict(s) for s in servers], indent=2))
+        return
 
     if not servers:
         ch.warning("No MCP servers installed")
@@ -104,10 +144,18 @@ def list_mcp_cmd(options: dict[str, Any]):
             ch.raw_print(server.name)
         return
 
-    # Create table
+    # No "Running" column: an MCP server's process is spawned by the CLIENT that
+    # uses it (an editor, the NAVIG agent), not by this CLI — and `is_running()`
+    # only knows about a process THIS process started, so from a one-shot command
+    # it is always "No". A column that can never say Yes is a lie, not a status.
     table = ch.create_table(
         title="📦 Installed MCP Servers",
-        columns=["Name", "Type", "Status", "Running"],
+        columns=[
+            {"name": "Name", "style": "cyan"},
+            {"name": "Type", "style": "magenta"},
+            {"name": "Status"},
+            {"name": "Package", "style": "dim"},
+        ],
         show_header=True,
     )
 
@@ -117,13 +165,20 @@ def list_mcp_cmd(options: dict[str, Any]):
             if server.is_enabled()
             else ch.status_text("Disabled", "dim")
         )
-        running = (
-            ch.status_text("Yes", "success") if server.is_running() else ch.status_text("No", "dim")
+        table.add_row(
+            server.name,
+            server.config.get("type", "unknown").upper(),
+            status,
+            server.config.get("package") or server.config.get("command", "—"),
         )
 
-        table.add_row(server.name, server.config.get("type", "unknown").upper(), status, running)
-
     ch.print_table(table)
+    enabled = sum(1 for s in servers if s.is_enabled())
+    ch.dim(
+        f"{enabled}/{len(servers)} enabled · enable one with navig mcp enable <name>"
+        if enabled < len(servers)
+        else f"{len(servers)} configured · all enabled"
+    )
 
 
 def enable_mcp_cmd(name: str, options: dict[str, Any]):
@@ -190,27 +245,43 @@ def status_mcp_cmd(name: str, options: dict[str, Any]):
 
     server = mcp_manager.get_server(name)
     if not server:
-        ch.error(f"MCP server '{name}' not found")
+        if options.get("json"):
+            ch.raw_print("null")  # parseable "no such server" for scripts
+        else:
+            ch.error(f"MCP server '{name}' not found")
+        return
+
+    if options.get("json"):
+        import json
+
+        ch.raw_print(json.dumps(_server_public_dict(server), indent=2))
         return
 
     status = server.get_status()
 
-    # Header
     ch.header(f"MCP Server: {status['name']}")
-    ch.newline()
 
-    # Status details
-    ch.info(f"Type: {status['type'].upper()}")
-    ch.info(f"Command: {status['command']}")
-
-    enabled_status = (
-        ch.status_text("Enabled", "success")
-        if status["enabled"]
-        else ch.status_text("Disabled", "dim")
-    )
-    ch.info(f"Status: {enabled_status}")
-
+    # State line — enabled/disabled at a glance (glyph + colour), mirrors the hub
+    # (`navig store`) aesthetic. We only surface "running" when it is affirmatively
+    # true: the server's process is spawned by the CLIENT (an editor, the agent),
+    # so from this one-shot CLI `is_running()` is always False — printing
+    # "○ not running" unconditionally asserts a state we cannot actually know, the
+    # same lie `list` refuses to show.
+    state = "[green]✓ enabled[/green]" if status["enabled"] else "[dim]○ disabled[/dim]"
     if status["running"]:
-        ch.success(f"✓ Running (PID: {status['pid']})")
-    else:
-        ch.warning("○ Not running")
+        state += f"  ·  [green]● running[/green] [dim](pid {status['pid']})[/dim]"
+    ch.console.print(f"  {state}")
+
+    from rich.table import Table
+
+    t = Table(box=None, show_header=False, padding=(0, 2))
+    t.add_column("field", style="dim", no_wrap=True)
+    t.add_column("value")
+    t.add_row("type", str(status["type"]).upper())
+    t.add_row("command", str(status["command"]))
+    if server.config.get("package"):
+        t.add_row("package", str(server.config["package"]))
+    ch.console.print(t)
+
+    if not status["enabled"]:
+        ch.dim(f"\n  enable → navig mcp enable {status['name']}")

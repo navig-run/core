@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from navig.integrations.tailscale import Tailscale, TailscalePeer, TailscaleStatus
-
 
 # ---------------------------------------------------------------------------
 # TailscalePeer

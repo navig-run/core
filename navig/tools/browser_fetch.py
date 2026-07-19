@@ -14,11 +14,13 @@ Detection heuristic for JS-gated pages:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
 from typing import Any
 
+from navig.net.ssrf import SsrfBlockedError, check_url, policy_from_config
 from navig.tools.registry import BaseTool, StatusCallback, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -186,6 +188,26 @@ class BrowserFetchTool(BaseTool):
 
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
+
+        # SSRF guard — this URL comes from the model's tool-call args, so a
+        # prompt-injected agent could aim it at cloud metadata (169.254.169.254),
+        # the local daemon, or a private host. Validate before ANY network I/O;
+        # both the httpx and Playwright stages below fetch this same url. DNS
+        # resolution is blocking, so run the check off the event loop.
+        try:
+            await asyncio.to_thread(check_url, url, policy_from_config())
+        except SsrfBlockedError:
+            return ToolResult(
+                name=self.name,
+                success=False,
+                error=(
+                    f"Blocked: {url} resolves to a private/internal address (SSRF guard). "
+                    "To allow local/internal fetches: "
+                    "navig config set net.ssrf.allow_private_network true"
+                ),
+            )
+        except ValueError as exc:
+            return ToolResult(name=self.name, success=False, error=f"invalid url: {exc}")
 
         await self._emit(on_status, "Connecting…", url[:70], 15)
 

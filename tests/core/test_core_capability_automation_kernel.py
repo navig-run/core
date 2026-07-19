@@ -129,7 +129,12 @@ class TestIsEnabled:
 
     def test_optional_no_config_key_returns_false(self):
         """A capability with config_key=None is off even if tier==OPTIONAL."""
-        from navig.core.capability_registry import REGISTRY, CapabilityEntry, CapabilityTier, is_enabled
+        from navig.core.capability_registry import (
+            REGISTRY,
+            CapabilityEntry,
+            CapabilityTier,
+            is_enabled,
+        )
 
         # genesis_lab has no config_key
         entry = REGISTRY.get("genesis_lab")
@@ -156,6 +161,42 @@ class TestWorkflowStep:
         assert step.platform_override is None
         assert step.capture is None
         assert step.if_condition is None
+
+
+class TestWorkflowEngineWorkflowsDir:
+    """The default resolution, which the other tests override away with a temp dir.
+
+    Two regressions are pinned here: constructing the engine must NOT create a directory
+    (it used to `mkdir` inside site-packages), and the default location must follow
+    `config_dir()` — not the package's parent, and not frozen at construction (#189).
+    """
+
+    def test_construction_creates_no_directory(self, monkeypatch, tmp_path):
+        from navig.core import automation_engine
+        from navig.core.automation_engine import WorkflowEngine
+
+        monkeypatch.setattr(automation_engine, "config_dir", lambda: tmp_path)
+        WorkflowEngine()  # six real call sites do exactly this
+        assert not (tmp_path / "workflows").exists(), (
+            "constructing WorkflowEngine created a workflows/ dir — the old __init__ "
+            "mkdir'd one inside site-packages on every construction"
+        )
+
+    def test_default_dir_follows_config_dir_lazily(self, monkeypatch, tmp_path):
+        from navig.core import automation_engine
+        from navig.core.automation_engine import WorkflowEngine
+
+        engine = WorkflowEngine()
+        # Resolved on ACCESS, not frozen at construction: set the config dir afterwards.
+        monkeypatch.setattr(automation_engine, "config_dir", lambda: tmp_path)
+        assert engine._workflows_dir == tmp_path / "workflows"
+
+    def test_override_wins(self, tmp_path):
+        from navig.core.automation_engine import WorkflowEngine
+
+        engine = WorkflowEngine()
+        engine._workflows_dir = tmp_path / "custom"
+        assert engine._workflows_dir == tmp_path / "custom"
 
 
 class TestWorkflowEngineLoadWorkflow:

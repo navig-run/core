@@ -131,7 +131,7 @@ class SystemEventQueue:
 
         if events_path.exists():
             try:
-                data = json.loads(events_path.read_text())
+                data = json.loads(events_path.read_text(encoding="utf-8"))
 
                 # Load pending events
                 for event_data in data.get("pending", []):
@@ -173,20 +173,53 @@ class SystemEventQueue:
         self._event_counter += 1
         return f"evt_{self._event_counter}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
-    async def start(self) -> None:
-        """Start event processor."""
+    async def start(self, *, replay_pending: bool = True) -> None:
+        """Start event processor.
+
+        Args:
+            replay_pending: Re-queue events persisted from earlier runs. Pass
+                False when the backlog is known-stale (e.g. the processor was
+                never running when they were emitted) — they are moved to
+                history as discarded instead of bursting every live subscriber
+                (SSE clients, the cloud uplink, the event bridge) at boot.
+        """
         if self._running:
             return
 
         self._running = True
 
-        # Queue pending events for processing
-        for event in sorted(
-            self._pending.values(),
-            key=lambda e: (e.priority.value, e.timestamp),
-            reverse=True,  # Higher priority first
-        ):
-            await self._queue.put(event)
+        if replay_pending:
+            # Queue pending events for processing
+            for event in sorted(
+                self._pending.values(),
+                key=lambda e: (e.priority.value, e.timestamp),
+                reverse=True,  # Higher priority first
+            ):
+                await self._queue.put(event)
+        elif self._pending:
+            discarded = len(self._pending)
+            for event in self._pending.values():
+                event.processed = True
+                event.error = "discarded: stale backlog (processor was not running when emitted)"
+                self._history.append(event)
+            self._pending.clear()
+            # Events emitted earlier in THIS process (before start) sit in the
+            # live queue too — drain them, or the processor would dispatch and
+            # history the just-discarded events a second time.
+            while not self._queue.empty():
+                try:
+                    self._queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+            if len(self._history) > self.max_history:
+                self._history = self._history[-self.max_history :]
+            self._save_events()
+            logger.warning(
+                "Event queue discarded %s stale pending event(s) from earlier runs "
+                "(kept in history, capped at %s)",
+                discarded,
+                self.max_history,
+            )
 
         # Start processor
         self._processor_task = asyncio.create_task(self._process_loop())
@@ -330,6 +363,27 @@ class SystemEventQueue:
             self._history = self._history[-self.max_history :]
 
         self._save_events()
+
+    # ── Public health accessors (status route / doctor) ──────────────
+    # A stopped processor is silent by design: emit() succeeds, the queue
+    # grows, nothing errors. These expose just enough state for a health
+    # surface to notice without reaching into privates.
+
+    @property
+    def running(self) -> bool:
+        """True while the background processor loop is draining the queue."""
+        return self._running
+
+    @property
+    def pending_count(self) -> int:
+        """Emitted-but-unprocessed events. Growth while not running means
+        events are piling up undrained (the start()-never-called failure)."""
+        return len(self._pending)
+
+    @property
+    def history_count(self) -> int:
+        """Processed events retained in history (capped at max_history)."""
+        return len(self._history)
 
     def get_pending(self) -> list[SystemEvent]:
         """Get all pending events."""
@@ -561,7 +615,6 @@ class SmartNotificationFilter:
 
 
 def _env_bool(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+    from navig.core.coerce import coerce_bool
+
+    return coerce_bool(os.getenv(name), default)

@@ -18,7 +18,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # navig/providers/_local_defaults.py
 # ---------------------------------------------------------------------------
-
 from navig.providers._local_defaults import (
     _LLAMACPP_BASE_URL,
     _LLAMACPP_USER_BASE_URL,

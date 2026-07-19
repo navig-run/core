@@ -8,13 +8,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from navig.agent.remote_agent import (
+    _WIN_CMDLINE_B64_LIMIT,
     COMMAND_TIMEOUT,
     CommandState,
     RemoteAgentExecutor,
     RemoteCommand,
     RemoteResult,
     RemoteTask,
-    _WIN_CMDLINE_B64_LIMIT,
     _build_navig_command,
     _build_navig_file_command,
     _needs_b64,
@@ -650,8 +650,8 @@ class TestLargePayloadTempFile:
         """Temp file created for large payload must be deleted after execution."""
         created_paths: list[str] = []
 
-        import tempfile
         import pathlib
+        import tempfile
 
         orig_ntf = tempfile.NamedTemporaryFile
 

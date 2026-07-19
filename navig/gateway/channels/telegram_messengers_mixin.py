@@ -88,12 +88,14 @@ _ADAPTER_ORDER = ["telegram", "sms", "whatsapp", "discord"]
 
 def _vault_get(key: str) -> str:
     try:
-        from navig.vault.core import get_vault
+        from navig.vault.core import get_vault, reveal_secret
 
         v = get_vault()
         if v is None:
             return ""
-        return (v.get_secret(key) or "").strip()
+        # reveal_secret unwraps the SecretStr; the old bare .strip() raised and was
+        # swallowed, so this returned "" even when the secret existed.
+        return reveal_secret(v, key)
     except Exception:
         return ""
 

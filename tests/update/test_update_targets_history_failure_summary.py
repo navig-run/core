@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.update.targets — UpdateTarget, TargetResolver
 # ---------------------------------------------------------------------------

@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 
@@ -44,15 +45,15 @@ class TestTimeoutConstant:
 class TestRunBrowserTask:
     def test_run_browser_task_is_coroutine(self):
         import inspect
+
         from navig.integrations.browser_orchestrator import run_browser_task
         assert inspect.iscoroutinefunction(run_browser_task)
 
     def test_run_browser_task_accepts_spec(self):
         from navig.integrations.browser_orchestrator import run_browser_task
-        import asyncio
 
         async def _run():
-            from unittest.mock import AsyncMock, MagicMock, patch
+            from unittest.mock import patch
             mock_resp = MagicMock()
             mock_resp.status_code = 200
             mock_resp.json.return_value = {"status": "done", "result": "ok"}
@@ -74,6 +75,7 @@ class TestRunBrowserTask:
 
     def test_run_browser_task_max_hitl_retries_param(self):
         import inspect
+
         from navig.integrations.browser_orchestrator import run_browser_task
         sig = inspect.signature(run_browser_task)
         assert "max_hitl_retries" in sig.parameters

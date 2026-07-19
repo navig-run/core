@@ -13,7 +13,6 @@ from navig.memory.fact_retriever import (
     RetrievalConfig,
 )
 
-
 # ─── RetrievalConfig ──────────────────────────────────────────────────────────
 
 

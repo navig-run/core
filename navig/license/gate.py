@@ -23,8 +23,8 @@ response is:
       "ok": false,
       "error": "capability_required",
       "capability": "business_ops",
-      "tier_required": "pro",
-      "current_tier": "solo"
+      "tier_required": "plus",
+      "current_tier": "free"
     }
 
 The Deck transforms this into a ModuleLockedCard render rather than
@@ -51,31 +51,67 @@ Handler = Callable[["web.Request"], Awaitable["web.Response"]]
 
 # Smallest tier that includes each module. Used to populate ``tier_required``
 # in the 402 payload so the Deck can render the upgrade CTA without a
-# round-trip.
+# round-trip. Names MUST be live Harbor tiers (free/plus/max/team/enterprise)
+# — never the retired legacy names — or the UI points the user at a tier that
+# no longer exists in checkout. Derived from ``TIER_CAPABILITIES`` in quota.py:
+# Plus already carries the full operator set; client_ops starts at Team.
 _SMALLEST_TIER_FOR_MODULE: dict[str, TierName] = {
-    "core_ops": "solo",
-    "business_ops": "pro",
-    "ai_operator": "pro",
-    "security_ops": "business",
-    "deploy_ops": "business",
-    "client_ops": "fleet",
+    "core_ops": "free",
+    "business_ops": "plus",
+    "ai_operator": "plus",
+    "security_ops": "plus",
+    "deploy_ops": "plus",
+    "client_ops": "team",
 }
+
+
+def capability_payload(capability: str, current_tier: str) -> dict[str, Any]:
+    """The structured 402 body for a missing capability.
+
+    For Harbor Bay item grants (``item:<id>``) there is no tier requirement —
+    the payload instead carries the buy-once ``checkout_url`` so any surface
+    can render the one unlock CTA without a round-trip.
+    """
+    payload: dict[str, Any] = {
+        "ok": False,
+        "error": "capability_required",
+        "capability": capability,
+        "current_tier": current_tier,
+    }
+    if capability.startswith("item:"):
+        item_id = capability.split(":", 1)[1]
+        payload["tier_required"] = None
+        payload["checkout_url"] = f"https://api.navig.run/api/checkout?item={item_id}"
+    else:
+        payload["tier_required"] = _SMALLEST_TIER_FOR_MODULE.get(capability, "plus")
+    return payload
+
+
+def check_capability(capability: str) -> tuple[bool, dict[str, Any]]:
+    """Plain (non-decorator) capability check.
+
+    Returns ``(True, {})`` when the current license includes *capability*,
+    else ``(False, <402 payload dict>)``. Degrades OPEN on license-subsystem
+    errors, mirroring :func:`requires_capability`.
+    """
+    try:
+        from navig.license import current_status
+
+        status = current_status()
+        caps = list(status.capabilities or [])
+        if capability in caps:
+            return True, {}
+        return False, capability_payload(capability, status.effective_tier or "free")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("check_capability(%r) raised %r; allowing through", capability, exc)
+        return True, {}
 
 
 def _capability_required_response(
     capability: str,
     current_tier: str,
 ) -> "web.Response":
-    return web.json_response(
-        {
-            "ok": False,
-            "error": "capability_required",
-            "capability": capability,
-            "tier_required": _SMALLEST_TIER_FOR_MODULE.get(capability, "pro"),
-            "current_tier": current_tier,
-        },
-        status=402,
-    )
+    return web.json_response(capability_payload(capability, current_tier), status=402)
 
 
 def requires_capability(module: str) -> Callable[[Handler], Handler]:
@@ -98,7 +134,7 @@ def requires_capability(module: str) -> Callable[[Handler], Handler]:
                     return await handler(request)
                 return _capability_required_response(
                     capability=module,
-                    current_tier=status.effective_tier or "solo",
+                    current_tier=status.effective_tier or "free",
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(

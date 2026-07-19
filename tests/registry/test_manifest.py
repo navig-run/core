@@ -5,6 +5,8 @@ Tests for navig.registry.manifest — pure helper functions.
 import pytest
 
 from navig.registry.manifest import (
+    _extract_arguments,
+    _extract_options,
     _first_line,
     _prefer_new_entry,
     deprecations_report,
@@ -12,7 +14,6 @@ from navig.registry.manifest import (
     topic_index_from_manifest,
     validate_manifest,
 )
-
 
 # ---------------------------------------------------------------------------
 # _first_line
@@ -79,6 +80,8 @@ def _valid_command(**kwargs) -> dict:
         "aliases": [],
         "tags": [],
         "examples": ["navig test cmd"],
+        "arguments": [],
+        "options": [],
     }
     base.update(kwargs)
     return base
@@ -264,3 +267,126 @@ def test_topic_index_skips_short_paths():
     ]
     index = topic_index_from_manifest({"commands": commands})
     assert index == {}
+
+
+# ---------------------------------------------------------------------------
+# _extract_arguments — positional argument signatures for usage hints
+# ---------------------------------------------------------------------------
+
+
+def test_extract_arguments_reads_typer_arguments():
+    import typer
+
+    def handler(
+        name: str = typer.Argument(..., help="required"),
+        note: str = typer.Argument("", help="optional"),
+        verbose: bool = typer.Option(False, "--verbose"),  # an Option, not positional
+    ):
+        pass
+
+    args = _extract_arguments(handler)
+    assert args == [
+        {"name": "name", "required": True, "variadic": False},
+        {"name": "note", "required": False, "variadic": False},
+    ]  # the Option is excluded
+
+
+def test_extract_arguments_marks_variadic_list():
+    import typer
+
+    def handler(paths: list[str] = typer.Argument(...)):
+        pass
+
+    args = _extract_arguments(handler)
+    assert args == [{"name": "paths", "required": True, "variadic": True}]
+
+
+def test_extract_arguments_skips_context_and_underscores_to_dashes():
+    import typer
+
+    def handler(
+        ctx: typer.Context,  # not an argument or option — skipped
+        remote_path: str = typer.Argument(...),
+    ):
+        pass
+
+    args = _extract_arguments(handler)
+    assert args == [{"name": "remote-path", "required": True, "variadic": False}]
+
+
+def test_extract_arguments_empty_for_no_positional_args():
+    import typer
+
+    def handler(flag: bool = typer.Option(False)):
+        pass
+
+    assert _extract_arguments(handler) == []
+
+
+def test_extract_arguments_never_raises_on_unsignaturable():
+    # A C builtin has no inspectable signature — must degrade to [] not raise.
+    assert _extract_arguments(len) == []
+
+
+def test_validate_manifest_requires_arguments_field():
+    bad = _valid_command()
+    del bad["arguments"]
+    with pytest.raises(ValueError, match="arguments"):
+        validate_manifest({"commands": [bad], "generated_at": "x", "total": 1})
+
+
+# ---------------------------------------------------------------------------
+# _extract_options — option flags for the command schema
+# ---------------------------------------------------------------------------
+
+
+def test_extract_options_reads_flags_and_value_kind():
+    import typer
+
+    def handler(
+        name: str = typer.Argument(...),  # positional — not an option
+        host: str = typer.Option("", "--host", "-h"),  # takes a value
+        verbose: bool = typer.Option(False, "--verbose"),  # boolean switch
+    ):
+        pass
+
+    opts = _extract_options(handler)
+    assert opts == [
+        {"flags": ["--host", "-h"], "takes_value": True},
+        {"flags": ["--verbose"], "takes_value": False},
+    ]  # the positional Argument is excluded
+
+
+def test_extract_options_falls_back_to_param_name_flag():
+    import typer
+
+    def handler(dry_run: bool = typer.Option(False)):  # no explicit flag declared
+        pass
+
+    assert _extract_options(handler) == [{"flags": ["--dry-run"], "takes_value": False}]
+
+
+def test_extract_options_empty_for_no_options():
+    import typer
+
+    def handler(name: str = typer.Argument(...)):
+        pass
+
+    assert _extract_options(handler) == []
+
+
+def test_extract_options_never_raises_on_unsignaturable():
+    assert _extract_options(len) == []
+
+
+def test_validate_manifest_requires_options_field():
+    bad = _valid_command()
+    del bad["options"]
+    with pytest.raises(ValueError, match="options"):
+        validate_manifest({"commands": [bad], "generated_at": "x", "total": 1})
+
+
+def test_validate_manifest_rejects_option_without_flags():
+    bad = _valid_command(options=[{"takes_value": True}])  # missing 'flags'
+    with pytest.raises(ValueError, match="flags"):
+        validate_manifest({"commands": [bad], "generated_at": "x", "total": 1})

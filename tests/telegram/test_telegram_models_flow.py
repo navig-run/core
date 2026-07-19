@@ -104,7 +104,7 @@ async def test_models_with_active_provider_shows_tier_summary(monkeypatch):
                     return SimpleNamespace(model="openai/gpt-4o", provider="openai")
                 return None
 
-    monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
+    monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
     monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
@@ -129,7 +129,7 @@ async def test_models_no_provider_shows_provider_picker(monkeypatch):
             def get_mode(name):
                 return None
 
-    monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
+    monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
     monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [])
 
     await ch._handle_models_command(chat_id=100, user_id=200, text="/models")
@@ -170,7 +170,7 @@ async def test_tier_summary_shows_three_tiers(monkeypatch):
             def get_mode(name):
                 return SimpleNamespace(model="openai/gpt-4o-mini", provider="openai")
 
-    monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
+    monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
     monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
@@ -196,7 +196,7 @@ async def test_tier_summary_uses_edit_when_message_id(monkeypatch):
             def get_mode(name):
                 return None
 
-    monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
+    monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
     monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
@@ -222,7 +222,7 @@ async def test_model_list_shows_checkmark_on_current(monkeypatch):
             def get_mode(name):
                 return SimpleNamespace(model="openai/gpt-4o-mini", provider="openai")
 
-    monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
+    monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
     monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
@@ -254,7 +254,7 @@ async def test_model_list_pagination_buttons(monkeypatch):
             def get_mode(name):
                 return None
 
-    monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
+    monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
     monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
@@ -287,7 +287,7 @@ async def test_model_list_page_1_has_prev(monkeypatch):
             def get_mode(name):
                 return None
 
-    monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
+    monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
     monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from navig.routing.capabilities import (
+from navig.llm.routing.capabilities import (
     CAPABILITY_TAGS,
     GITHUB_MODELS,
     MODE_CAPABILITIES,

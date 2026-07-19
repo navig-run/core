@@ -39,6 +39,11 @@ _VAULT_ALLOWED_PROVIDERS = {
     # Voice / Audio
     "deepgram",
     "elevenlabs",
+    # Media generation (image / video)
+    "recraft",
+    "stability",
+    "runway",
+    "luma",
     # Developer tools
     "github",
     "gitlab",
@@ -306,7 +311,7 @@ async def _run_whisper_install() -> None:
         )
         # Read line-by-line so the latest progress line is always visible.
         last_line = ""
-        assert proc.stdout is not None
+        assert proc.stdout is not None  # noqa: S101 — type-narrowing invariant, not validation
         while True:
             chunk = await proc.stdout.readline()
             if not chunk:

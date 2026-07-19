@@ -12,8 +12,9 @@ the system.
 from __future__ import annotations
 
 import logging
+import random
 
-from . import ai_actions, permissions
+from . import ai_actions, autoreply, biz_commands, permissions, reply_actions
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,12 @@ import re as _re  # noqa: E402
 
 _PING_RE = _re.compile(r"^\s*/?ping(@\w+)?\s*$", _re.IGNORECASE)
 
+# Short, playful pong variants (ping in a business chat replies just one of these).
+_PONGS = (
+    "🏓 pong", "🏓 king pong", "🏓 pong gong", "🏓 gnop", "🏓 ponguuuuuuuuuuuuuuuuuuuuuuw",
+    "🏓 pong pong", "🏓 p0ng", "🏓 pongo", "🏓 pongggg", "🏓 ping? pong.", "🏓 pôńg",
+)
+
 
 def _cfg():
     from navig.core import Config
@@ -34,6 +41,16 @@ def _cfg():
 def _store():
     from navig.store.telegram_catalog import TelegramCatalogStore
     return TelegramCatalogStore()
+
+
+def _bot_id(channel) -> str:
+    """The bot's own numeric user id (the prefix of its token) — used to detect
+    the bot's own messages echoed back by Telegram in business conversations."""
+    try:
+        tok = getattr(channel, "bot_token", "") or ""
+        return tok.split(":", 1)[0] if ":" in tok else ""
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 # ── Business connection registry (owner id ← connection id) ──────────────────
@@ -61,6 +78,37 @@ def connection_owner(connection_id: str | None) -> int | None:
     conns = _cfg().get(CFG_CONNECTIONS, {}) or {}
     rec = conns.get(str(connection_id))
     return rec.get("owner_id") if rec else None
+
+
+def _owner_from_allowed() -> int | None:
+    """The configured owner (the single allowed Telegram user). Fallback for when
+    the one-time ``business_connection`` update was never captured (e.g. the cloud
+    uplink was offline when the bot was connected)."""
+    try:
+        tg = _cfg().get("telegram", {}) or {}
+        allowed = tg.get("allowed_users") or []
+        ints = [int(x) for x in allowed if str(x).lstrip("-").isdigit()]
+        return ints[0] if ints else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def resolve_owner(connection_id: str | None) -> int | None:
+    """Owner id for a business connection — registry first, else the configured
+    owner. On fallback we cache the connection so future lookups + reply targeting
+    work without re-receiving the (one-time) connection update."""
+    oid = connection_owner(connection_id)
+    if oid is not None:
+        return oid
+    oid = _owner_from_allowed()
+    if oid is not None and connection_id:
+        try:
+            remember_connection(connection_id, oid, can_reply=True)
+            logger.info("business: auto-registered connection %s → owner %s (fallback)",
+                        connection_id, oid)
+        except Exception:  # noqa: BLE001
+            pass
+    return oid
 
 
 def deletion_alert_enabled() -> bool:
@@ -146,24 +194,10 @@ async def handle_ping(channel, msg: dict, *, is_owner: bool) -> bool:
     chat_id = (msg.get("chat") or {}).get("id")
     if chat_id is None:
         return False
-    stats = _catalog_stats()
-    latency = ""
-    try:
-        import time
-
-        sent = int(msg.get("date") or 0)
-        if sent:
-            latency = f"⚡ ~{max(0, int(time.time()) - sent)}s round-trip\n"
-    except Exception:  # noqa: BLE001
-        latency = ""
-    body = (
-        "🏓 <b>pong</b> — NAVIG is live\n\n"
-        f"{latency}"
-        f"📜 Messages: <code>{stats['messages']:,}</code>\n"
-        f"🗂️ Rooms: <code>{stats['rooms']:,}</code>\n"
-        f"🎞️ Media: <code>{stats['media']:,}</code>"
-    )
-    await _send_business_reply(channel, chat_id, body, msg.get("business_connection_id"))
+    # Short, playful pong (the full status report lives in the bot's own DM).
+    body = random.choice(_PONGS)
+    await _send_business_reply(channel, chat_id, body, msg.get("business_connection_id"),
+                               parse_mode=None)
     return True
 
 
@@ -197,9 +231,19 @@ async def handle_business_message(channel, msg: dict, *, edited: bool = False) -
     if chat_id is None or message_id is None:
         return
     sender_id = frm.get("id")
-    owner_id = connection_owner(msg.get("business_connection_id"))
+    # ── Loop guard ──────────────────────────────────────────────────────────
+    # Telegram echoes the bot's OWN business sends back as business_message
+    # updates (from = the bot). Without this, pro-mode auto-reply would answer its
+    # own replies forever. Skip anything the bot itself sent.
+    if frm.get("is_bot") or (sender_id is not None and str(sender_id) == _bot_id(channel)):
+        return
+    owner_id = resolve_owner(msg.get("business_connection_id"))
     is_owner = bool(owner_id and sender_id == owner_id)
     text = msg.get("text") or msg.get("caption") or ""
+    logger.info(
+        "business message: chat=%s from=%s owner=%s is_owner=%s text=%.50r",
+        chat_id, sender_id, owner_id, is_owner, text,
+    )
     try:
         _store().upsert_room(chat_id, type="business",
                              title=chat.get("title") or chat.get("first_name") or "")
@@ -214,13 +258,29 @@ async def handle_business_message(channel, msg: dict, *, edited: bool = False) -
         )
     except Exception:  # noqa: BLE001
         logger.debug("business message catalog failed", exc_info=True)
-    # Owner health-check: /ping → live status report (owner-gated; the one safe
-    # canned reply — never a system/command path).
+    # Owner pro-mode control ("role … on/off") — owner-only; deletes the command
+    # and toggles AI persona auto-reply for this conversation.
     try:
-        if await handle_ping(channel, msg, is_owner=is_owner):
+        if await autoreply.handle_command(channel, msg, is_owner=is_owner, owner_id=owner_id):
             return
     except Exception:  # noqa: BLE001
-        logger.debug("business ping skipped", exc_info=True)
+        logger.debug("business autoreply command skipped", exc_info=True)
+    # Owner reply-keyword action: the owner replies to a message with a bare
+    # keyword (translate/summarize/explain/context) → run the sandboxed no-tools
+    # AI op on the replied-to message and DM the result to the owner PRIVATELY.
+    # Replaces emoji reactions (which Telegram never delivers in business chats).
+    try:
+        if await reply_actions.run_business_reply(channel, msg, is_owner=is_owner, owner_id=owner_id):
+            return
+    except Exception:  # noqa: BLE001
+        logger.debug("business reply-action skipped", exc_info=True)
+    # Business-chat commands (ping/time/timer …) — anyone or owner per command;
+    # result posted INTO the chat as the owner, the owner's trigger deleted.
+    try:
+        if await biz_commands.dispatch(channel, msg, is_owner=is_owner, owner_id=owner_id):
+            return
+    except Exception:  # noqa: BLE001
+        logger.debug("business command skipped", exc_info=True)
     # A shared TikTok link gets a metadata card + Download/Analyse buttons (gated by
     # the 'download' policy). This is owner-facing DATA enrichment — still never a
     # command, and a no-op when the message has no TikTok link.
@@ -230,6 +290,23 @@ async def handle_business_message(channel, msg: dict, *, edited: bool = False) -
         await tiktok_actions.offer_card(channel, chat_id, message_id, text, is_owner=is_owner)
     except Exception:  # noqa: BLE001
         logger.debug("tiktok offer_card skipped", exc_info=True)
+    # A shared bare music link (Spotify/Apple/Deezer/…) gets the same track on every
+    # platform (song.link). Owner-facing enrichment; a no-op without a bare music link
+    # or when telegram.music_links.enabled is off.
+    try:
+        from navig.telegram import music_actions
+
+        await music_actions.offer_links(channel, chat_id, message_id, text)
+    except Exception:  # noqa: BLE001
+        logger.debug("music offer_links skipped", exc_info=True)
+    # Pro-mode auto-reply: if the owner activated a persona for this chat, answer
+    # the counterparty AS the owner (human-like timing). No-op when inactive or
+    # when the message is from the owner.
+    try:
+        if await autoreply.maybe_autoreply(channel, msg, is_owner=is_owner, owner_id=owner_id):
+            return
+    except Exception:  # noqa: BLE001
+        logger.debug("business autoreply skipped", exc_info=True)
     # IMPORTANT: business text is NEVER dispatched as a command. End of handling.
 
 
@@ -253,7 +330,7 @@ async def handle_deleted_business_messages(channel, payload: dict) -> None:
         try:
             from navig.notify.router import NotificationRouter
             await NotificationRouter().dispatch(
-                "telegram.message_deleted",
+                "message_deleted",   # a registered notify type (navig.notify.types)
                 "🗑 Message deleted",
                 body,
                 priority="high",
@@ -268,27 +345,3 @@ async def handle_deleted_business_messages(channel, payload: dict) -> None:
             pass
 
 
-async def run_reaction_action(channel, emoji: str, *, chat_id: int, message_id: int,
-                              reactor_id: int, text: str) -> dict | None:
-    """Owner reacted with an emoji on a (business or group) message → run the mapped
-    sandboxed AI action, if permitted. Returns the action result or None (no mapping)."""
-    tool = ai_actions.emoji_to_tool(emoji)
-    if not tool:
-        return None
-    owner_id = None  # reactions: only the owner's own reactions trigger (caller passes reactor)
-    # The caller already verified the reactor is the owner for owner-only tools; here we
-    # re-check policy with is_owner based on allowed_users membership.
-    is_owner = _is_owner_user(reactor_id)
-    if tool in ai_actions.LLM_TOOLS:
-        return await ai_actions.run_text_action(tool, text, is_owner=is_owner)
-    return {"ok": False, "reason": "non_llm_tool_not_wired", "tool": tool}
-
-
-def _is_owner_user(user_id: int | None) -> bool:
-    if user_id is None:
-        return False
-    try:
-        allowed = _cfg().get("telegram", {}).get("allowed_users") or []
-        return int(user_id) in {int(x) for x in allowed}
-    except Exception:  # noqa: BLE001
-        return False

@@ -15,7 +15,6 @@ from typing import Any
 
 from navig import console_helper as ch
 from navig.operation_recorder import (
-    OperationRecord,
     OperationStatus,
     OperationType,
     get_operation_recorder,
@@ -314,13 +313,27 @@ def replay_operation(
 
 def undo_operation(op_id: str, opts: dict[str, Any] = None) -> None:
     """
-    Undo a reversible operation.
+    Undo a reversible operation — delegates to the T-068 undo engine
+    (``navig.undo``): same green-only rule, drift detection, double-undo
+    protection, and chained undo recording as the top-level ``navig undo``.
 
     Args:
-        op_id: Operation ID or index
-        opts: CLI options
+        op_id: Operation ID or index (1 = last)
+        opts: CLI options (respects ``yes`` for the confirm gate)
     """
     opts = opts or {}
+
+    import time
+
+    from navig.undo import (
+        UndoRefused,
+        check_drift,
+        collect_undone,
+        describe_undo,
+        ensure_undoable,
+        perform_undo,
+        recent_records,
+    )
 
     recorder = get_operation_recorder()
 
@@ -339,35 +352,54 @@ def undo_operation(op_id: str, opts: dict[str, Any] = None) -> None:
         ch.error(f"Operation not found: {op_id}")
         return
 
-    if not op.reversible:
-        ch.error(f"Operation {op_id} is not reversible")
+    try:
+        ensure_undoable(op, collect_undone(recent_records(recorder)))
+        check_drift(op)
+    except UndoRefused as exc:
+        ch.error(str(exc))
         ch.dim(f"Command was: {op.command}")
         return
 
-    if not op.undo_data:
-        ch.error(f"No undo data available for operation {op_id}")
-        return
-
+    description = describe_undo(op)
     ch.info(f"Undoing: {op.command}")
+    ch.info(f"  will: {description}")
 
-    # Execute undo based on operation type
-    try:
-        if op.operation_type == OperationType.FILE_CREATE:
-            _undo_file_create(op)
-        elif op.operation_type == OperationType.FILE_DELETE:
-            _undo_file_delete(op)
-        elif op.operation_type == OperationType.CONFIG_CHANGE:
-            _undo_config_change(op)
-        elif op.operation_type == OperationType.HOST_SWITCH:
-            _undo_host_switch(op)
-        else:
-            ch.warning(f"Undo not implemented for {op.operation_type.value}")
+    if not opts.get("yes", False):
+        from rich.prompt import Confirm
+
+        if not Confirm.ask("Undo this operation?", default=False):
+            ch.info("Cancelled")
             return
 
-        ch.success("Undo completed")
-
-    except Exception as e:
+    started = time.time()
+    undo_record = recorder.start_operation(
+        command=f"navig undo {op.id}",
+        operation_type=op.operation_type,
+        args={"undo_of": op.id},
+        tags=["undo"],
+    )
+    try:
+        swapped = perform_undo(op)
+    except Exception as e:  # noqa: BLE001 — record the failure, then surface it
+        recorder.complete_operation(
+            undo_record,
+            success=False,
+            error=str(e),
+            exit_code=1,
+            duration_ms=(time.time() - started) * 1000,
+        )
         ch.error(f"Undo failed: {e}")
+        return
+
+    undo_id = recorder.complete_operation(
+        undo_record,
+        success=True,
+        output=description,
+        duration_ms=(time.time() - started) * 1000,
+        undo_data=swapped,
+    )
+    ch.success(f"Undone: {description}")
+    ch.dim(f"recorded as {undo_id} (tagged undo)")
 
 
 def export_history(
@@ -530,63 +562,9 @@ def _apply_modifications(command: str, modify: str) -> str:
     return f"{command} {modify}"
 
 
-def _undo_file_create(op: OperationRecord) -> None:
-    """Undo a file creation by deleting the file."""
-    file_path = op.undo_data.get("file_path")
-    if not file_path:
-        raise ValueError("No file path in undo data")
-
-    path = Path(file_path)
-    if path.exists():
-        path.unlink()
-        ch.info(f"Deleted: {file_path}")
-
-
-def _undo_file_delete(op: OperationRecord) -> None:
-    """Undo a file deletion by restoring from backup."""
-    backup_path = op.undo_data.get("backup_path")
-    original_path = op.undo_data.get("original_path")
-
-    if not backup_path or not original_path:
-        raise ValueError("Missing backup or original path in undo data")
-
-    backup = Path(backup_path)
-    original = Path(original_path)
-
-    if not backup.exists():
-        raise ValueError(f"Backup not found: {backup_path}")
-
-    backup.rename(original)
-    ch.info(f"Restored: {original_path}")
-
-
-def _undo_config_change(op: OperationRecord) -> None:
-    """Undo a config change by restoring previous value."""
-
-    config_key = op.undo_data.get("key")
-    previous_value = op.undo_data.get("previous_value")
-    config_file = op.undo_data.get("config_file")
-
-    if not config_key or config_file is None:
-        raise ValueError("Missing config key or file in undo data")
-
-    # Restore the previous value
-    # This is a simplified implementation
-    ch.info(f"Would restore {config_key} to {previous_value}")
-
-
-def _undo_host_switch(op: OperationRecord) -> None:
-    """Undo a host switch by switching back to previous host."""
-    previous_host = op.undo_data.get("previous_host")
-
-    if not previous_host:
-        raise ValueError("No previous host in undo data")
-
-    from navig.config import get_config_manager
-
-    config = get_config_manager()
-    config.set_active_host(previous_host)
-    ch.info(f"Switched back to host: {previous_host}")
+# Per-type _undo_* helpers were removed in T-068: the undo engine
+# (navig/undo.py) is the single implementation — drift-checked, idempotent,
+# vault-safe, and shared with the top-level `navig undo`.
 
 
 # ============================================================================
@@ -693,16 +671,19 @@ def history_replay(
 def history_undo(
     ctx: typer.Context,
     op_id: str = typer.Argument(..., help="Operation ID or index to undo"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
     """
-    Undo a reversible operation.
+    Undo a reversible (green) operation — confirm-gated.
 
-    Only works for operations that were marked as reversible
-    and have undo data stored.
+    Same engine as the top-level `navig undo`: green-only, drift-checked,
+    double-undo protected; the undo itself is recorded on the ledger.
 
     Examples:
         navig history undo 1
+        navig history undo op-20260716... --yes
     """
+    ctx.obj["yes"] = yes or ctx.obj.get("yes", False)
     undo_operation(op_id, opts=ctx.obj)
 
 

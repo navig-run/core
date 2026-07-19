@@ -24,6 +24,8 @@ def run_docs(
 
     console = Console(force_terminal=True)
 
+    want_json = bool(json_output or (ctx.obj and ctx.obj.get("json")))
+
     project_docs = Path(__file__).resolve().parent.parent / "docs"
     pkg_docs = Path(__file__).resolve().parent / "docs"
 
@@ -32,13 +34,15 @@ def run_docs(
     elif pkg_docs.exists():
         docs_dir = pkg_docs
     else:
-        ch.error(
-            "Documentation directory not found.",
-            "Make sure NAVIG is installed correctly with docs/ available.",
-        )
+        if want_json:
+            # Error path included: --json stdout is a JSON document, never narration.
+            ch.emit_json({"success": False, "error": "documentation directory not found"})
+        else:
+            ch.error(
+                "Documentation directory not found.",
+                "Make sure NAVIG is installed correctly with docs/ available.",
+            )
         raise typer.Exit(1)
-
-    want_json = bool(json_output or (ctx.obj and ctx.obj.get("json")))
 
     if not query:
         md_files = sorted(docs_dir.glob("**/*.md"))
@@ -58,7 +62,7 @@ def run_docs(
                 topics.append({"file": str(rel_path), "title": f.stem})
 
         if want_json:
-            console.print(jsonlib.dumps({"topics": topics}, indent=2))
+            ch.emit_json({"topics": topics})
         else:
             console.print("[bold cyan]NAVIG Documentation[/bold cyan]")
             console.print(f"Found {len(topics)} documentation files.\n")
@@ -80,22 +84,19 @@ def run_docs(
         results = search_docs(query=query, docs_path=docs_dir, max_results=limit)
 
         if want_json:
-            console.print(
-                jsonlib.dumps(
-                    {
-                        "query": query,
-                        "results": [
-                            {
-                                "file": r.get("file"),
-                                "title": r.get("title"),
-                                "excerpt": r.get("excerpt"),
-                                "score": r.get("score"),
-                            }
-                            for r in results
-                        ],
-                    },
-                    indent=2,
-                )
+            ch.emit_json(
+                {
+                    "query": query,
+                    "results": [
+                        {
+                            "file": r.get("file"),
+                            "title": r.get("title"),
+                            "excerpt": r.get("excerpt"),
+                            "score": r.get("score"),
+                        }
+                        for r in results
+                    ],
+                }
             )
         else:
             if not results:
@@ -160,19 +161,16 @@ def run_fetch(
         )
 
         if want_json:
-            console.print(
-                jsonlib.dumps(
-                    {
-                        "success": result.success,
-                        "url": url,
-                        "final_url": result.final_url,
-                        "title": result.title,
-                        "content": result.text[:max_chars] if result.text else None,
-                        "truncated": result.truncated,
-                        "error": result.error if not result.success else None,
-                    },
-                    indent=2,
-                )
+            ch.emit_json(
+                {
+                    "success": result.success,
+                    "url": url,
+                    "final_url": result.final_url,
+                    "title": result.title,
+                    "content": result.text[:max_chars] if result.text else None,
+                    "truncated": result.truncated,
+                    "error": result.error if not result.success else None,
+                }
             )
         elif result.success:
             if want_plain:
@@ -228,23 +226,20 @@ def run_search(
         result = web_search(query=query, count=limit, provider=provider)
 
         if want_json:
-            console.print(
-                jsonlib.dumps(
-                    {
-                        "success": result.success,
-                        "query": query,
-                        "results": (
-                            [
-                                {"title": r.title, "url": r.url, "snippet": r.snippet}
-                                for r in result.results
-                            ]
-                            if result.results
-                            else []
-                        ),
-                        "error": result.error if not result.success else None,
-                    },
-                    indent=2,
-                )
+            ch.emit_json(
+                {
+                    "success": result.success,
+                    "query": query,
+                    "results": (
+                        [
+                            {"title": r.title, "url": r.url, "snippet": r.snippet}
+                            for r in result.results
+                        ]
+                        if result.results
+                        else []
+                    ),
+                    "error": result.error if not result.success else None,
+                }
             )
         elif result.success and result.results:
             if want_plain:

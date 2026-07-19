@@ -175,7 +175,7 @@ class LocalOperations:
         """
         hosts_path = self.get_hosts_file_path()
         try:
-            return hosts_path.read_text()
+            return hosts_path.read_text(encoding="utf-8")
         except PermissionError:
             return f"Permission denied reading {hosts_path}"
         except FileNotFoundError:

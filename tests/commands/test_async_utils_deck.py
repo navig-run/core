@@ -9,7 +9,6 @@ import pytest
 from navig.commands._async_utils import run_sync
 from navig.gateway.deck.routes.static_assets import _find_deck_static_dir
 
-
 # ---------------------------------------------------------------------------
 # run_sync
 # ---------------------------------------------------------------------------

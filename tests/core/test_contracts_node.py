@@ -7,7 +7,6 @@ import pytest
 
 from navig.contracts.node import Node, NodeOS, NodeStatus
 
-
 # ── helpers ──────────────────────────────────────────────────
 
 
@@ -119,7 +118,9 @@ class TestLifecycle:
     def test_go_online_updates_last_seen(self):
         n = _node()
         old_seen = n.last_seen
-        import time; time.sleep(0.001)
+        import time
+
+        time.sleep(0.001)
         n.go_online()
         # last_seen should be updated (or at least not broken)
         assert n.last_seen is not None

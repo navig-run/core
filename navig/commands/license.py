@@ -66,7 +66,7 @@ def license_paste(
 @app.command("show")
 def license_show() -> None:
     """Print the persisted license token in truncated form."""
-    from navig.license import read_raw_token, truncate_for_display, license_path
+    from navig.license import license_path, read_raw_token, truncate_for_display
     ch = _ch()
     token = read_raw_token()
     if token is None:
@@ -118,7 +118,7 @@ def license_remove(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
 ) -> None:
     """Delete the persisted license (drops you back to Solo / Free tier)."""
-    from navig.license import remove_license, read_raw_token
+    from navig.license import read_raw_token, remove_license
     ch = _ch()
 
     if read_raw_token() is None:

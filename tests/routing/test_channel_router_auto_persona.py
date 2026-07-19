@@ -15,6 +15,8 @@ class _FakeAgent:
         self.persona_calls = []
         self.language_calls = []
         self.on_status_update = None
+        # Real ConversationalAgent exposes this; set it to simulate a rotation.
+        self._last_account_fallback = None
 
     def set_user_identity(self, user_id="", username=""):
         self.identity_calls.append((user_id, username))
@@ -28,7 +30,8 @@ class _FakeAgent:
     def set_language_preferences(self, detected_language="", last_detected_language=""):
         self.language_calls.append((detected_language, last_detected_language))
 
-    async def chat(self, message, tier_override=""):
+    async def chat(self, message, tier_override="", *, on_partial=None, effort=""):
+        # Mirror the real ConversationalAgent.chat signature (on_partial/effort).
         return "ok"
 
 
@@ -109,6 +112,67 @@ async def test_handle_message_passes_language_hints(monkeypatch):
 
     assert response == "ok"
     assert fake_agent.language_calls[-1] == ("fr", "en")
+
+
+async def test_handle_message_surfaces_account_rotation(monkeypatch):
+    gateway = SimpleNamespace(
+        config_manager=SimpleNamespace(global_config={}),
+        config=SimpleNamespace(default_agent="default"),
+        run_agent_turn=AsyncMock(return_value="fallback"),
+    )
+    router = ChannelRouter(gateway)
+
+    fake_agent = _FakeAgent()
+    fake_agent._last_account_fallback = {"reason": "rate_limited", "to": "Claude B"}
+    monkeypatch.setattr(router, "_get_conversational_agent", lambda _key: fake_agent)
+    monkeypatch.setattr(router, "_check_quick_commands", AsyncMock(return_value=None))
+
+    response = await router._handle_message(
+        agent_id="default",
+        session_key="telegram:dm:42",
+        message="do a thing",
+        metadata={"user_id": 42, "username": "operator"},
+    )
+
+    assert response.startswith("ok")
+    assert "answered with Claude B" in response      # rotation surfaced to chat
+    assert "rate-limited" in response
+
+
+def test_rotation_notice_uses_shared_humanizer():
+    # The chat notice now shares the canonical describe_category, so it covers
+    # categories the old local map missed (e.g. a pre-emptive "cooldown" skip,
+    # which used to fall back to a generic "was unavailable").
+    from navig.gateway.channel_router import _format_account_rotation_notice
+    from navig.llm.fallback_policy import describe_category
+
+    line = _format_account_rotation_notice({"reason": "cooldown", "to": "Claude C"})
+    assert line == "↻ Primary account was cooling down from a recent failure — answered with Claude C."
+    assert describe_category("cooldown") in line
+    # blank reason still reads cleanly
+    assert "was unavailable" in _format_account_rotation_notice({"to": "Claude C"})
+
+
+async def test_handle_message_no_rotation_no_notice(monkeypatch):
+    gateway = SimpleNamespace(
+        config_manager=SimpleNamespace(global_config={}),
+        config=SimpleNamespace(default_agent="default"),
+        run_agent_turn=AsyncMock(return_value="fallback"),
+    )
+    router = ChannelRouter(gateway)
+
+    fake_agent = _FakeAgent()  # _last_account_fallback stays None
+    monkeypatch.setattr(router, "_get_conversational_agent", lambda _key: fake_agent)
+    monkeypatch.setattr(router, "_check_quick_commands", AsyncMock(return_value=None))
+
+    response = await router._handle_message(
+        agent_id="default",
+        session_key="telegram:dm:42",
+        message="hi",
+        metadata={"user_id": 42, "username": "operator"},
+    )
+    assert response == "ok"        # no rotation → clean reply, no footer
+    assert "↻" not in response
 
 
 def test_format_command_failure_for_unknown_command_is_friendly():

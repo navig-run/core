@@ -9,9 +9,6 @@ Provides a reliable ``PowerShellExecutor`` that:
   stdio environment.
 - Delegates graceful timeout handling to
   ``navig.platform.windows_utils.run_with_graceful_timeout``.
-
-Ported and hardened from CursorTouch/Windows-MCP (MIT licence)
-desktop/powershell.py.
 """
 
 from __future__ import annotations

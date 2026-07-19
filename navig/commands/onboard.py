@@ -32,9 +32,9 @@ from typing import TYPE_CHECKING, Any, Literal
 from navig.core.yaml_io import atomic_write_text
 from navig.platform.paths import config_dir
 from navig.workspace_ownership import (
-    USER_WORKSPACE_DIR,
     detect_project_workspace_duplicates,
     summarize_duplicates,
+    user_workspace_dir,
 )
 
 if TYPE_CHECKING:
@@ -93,9 +93,18 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Default paths
 # ---------------------------------------------------------------------------
-DEFAULT_NAVIG_DIR = config_dir()
-DEFAULT_WORKSPACE_DIR = USER_WORKSPACE_DIR
-DEFAULT_CONFIG_FILE = DEFAULT_NAVIG_DIR / "navig.json"
+# Resolved at CALL time so NAVIG_CONFIG_DIR isolation set after import still
+# applies (see navig/vault/migrate.py:_legacy_db_path).
+def _default_navig_dir() -> Path:
+    return config_dir()
+
+
+def _default_workspace_dir() -> Path:
+    return user_workspace_dir()
+
+
+def _default_config_file() -> Path:
+    return _default_navig_dir() / "navig.json"
 
 # ---------------------------------------------------------------------------
 # Provider registry — single source of truth for all wizard flows
@@ -346,7 +355,7 @@ class NavigConfig:
 
     # Step 1 — Identity
     profile_name: str = "operator"
-    workspace_root: str = str(DEFAULT_WORKSPACE_DIR)
+    workspace_root: str = field(default_factory=lambda: str(_default_workspace_dir()))
     theme: str = "dark"
 
     # Step 2 — Provider
@@ -1153,8 +1162,8 @@ if _TEXTUAL_AVAILABLE:
                 None, functools.partial(run_quickstart, console)
             )
             try:
-                save_config(cfg_dict, DEFAULT_CONFIG_FILE)
-                create_workspace_templates(Path(DEFAULT_WORKSPACE_DIR))
+                save_config(cfg_dict, _default_config_file())
+                create_workspace_templates(Path(_default_workspace_dir()))
                 sync_to_env(cfg_dict)
             except OSError as exc:
                 self.notify(f"Config save failed: {exc}", severity="error")
@@ -1343,7 +1352,7 @@ if _TEXTUAL_AVAILABLE:
             yield Input(
                 value=self._cfg.workspace_root,
                 id="inp-workspace",
-                placeholder=str(DEFAULT_WORKSPACE_DIR),
+                placeholder=str(_default_workspace_dir()),
             )
             yield Label("Theme")
             yield Select(
@@ -1743,7 +1752,7 @@ if _TEXTUAL_AVAILABLE:
                     yield Button("← Edit", variant="default", id="btn-back")
 
         def on_mount(self) -> None:
-            if DEFAULT_CONFIG_FILE.exists():
+            if _default_config_file().exists():
                 self.app.push_screen(ConfirmModal(), self._handle_confirm_modal)
 
         def _handle_confirm_modal(self, result: bool) -> None:
@@ -1849,7 +1858,7 @@ if _TEXTUAL_AVAILABLE:
                 log.write("[dim]Writing configuration…[/dim]")
                 await asyncio.sleep(0.15)
                 try:
-                    save_config(cfg_dict, DEFAULT_CONFIG_FILE)
+                    save_config(cfg_dict, _default_config_file())
                 except OSError as exc:
                     self.notify(f"Config write failed: {exc}", severity="error")
                     retry_btn.display = True
@@ -1866,7 +1875,7 @@ if _TEXTUAL_AVAILABLE:
                 log.write("[bold #10b981]✔[/bold #10b981] Runtime linked")
 
                 # json round-trip verify
-                raw = DEFAULT_CONFIG_FILE.read_text(encoding="utf-8")
+                raw = _default_config_file().read_text(encoding="utf-8")
                 json.loads(raw)
 
                 # Animate status → active
@@ -2002,9 +2011,9 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
     )
 
     try:
-        if DEFAULT_CONFIG_FILE.exists():
+        if _default_config_file().exists():
             console.print(
-                f"[yellow]⚠ Configuration already exists at {DEFAULT_CONFIG_FILE}[/yellow]"
+                f"[yellow]⚠ Configuration already exists at {_default_config_file()}[/yellow]"
             )
             if not Confirm.ask("Overwrite existing configuration?", default=False):
                 console.print("[dim]Onboarding cancelled.[/dim]")
@@ -2020,7 +2029,7 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
                 },
                 "agents": {
                     "defaults": {
-                        "workspace": str(DEFAULT_WORKSPACE_DIR),
+                        "workspace": str(_default_workspace_dir()),
                         "model": "openrouter",
                         "typing_mode": "instant",
                     }
@@ -2046,7 +2055,7 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
                 config = run_manual(console, non_interactive=non_interactive)
 
         console.print("\n[bold]Saving configuration...[/bold]")
-        save_config(config, DEFAULT_CONFIG_FILE, console)
+        save_config(config, _default_config_file(), console)
 
         workspace_path = Path(config["agents"]["defaults"]["workspace"])
         console.print("\n[bold]Creating workspace templates...[/bold]")
@@ -2068,7 +2077,7 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
         summary = Table(title="Configuration Summary", show_header=False, border_style="#2c8bb7")
         summary.add_column("Setting", style="#2c8bb7")
         summary.add_column("Value", style="white")
-        summary.add_row("Config File", str(DEFAULT_CONFIG_FILE))
+        summary.add_row("Config File", str(_default_config_file()))
         summary.add_row("Workspace", config["agents"]["defaults"]["workspace"])
         summary.add_row("AI Provider", config["agents"]["defaults"]["model"])
         summary.add_row("Typing Mode", config["agents"]["defaults"].get("typing_mode", "instant"))
@@ -2146,7 +2155,7 @@ def run_quickstart(console: ConsoleType) -> dict[str, Any]:
         },
         "agents": {
             "defaults": {
-                "workspace": str(DEFAULT_WORKSPACE_DIR),
+                "workspace": str(_default_workspace_dir()),
                 "model": "openrouter",
                 "typing_mode": "instant",
             }
@@ -2212,14 +2221,14 @@ def run_quickstart(console: ConsoleType) -> dict[str, Any]:
 
     # Step 3: Workspace
     console.print("\n[#2c8bb7]\u25b8[/#2c8bb7] [#2c8bb7]\\[3/3][/#2c8bb7] [bold]Workspace[/bold]")
-    console.print(f"Default workspace: [#2c8bb7]{DEFAULT_WORKSPACE_DIR}[/#2c8bb7]")
+    console.print(f"Default workspace: [#2c8bb7]{_default_workspace_dir()}[/#2c8bb7]")
 
     use_default = Confirm.ask("Use default workspace location?", default=True)
     if not use_default:
-        requested_workspace = Prompt.ask("Enter workspace path", default=str(DEFAULT_WORKSPACE_DIR))
+        requested_workspace = Prompt.ask("Enter workspace path", default=str(_default_workspace_dir()))
         console.print(
             "[yellow]Personal/state workspace files are always managed at "
-            f"{DEFAULT_WORKSPACE_DIR}[/yellow]"
+            f"{_default_workspace_dir()}[/yellow]"
         )
         console.print(
             f"[dim]Requested path '{requested_workspace}' is treated as project context only.[/dim]"
@@ -2245,7 +2254,7 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> dict[str,
         },
         "agents": {
             "defaults": {
-                "workspace": str(DEFAULT_WORKSPACE_DIR),
+                "workspace": str(_default_workspace_dir()),
                 "model": "openrouter",
                 "typing_mode": "instant",
                 "typing_interval": 4.0,
@@ -2266,11 +2275,11 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> dict[str,
         input()
     console.print(Panel("[bold]Section 1: Workspace Configuration[/bold]", border_style="#2c8bb7"))
 
-    requested_workspace = Prompt.ask("Workspace directory", default=str(DEFAULT_WORKSPACE_DIR))
-    if requested_workspace != str(DEFAULT_WORKSPACE_DIR):
+    requested_workspace = Prompt.ask("Workspace directory", default=str(_default_workspace_dir()))
+    if requested_workspace != str(_default_workspace_dir()):
         console.print(
             "[yellow]Personal/state workspace files are always managed at "
-            f"{DEFAULT_WORKSPACE_DIR}[/yellow]"
+            f"{_default_workspace_dir()}[/yellow]"
         )
         console.print(
             f"[dim]Requested path '{requested_workspace}' is treated as project context only.[/dim]"
@@ -2693,7 +2702,7 @@ See documentation for enabling automated monitoring.
     }
 
     requested_workspace = workspace_path.expanduser()
-    canonical_workspace = USER_WORKSPACE_DIR
+    canonical_workspace = user_workspace_dir()
     canonical_workspace.mkdir(parents=True, exist_ok=True)
 
     if requested_workspace.resolve() != canonical_workspace.resolve():
@@ -2786,11 +2795,25 @@ def sync_to_env(config: dict[str, Any], console: ConsoleType = None) -> None:
     if telegram_config:
         from navig.messaging.secrets import resolve_telegram_bot_token
 
-        resolved_token = resolve_telegram_bot_token(config)
+        resolved_token = resolve_telegram_bot_token(config) or telegram_config.get("bot_token")
         if resolved_token:
-            updates["TELEGRAM_BOT_TOKEN"] = resolved_token
-        elif telegram_config.get("bot_token"):  # legacy / manual config
-            updates["TELEGRAM_BOT_TOKEN"] = telegram_config["bot_token"]
+            # SECURITY: never write the bot token in cleartext to a cwd .env — the
+            # path here is nondeterministic (cwd or the package dir) and the file
+            # is easily world-readable / git-committed. Persist it to the encrypted
+            # vault instead (the canonical store that resolve_telegram_bot_token
+            # reads first). Best-effort: the vault may be locked in this legacy
+            # path, so never crash the wizard on it.
+            try:
+                from navig.vault.core import get_vault  # noqa: PLC0415
+
+                _vault = get_vault()
+                if _vault is not None:
+                    _vault.put(
+                        "telegram_bot_token",
+                        json.dumps({"value": resolved_token}).encode(),
+                    )
+            except Exception:  # noqa: BLE001
+                pass
         if telegram_config.get("allowed_users"):
             updates["ALLOWED_TELEGRAM_USERS"] = ",".join(
                 str(u) for u in telegram_config["allowed_users"]

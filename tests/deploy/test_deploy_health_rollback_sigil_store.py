@@ -10,7 +10,6 @@ import pytest
 
 from navig.deploy.models import BackupConfig, HealthConfig, SnapshotRecord
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -233,7 +232,7 @@ class TestPersistAndLoadEntity:
         entity_path = tmp_path / "entity.json"
         entity = _make_entity()
         with patch("navig.identity.sigil_store._identity_path", return_value=entity_path):
-            from navig.identity.sigil_store import persist_entity, load_entity
+            from navig.identity.sigil_store import load_entity, persist_entity
             persist_entity(entity)
             data = load_entity()
         assert data is not None

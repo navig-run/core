@@ -176,7 +176,7 @@ def test_resolve_disk_usage():
 
 
 def test_resolve_unknown_returns_defaults():
-    from navig.core.thresholds import resolve, DEFAULTS
+    from navig.core.thresholds import DEFAULTS, resolve
 
     t = resolve("totally_unknown_metric_xyz")
     assert t == DEFAULTS

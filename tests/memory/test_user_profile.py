@@ -16,7 +16,6 @@ from navig.memory.user_profile import (
     WorkPatterns,
 )
 
-
 # ─── MemoryNote ───────────────────────────────────────────────────────────────
 
 

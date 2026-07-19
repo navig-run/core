@@ -159,12 +159,6 @@ class LinuxAdapter(OSAdapter):
     def get_home_directory(self) -> Path:
         return Path(os.environ.get("HOME", "/root"))
 
-    def get_config_directory(self) -> Path:
-        xdg_config = os.environ.get("XDG_CONFIG_HOME")
-        if xdg_config:
-            return Path(xdg_config) / "navig"
-        return self.get_home_directory() / ".navig"
-
     # ==================== System Information ====================
 
     def get_system_info_command(self) -> str:

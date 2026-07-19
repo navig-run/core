@@ -8,6 +8,11 @@ Records all CLI operations with full context for:
 - Exporting operation logs
 
 Storage: ~/.navig/history/operations.jsonl (JSON Lines format)
+
+Hash chain (T-067): every appended entry additionally carries ``prev`` (the
+previous chained entry's hash) and ``hash`` (sha256 over prev + the entry's
+canonical JSON) — see ``navig.ledger_chain``. Tamper-evident, not
+tamper-proof; ``navig ledger verify`` re-walks the chain.
 """
 
 import hashlib
@@ -39,6 +44,10 @@ class OperationType(str, Enum):
     FILE_DOWNLOAD = "file_download"
     REMOTE_COMMAND = "remote_command"
     LOCAL_COMMAND = "local_command"
+    #: Pure read — `navig config get`, `host list`, `db tables`, ... No side
+    #: effect, so reversibility is "none" (navig.reversibility), never a
+    #: yellow/red scare label (T-068 follow-up).
+    READ_QUERY = "read_query"
     DATABASE_QUERY = "database_query"
     DATABASE_DUMP = "database_dump"
     CONFIG_CHANGE = "config_change"
@@ -59,6 +68,12 @@ class OperationStatus(str, Enum):
     PARTIAL = "partial"  # Some parts succeeded
     CANCELLED = "cancelled"
     PENDING = "pending"
+    #: The owning process died before recording a terminal status (SIGKILL, or a
+    #: SIGTERM that never reached the atexit completer). Written only by the
+    #: in-flight reaper (navig.operation_inflight) — never a working step and
+    #: never a warnable failure (its real outcome is unknown), so `skill distill`
+    #: treats it as neither, and `navig undo` (SUCCESS-only) never targets it.
+    INTERRUPTED = "interrupted"
 
 
 @dataclass
@@ -98,9 +113,12 @@ class OperationRecord:
     args: dict[str, Any] = field(default_factory=dict)
     env_vars: dict[str, str] = field(default_factory=dict)
 
-    # For undo
+    # For undo (T-068): `reversibility` is the green/yellow/red label
+    # (navig.reversibility) computed at record time; `reversible` is kept in
+    # sync with it (True iff green) for backward compatibility.
     reversible: bool = False
     undo_data: dict[str, Any] = field(default_factory=dict)
+    reversibility: str = ""
 
     # Metadata
     tags: list[str] = field(default_factory=list)
@@ -115,9 +133,29 @@ class OperationRecord:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "OperationRecord":
-        """Create from dictionary."""
-        data["operation_type"] = OperationType(data.get("operation_type", "other"))
-        data["status"] = OperationStatus(data.get("status", "pending"))
+        """Create from dictionary.
+
+        Keeps only known dataclass fields: chain fields (``prev``/``hash``/
+        ``sig`` — navig.ledger_chain) live on the JSONL line, not on the
+        record, and any FUTURE field a newer writer adds must not crash an
+        older reader (forward compatibility — the ledger is append-only and
+        long-lived). Also copies instead of mutating the caller's dict.
+        """
+        from dataclasses import fields as dc_fields
+
+        known = {f.name for f in dc_fields(cls)}
+        data = {k: v for k, v in data.items() if k in known}
+        # Unknown enum values (a ledger written by a NEWER navig) must degrade,
+        # not raise: one foreign line would otherwise break every history/undo
+        # iteration. OTHER classifies red and is never undoable — safe default.
+        try:
+            data["operation_type"] = OperationType(data.get("operation_type", "other"))
+        except ValueError:
+            data["operation_type"] = OperationType.OTHER
+        try:
+            data["status"] = OperationStatus(data.get("status", "pending"))
+        except ValueError:
+            data["status"] = OperationStatus.PENDING
         return cls(**data)
 
 
@@ -158,6 +196,10 @@ class OperationRecorder:
         self.history_dir = Path(history_dir)
         self.history_file = self.history_dir / "operations.jsonl"
         self.max_entries = max_entries
+
+        # Serializes tail-read + append (+ rotation) so concurrent in-process
+        # writers cannot fork the hash chain or interleave lines.
+        self._write_lock = threading.Lock()
 
         # Ensure directory exists
         self.history_dir.mkdir(parents=True, exist_ok=True)
@@ -211,6 +253,11 @@ class OperationRecorder:
         """
         Record an operation.
 
+        The appended JSONL line carries the record plus the hash-chain fields
+        ``prev`` and ``hash`` (navig.ledger_chain): the chain head is re-read
+        from the file tail at every append, so it survives rotation, restarts
+        cleanly after ``clear_history()``, and stays fresh across processes.
+
         Args:
             record: The operation record to store
 
@@ -225,19 +272,39 @@ class OperationRecorder:
         if not record.timestamp:
             record.timestamp = self._get_timestamp()
 
+        # Reversibility label (T-068): computed here so EVERY appended entry
+        # carries one, whatever path built the record. An explicit preset
+        # label wins; `reversible` is kept in sync (green ⇔ True) so the two
+        # fields can never disagree on a committed line.
+        from navig.reversibility import Reversibility, classify
+
+        if not record.reversibility:
+            record.reversibility = classify(
+                record.operation_type.value, record.undo_data or None, record.tags
+            ).value
+        record.reversible = record.reversibility == Reversibility.GREEN.value
+
         # Write to file
         try:
-            with open(self.history_file, "a", encoding="utf-8") as f:
-                f.write(json.dumps(record.to_dict()) + "\n")
+            from navig.ledger_chain import compute_entry_hash, read_tail_hash
 
-            # Rebuild index from file so operation_id -> file line mapping stays
-            # correct even when history includes blank/malformed lines.
-            self._index_loaded = False
-            self._load_index()
+            with self._write_lock:
+                entry = record.to_dict()
+                prev = read_tail_hash(self.history_file)
+                entry["prev"] = prev
+                entry["hash"] = compute_entry_hash(prev, entry)
 
-            # Check for rotation
-            if len(self._operation_ids) > self.max_entries:
-                self._rotate()
+                with open(self.history_file, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(entry) + "\n")
+
+                # Rebuild index from file so operation_id -> file line mapping stays
+                # correct even when history includes blank/malformed lines.
+                self._index_loaded = False
+                self._load_index()
+
+                # Check for rotation
+                if len(self._operation_ids) > self.max_entries:
+                    self._rotate()
 
         except OSError as e:
             from navig import console_helper as ch
@@ -288,6 +355,7 @@ class OperationRecorder:
         exit_code: int = 0,
         duration_ms: float = 0,
         undo_data: dict[str, Any] | None = None,
+        status: OperationStatus | None = None,
     ) -> str:
         """
         Complete and record an operation.
@@ -300,11 +368,20 @@ class OperationRecorder:
             exit_code: Exit code
             duration_ms: Execution duration in milliseconds
             undo_data: Data needed to undo this operation
+            status: Explicit terminal status. When given it WINS over *success*
+                — lets callers record CANCELLED / PARTIAL (a Ctrl-C'd command is
+                a cancel, not a failure), not just the SUCCESS/FAILED binary.
+                When ``None`` (default) the status is ``SUCCESS if success else
+                FAILED`` — identical to every existing caller.
 
         Returns:
             The operation ID
         """
-        record.status = OperationStatus.SUCCESS if success else OperationStatus.FAILED
+        effective_status = (
+            status if status is not None
+            else (OperationStatus.SUCCESS if success else OperationStatus.FAILED)
+        )
+        record.status = effective_status
         record.output = self._truncate_output(output)
         record.error = error
         record.exit_code = exit_code
@@ -328,13 +405,166 @@ class OperationRecorder:
                 },
                 channel="cli",
                 host=record.host,
-                status="success" if success else "failed",
+                status=effective_status.value,
                 duration_ms=int(duration_ms) if duration_ms else None,
             )
         except Exception as _exc:
             logger.debug("audit log skipped: %s", _exc)  # Never let audit failure block recording
 
-        return self.record(record)
+        recorded_id = self.record(record)
+        # The op reached a terminal status → drop its in-flight marker (if any).
+        # A marker outliving its process is what the reaper turns into an honest
+        # `interrupted` line; clearing it here is the normal, non-interrupted path.
+        self.clear_inflight(record.id)
+        return recorded_id
+
+    # ------------------------------------------------------------------
+    # In-flight registry + reaper (navig.operation_inflight)
+    #
+    # A completion writes the ledger line; a hard kill writes nothing. These
+    # sidecar markers make an interrupted operation observable so the reaper can
+    # record it honestly as `interrupted` — a chain-safe APPEND, never a rewrite.
+    # ------------------------------------------------------------------
+
+    def mark_inflight(self, record: OperationRecord, pid: int | None = None) -> None:
+        """Write a per-operation in-flight marker so a hard kill leaves a trace.
+
+        Best-effort — a marker-write hiccup must never break the command.
+        Cleared by :meth:`complete_operation` on any terminal status; a marker
+        that outlives its process is what :meth:`reap_inflight` ages out.
+        """
+        try:
+            from navig import operation_inflight as _inflight
+
+            _inflight.write_marker(
+                self.history_dir,
+                op_id=record.id,
+                command=record.command,
+                host=record.host,
+                operation_type=record.operation_type.value,
+                working_dir=record.working_dir,
+                pid=pid,
+            )
+        except Exception as exc:  # noqa: BLE001 — recording plumbing must never raise
+            logger.debug("mark_inflight skipped: %s", exc)
+
+    def clear_inflight(self, op_id: str) -> None:
+        """Remove an operation's in-flight marker (no-op when absent)."""
+        try:
+            from navig import operation_inflight as _inflight
+
+            _inflight.clear_marker(self.history_dir, op_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("clear_inflight skipped: %s", exc)
+
+    def iter_inflight(self) -> list[Any]:
+        """Every parseable in-flight marker (running or interrupted)."""
+        try:
+            from navig import operation_inflight as _inflight
+
+            return _inflight.iter_markers(self.history_dir)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("iter_inflight skipped: %s", exc)
+            return []
+
+    def reap_inflight(
+        self,
+        max_age_seconds: float | None = None,
+        now: float | None = None,
+        dry_run: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Age out interrupted operations to a terminal ``interrupted`` status.
+
+        A marker whose owning process is gone AND which is older than
+        *max_age_seconds* gets exactly ONE ``interrupted`` ledger line appended
+        (chain-safe — never a rewrite), then its marker is removed. Safe and
+        idempotent:
+
+        - a marker with a live PID is never reaped (a running op is protected by
+          process liveness, not any age guess);
+        - a marker whose op id already has a ledger line (a completion that raced
+          the marker delete) is just cleared — no duplicate, no false status;
+        - reaping twice does not double-write (the marker is gone after the
+          first pass; a concurrent reaper loses the atomic claim).
+
+        Returns a summary dict per reaped op (or per would-be-reaped op under
+        *dry_run*).
+        """
+        import time
+
+        from navig import operation_inflight as _inflight
+
+        if max_age_seconds is None:
+            max_age_seconds = _inflight.DEFAULT_REAP_MAX_AGE_SECONDS
+        now = time.time() if now is None else now
+
+        markers = _inflight.iter_markers(self.history_dir)
+        if not markers:
+            return []
+
+        # Refresh the id index once so a completion that raced the marker delete
+        # is detected and does not produce a duplicate `interrupted` line.
+        self._index_loaded = False
+        self._load_index()
+
+        reaped: list[dict[str, Any]] = []
+        for marker in markers:
+            if _inflight.pid_is_alive(marker.pid, marker.create_time):
+                continue  # currently running — never reap
+            if marker.age_seconds(now) < max_age_seconds:
+                continue  # dead but within the grace window
+            if marker.op_id in self._operations_by_id:
+                # Already recorded — the completion raced the marker delete.
+                if not dry_run:
+                    _inflight.clear_marker(self.history_dir, marker.op_id)
+                continue
+
+            summary = {
+                "id": marker.op_id,
+                "command": marker.command,
+                "host": marker.host,
+                "operation_type": marker.operation_type,
+                "started_at": marker.started_at,
+                "age_seconds": round(marker.age_seconds(now), 1),
+                "pid": marker.pid,
+            }
+            if dry_run:
+                reaped.append(summary)
+                continue
+
+            claimed = _inflight.claim_marker(marker)
+            if claimed is None:
+                continue  # another reaper claimed it first
+            try:
+                self._record_interrupted(marker)
+                reaped.append(summary)
+            finally:
+                _inflight.remove_claimed(claimed)
+        return reaped
+
+    def _record_interrupted(self, marker: Any) -> str:
+        """Append the single terminal ``interrupted`` ledger line for an op whose
+        process died before completing. A chain-safe APPEND via :meth:`record`,
+        never a rewrite (T-067)."""
+        rec = OperationRecord.from_dict(
+            {
+                "id": marker.op_id,
+                "timestamp": marker.started_at,
+                "command": marker.command,
+                "operation_type": marker.operation_type,
+                "host": marker.host,
+                "working_dir": marker.working_dir,
+                "status": OperationStatus.INTERRUPTED.value,
+                "exit_code": -1,
+                "error": "process exited without completing (reaped by navig ledger reap)",
+                "tags": ["reaped", "interrupted"],
+                "notes": (
+                    f"reaped after the owning process (pid {marker.pid}) exited "
+                    "before recording a terminal status"
+                ),
+            }
+        )
+        return self.record(rec)
 
     def _truncate_output(self, output: str, max_bytes: int = 10240) -> str:
         """Truncate output to prevent huge history files."""
@@ -349,14 +579,23 @@ class OperationRecorder:
         return f"{truncated}\n... [TRUNCATED - {len(output_bytes)} bytes total]"
 
     def _rotate(self):
-        """Rotate history file, keeping most recent entries."""
+        """Rotate history file, keeping most recent entries.
+
+        Operates on RAW lines — never re-serializes — so chained entries keep
+        their exact bytes and the hash chain survives rotation: the first
+        retained entry's ``prev`` still names the hash of a rotated-out entry,
+        which ``navig ledger verify`` reports as the chain anchor (wrinkle 1
+        of plan-evidence-ledger.md). Called with ``_write_lock`` held (from
+        ``record()``); must not re-acquire it.
+        """
         try:
-            # Read all entries
-            entries = list(self.iter_operations())
+            # Read all raw lines (blank lines dropped, content untouched)
+            with open(self.history_file, encoding="utf-8") as fh:
+                lines = [line for line in fh if line.strip()]
 
             # Keep only recent entries
             keep_count = self.max_entries // 2  # Keep 50% on rotation
-            recent_entries = entries[-keep_count:]
+            recent_lines = lines[-keep_count:]
 
             # Write back
             backup_file = self.history_file.with_suffix(".jsonl.bak")
@@ -367,8 +606,8 @@ class OperationRecorder:
                 _fd, _tmp = tempfile.mkstemp(dir=self.history_file.parent, suffix=".tmp")
                 _tmp_path = Path(_tmp)
                 with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
-                    for entry in recent_entries:
-                        _fh.write(json.dumps(entry.to_dict()) + "\n")
+                    for line in recent_lines:
+                        _fh.write(line if line.endswith("\n") else line + "\n")
                 os.replace(_tmp_path, self.history_file)
                 _tmp_path = None
             finally:
@@ -550,6 +789,11 @@ class OperationRecorder:
         """
         Clear all history.
 
+        Legitimately ends the hash chain: the next recorded operation starts
+        a fresh chain (``prev: null``), which ``navig ledger verify`` reports
+        as a clean restart — never a failure (wrinkle 2 of
+        plan-evidence-ledger.md).
+
         Returns:
             Number of operations cleared
         """
@@ -567,6 +811,48 @@ class OperationRecorder:
     def count(self, **filters) -> int:
         """Count operations matching filters."""
         return sum(1 for _ in self.iter_operations(limit=_UNBOUNDED_SCAN_LIMIT, **filters))
+
+
+def claim_cli_operation(
+    match: tuple[str, ...] = (),
+) -> tuple["OperationRecord | None", float | None]:
+    """Claim (and detach) the in-flight CLI middleware record for this invocation.
+
+    The middleware (``navig/cli/middleware.py``) starts a coarse record for
+    every CLI run and completes it at process exit. A command that knows
+    better — precise operation type, captured ``undo_data``, exact
+    success/error — claims the record, enriches it, and completes it itself:
+    exactly ONE ledger line per invocation, carrying the richest data
+    available (T-068).
+
+    Args:
+        match: claim only when one of these substrings appears in the
+            record's command string. This guards LIBRARY calls: when e.g.
+            ``set_config()`` runs inside another command's flow, the outer
+            command keeps its own record and the caller falls back to a
+            standalone entry.
+
+    Returns:
+        ``(record, start_time)`` — or ``(None, None)`` when there is no
+        middleware record (library call, tests) or the command doesn't match.
+    """
+    try:
+        import click
+
+        ctx = click.get_current_context(silent=True)
+    except Exception:  # noqa: BLE001 — recording plumbing must never raise
+        return None, None
+    while ctx is not None:
+        obj = getattr(ctx, "obj", None)
+        if isinstance(obj, dict):
+            record = obj.get("_operation_record")
+            if isinstance(record, OperationRecord):
+                if match and not any(m in record.command for m in match):
+                    return None, None
+                obj.pop("_operation_record", None)
+                return record, obj.get("_operation_start")
+        ctx = getattr(ctx, "parent", None)
+    return None, None
 
 
 # Singleton instance
@@ -686,6 +972,26 @@ class RecordedOperation:
         if exc_type is not None and not self.error:
             self.error = str(exc_val) if exc_val else exc_type.__name__
             self.exit_code = 1
+
+        # Post-state fingerprint (T-068): with a file-history backup captured
+        # at __enter__, the sha256 of the file AFTER the operation gives
+        # `navig undo` a cheap drift check — it refuses to restore a file
+        # that changed again since this operation.
+        if (
+            self.success
+            and self.filepath
+            and isinstance(self.undo_data, dict)
+            and "file_history_backup" in self.undo_data
+        ):
+            try:
+                _p = Path(self.filepath)
+                if _p.is_file():
+                    self.undo_data.setdefault("path", str(_p))
+                    self.undo_data.setdefault(
+                        "after_sha256", hashlib.sha256(_p.read_bytes()).hexdigest()
+                    )
+            except OSError as _exc:
+                logger.debug("undo_data post-hash skipped: %s", _exc)
 
         # Record the operation
         self._recorder.complete_operation(

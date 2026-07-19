@@ -14,11 +14,21 @@ from navig.gateway.health_monitor import ChannelHealthMonitor
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_channel(*, running: bool = True, last_event_offset_s: float = 0.0) -> MagicMock:
-    """Return a mock channel with _running and _last_event_at set."""
+def _make_channel(
+    *,
+    running: bool = True,
+    last_event_offset_s: float = 0.0,
+    use_webhook: bool = False,
+) -> MagicMock:
+    """Return a mock channel with _running, _last_event_at and _use_webhook set.
+
+    ``_use_webhook`` MUST be set explicitly — a bare MagicMock auto-creates a
+    truthy attribute, which the monitor now reads to skip webhook channels.
+    """
     ch = MagicMock()
     ch._running = running
     ch._last_event_at = time.monotonic() - last_event_offset_s
+    ch._use_webhook = use_webhook
     return ch
 
 
@@ -74,6 +84,22 @@ async def test_channel_without_last_event_at_skipped():
     channel._running = True
     # No _last_event_at attribute
     del channel._last_event_at
+    m = _make_monitor({"tg": channel}, restart)
+    await m._check_all()
+    restart.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_webhook_channel_never_restarted_on_silence():
+    """A quiet webhook-mode channel must NOT be restarted.
+
+    Regression: a webhook bot has no poll loop to refresh _last_event_at, so a
+    quiet bot looks perpetually "stale" and was restarted every ~10 min, firing
+    a boot greeting each time. Webhook channels are now skipped entirely.
+    """
+    restart = AsyncMock()
+    # Way past the stale threshold, but it's a webhook channel → must be skipped.
+    channel = _make_channel(last_event_offset_s=100_000, use_webhook=True)
     m = _make_monitor({"tg": channel}, restart)
     await m._check_all()
     restart.assert_not_called()

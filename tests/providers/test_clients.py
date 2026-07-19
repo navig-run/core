@@ -13,6 +13,7 @@ Covers:
 
 import pytest
 
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
 from navig.providers.clients import (
     CompletionRequest,
     CompletionResponse,
@@ -22,8 +23,6 @@ from navig.providers.clients import (
     ToolCall,
     ToolDefinition,
 )
-from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
-
 
 # ─────────────────────────────────────────────────────────────
 # Message

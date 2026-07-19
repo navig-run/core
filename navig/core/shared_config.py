@@ -24,6 +24,7 @@ import yaml
 
 from navig.core.yaml_io import atomic_write_text, atomic_write_yaml
 from navig.platform.paths import config_dir
+from navig.platform.paths import debug_log_path as _debug_log_path
 
 
 class ConfigSingleton:
@@ -55,15 +56,11 @@ class ConfigSingleton:
 
         with self._lock:
             if not getattr(self, "_initialized", False):
-                # Global config path
-                self.global_config_dir = config_dir()
-                self.global_config_path = self.global_config_dir / "config.yaml"
-
-                # Cache directory
-                self.cache_dir = self.global_config_dir / "cache"
-
-                # Plugin directory
-                self.plugins_dir = self.global_config_dir / "plugins"
+                # NOTE: global_config_dir / global_config_path / cache_dir / plugins_dir are
+                # LIVE @property (below), never frozen instance attrs — mirroring config.py's
+                # ConfigManager (#317). This singleton outlives the moment NAVIG_CONFIG_DIR
+                # isolation applies, so a cached path would freeze config_dir() too early (the
+                # #179 class) and diverge from config.py's ConfigManager and paths.config_dir().
 
                 # Data storage
                 self._global_data: dict[str, Any] = {}
@@ -74,6 +71,31 @@ class ConfigSingleton:
                 # Load configuration
                 self._load()
                 self._initialized = True
+
+    @property
+    def global_config_dir(self) -> Path:
+        """Global config directory (``~/.navig``), resolved LIVE via ``config_dir()``.
+
+        Never frozen — this is a process-wide singleton, so a cached value would freeze
+        ``config_dir()`` before ``NAVIG_CONFIG_DIR`` isolation applies (the #179 class) and
+        diverge from ``config.py``'s ``ConfigManager`` (#317) and ``paths.config_dir()``.
+        """
+        return config_dir()
+
+    @property
+    def global_config_path(self) -> Path:
+        """Global ``config.yaml`` path (live — derives from :attr:`global_config_dir`)."""
+        return self.global_config_dir / "config.yaml"
+
+    @property
+    def cache_dir(self) -> Path:
+        """Config-scoped cache dir ``<config_dir>/cache`` (live)."""
+        return self.global_config_dir / "cache"
+
+    @property
+    def plugins_dir(self) -> Path:
+        """Installed-plugins dir ``<config_dir>/plugins`` (live == ``paths.plugins_dir()``)."""
+        return self.global_config_dir / "plugins"
 
     @property
     def project_config_path(self) -> Path:
@@ -139,7 +161,9 @@ class ConfigSingleton:
             "execution": {"mode": "safe", "confirmation_level": "normal"},
             "plugins": {"enabled": True, "auto_discover": True, "disabled_plugins": []},
             "debug_log": False,
-            "debug_log_path": str(self.global_config_dir / "debug.log"),
+            # Must match where the logger actually writes (paths.debug_log_path());
+            # this default advertised config_dir()/debug.log, a file nothing produces.
+            "debug_log_path": str(_debug_log_path()),
             "debug_log_max_size_mb": 10,
             "debug_log_max_files": 5,
         }
@@ -165,9 +189,14 @@ class ConfigSingleton:
             self._project_cache_mtime_ns = None
 
     def _get_nested(self, data: dict[str, Any], key: str, default: Any = None) -> Any:
-        """Get value using dot notation (e.g., 'plugins.brain.db_path')."""
+        """Get value using dot notation (e.g., 'plugins.brain.db_path').
+
+        Note: stored ``None`` values are treated as "not configured" and return
+        *default*.  This is the intentional contract for this config system:
+        ``None`` in the YAML/dict means the key is absent, not explicitly set to null.
+        """
         keys = key.split(".")
-        value = data
+        value: Any = data
         for k in keys:
             if isinstance(value, dict):
                 value = value.get(k)

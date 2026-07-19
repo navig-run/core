@@ -333,9 +333,11 @@ class TelegramCatalogStore(BaseStore):
         where: list[str] = []
         params: list[Any] = []
         if chat_id is not None:
-            where.append("chat_id = ?"); params.append(chat_id)
+            where.append("chat_id = ?")
+            params.append(chat_id)
         if provider:
-            where.append("provider = ?"); params.append(provider)
+            where.append("provider = ?")
+            params.append(provider)
         sql = "SELECT * FROM tg_links"
         if where:
             sql += " WHERE " + " AND ".join(where)

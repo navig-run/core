@@ -235,7 +235,7 @@ class TaskExecutor:
                     '{ "achieved": bool, "confidence": 0-100, '
                     '"gap": "description of what was missed, or empty string" }'
                 )
-                from navig.llm_generate import (
+                from navig.llm.generate import (
                     run_llm,  # lazy: heavy module, only used on reflection pass
                 )
 

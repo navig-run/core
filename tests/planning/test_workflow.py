@@ -1,449 +1,181 @@
-"""Tests for Workflow System"""
+"""Tests for the retired workflow engine + the ops Blocks that replaced it.
 
-from unittest.mock import MagicMock
+The System-A workflow engine (``WorkflowManager``: YAML command-sequences run via
+``navig task``/``navig flow``) was retired; its builtin content migrated to
+**Blocks** (``navig apply``). ``navig task``/``navig flow`` remain as deprecation
+shims. See ``docs/blocks-vs-workflows.md``.
+"""
 
 import pytest
-import yaml
-
-from navig.commands.workflow import Workflow, WorkflowManager, WorkflowStep
 
 pytestmark = pytest.mark.integration
 
+
 # ============================================================================
-# FIXTURES
+# RETIREMENT — the engine is gone, the CLI verbs survive as shims
 # ============================================================================
 
 
-@pytest.fixture
-def temp_config_dir(tmp_path):
-    """Create temporary config directory for testing."""
-    workflows_dir = tmp_path / "workflows"
-    workflows_dir.mkdir()
-    yield tmp_path
+class TestWorkflowEngineRetired:
+    """System-A engine classes removed; the verbs remain as Block redirects."""
 
+    def test_engine_classes_removed(self):
+        import navig.commands.workflow as wf
 
-@pytest.fixture
-def mock_config_manager(temp_config_dir):
-    """Create mock config manager with temp directories."""
-    manager = MagicMock()
-    manager.global_config_dir = temp_config_dir
-    manager.app_config_dir = None
-    return manager
+        assert not hasattr(wf, "WorkflowManager"), "WorkflowManager should be retired"
+        assert not hasattr(wf, "WorkflowStep"), "WorkflowStep should be retired"
 
+    def test_task_app_still_exposed(self):
+        # `navig flow`/`job` and registration.py import task_app by name.
+        from navig.commands.workflow import task_app
 
-@pytest.fixture
-def sample_workflow_yaml():
-    """Sample workflow YAML content."""
-    return {
-        "name": "Test Workflow",
-        "description": "A test workflow for unit tests",
-        "version": "1.0",
-        "author": "Test Author",
-        "variables": {"host": "production", "app": "myapp"},
-        "steps": [
-            {
-                "name": "Step 1",
-                "command": "host use ${host}",
-                "description": "Set active host",
-            },
-            {
-                "name": "Step 2",
-                "command": "run 'echo ${app}'",
-                "continue_on_error": True,
-            },
-            {"name": "Step 3", "command": "health", "prompt": "Continue?"},
+        assert task_app is not None
+
+    @pytest.mark.parametrize(
+        "fn",
+        [
+            "list_workflows",
+            "show_workflow",
+            "run_workflow",
+            "validate_workflow",
+            "create_workflow",
+            "delete_workflow",
+            "edit_workflow",
         ],
-    }
+    )
+    def test_shim_functions_importable(self, fn):
+        # `navig flow` imports these by name — they must stay callable.
+        import navig.commands.workflow as wf
 
+        assert callable(getattr(wf, fn))
 
-@pytest.fixture
-def workflow_file(temp_config_dir, sample_workflow_yaml):
-    """Create a sample workflow file."""
-    workflows_dir = temp_config_dir / "workflows"
-    file_path = workflows_dir / "test-workflow.yaml"
-    with open(file_path, "w") as f:
-        yaml.dump(sample_workflow_yaml, f)
-    return file_path
-
-
-# ============================================================================
-# DATA CLASS TESTS
-# ============================================================================
-
-
-class TestWorkflowStep:
-    """Tests for WorkflowStep dataclass."""
-
-    def test_basic_step(self):
-        """Test basic step creation."""
-        step = WorkflowStep(name="Test", command="host list")
-        assert step.name == "Test"
-        assert step.command == "host list"
-        assert step.description == ""
-        assert step.prompt == ""
-        assert step.continue_on_error is False
-        assert step.skip_on_error is False
-
-    def test_step_with_options(self):
-        """Test step with all options."""
-        step = WorkflowStep(
-            name="Test",
-            command="run 'command'",
-            description="A description",
-            prompt="Proceed?",
-            continue_on_error=True,
-            skip_on_error=True,
-        )
-        assert step.description == "A description"
-        assert step.prompt == "Proceed?"
-        assert step.continue_on_error is True
-        assert step.skip_on_error is True
-
-    def test_step_to_dict(self):
-        """Test step serialization."""
-        step = WorkflowStep(
-            name="Test", command="host list", description="Desc", continue_on_error=True
-        )
-        data = step.to_dict()
-        assert data["name"] == "Test"
-        assert data["command"] == "host list"
-        assert data["description"] == "Desc"
-        assert data["continue_on_error"] is True
-        assert "skip_on_error" not in data  # False values not included
-        assert "prompt" not in data  # Empty values not included
-
-
-class TestWorkflow:
-    """Tests for Workflow dataclass."""
-
-    def test_basic_workflow(self):
-        """Test basic workflow creation."""
-        wf = Workflow(name="Test Workflow")
-        assert wf.name == "Test Workflow"
-        assert wf.description == ""
-        assert wf.variables == {}
-        assert wf.steps == []
-        assert wf.version == "1.0"
-
-    def test_workflow_with_steps(self):
-        """Test workflow with steps."""
-        steps = [
-            WorkflowStep(name="Step 1", command="cmd1"),
-            WorkflowStep(name="Step 2", command="cmd2"),
-        ]
-        wf = Workflow(name="Test", description="A test", variables={"host": "prod"}, steps=steps)
-        assert len(wf.steps) == 2
-        assert wf.variables["host"] == "prod"
-
-    def test_workflow_to_dict(self):
-        """Test workflow serialization."""
-        wf = Workflow(
-            name="Test",
-            description="Desc",
-            version="2.0",
-            author="Author",
-            variables={"var1": "val1"},
-            steps=[WorkflowStep(name="S1", command="c1")],
-        )
-        data = wf.to_dict()
-        assert data["name"] == "Test"
-        assert data["description"] == "Desc"
-        assert data["version"] == "2.0"
-        assert data["author"] == "Author"
-        assert data["variables"]["var1"] == "val1"
-        assert len(data["steps"]) == 1
-
-
-# ============================================================================
-# WORKFLOW MANAGER TESTS
-# ============================================================================
-
-
-class TestWorkflowManagerDiscovery:
-    """Tests for workflow discovery."""
-
-    def test_discover_workflows(self, mock_config_manager, workflow_file):
-        """Test workflow discovery finds files."""
-        manager = WorkflowManager(mock_config_manager)
-        workflows = manager.discover_workflows()
-        assert "test-workflow" in workflows
-        assert workflows["test-workflow"] == workflow_file
-
-    def test_discover_empty_directory(self, mock_config_manager):
-        """Test discovery with no workflows."""
-        manager = WorkflowManager(mock_config_manager)
-        workflows = manager.discover_workflows()
-        # May have builtin workflows
-        assert isinstance(workflows, dict)
-
-    def test_get_workflow_source_global(self, mock_config_manager, workflow_file):
-        """Test source identification for global workflows."""
-        manager = WorkflowManager(mock_config_manager)
-        source = manager.get_workflow_source(workflow_file)
-        assert source == "global"
-
-
-class TestWorkflowManagerLoading:
-    """Tests for workflow loading and parsing."""
-
-    def test_load_workflow(self, mock_config_manager, workflow_file):
-        """Test loading a workflow file."""
-        manager = WorkflowManager(mock_config_manager)
-        manager.discover_workflows()
-        workflow = manager.load_workflow("test-workflow")
-
-        assert workflow is not None
-        assert workflow.name == "Test Workflow"
-        assert workflow.description == "A test workflow for unit tests"
-        assert len(workflow.steps) == 3
-        assert workflow.variables["host"] == "production"
-
-    def test_load_nonexistent_workflow(self, mock_config_manager):
-        """Test loading non-existent workflow returns None."""
-        manager = WorkflowManager(mock_config_manager)
-        manager.discover_workflows()
-        workflow = manager.load_workflow("nonexistent")
-        assert workflow is None
-
-    def test_load_invalid_yaml(self, mock_config_manager, temp_config_dir):
-        """Test loading invalid YAML file."""
-        workflows_dir = temp_config_dir / "workflows"
-        bad_file = workflows_dir / "bad.yaml"
-        bad_file.write_text("invalid: yaml: content: [")
-
-        manager = WorkflowManager(mock_config_manager)
-        manager.discover_workflows()
-        workflow = manager.load_workflow("bad")
-        assert workflow is None
-
-
-class TestWorkflowValidation:
-    """Tests for workflow validation."""
-
-    def test_validate_valid_workflow(self, mock_config_manager, workflow_file):
-        """Test validation of valid workflow."""
-        manager = WorkflowManager(mock_config_manager)
-        manager.discover_workflows()
-        workflow = manager.load_workflow("test-workflow")
-        errors = manager.validate_workflow(workflow)
-        assert len(errors) == 0
-
-    def test_validate_empty_workflow(self):
-        """Test validation catches empty workflow."""
-        manager = WorkflowManager()
-        workflow = Workflow(name="", steps=[])
-        errors = manager.validate_workflow(workflow)
-        assert "Workflow name is required" in errors
-        assert "Workflow must have at least one step" in errors
-
-    def test_validate_missing_command(self):
-        """Test validation catches step without command."""
-        manager = WorkflowManager()
-        workflow = Workflow(name="Test", steps=[WorkflowStep(name="Empty Step", command="")])
-        errors = manager.validate_workflow(workflow)
-        assert any("has no command" in e for e in errors)
-
-    def test_validate_undefined_variable(self):
-        """Test validation catches undefined variables."""
-        manager = WorkflowManager()
-        workflow = Workflow(
-            name="Test",
-            variables={"defined": "value"},
-            steps=[WorkflowStep(name="Step", command="run ${undefined}")],
-        )
-        errors = manager.validate_workflow(workflow)
-        assert any("undefined variable" in e for e in errors)
-
-
-class TestVariableSubstitution:
-    """Tests for variable substitution."""
-
-    def test_substitute_simple(self):
-        """Test simple variable substitution."""
-        manager = WorkflowManager()
-        text = "host use ${host}"
-        result = manager.substitute_variables(text, {"host": "production"})
-        assert result == "host use production"
-
-    def test_substitute_multiple(self):
-        """Test multiple variable substitution."""
-        manager = WorkflowManager()
-        text = "deploy ${app} to ${host}"
-        result = manager.substitute_variables(text, {"app": "myapp", "host": "prod"})
-        assert result == "deploy myapp to prod"
-
-    def test_substitute_with_override(self):
-        """Test variable override."""
-        manager = WorkflowManager()
-        text = "host use ${host}"
-        result = manager.substitute_variables(
-            text, {"host": "default"}, extra_vars={"host": "override"}
-        )
-        assert result == "host use override"
-
-    def test_substitute_undefined_left_as_is(self):
-        """Test undefined variables are left unchanged."""
-        manager = WorkflowManager()
-        text = "run ${undefined}"
-        result = manager.substitute_variables(text, {})
-        assert result == "run ${undefined}"
-
-
-class TestWorkflowCreation:
-    """Tests for workflow creation and deletion."""
-
-    def test_create_workflow(self, mock_config_manager, temp_config_dir):
-        """Test creating new workflow."""
-        manager = WorkflowManager(mock_config_manager)
-        path = manager.create_workflow("new-workflow", global_scope=True)
-
-        assert path is not None
-        assert path.exists()
-        assert path.name == "new-workflow.yaml"
-
-        # Verify content
-        with open(path) as f:
-            data = yaml.safe_load(f)
-        assert data["name"] == "New Workflow"
-        assert "steps" in data
-
-    def test_create_duplicate_workflow(self, mock_config_manager, workflow_file):
-        """Test creating duplicate workflow fails."""
-        manager = WorkflowManager(mock_config_manager)
-        path = manager.create_workflow("test-workflow", global_scope=True)
-        assert path is None
-
-    def test_delete_workflow(self, mock_config_manager, workflow_file):
-        """Test deleting workflow."""
-        manager = WorkflowManager(mock_config_manager)
-        manager.discover_workflows()
-
-        assert workflow_file.exists()
-        result = manager.delete_workflow("test-workflow")
-        assert result is True
-        assert not workflow_file.exists()
-
-    def test_delete_nonexistent_workflow(self, mock_config_manager):
-        """Test deleting non-existent workflow fails."""
-        manager = WorkflowManager(mock_config_manager)
-        manager.discover_workflows()
-        result = manager.delete_workflow("nonexistent")
-        assert result is False
-
-
-# ============================================================================
-# CLI INTEGRATION TESTS
-# ============================================================================
-
-
-class TestWorkflowCLI:
-    """Tests for workflow CLI commands."""
-
-    def test_workflow_list_import(self):
-        """Test workflow list function can be imported."""
-        from navig.commands.workflow import list_workflows
-
-        assert callable(list_workflows)
-
-    def test_workflow_show_import(self):
-        """Test workflow show function can be imported."""
-        from navig.commands.workflow import show_workflow
-
-        assert callable(show_workflow)
-
-    def test_workflow_run_import(self):
-        """Test workflow run function can be imported."""
+    def test_run_unknown_name_errors(self):
         from navig.commands.workflow import run_workflow
 
-        assert callable(run_workflow)
+        with pytest.raises(SystemExit):
+            run_workflow("definitely-not-a-block-xyz")
 
-    def test_workflow_validate_import(self):
-        """Test workflow validate function can be imported."""
-        from navig.commands.workflow import validate_workflow
+    def test_run_block_name_redirects_without_error(self):
+        """A Block name prints the `navig apply` redirect and returns cleanly."""
+        from navig.commands.workflow import run_workflow
 
-        assert callable(validate_workflow)
-
-    def test_workflow_create_import(self):
-        """Test workflow create function can be imported."""
-        from navig.commands.workflow import create_workflow
-
-        assert callable(create_workflow)
-
-    def test_workflow_delete_import(self):
-        """Test workflow delete function can be imported."""
-        from navig.commands.workflow import delete_workflow
-
-        assert callable(delete_workflow)
+        # server-health is a migrated builtin Block; the shim must NOT raise.
+        run_workflow("server-health")
 
 
 # ============================================================================
-# BUILTIN WORKFLOW TESTS
+# BUILTIN OPS BLOCK TESTS
+# ============================================================================
+# The four builtin ops workflows migrated to Blocks (installable, verifiable
+# outcomes — `navig apply`), shipped as BLOCK.md via the community registry.
+
+
+class TestBuiltinOpsBlocks:
+    """The four builtin ops workflows now ship as Blocks."""
+
+    EXPECTED = ["safe-deployment", "db-snapshot", "emergency-debug", "server-health"]
+
+    def test_builtin_blocks_exist(self):
+        from navig.blocks import discover_blocks
+
+        ids = {b.id for b in discover_blocks()}
+        for bid in self.EXPECTED:
+            assert bid in ids, f"Built-in block '{bid}' not found (did the migration ship?)"
+
+    def test_builtin_blocks_valid(self):
+        from navig.blocks import find_block, validate_block
+
+        for bid in self.EXPECTED:
+            block = find_block(bid)
+            assert block is not None, f"Failed to load block '{bid}'"
+            problems = validate_block(block)
+            assert not problems, f"Block '{bid}' has problems: {problems}"
+
+    def test_all_builtin_blocks_valid(self):
+        """Every BLOCK.md shipped in the builtin store is linter-clean."""
+        from navig.blocks.loader import discover_blocks, validate_block
+        from navig.platform.paths import builtin_store_dir
+
+        blocks_dir = builtin_store_dir() / "blocks"
+        discovered = discover_blocks([blocks_dir])
+        assert discovered, "no builtin blocks discovered"
+        for b in discovered:
+            problems = validate_block(b)
+            assert not problems, f"builtin block '{b.id}': {problems}"
+
+    def test_safe_deployment_structure(self):
+        """Deploy is a verifiable outcome (post-deploy health check)."""
+        from navig.blocks import find_block
+
+        block = find_block("safe-deployment")
+        assert block is not None
+        assert {"host", "app_path", "build_dir", "service"} <= {i.key for i in block.inputs}
+        assert len(block.steps) >= 5
+        assert block.verify.kind == "command"
+
+    def test_db_snapshot_structure(self):
+        """The dump lands as a machine-verifiable local file."""
+        from navig.blocks import find_block
+
+        block = find_block("db-snapshot")
+        assert block is not None
+        assert "db_name" in {i.key for i in block.inputs}
+        assert any("dump" in s.id for s in block.steps)
+        assert block.verify.kind == "file_exists"
+
+    def test_mutating_steps_are_gated(self):
+        """Server-mutating steps compute to destructive risk (need a named --approve)."""
+        from navig.blocks import capability_risk, find_block
+
+        block = find_block("safe-deployment")
+        risks = {s.id: capability_risk(s.capabilities) for s in block.steps}
+        for sid in ("backup", "upload", "restart"):
+            assert risks[sid] == "destructive", f"'{sid}' must be destructive, got {risks[sid]}"
+
+    def test_diagnostics_are_readonly(self):
+        """Diagnostics have no verifiable outcome and no destructive step."""
+        from navig.blocks import capability_risk, find_block
+
+        for bid in ("server-health", "emergency-debug"):
+            block = find_block(bid)
+            assert block.verify.kind == "none"
+            assert all(capability_risk(s.capabilities) != "destructive" for s in block.steps)
+
+
+# ============================================================================
+# MIGRATED RUNBOOK BLOCKS — the community pack + single-workflow packages
 # ============================================================================
 
 
-class TestBuiltinWorkflows:
-    """Tests for built-in workflow files."""
+class TestMigratedRunbookBlocks:
+    """The community runbooks + single-workflow packages are now instruction Blocks."""
 
-    def test_builtin_workflows_exist(self):
-        """Test that built-in workflows are discoverable."""
-        manager = WorkflowManager()
-        workflows = manager.discover_workflows()
+    MIGRATED = [
+        "deployment-checklist",
+        "docker-health",
+        "security-audit",
+        "devops-shortcuts",
+        "backup-runbook",
+        "startup",
+        "backup-essential",
+        "lifeos",
+    ]
 
-        # Check for expected builtins
-        expected = [
-            "safe-deployment",
-            "db-snapshot",
-            "emergency-debug",
-            "server-health",
-        ]
-        for name in expected:
-            assert name in workflows, f"Built-in workflow '{name}' not found"
+    def test_migrated_blocks_exist(self):
+        from navig.blocks import discover_blocks
 
-    def test_builtin_workflows_valid(self):
-        """Test that all built-in workflows are valid."""
-        manager = WorkflowManager()
-        manager.discover_workflows()
+        ids = {b.id for b in discover_blocks()}
+        for bid in self.MIGRATED:
+            assert bid in ids, f"Migrated runbook block '{bid}' not found"
 
-        for name in [
-            "safe-deployment",
-            "db-snapshot",
-            "emergency-debug",
-            "server-health",
-        ]:
-            workflow = manager.load_workflow(name)
-            assert workflow is not None, f"Failed to load '{name}'"
+    def test_migrated_blocks_are_instruction_only(self):
+        """Doc-style runbooks are guided instruction Blocks — no fake execution."""
+        from navig.blocks import find_block
 
-            errors = manager.validate_workflow(workflow)
-            assert len(errors) == 0, f"Workflow '{name}' has validation errors: {errors}"
-
-    def test_builtin_safe_deployment(self):
-        """Test safe-deployment workflow structure."""
-        manager = WorkflowManager()
-        manager.discover_workflows()
-        workflow = manager.load_workflow("safe-deployment")
-
-        assert workflow is not None
-        assert "host" in workflow.variables
-        assert len(workflow.steps) >= 5
-
-    def test_builtin_db_snapshot(self):
-        """Test db-snapshot workflow structure."""
-        manager = WorkflowManager()
-        manager.discover_workflows()
-        workflow = manager.load_workflow("db-snapshot")
-
-        assert workflow is not None
-        assert "db_name" in workflow.variables
-        assert any("dump" in step.command.lower() for step in workflow.steps)
-
-    def test_builtin_emergency_debug(self):
-        """Test emergency-debug workflow structure."""
-        manager = WorkflowManager()
-        manager.discover_workflows()
-        workflow = manager.load_workflow("emergency-debug")
-
-        assert workflow is not None
-        assert "service" in workflow.variables
-        # Most steps should continue on error
-        continue_steps = sum(1 for s in workflow.steps if s.continue_on_error)
-        assert continue_steps >= 5
+        for bid in self.MIGRATED:
+            block = find_block(bid)
+            assert block is not None, f"Failed to load '{bid}'"
+            assert block.verify.kind == "none"
+            assert all(s.kind == "instruction" for s in block.steps), (
+                f"'{bid}' should be instruction-only"
+            )

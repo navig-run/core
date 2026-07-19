@@ -113,15 +113,15 @@ def index_stats(
         navig index stats
         navig index stats --json
     """
-    import json
-
     console = get_console()
 
     project_root = Path(root) if root else Path.cwd()
     with ProjectIndexer(project_root) as indexer:
         stats = indexer.stats()
         if json_out:
-            console.print(json.dumps(stats, indent=2))
+            from navig.console_helper import emit_json
+
+            emit_json(stats)
         else:
             console.print(f"[bold]Project Index Stats[/] — {project_root}")
             for key, value in stats.items():

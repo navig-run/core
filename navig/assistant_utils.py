@@ -86,7 +86,7 @@ def _initialize_json_files(navig_dir: Path):
             try:
                 if filename.endswith(".log"):
                     # Text file
-                    file_path.write_text(default_content)
+                    file_path.write_text(default_content, encoding="utf-8")
                 else:
                     # JSON file
                     with open(file_path, "w", encoding="utf-8") as f:

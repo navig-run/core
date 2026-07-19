@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # =============================================================================
 # thresholds (simplest — read-only registry)
 # =============================================================================
@@ -49,7 +48,7 @@ class TestThresholdResolve:
         assert t.warn_pct == 70.0
 
     def test_unknown_metric_returns_defaults(self):
-        from navig.core.thresholds import resolve, DEFAULTS
+        from navig.core.thresholds import DEFAULTS, resolve
         t = resolve("nonexistent_metric")
         assert t == DEFAULTS
 
@@ -275,6 +274,7 @@ class TestJitteredBackoff:
 
     def test_thread_safety_no_crash(self):
         import threading
+
         from navig.core.retry_utils import jittered_backoff
         errors = []
 
@@ -311,7 +311,7 @@ class TestRetryConfig:
 
 class TestAsyncRetry:
     def test_success_on_first_attempt(self):
-        from navig.core.retry_utils import async_retry, RetryConfig
+        from navig.core.retry_utils import RetryConfig, async_retry
 
         @async_retry(RetryConfig(max_attempts=3, base_delay=0.001))
         async def fn():
@@ -321,7 +321,7 @@ class TestAsyncRetry:
         assert result == "ok"
 
     def test_retries_and_succeeds(self):
-        from navig.core.retry_utils import async_retry, RetryConfig
+        from navig.core.retry_utils import RetryConfig, async_retry
         call_count = [0]
 
         @async_retry(RetryConfig(max_attempts=3, base_delay=0.001, max_delay=0.001))
@@ -337,7 +337,7 @@ class TestAsyncRetry:
         assert call_count[0] == 3
 
     def test_reraises_after_exhausted(self):
-        from navig.core.retry_utils import async_retry, RetryConfig
+        from navig.core.retry_utils import RetryConfig, async_retry
 
         @async_retry(RetryConfig(max_attempts=2, base_delay=0.001, max_delay=0.001))
         async def fn():
@@ -348,7 +348,7 @@ class TestAsyncRetry:
                 asyncio.run(fn())
 
     def test_no_reraise_when_disabled(self):
-        from navig.core.retry_utils import async_retry, RetryConfig
+        from navig.core.retry_utils import RetryConfig, async_retry
 
         @async_retry(RetryConfig(max_attempts=2, base_delay=0.001, max_delay=0.001,
                                   reraise_last=False))
@@ -360,7 +360,7 @@ class TestAsyncRetry:
         assert result is None
 
     def test_non_retryable_exception_bubbles_immediately(self):
-        from navig.core.retry_utils import async_retry, RetryConfig
+        from navig.core.retry_utils import RetryConfig, async_retry
         call_count = [0]
 
         @async_retry(RetryConfig(max_attempts=3, base_delay=0.001,
@@ -374,7 +374,7 @@ class TestAsyncRetry:
         assert call_count[0] == 1  # only one attempt
 
     def test_on_retry_callback_called(self):
-        from navig.core.retry_utils import async_retry, RetryConfig
+        from navig.core.retry_utils import RetryConfig, async_retry
         calls = []
 
         def on_retry(attempt, exc, delay):

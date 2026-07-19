@@ -1,7 +1,10 @@
 from __future__ import annotations
-import sys, types
+
+import sys
+import types
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+
 
 def _install_textual_stub():
     if "textual" in sys.modules and hasattr(sys.modules["textual"], "_navig_stub"):
@@ -61,8 +64,9 @@ def _install_textual_stub():
 
     # Pre-stub navig.tui so its __init__ does NOT execute, but submodule discovery
     # still works by pointing __path__ at the real directory.
-    import navig as _navig_pkg
     import os as _os
+
+    import navig as _navig_pkg
     _tui_path = [_os.path.join(_navig_pkg.__path__[0], "tui")]
     navig_tui = _mod("navig.tui")
     navig_tui.__path__ = _tui_path
@@ -75,7 +79,7 @@ def _cfg(**ov):
     d=dict(profile_name="alice",ai_provider="openai",local_runtime_enabled=True,capability_packs=["core","devops"],shell_integration=True,git_hooks=False,telemetry=True)
     d.update(ov); return SimpleNamespace(**d)
 def _badge(**ov):
-    d=dict(color="green",symbol=u"✓",status="ok",detail="running",deep_link="",label="My Service")
+    d=dict(color="green",symbol="✓",status="ok",detail="running",deep_link="",label="My Service")
     d.update(ov); return SimpleNamespace(**d)
 
 class TestBrandHero:
@@ -144,7 +148,7 @@ class TestSummaryPanel:
     def test_empty_packs(self): assert self._make(_cfg(capability_packs=[])).render()
     def test_active(self): assert "active" in self._make().render()
     def test_set_status(self): p=self._make(); p.set_status("p2"); assert p._status=="p2"
-    def test_checkmark(self): assert any(c in self._make(_cfg(shell_integration=True)).render() for c in (u"✓", u"✔", u"\u2714", u"\u2713"))
+    def test_checkmark(self): assert any(c in self._make(_cfg(shell_integration=True)).render() for c in ("✓", "✔", "\u2714", "\u2713"))
 
 class TestStatusRow:
     def _make(self,b=None):
@@ -165,7 +169,7 @@ class TestStatusRow:
         r.update=lambda t:c.append(t); r.update_badge(b); assert "!" in c[0]
     def test_warn_icon(self):
         c=[]; b=_badge(status="warn",deep_link=""); r=self._make(b)
-        r.update=lambda t:c.append(t); r.update_badge(b); assert u"▲" in c[0]
+        r.update=lambda t:c.append(t); r.update_badge(b); assert "▲" in c[0]
     def test_error_cta(self):
         c=[]; b=_badge(status="error",deep_link="/settings/db"); r=self._make(b)
         r.update=lambda t:c.append(t); r.update_badge(b)

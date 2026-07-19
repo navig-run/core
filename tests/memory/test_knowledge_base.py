@@ -10,7 +10,6 @@ import pytest
 
 from navig.memory.knowledge_base import KnowledgeEntry
 
-
 # ─── KnowledgeEntry defaults ──────────────────────────────────────────────────
 
 

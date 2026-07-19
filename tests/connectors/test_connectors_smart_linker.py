@@ -9,8 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from navig.connectors.smart_linker import SmartLinker, _DATE_PATTERN
-
+from navig.connectors.smart_linker import _DATE_PATTERN, SmartLinker
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -2,7 +2,7 @@
 
 Exposes read-only endpoints that feed the Onyx-ported admin pages in
 navig-deck.  All data is sourced from:
-  - navig.routing.router.WELL_KNOWN_* registries  (providers)
+  - navig.llm.routing.router.WELL_KNOWN_* registries  (providers)
   - navig.mcp_manager.MCPManager                  (MCP servers)
   - navig.config.get_config_manager()             (admin settings)
 
@@ -83,7 +83,7 @@ _VOICE_ICONS: dict[str, str] = {
 
 def _load_llm_providers() -> list[dict]:
     try:
-        from navig.routing.router import WELL_KNOWN_LLM_PROVIDERS
+        from navig.llm.routing.router import WELL_KNOWN_LLM_PROVIDERS
 
         result = []
         for key, meta in WELL_KNOWN_LLM_PROVIDERS.items():
@@ -105,7 +105,7 @@ def _load_llm_providers() -> list[dict]:
 
 def _load_search_providers() -> dict:
     try:
-        from navig.routing.router import WELL_KNOWN_CRAWLERS, WELL_KNOWN_SEARCH_PROVIDERS
+        from navig.llm.routing.router import WELL_KNOWN_CRAWLERS, WELL_KNOWN_SEARCH_PROVIDERS
 
         search = []
         for key, meta in WELL_KNOWN_SEARCH_PROVIDERS.items():
@@ -143,7 +143,7 @@ def _load_search_providers() -> dict:
 
 def _load_image_providers() -> list[dict]:
     try:
-        from navig.routing.router import WELL_KNOWN_IMAGE_PROVIDERS
+        from navig.llm.routing.router import WELL_KNOWN_IMAGE_PROVIDERS
 
         result = []
         vendor_names = {
@@ -175,7 +175,7 @@ def _load_image_providers() -> list[dict]:
 
 def _load_voice_providers() -> dict:
     try:
-        from navig.routing.router import WELL_KNOWN_VOICE_PROVIDERS
+        from navig.llm.routing.router import WELL_KNOWN_VOICE_PROVIDERS
 
         def _enrich(items: list[dict]) -> list[dict]:
             out = []
@@ -383,6 +383,19 @@ def _load_agents() -> dict:
             }
             for c in (custom_raw if isinstance(custom_raw, list) else [])
         ]
+
+        # Installed CC/NAVIG plugins' `agents/*.md` surface as custom agents.
+        try:
+            from navig.plugins.cc_agents import discover_plugin_agents
+
+            existing = {a["key"] for a in custom}
+            for a in discover_plugin_agents():
+                if a["key"] not in existing:
+                    custom.append(a)
+                    existing.add(a["key"])
+        except Exception as exc:  # noqa: BLE001 — plugin agents never break the roster
+            logger.debug("admin: plugin agents skipped: %s", exc)
+
         return {"builtin": builtin, "custom": custom}
     except Exception as exc:
         logger.warning("admin: failed to load agents: %s", exc)

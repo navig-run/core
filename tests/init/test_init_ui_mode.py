@@ -16,7 +16,6 @@ def _patch_common_ping() -> patch:
     return patch(
         "navig.commands.init._maybe_send_first_run_ping",
         MagicMock(),
-        create=True,
     )
 
 

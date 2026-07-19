@@ -661,7 +661,7 @@ class AutoHealMixin:
 
         # Optionally enrich with ErrorResolution analysis
         try:
-            from navig.modules.error_resolution import analyze_error
+            from navig.proactive.error_resolution import analyze_error
 
             solutions = analyze_error(ctx.original_cmd, ctx.exit_code, ctx.stderr)
             if solutions:

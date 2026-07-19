@@ -313,7 +313,7 @@ class Classifier:
         filename: str,
         extra_context: str | None,
     ) -> ClassifyResult:
-        from navig.llm_generate import generate_text
+        from navig.llm.generate import llm_generate
 
         categories = list(_CATEGORY_KEYWORDS.keys()) + ["ignore"]
         categories_fmt = "\n".join(f"  - {c}" for c in categories)
@@ -331,7 +331,11 @@ class Classifier:
 
         import json as _json
 
-        text = generate_text(prompt, timeout=self.llm_timeout)
+        text = llm_generate(
+            [{"role": "user", "content": prompt}],
+            mode="coding",
+            timeout=self.llm_timeout,
+        )
         # Extract JSON from response
         match = re.search(r"\{[^{}]+\}", text, re.DOTALL)
         if not match:

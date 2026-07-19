@@ -13,7 +13,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
@@ -139,8 +138,10 @@ class TestHostManagerLoad:
         (hosts_dir / "prod.yaml").write_text(yaml.dump(config_data))
 
         hm = HostManager(_make_provider(tmp_path))
-        with patch("navig.core.hosts.load_config", None, create=True):
-            result = hm.load("prod")
+        # (was wrapped in `patch("navig.core.hosts.load_config", None, create=True)` —
+        # the module has never had a `load_config`; the patch invented one, patched it to
+        # None, and changed nothing. HostManager reads the YAML through its provider.)
+        result = hm.load("prod")
         assert result["host"] == "prod.example.com"
         assert result["user"] == "deploy"
 
@@ -301,9 +302,8 @@ def fresh_config(tmp_path):
             cfg = ConfigSingleton()
             cfg._global_data = {}
             cfg._project_data = {}
-            cfg.global_config_dir = tmp_path
-            cfg.cache_dir = tmp_path / "cache"
-            cfg.plugins_dir = tmp_path / "plugins"
+            # global_config_dir / cache_dir / plugins_dir are now LIVE properties that read
+            # config_dir() — already patched to tmp_path above, so no manual assignment needed.
             yield cfg
     finally:
         ConfigSingleton._instance = old_instance

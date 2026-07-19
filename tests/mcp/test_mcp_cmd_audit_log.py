@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 runner = CliRunner()
 
-_WARN = "navig.console_helper.warn"
+_WARN = "navig.console_helper.warning"
 
 
 # ---------------------------------------------------------------------------
@@ -28,27 +28,45 @@ def test_mcp_list_no_servers():
     assert "No MCP servers" in result.output
 
 
-def test_mcp_list_with_servers():
+def test_mcp_list_renders_the_server_not_its_repr():
+    """`list_servers()` returns MCPServer OBJECTS, not strings.
+
+    This test used to mock it as `["myserver:8080"]` — a shape the real manager
+    never returns — and assert that string appeared in the output. It passed
+    only because the command echoed whatever it was handed, which is exactly the
+    bug: against the real manager, `navig mcp list` printed
+    "<navig.mcp_manager.MCPServer object at 0x…>". So mock what the manager
+    actually returns, and assert the rendered row.
+    """
     from navig.commands.mcp_cmd import mcp_app
+    from navig.mcp_manager import MCPServer
+
+    server = MCPServer("myserver", {"type": "npm", "package": "@scope/pkg", "enabled": True})
+    mock_manager = MagicMock()
+    mock_manager.list_servers.return_value = [server]
+
+    with patch("navig.mcp_manager.MCPManager", return_value=mock_manager):
+        result = runner.invoke(mcp_app, ["list"])
+
+    assert result.exit_code == 0
+    assert "myserver" in result.output
+    assert "MCPServer object" not in result.output
+    assert "Enabled" in result.output
+
+
+def test_mcp_list_plain_is_scriptable():
+    """--plain prints bare names, for piping."""
+    from navig.commands.mcp_cmd import mcp_app
+    from navig.mcp_manager import MCPServer
 
     mock_manager = MagicMock()
-    mock_manager.list_servers.return_value = ["myserver:8080"]
+    mock_manager.list_servers.return_value = [MCPServer("myserver", {"type": "npm"})]
 
     with patch("navig.mcp_manager.MCPManager", return_value=mock_manager):
-        result = runner.invoke(mcp_app, ["list"])
+        result = runner.invoke(mcp_app, ["list", "--plain"])
+
     assert result.exit_code == 0
-    assert "myserver:8080" in result.output
-
-
-def test_mcp_list_manager_no_list_servers():
-    from navig.commands.mcp_cmd import mcp_app
-
-    mock_manager = MagicMock(spec=[])  # no list_servers attribute
-
-    with patch("navig.mcp_manager.MCPManager", return_value=mock_manager):
-        result = runner.invoke(mcp_app, ["list"])
-    assert result.exit_code == 0
-    assert "No MCP servers" in result.output
+    assert "myserver" in result.output
 
 
 def test_mcp_serve_print_config():
@@ -80,7 +98,7 @@ def test_mcp_serve_import_error_exits_1():
 def test_mcp_status_no_impl():
     from navig.commands.mcp_cmd import mcp_app
 
-    with patch(_WARN, create=True):
+    with patch(_WARN):
         result = runner.invoke(mcp_app, ["status"])
     assert result.exit_code == 0
 

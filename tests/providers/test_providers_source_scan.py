@@ -9,8 +9,8 @@ import pytest
 
 import navig.providers.source_scan as ss_mod
 from navig.providers.source_scan import (
-    PROVIDER_ENV_KEYS,
     _FALLBACK_PROVIDER_IDS,
+    PROVIDER_ENV_KEYS,
     check_api_key_in_env,
     detect_provider_sources,
     provider_env_key,
@@ -19,7 +19,6 @@ from navig.providers.source_scan import (
     provider_has_vault_key,
     scan_enabled_provider_sources,
 )
-
 
 # ---------------------------------------------------------------------------
 # PROVIDER_ENV_KEYS

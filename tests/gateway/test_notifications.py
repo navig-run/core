@@ -8,7 +8,6 @@ import pytest
 
 from navig.gateway.notifications import Notification, NotificationPriority
 
-
 # ─── NotificationPriority ─────────────────────────────────────────────────────
 
 
@@ -154,3 +153,54 @@ def test_notification_keyboard_stored():
     keyboard = [[{"text": "Confirm", "callback_data": "confirm"}]]
     n = Notification(type="alert", title="T", message="M", keyboard=keyboard)
     assert n.keyboard == keyboard
+
+
+# ─── to_telegram_message — HTML safety + rich rendering (Bot API 10.2) ─────────
+
+
+def test_to_telegram_message_escapes_special_chars_in_body():
+    # The real bug: an error notification appends a raw traceback tail full of
+    # "<module>", "<Foo object at 0x…>", generics — raw "<"/"&" tripped Telegram's
+    # HTML parser, so the transport silently dropped ALL formatting. Now escaped.
+    body = 'Traceback: File "x.py", line 5, in <module>\n  KeyError: dict[str, int] & co'
+    n = Notification(type="alert", title="NAVIG error", message=body)
+    msg = n.to_telegram_message()
+    assert "&lt;module&gt;" in msg
+    assert "<module>" not in msg          # never a raw tag
+    assert "&amp;" in msg                 # bare "&" escaped
+    assert "<b>NAVIG error</b>" in msg    # title formatting survives
+
+
+def test_to_telegram_message_escapes_special_chars_in_title():
+    n = Notification(type="alert", title="A < B & C", message="ok")
+    msg = n.to_telegram_message()
+    assert "<b>A &lt; B &amp; C</b>" in msg
+
+
+def test_to_telegram_message_renders_markdown_body():
+    n = Notification(type="alert", title="T", message="run **now** with `code`")
+    msg = n.to_telegram_message()
+    assert "<b>now</b>" in msg
+    assert "<code>code</code>" in msg
+
+
+def test_to_telegram_message_empty_title_no_empty_bold():
+    # comms/dispatch passes title="" — must not emit "<b></b>".
+    n = Notification(type="alert", title="", message="body")
+    msg = n.to_telegram_message()
+    assert "<b></b>" not in msg
+    assert "🚨" in msg
+    assert "body" in msg
+
+
+def test_to_telegram_message_empty_body_no_trailing_newlines():
+    n = Notification(type="alert", title="Only a title", message="")
+    msg = n.to_telegram_message()
+    assert "<b>Only a title</b>" in msg
+    assert not msg.endswith("\n")
+
+
+def test_to_telegram_message_raw_mode_still_verbatim():
+    raw = "<b>Pre-built</b> HTML with <code>&lt;raw&gt;</code>"
+    n = Notification(type="alert", title="ignored", message=raw, raw_message=True)
+    assert n.to_telegram_message() == raw

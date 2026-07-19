@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+
 import pytest
 
 from navig.connectors.gmail.mappers import (
@@ -11,7 +12,6 @@ from navig.connectors.gmail.mappers import (
     gmail_message_to_resource,
 )
 from navig.connectors.types import ResourceType
-
 
 # ---------------------------------------------------------------------------
 # _extract_header

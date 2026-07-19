@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Module-level helpers
 # ---------------------------------------------------------------------------
@@ -176,6 +175,7 @@ class TestTryKeyring:
 
     def test_returns_stored_key_as_bytes(self, tmp_path):
         from cryptography.fernet import Fernet
+
         from navig.vault.encryption import VaultEncryption
 
         ve = VaultEncryption(tmp_path)

@@ -8,7 +8,6 @@ import pytest
 
 from navig.spaces.next_action import SpaceNextAction, first_pending_task
 
-
 # ---------------------------------------------------------------------------
 # first_pending_task
 # ---------------------------------------------------------------------------

@@ -153,7 +153,7 @@ def cli_review_and_approve(
     """
     import typer  # noqa: PLC0415
 
-    from navig.selfheal.git_manager import _CORE_REPO_DIR  # noqa: PLC0415
+    from navig.selfheal.git_manager import core_repo_dir  # noqa: PLC0415
     from navig.selfheal.patcher import build_patch  # noqa: PLC0415
     from navig.selfheal.pr_builder import submit_pr  # noqa: PLC0415
 
@@ -178,7 +178,7 @@ def cli_review_and_approve(
         return None
 
     # Rebuild patch from approved subset only.
-    repo_path = _CORE_REPO_DIR
+    repo_path = core_repo_dir()
     patch_str = build_patch(approved_findings, repo_path)
     if not patch_str:
         typer.echo("\nNo effective changes after filtering — nothing to patch.")
@@ -384,14 +384,14 @@ class ContributeFlow:
             Message dict with ``pr_url`` set on success and ``done=True``.
         """
         from navig.selfheal.git_manager import (  # noqa: PLC0415
-            _CORE_REPO_DIR,
             apply_patch,
             commit_and_push,
+            core_repo_dir,
         )
         from navig.selfheal.patcher import build_patch  # noqa: PLC0415
         from navig.selfheal.pr_builder import submit_pr  # noqa: PLC0415
 
-        repo_path = _CORE_REPO_DIR
+        repo_path = core_repo_dir()
         try:
             patch_str = build_patch(self._approved, repo_path)
             if not patch_str:

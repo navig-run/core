@@ -2,8 +2,6 @@
 
 All public functions guard against non-Windows platforms and raise RuntimeError
 when called on Linux/macOS, unless documented otherwise.
-
-Ported and hardened from CursorTouch/Windows-MCP (MIT licence) desktop/utils.py.
 """
 
 from __future__ import annotations
@@ -106,7 +104,7 @@ def run_with_graceful_timeout(
        kill the entire process tree (handles nested ``python`` sub-processes).
 
     This reliably terminates ``pwsh → python`` scenarios that hang on a plain
-    ``.terminate()`` call (fixes issues analogous to Windows-MCP #124, #146).
+    ``.terminate()`` call (fixes a class of graceful-terminate races on Windows).
 
     Raises ``subprocess.TimeoutExpired`` after killing the process, preserving
     the same contract as the standard ``subprocess.run``.

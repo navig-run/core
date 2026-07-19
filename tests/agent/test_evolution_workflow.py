@@ -12,7 +12,6 @@ import pytest
 from navig.core.evolution.base import EvolutionResult
 from navig.core.evolution.workflow import WorkflowEvolver
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -284,11 +283,18 @@ class TestSave:
         expected = tmp_path / "my_flow_name.yaml"
         assert expected.exists()
 
-    def test_save_exception_does_not_propagate(self):
+    def test_save_exception_does_not_propagate(self, tmp_path):
         ev = _evolver()
-        ev._workflows_dir = Path("/nonexistent/dir")
+        # A workflows dir whose parent is a regular FILE — mkdir(parents=True) can't create
+        # it (NotADirectoryError), on every platform, without littering the real filesystem.
+        # (`_save` now mkdirs the dir first, so the old "/nonexistent/dir" would just be
+        # created on Windows; this proves the try/except still swallows a genuine failure.)
+        a_file = tmp_path / "blocker"
+        a_file.write_text("i am a file, not a dir", encoding="utf-8")
+        ev._workflows_dir = a_file / "workflows"
         # Should not raise
         ev._save("goal", "name: fail_save\nsteps:\n  - action: wait\n")
+        assert not (a_file / "workflows").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -339,3 +345,49 @@ class TestEvolveIntegration:
             result = ev.evolve("crash test")
         assert result.success is False
         assert "generate boom" in result.error
+
+
+# ---------------------------------------------------------------------------
+# _workflows_dir — must be config_dir()/workflows (per-brain, in the wheel) and
+# must match where AutomationEngine loads from, so an evolved workflow is runnable.
+# REGRESSION: it was Path(__file__).parents[3]/"workflows" — the dir CONTAINING the
+# navig package (site-packages in a real install). It escaped the wheel, was
+# machine-global, and the loader never read it, so a "saved" workflow was
+# unreachable and on a real install _save wrote to a nonexistent path and silently
+# failed. Same class as #189's automation_engine fix, in the sibling evolver.
+# ---------------------------------------------------------------------------
+
+class TestWorkflowsDir:
+    def test_default_is_config_dir_workflows(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        from navig.platform.paths import config_dir
+
+        assert _evolver()._workflows_dir == config_dir() / "workflows"
+
+    def test_default_is_inside_the_navig_package_tree_for_neither_layout(self, monkeypatch, tmp_path):
+        """It must NOT resolve to a package-relative dir (which escapes the wheel)."""
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        import navig
+
+        pkg = Path(navig.__file__).resolve().parent
+        assert not str(_evolver()._workflows_dir).startswith(str(pkg))
+
+    def test_follows_navig_config_dir(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "brainA"))
+        a = _evolver()._workflows_dir
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "brainB"))
+        b = _evolver()._workflows_dir
+        assert a != b  # two brains never share a workflows dir
+
+    def test_evolver_saves_where_the_workflow_engine_loads(self, monkeypatch, tmp_path):
+        """The round-trip that was silently broken: evolve → save → the WorkflowEngine that
+        runs workflows finds it. Both must resolve config_dir()/workflows."""
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        from navig.core.automation_engine import WorkflowEngine
+
+        ev = _evolver()
+        ev._save("round trip", "name: rt_flow\nsteps:\n  - action: wait\n    args:\n      seconds: 1\n")
+        assert (ev._workflows_dir / "rt_flow.yaml").exists()
+        # the loader looks in the same place → the saved workflow is actually runnable
+        assert WorkflowEngine()._workflows_dir == ev._workflows_dir
+        assert WorkflowEngine().load_workflow("rt_flow") is not None

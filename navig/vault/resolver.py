@@ -224,7 +224,10 @@ def resolve_secret(
         except Exception:
             continue
         if value:
-            return value
+            # get_secret() returns a SecretStr; callers expect the plaintext str
+            # (the env branch above already returns str). Unwrap so a vault-sourced
+            # secret isn't handed out as the masked "***".
+            return value.reveal() if hasattr(value, "reveal") else str(value)
     return None
 
 

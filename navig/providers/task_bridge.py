@@ -162,22 +162,18 @@ class CalendarProvider(BaseTaskProvider):
         return _keyword_score(instruction, self._KEYWORDS)
 
     def process(self, instruction: str) -> ProviderResult:
-        try:
-            from navig.commands.calendar import (
-                create_event_from_instruction,  # type: ignore
-            )
-
-            result = create_event_from_instruction(instruction)
-            return ProviderResult(provider=self.name, success=True, output=str(result))
-        except ImportError:
-            return ProviderResult(
-                provider=self.name,
-                success=False,
-                output="",
-                error="calendar module not available",
-            )
-        except Exception as exc:
-            return ProviderResult(provider=self.name, success=False, output="", error=str(exc))
+        # NL→event creation is not implemented: no revision ever defined
+        # create_event_from_instruction (the old import of it was permanently
+        # dead), and the calendar CLI now lives in the navig-calendar plugin.
+        # When implementing, put the helper in navig.agent.proactive (core owns
+        # the providers) and call it here.
+        return ProviderResult(
+            provider=self.name,
+            success=False,
+            output="",
+            error="calendar instruction handling not implemented "
+                  "(calendar CLI: navig-calendar plugin)",
+        )
 
 
 class CommsProvider(BaseTaskProvider):

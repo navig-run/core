@@ -11,29 +11,36 @@ import pytest
 
 
 class TestDetectOs:
-    def test_windows(self):
+    """`detect_os` delegates to `navig.platform.paths.current_os` (sys.platform based).
+
+    These tests used to patch `platform.system`, which `detect_os` NO LONGER CALLS — it
+    was dropped on purpose to avoid a `platform.system()` WMI query that can hang on
+    Windows. The patches were therefore no-ops, which made them worse than merely
+    broken: `test_windows` was not passing, it was passing BY ACCIDENT because this host
+    is Windows (it asserted nothing, and would stay green whatever detect_os did), while
+    macos/linux/unknown failed. On a Linux runner the false green would just move.
+
+    Patch the real dependency instead, so every case is host-independent — and cover the
+    one piece of logic detect_os actually owns: collapsing WSL to linux.
+    """
+
+    @pytest.mark.parametrize(
+        ("current", "expected"),
+        [
+            ("windows", "windows"),
+            ("macos", "macos"),
+            ("linux", "linux"),
+            ("wsl", "linux"),  # the only mapping detect_os itself performs
+        ],
+    )
+    def test_maps_current_os(self, current, expected, monkeypatch):
+        import navig.platform.paths as pp
         from navig.adapters.os.factory import detect_os
 
-        with patch("platform.system", return_value="Windows"):
-            assert detect_os() == "windows"
-
-    def test_macos(self):
-        from navig.adapters.os.factory import detect_os
-
-        with patch("platform.system", return_value="Darwin"):
-            assert detect_os() == "macos"
-
-    def test_linux(self):
-        from navig.adapters.os.factory import detect_os
-
-        with patch("platform.system", return_value="Linux"):
-            assert detect_os() == "linux"
-
-    def test_unknown_falls_back_to_linux(self):
-        from navig.adapters.os.factory import detect_os
-
-        with patch("platform.system", return_value="FreeBSD"):
-            assert detect_os() == "linux"
+        # detect_os imports current_os INSIDE the function, so patching the attribute on
+        # the source module is what takes effect at call time.
+        monkeypatch.setattr(pp, "current_os", lambda: current)
+        assert detect_os() == expected
 
     def test_case_insensitive_input(self):
         from navig.adapters.os.factory import detect_os
@@ -114,7 +121,7 @@ class TestGetOsAdapter:
         mock_cls.return_value = mock_instance
 
         with patch("navig.adapters.os.factory.detect_os", return_value="windows"):
-            with patch("navig.adapters.os.windows.WindowsAdapter", mock_cls, create=True):
+            with patch("navig.adapters.os.windows.WindowsAdapter", mock_cls):
                 with patch.dict(
                     "sys.modules",
                     {"navig.adapters.os.windows": MagicMock(WindowsAdapter=mock_cls)},

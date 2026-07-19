@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-
 # ---------------------------------------------------------------------------
 # migration
 # ---------------------------------------------------------------------------
@@ -33,14 +32,14 @@ class TestDetectFormat:
             detect_format(tmp_path / "missing.yaml")
 
     def test_raises_on_empty_file(self, tmp_path):
-        from navig.migration import detect_format, ConfigMigrationError
+        from navig.migration import ConfigMigrationError, detect_format
         cfg = tmp_path / "empty.yaml"
         cfg.write_text("", encoding="utf-8")
         with pytest.raises(ConfigMigrationError):
             detect_format(cfg)
 
     def test_raises_on_ambiguous_format(self, tmp_path):
-        from navig.migration import detect_format, ConfigMigrationError
+        from navig.migration import ConfigMigrationError, detect_format
         cfg = tmp_path / "ambiguous.yaml"
         cfg.write_text(yaml.dump({"something_else": True}), encoding="utf-8")
         with pytest.raises((ConfigMigrationError, Exception)):
@@ -64,12 +63,12 @@ class TestExtractWebserverType:
         assert extract_webserver_type(config) == "nginx"
 
     def test_raises_when_no_services(self):
-        from navig.migration import extract_webserver_type, ConfigMigrationError
+        from navig.migration import ConfigMigrationError, extract_webserver_type
         with pytest.raises(ConfigMigrationError):
             extract_webserver_type({})
 
     def test_raises_when_unknown_webserver(self):
-        from navig.migration import extract_webserver_type, ConfigMigrationError
+        from navig.migration import ConfigMigrationError, extract_webserver_type
         with pytest.raises(ConfigMigrationError):
             extract_webserver_type({"services": {"web": "iis"}})
 
@@ -175,7 +174,7 @@ class TestAIContextManager:
         assert AIContextManager.MAX_ERROR_LOGS == 100
 
     def test_get_ai_context_manager_returns_instance(self, tmp_path):
-        from navig.ai_context import get_ai_context_manager, AIContextManager
+        from navig.ai_context import AIContextManager, get_ai_context_manager
         with patch("navig.platform.paths.config_dir", return_value=tmp_path):
             mgr = get_ai_context_manager()
         assert isinstance(mgr, AIContextManager)

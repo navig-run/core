@@ -28,11 +28,12 @@ class TestFlowDelegation:
         assert "Task/workflow management" in result.output
 
     def test_flow_list_exits_zero(self):
-        """navig flow list should exit 0."""
+        """navig flow list should exit 0 (engine retired — shows the Blocks redirect)."""
         result = runner.invoke(app, ["flow", "list"])
         assert result.exit_code == 0
-        # Should show a table with workflows
-        assert "Name" in result.output or "No flows" in result.output.lower()
+        # Engine retired: the shim points at Blocks instead of a workflow table.
+        out = result.output.lower()
+        assert "no flows" in out or "block" in out
 
     def test_flow_has_expected_subcommands(self):
         """navig flow should expose core workflow subcommands."""

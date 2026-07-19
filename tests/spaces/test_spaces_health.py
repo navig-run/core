@@ -63,7 +63,11 @@ class TestGetHabitTemplate:
     def test_returns_none_for_empty_string(self):
         assert get_habit_template("") is None
 
-    @pytest.mark.parametrize("key", list(EXPECTED_KEYS))
+    # `sorted`, not `list`: EXPECTED_KEYS is a set, whose iteration order varies per
+    # process. Under pytest-xdist each worker collected these params in a different
+    # order and xdist aborted the run ("Different tests were collected"). The set is
+    # still correct for the equality assertions above — only collection must be stable.
+    @pytest.mark.parametrize("key", sorted(EXPECTED_KEYS))
     def test_all_builtin_keys_resolvable(self, key):
         tmpl = get_habit_template(key)
         assert tmpl is not None

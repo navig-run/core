@@ -1,7 +1,7 @@
 """
 Host Management Commands
 
-The Schema tracks all assets. Every host. Every operation.
+NAVIG tracks every asset. Every host. Every operation.
 """
 
 import os
@@ -276,7 +276,7 @@ def use_host(name: str, options: dict[str, Any]):
     """
     if not config_manager.host_exists(name):
         ch.error(f"Host '{name}' not found", "Use 'navig host list' to see available hosts.")
-        return
+        raise typer.Exit(2)
 
     config_manager.set_active_host(name)
 
@@ -321,13 +321,14 @@ def show_current_host(options: dict[str, Any]):
         ch.print_server_info(active, config)
     except Exception as e:
         ch.error("Error loading host config", str(e))
+        raise typer.Exit(1) from e
 
 
 def set_default_host(name: str, options: dict[str, Any]):
     """Set default host."""
     if not config_manager.host_exists(name):
         ch.error(f"Host '{name}' not found")
-        return
+        raise typer.Exit(2)
 
     config_manager.update_global_config({"default_host": name})
 
@@ -339,7 +340,7 @@ def add_host(name: str, options: dict[str, Any]):
     """Add new host configuration (interactive wizard with auto-discovery)."""
     if config_manager.host_exists(name):
         ch.error(f"Host '{name}' already exists.")
-        return
+        raise typer.Exit(1)
 
     ch.info(f"Adding new host: {name}")
     ch.dim("Press Ctrl+C to cancel at any time.\n")
@@ -556,7 +557,7 @@ def add_host(name: str, options: dict[str, Any]):
         config_manager.save_host_config(name, config)
     except Exception as e:
         ch.error("Failed to save host configuration", str(e))
-        return
+        raise typer.Exit(1) from e
 
     ch.success(f"✓ Host '{name}' configured successfully!\n")
 
@@ -586,17 +587,21 @@ def remove_host(name: str, options: dict[str, Any]):
     if not config_manager.host_exists(name):
         if not quiet:
             ch.error(f"Host '{name}' not found.")
-        return
+        raise typer.Exit(2)
 
     if not options.get("yes"):
         if not ch.confirm_action(f"Are you sure you want to remove host '{name}'?"):
             ch.warning("Cancelled.")
             return
 
+    # Capture BEFORE the delete: get_active_host() filters out non-existent hosts, so checking
+    # after delete_host_config always returns False and the stale pointer file would linger — then
+    # a re-added same-name host silently becomes active again without `navig host use`.
+    was_active = config_manager.get_active_host() == name
+
     config_manager.delete_host_config(name)
 
-    # If this was the active host, clear it
-    if config_manager.get_active_host() == name:
+    if was_active:
         config_manager.active_host_file.unlink(missing_ok=True)
 
     if not quiet:
@@ -760,7 +765,7 @@ def edit_host(options: dict[str, Any]) -> None:
 
     if not host_name:
         ch.error("Host name is required")
-        return
+        raise typer.Exit(1)
 
     # Verify host exists
     if not config_manager.host_exists(host_name):
@@ -768,7 +773,7 @@ def edit_host(options: dict[str, Any]) -> None:
             f"Host '{host_name}' not found",
             "Use 'navig host list' to see available hosts.",
         )
-        return
+        raise typer.Exit(2)
 
     # Get host config file path
     host_file = config_manager.hosts_dir / f"{host_name}.yaml"
@@ -779,7 +784,7 @@ def edit_host(options: dict[str, Any]) -> None:
 
         if not host_file.exists():
             ch.error(f"Configuration file not found for host '{host_name}'")
-            return
+            raise typer.Exit(2)
 
     # Determine editor
     editor = os.environ.get("EDITOR") or os.environ.get("VISUAL")
@@ -810,8 +815,10 @@ def edit_host(options: dict[str, Any]) -> None:
         ch.dim("Changes will take effect immediately.")
     except subprocess.CalledProcessError as e:
         ch.error("Error opening editor", str(e))
+        raise typer.Exit(1) from e
     except Exception as e:
         ch.error("Unexpected error", str(e))
+        raise typer.Exit(1) from e
 
 
 def clone_host(options: dict[str, Any]) -> None:
@@ -821,7 +828,7 @@ def clone_host(options: dict[str, Any]) -> None:
 
     if not source_name or not new_name:
         ch.error("Both source and new host names are required")
-        return
+        raise typer.Exit(1)
 
     # Verify source exists
     if not config_manager.host_exists(source_name):
@@ -829,19 +836,19 @@ def clone_host(options: dict[str, Any]) -> None:
             f"Source host '{source_name}' not found",
             "Use 'navig host list' to see available hosts.",
         )
-        return
+        raise typer.Exit(2)
 
     # Verify new name doesn't exist
     if config_manager.host_exists(new_name):
         ch.error(f"Host '{new_name}' already exists")
-        return
+        raise typer.Exit(1)
 
     # Load source configuration
     try:
         source_config = config_manager.load_host_config(source_name)
     except Exception as e:
         ch.error("Error loading source host configuration", str(e))
-        return
+        raise typer.Exit(1) from e
 
     # Update name in cloned config
     source_config["name"] = new_name
@@ -883,6 +890,7 @@ def clone_host(options: dict[str, Any]) -> None:
         ch.info(f"3. Set as active: navig host use {new_name}")
     except Exception as e:
         ch.error("Error saving cloned host configuration", str(e))
+        raise typer.Exit(1) from e
 
 
 def test_host(options: dict[str, Any]) -> None:
@@ -1079,7 +1087,7 @@ def info_host(options: dict[str, Any]) -> None:
 
     if not host_name:
         ch.error("No host specified and no active host configured")
-        return
+        raise typer.Exit(1)
 
     # Verify host exists
     if not config_manager.host_exists(host_name):
@@ -1087,14 +1095,14 @@ def info_host(options: dict[str, Any]) -> None:
             f"Host '{host_name}' not found",
             "Use 'navig host list' to see available hosts.",
         )
-        return
+        raise typer.Exit(2)
 
     # Load host configuration
     try:
         host_config = config_manager.load_host_config(host_name)
     except Exception as e:
         ch.error("Error loading host configuration", str(e))
-        return
+        raise typer.Exit(1) from e
 
     # Get additional info
     active_host = config_manager.get_active_host()
@@ -1842,6 +1850,7 @@ def host_security_edit(
         fail2ban_unban(unban, jail, ctx.obj)
     else:
         ch.error("Specify what to edit: --firewall or --unban")
+        raise typer.Exit(1)
 
 
 # Host maintenance subcommand
@@ -1925,6 +1934,7 @@ def host_maintenance_run(
         ch.error(
             "Specify an action: --update, --clean, --rotate-logs, --cleanup-temp, --all, --reboot"
         )
+        raise typer.Exit(1)
 
 
 @host_maintenance_app.command("update")

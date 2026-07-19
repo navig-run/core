@@ -3332,6 +3332,7 @@ data: ${data}
 };
 
 // src/index.ts
+var LIGHTHOUSE_VERSION = "1.0.0";
 var app = new Hono2();
 app.use(
   "*",
@@ -3388,7 +3389,7 @@ app.post(
   "/ingest/:tenant/:source",
   (c) => brainFor(c.env, c.req.param("tenant")).fetch(c.req.raw)
 );
-app.get("/", (c) => c.json({ ok: true, service: "navig-lighthouse" }));
+app.get("/", (c) => c.json({ ok: true, service: "navig-lighthouse", version: LIGHTHOUSE_VERSION }));
 app.notFound((c) => c.json({ error: "not_found" }, 404));
 var index_default = app;
 export {

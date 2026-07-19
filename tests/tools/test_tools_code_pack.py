@@ -1,10 +1,10 @@
 """Tests for navig/tools/domains/code_pack.py."""
 
-import pytest
 from unittest.mock import MagicMock, call
 
-from navig.tools.domains.code_pack import register_tools
+import pytest
 
+from navig.tools.domains.code_pack import register_tools
 
 # ---------------------------------------------------------------------------
 # register_tools — basic invocation

@@ -18,7 +18,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # navig/gateway/routes/common.py
 # ---------------------------------------------------------------------------
-
 from navig.gateway.routes.common import envelope_error, envelope_ok
 
 
@@ -255,28 +254,28 @@ async def test_router_status_success():
     mock_status = MagicMock()
     mock_status.to_dict.return_value = {"providers": ["openai"], "active": "openai"}
     mock_router.status.return_value = mock_status
-    with patch("navig.routing.router.get_router", return_value=mock_router):
+    with patch("navig.llm.routing.router.get_router", return_value=mock_router):
         resp = await _router_status(_make_json_request())
     assert resp.status == 200
 
 
 @pytest.mark.asyncio
 async def test_router_status_exception():
-    with patch("navig.routing.router.get_router", side_effect=ImportError("no module")):
+    with patch("navig.llm.routing.router.get_router", side_effect=ImportError("no module")):
         resp = await _router_status(_make_json_request())
     assert resp.status == 500
 
 
 @pytest.mark.asyncio
 async def test_router_traces_success():
-    with patch("navig.routing.trace.recent_traces", return_value=[{"id": 1}]):
+    with patch("navig.llm.routing.trace.recent_traces", return_value=[{"id": 1}]):
         resp = await _router_traces(_make_json_request(query={"limit": "10"}))
     assert resp.status == 200
 
 
 @pytest.mark.asyncio
 async def test_router_traces_exception():
-    with patch("navig.routing.trace.recent_traces", side_effect=RuntimeError("fail")):
+    with patch("navig.llm.routing.trace.recent_traces", side_effect=RuntimeError("fail")):
         resp = await _router_traces(_make_json_request())
     assert resp.status == 500
 
@@ -296,8 +295,8 @@ async def test_router_detect_success():
     mock_caps.cost_target = "low"
     mock_caps.latency_target = "fast"
     with (
-        patch("navig.routing.detect.detect_mode", return_value=("chat", 0.9, ["keyword"])),
-        patch("navig.routing.capabilities.MODE_CAPABILITIES", {"chat": mock_caps}),
+        patch("navig.llm.routing.detect.detect_mode", return_value=("chat", 0.9, ["keyword"])),
+        patch("navig.llm.routing.capabilities.MODE_CAPABILITIES", {"chat": mock_caps}),
     ):
         resp = await _router_detect(_make_json_request(body={"text": "hello"}))
     assert resp.status == 200
@@ -306,7 +305,7 @@ async def test_router_detect_success():
 @pytest.mark.asyncio
 async def test_router_detect_exception():
     req = _make_json_request(body={"text": "hello"})
-    with patch("navig.routing.detect.detect_mode", side_effect=RuntimeError("classify fail")):
+    with patch("navig.llm.routing.detect.detect_mode", side_effect=RuntimeError("classify fail")):
         resp = await _router_detect(req)
     assert resp.status == 500
 

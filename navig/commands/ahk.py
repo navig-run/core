@@ -21,7 +21,7 @@ import typer
 
 from navig.console_helper import get_console
 from navig.lazy_loader import lazy_import
-from navig.platform.paths import config_dir
+from navig.platform.paths import config_dir, scripts_dir
 
 ch = lazy_import("navig.console_helper")
 
@@ -124,11 +124,11 @@ def ahk_status(
     console = get_console()
 
     if sys.platform != "win32":
-        ch.error("AutoHotkey is only available on Windows")
         if json_output:
-            import json
-
-            console.print(json.dumps({"available": False, "reason": "Not Windows"}))
+            # stdout belongs to the JSON payload; the human message would corrupt it.
+            ch.emit_json({"available": False, "reason": "Not Windows"}, indent=None)
+        else:
+            ch.error("AutoHotkey is only available on Windows")
         raise typer.Exit(1)
 
     adapter = _get_adapter()
@@ -137,15 +137,14 @@ def ahk_status(
 
     # Refresh if requested
     if refresh:
-        ch.info("Refreshing AHK detection...")
+        if not json_output:  # narration must never interleave with the JSON payload
+            ch.info("Refreshing AHK detection...")
         adapter.refresh_detection()
 
     status = adapter.get_status()
 
     if json_output:
-        import json
-
-        console.print(json.dumps(status.to_dict(), indent=2))
+        ch.emit_json(status.to_dict())
         return
 
     # Rich display
@@ -711,9 +710,7 @@ def ahk_windows(
         windows = [w for w in windows if filter_lower in w.title.lower()]
 
     if json_output:
-        import json
-
-        console.print(json.dumps([w.to_dict() for w in windows], indent=2))
+        ch.emit_json([w.to_dict() for w in windows])
         return
 
     # Rich table display
@@ -1257,7 +1254,7 @@ def ahk_listen(
     Register a global hotkey to run a command.
     Appends to ~/.navig/scripts/listener.ahk.
     """
-    script_dir = config_dir() / "scripts"
+    script_dir = scripts_dir()
     script_dir.mkdir(parents=True, exist_ok=True)
     listener_path = script_dir / "listener.ahk"
 
@@ -1290,7 +1287,7 @@ def ahk_listen(
 @ahk_app.command("listener-start")
 def ahk_listener_start():
     """Start or restart the persistent listener script."""
-    script_dir = config_dir() / "scripts"
+    script_dir = scripts_dir()
     listener_path = script_dir / "listener.ahk"
 
     if not listener_path.exists():
@@ -1312,20 +1309,15 @@ def ahk_listener_start():
 @ahk_app.command("listener-edit")
 def ahk_listener_edit():
     """Open listener script in default editor."""
-    script_dir = config_dir() / "scripts"
+    script_dir = scripts_dir()
     listener_path = script_dir / "listener.ahk"
     if not listener_path.exists():
         script_dir.mkdir(parents=True, exist_ok=True)
         listener_path.touch()
 
-    import os
+    from navig.platform.opener import open_path
 
-    if sys.platform == "win32":
-        os.startfile(listener_path)
-    else:
-        import subprocess
-
-        subprocess.call(("open", str(listener_path)))
+    open_path(listener_path)
 
 
 # ==================== AI-Powered Automation ====================
@@ -1868,22 +1860,19 @@ def workflow_list():
     console = get_console()
     engine = WorkflowEngine()
 
+    # One location, not two: `engine._workflows_dir` now IS `config_dir()/workflows`. Listing
+    # both would print every workflow twice.
     workflows_dir = engine._workflows_dir
-    possible_paths = [workflows_dir, config_dir() / "workflows"]
 
     table = Table(title="📜 Automation Workflows")
     table.add_column("Name", style="cyan")
     table.add_column("Path", style="dim")
 
     found = False
-    for p in possible_paths:
-        if p.exists():
-            for f in p.glob("*.yaml"):
-                table.add_row(f.stem, str(f))
-                found = True
-            for f in p.glob("*.yml"):
-                table.add_row(f.stem, str(f))
-                found = True
+    if workflows_dir.exists():
+        for f in sorted(workflows_dir.glob("*.y*ml")):
+            table.add_row(f.stem, str(f))
+            found = True
 
     if found:
         console.print(table)

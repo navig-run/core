@@ -57,11 +57,11 @@ def _detect_default_model() -> str:
     import logging  # noqa: PLC0415
 
     try:
-        from navig.llm_router import get_llm_router  # noqa: PLC0415
+        from navig.llm.router import get_llm_router  # noqa: PLC0415
 
         # Suppress the "Unknown provider" validator warning — we handle unknown
         # providers gracefully and don't want noise on every config/install call.
-        _log = logging.getLogger("navig.llm_router")
+        _log = logging.getLogger("navig.llm.router")
         _prev = _log.level
         _log.setLevel(logging.ERROR)
         try:
@@ -586,7 +586,7 @@ def agent_stop():
         return
 
     try:
-        pid = int(pid_file.read_text().strip())
+        pid = int(pid_file.read_text(encoding="utf-8").strip())
 
         if sys.platform == "win32":
             import subprocess
@@ -635,7 +635,7 @@ def agent_status(
 
     if pid_file.exists():
         try:
-            pid = int(pid_file.read_text().strip())
+            pid = int(pid_file.read_text(encoding="utf-8").strip())
             if sys.platform == "win32":
                 import subprocess
 
@@ -750,9 +750,7 @@ def agent_config_cmd(
     import os
     import subprocess
 
-    import yaml
-
-    from navig.core.yaml_io import atomic_write_yaml
+    from navig.core.yaml_io import atomic_write_yaml, load_yaml_for_update
 
     config_path = _get_config_path()
 
@@ -768,14 +766,13 @@ def agent_config_cmd(
 
     if show:
         # Display configuration
-        content = config_path.read_text()
+        content = config_path.read_text(encoding="utf-8")
         ch.console.print(content)
         return
 
     if set_key and value:
         # Set a configuration value
-        with open(config_path, encoding='utf-8') as f:
-            data = yaml.safe_load(f) or {}
+        data = load_yaml_for_update(config_path)
 
         # Navigate to nested key
         keys = set_key.split(".")
@@ -912,9 +909,7 @@ def agent_personality(
         navig agent personality show witty
         navig agent personality set professional
     """
-    import yaml
-
-    from navig.core.yaml_io import atomic_write_yaml
+    from navig.core.yaml_io import atomic_write_yaml, load_yaml_for_update
 
     if action == "list":
         from navig.agent.soul import BUILTIN_PROFILES
@@ -968,8 +963,7 @@ def agent_personality(
             ch.error("Agent not installed")
             raise typer.Exit(1)
 
-        with open(config_path, encoding='utf-8') as f:
-            data = yaml.safe_load(f) or {}
+        data = load_yaml_for_update(config_path)
 
         data.setdefault("agent", {}).setdefault("personality", {})["profile"] = name
 
@@ -1322,8 +1316,13 @@ def agent_learn(
         from collections import defaultdict
         from datetime import datetime
 
+        from navig.platform.paths import debug_log_path
+
+        # debug.log lives in log_dir(); remediation.log lives in config_dir()/logs. Reading
+        # both from config_dir()/logs meant `navig agent learn` always aborted with
+        # "No logs found to analyze" while the real debug log grew elsewhere.
         log_dir = config_dir() / "logs"
-        debug_log = log_dir / "debug.log"
+        debug_log = debug_log_path()
         remediation_log = log_dir / "remediation.log"
 
         if not debug_log.exists():
@@ -1879,21 +1878,16 @@ def agent_transcribe(
     result = asyncio.run(handler.transcribe(audio_file, language=language))
 
     if json_output:
-        import json
-
-        ch.console.print(
-            json.dumps(
-                {
-                    "success": result.success,
-                    "text": result.text,
-                    "language": result.language,
-                    "duration_ms": result.duration_ms,
-                    "backend": result.backend.value if result.backend else None,
-                    "confidence": result.confidence,
-                    "error": result.error,
-                },
-                indent=2,
-            )
+        ch.emit_json(
+            {
+                "success": result.success,
+                "text": result.text,
+                "language": result.language,
+                "duration_ms": result.duration_ms,
+                "backend": result.backend.value if result.backend else None,
+                "confidence": result.confidence,
+                "error": result.error,
+            }
         )
     elif plain:
         if result.text:
@@ -1990,7 +1984,7 @@ def agent_plan(
         raise typer.Exit(1) from exc
 
     if json_output:
-        ch.console.print(_json.dumps(plan.to_dict(), indent=2, default=str))
+        ch.emit_json(plan.to_dict())
         return
 
     if plain:

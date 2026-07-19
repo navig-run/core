@@ -1,8 +1,7 @@
 """
 Memory Taxonomy — structured 4-type memory guidance system.
 
-Ported from .lab/claude/memdir/memoryTypes.ts (MIT, Anthropic).  Adapted to
-Python with Pydantic-fallback identical to the pattern in skills_renderer.py.
+Uses a Pydantic-fallback identical to the pattern in skills_renderer.py.
 
 The taxonomy enriches the NAVIG memory system prompt with per-type guidance
 so the LLM understands *when* to save a fact, *what scope* it has, and *how*

@@ -15,7 +15,6 @@ from navig.agent.context_compressor import (
     _get_context_window,
 )
 
-
 # ─── _MODEL_CONTEXT_WINDOWS ───────────────────────────────────────────────────
 
 

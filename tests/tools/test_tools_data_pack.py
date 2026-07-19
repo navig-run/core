@@ -1,11 +1,11 @@
 """Tests for navig/tools/domains/data_pack.py."""
 
 import json
-import pytest
 from unittest.mock import MagicMock, call
 
-from navig.tools.domains.data_pack import _json_parse, register_tools
+import pytest
 
+from navig.tools.domains.data_pack import _json_parse, register_tools
 
 # ---------------------------------------------------------------------------
 # _json_parse — valid JSON

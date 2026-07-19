@@ -84,22 +84,137 @@ class TestGatewayCliDefaults:
 
 
 class TestGatewayBaseUrl:
-    def test_default_url(self):
+    # gateway_base_url() is discovery-aware: isolate NAVIG_CONFIG_DIR so a real
+    # ~/.navig/gateway.json on the dev machine can't leak into these tests.
+
+    def test_default_url(self, tmp_path, monkeypatch):
         from navig.gateway_client import gateway_base_url
 
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
         with _patch_config({}):
             url = gateway_base_url()
 
         assert url == "http://127.0.0.1:8789"
 
-    def test_custom_host_and_port(self):
+    def test_custom_host_and_port(self, tmp_path, monkeypatch):
         from navig.gateway_client import gateway_base_url
 
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
         raw = {"gateway": {"host": "192.168.1.100", "port": 9000}}
         with _patch_config(raw):
             url = gateway_base_url()
 
         assert url == "http://192.168.1.100:9000"
+
+    def test_bind_any_host_maps_to_loopback(self, tmp_path, monkeypatch):
+        # gateway.host=0.0.0.0 is a BIND address; a client can't connect to it.
+        from navig.gateway_client import gateway_base_url
+
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        raw = {"gateway": {"host": "0.0.0.0", "port": 9000}}
+        with _patch_config(raw):
+            url = gateway_base_url()
+
+        assert url == "http://127.0.0.1:9000"
+
+    def test_follows_live_discovery(self, tmp_path, monkeypatch):
+        # The self-healed port from gateway.json wins when its endpoint is live.
+        from navig.gateway_client import gateway_base_url
+
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        _write_discovery(tmp_path, {"host": "127.0.0.1", "port": 56564})
+
+        with _patch_config({}), patch("socket.create_connection"):
+            url = gateway_base_url()
+
+        assert url == "http://127.0.0.1:56564"
+
+
+# ---------------------------------------------------------------------------
+# read_gateway_discovery / gateway_live_defaults
+# ---------------------------------------------------------------------------
+
+
+def _write_discovery(tmp_path, payload) -> None:
+    import json
+
+    (tmp_path / "gateway.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
+class TestGatewayDiscovery:
+    def test_reads_discovery_file(self, tmp_path, monkeypatch):
+        from navig.gateway_client import read_gateway_discovery
+
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        _write_discovery(tmp_path, {"host": "127.0.0.1", "port": 56564})
+
+        assert read_gateway_discovery() == (56564, "127.0.0.1")
+
+    def test_missing_file_returns_none(self, tmp_path, monkeypatch):
+        from navig.gateway_client import read_gateway_discovery
+
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+
+        assert read_gateway_discovery() is None
+
+    def test_malformed_file_returns_none(self, tmp_path, monkeypatch):
+        from navig.gateway_client import read_gateway_discovery
+
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        (tmp_path / "gateway.json").write_text("{not json", encoding="utf-8")
+
+        assert read_gateway_discovery() is None
+
+    def test_invalid_port_returns_none(self, tmp_path, monkeypatch):
+        from navig.gateway_client import read_gateway_discovery
+
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        _write_discovery(tmp_path, {"host": "127.0.0.1", "port": 0})
+
+        assert read_gateway_discovery() is None
+
+
+class TestGatewayLiveDefaults:
+    def test_prefers_live_discovery_over_config(self, tmp_path, monkeypatch):
+        # The self-healing bind landed the gateway on 56564 (config says 8789):
+        # a client resolving the gateway must follow the discovery file.
+        from navig.gateway_client import gateway_live_defaults
+
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        _write_discovery(tmp_path, {"host": "127.0.0.1", "port": 56564})
+
+        with _patch_config({}), patch("socket.create_connection") as conn:
+            port, host = gateway_live_defaults()
+
+        assert (port, host) == (56564, "127.0.0.1")
+        conn.assert_called_once()
+
+    def test_stale_discovery_falls_back_to_config(self, tmp_path, monkeypatch):
+        # Discovery file exists but nothing listens there (daemon down/moved):
+        # fall back to the configured port rather than a dead endpoint.
+        from navig.gateway_client import gateway_live_defaults
+
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        _write_discovery(tmp_path, {"host": "127.0.0.1", "port": 56564})
+
+        with (
+            _patch_config({"gateway": {"port": 9090}}),
+            patch("socket.create_connection", side_effect=ConnectionRefusedError),
+        ):
+            port, host = gateway_live_defaults()
+
+        assert (port, host) == (9090, "127.0.0.1")
+
+    def test_no_discovery_uses_config_without_probe(self, tmp_path, monkeypatch):
+        from navig.gateway_client import gateway_live_defaults
+
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+
+        with _patch_config({}), patch("socket.create_connection") as conn:
+            port, host = gateway_live_defaults()
+
+        assert (port, host) == (8789, "127.0.0.1")
+        conn.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -444,7 +444,7 @@ class CoordinatorAgent:
 
         Wrapped by ``asyncio.to_thread`` in async callers.
         """
-        from navig.llm_generate import run_llm
+        from navig.llm.generate import run_llm
 
         return run_llm(
             messages=messages,
@@ -463,7 +463,7 @@ class CoordinatorAgent:
 
         Wrapped by ``asyncio.to_thread`` in async callers.
         """
-        from navig.llm_generate import run_llm
+        from navig.llm.generate import run_llm
 
         return run_llm(
             messages=messages,

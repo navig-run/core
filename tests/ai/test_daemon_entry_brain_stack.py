@@ -6,11 +6,9 @@ from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.daemon.entry — _as_bool, _as_int, DEFAULT_DAEMON_CONFIG
 # ---------------------------------------------------------------------------
-
 from navig.daemon.entry import (
     DEFAULT_DAEMON_CONFIG,
     _as_bool,

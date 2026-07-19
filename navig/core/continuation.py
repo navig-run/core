@@ -216,6 +216,12 @@ def is_decision_point_for_profile(response_text: str, profile: str | None) -> bo
 
 
 def _seconds_since_iso8601(iso_utc: str) -> int:
+    """Return seconds elapsed since *iso_utc*.
+
+    Positive  → timestamp is in the past (elapsed time).
+    Negative  → timestamp is in the future (time remaining, absolute value).
+    Very large positive (10**9) → empty or unparseable string.
+    """
     if not iso_utc:
         return 10**9
     try:
@@ -270,7 +276,16 @@ def get_busy_suppression(context: dict[str, Any] | None) -> tuple[bool, str, str
     if not busy_until:
         return False, "", ""
 
-    if _seconds_since_iso8601(busy_until) < 0:
+    # Use a direct datetime comparison for clarity: a future timestamp means
+    # still busy.  Treat parse failures conservatively (= still busy) so a
+    # corrupt busy_until never silently disables suppression.
+    try:
+        busy_dt = datetime.fromisoformat(busy_until.replace("Z", "+00:00"))
+        still_busy = busy_dt > datetime.now(timezone.utc)
+    except ValueError:
+        still_busy = True  # conservative: corrupt timestamp → assume still busy
+
+    if still_busy:
         return (
             True,
             str(continuation.get("busy_reason") or "busy"),

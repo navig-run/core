@@ -264,7 +264,7 @@ def add_source(
     if routing_type.startswith("signal:"):
         prefs.seed_type(routing_type, default_channels)
     row = get_source(name)
-    assert row is not None
+    assert row is not None  # noqa: S101 — type-narrowing invariant, not validation
     return row
 
 

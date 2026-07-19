@@ -20,7 +20,6 @@ from navig.agent.tools.todo_tools import (
     set_todo_list,
 )
 
-
 # ──────────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────────
@@ -33,7 +32,6 @@ def _make_todo_list(session_id="session-1"):
 
 
 def run(coro):
-    import asyncio
     return asyncio.run(coro)
 
 
@@ -99,7 +97,7 @@ class TestAutoSave:
     def test_save_exception_is_suppressed(self):
         tl = _make_todo_list()
         pers = MagicMock()
-        pers.save.side_effect = IOError("disk full")
+        pers.save.side_effect = OSError("disk full")
         _mod._todo_list_ref = tl
         _mod._persistence_ref = pers
         _mod._auto_save()  # Must not propagate

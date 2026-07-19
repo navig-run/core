@@ -148,7 +148,7 @@ async def test_plan_context_loaded_log_emitted() -> None:
     with (
         patch("navig.spaces.resolver.get_default_space", return_value="an0"),
         patch("navig.plans.context.PlanContext.gather") as gather_mock,
-        patch("navig.routing.router.get_router") as get_router_mock,
+        patch("navig.llm.routing.router.get_router") as get_router_mock,
         patch("navig.agent.conv.agent.logger.info") as info_mock,
     ):
         gather_mock.return_value = {
@@ -165,7 +165,13 @@ async def test_plan_context_loaded_log_emitted() -> None:
         get_router_mock.return_value.run = AsyncMock(side_effect=RuntimeError("router down"))
 
         agent = _make_agent(ai_client=_FakeAIClient())
-        await agent.chat("hello")
+        # A substantive task, NOT a greeting: short-chat messages ("hello") skip
+        # plan-context loading for latency, so plan_context_loaded would never
+        # fire. A real request loads the plan block (and thus emits the log).
+        await agent.chat(
+            "Please review the authentication refactor in the current phase and "
+            "update the development plan and roadmap to reflect the finished work."
+        )
 
         assert info_mock.called
         assert any(
@@ -430,7 +436,7 @@ async def test_thinking_emitted_before_llm_call() -> None:
             "navig.agent.conv.agent.ConversationalAgent._get_ai_response",
             wraps=agent._get_ai_response,
         ),
-        patch("navig.routing.router.get_router", side_effect=ImportError("no router")),
+        patch("navig.llm.routing.router.get_router", side_effect=ImportError("no router")),
     ):
         await agent._get_ai_response("hi there")
 
@@ -480,7 +486,7 @@ async def test_get_ai_response_falls_back_when_ai_client_reports_unavailable() -
     # The production code still tries the UnifiedRouter even when ai_client reports
     # unavailable (so Telegram-configured providers can still be reached).
     # Stub the router out so the code falls through to _deterministic_fallback().
-    with patch("navig.routing.router.get_router", side_effect=RuntimeError("no router in test")):
+    with patch("navig.llm.routing.router.get_router", side_effect=RuntimeError("no router in test")):
         result = await agent._get_ai_response("do something")
     assert "fallback" in result
 
@@ -498,7 +504,7 @@ async def test_get_ai_response_falls_back_when_no_provider_error() -> None:
     }
 
     agent = _make_agent(ai_client=mock_client, fallback_planner=planner)
-    with patch("navig.routing.router.get_router", side_effect=ImportError("no router")):
+    with patch("navig.llm.routing.router.get_router", side_effect=ImportError("no router")):
         result = await agent._get_ai_response("hello")
 
     assert "no-llm" in result

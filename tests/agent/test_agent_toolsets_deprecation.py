@@ -5,23 +5,22 @@ Pure-logic tests, no I/O.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 # ─────────────────────────────────────────────────────────────
 # navig.agent.toolsets
 # ─────────────────────────────────────────────────────────────
-
 from navig.agent.toolsets import (
-    TOOLSETS,
     NAVIG_CORE_TOOLS,
-    PARALLEL_SAFE_TOOLS,
     NEVER_PARALLEL_TOOLS,
-    validate_toolset,
-    resolve_toolset_names,
-    merge_toolsets,
+    PARALLEL_SAFE_TOOLS,
+    TOOLSETS,
     is_parallel_safe,
+    merge_toolsets,
+    resolve_toolset_names,
+    validate_toolset,
 )
 
 
@@ -163,9 +162,9 @@ class TestIsParallelSafe:
 # ─────────────────────────────────────────────────────────────
 
 from navig.deprecation import (
+    DEPRECATION_MAP,
     deprecated_command,
     deprecation_warning,
-    DEPRECATION_MAP,
     get_canonical_command,
 )
 

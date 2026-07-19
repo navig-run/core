@@ -1,6 +1,6 @@
 """Federated skill hub — install skills from any agent, export to any.
 
-``SKILL.md`` is the shared format: Claude Code, Hermes, OpenClaw and Codex all
+``SKILL.md`` is the shared format: Claude Code, Hermes and Codex all
 read it. We *normalize* a foreign skill into a canonical NAVIG ``SKILL.md``
 (a Claude-compatible superset) under ``~/.navig/store/skills/<id>/`` and record
 its origin in ``.skill.meta.json``. **Export** re-emits a NAVIG skill in a
@@ -8,7 +8,6 @@ target agent's layout so other agents can consume it.
 
 Install specs (``navig skill install <spec>``):
     claude:<name>     ~/.claude/skills/<name>
-    openclaw:<name>   ~/.openclaw/workspace/skills/<name>
     hermes:<name>     ~/.hermes/skills/<name>
     codex:<name>      ~/.codex/skills/<name>
     <local path>      a SKILL.md file or a dir containing one
@@ -23,15 +22,14 @@ from pathlib import Path
 
 from navig.skills.loader import Skill, parse_skill_file
 
-SCHEMES = ("claude", "openclaw", "hermes", "codex")
-EXPORT_FORMATS = ("claude", "hermes", "openclaw")
+SCHEMES = ("claude", "hermes", "codex")
+EXPORT_FORMATS = ("claude", "hermes")
 
 
 def _foreign_root(scheme: str) -> Path | None:
     home = Path.home()
     return {
         "claude": home / ".claude" / "skills",
-        "openclaw": home / ".openclaw" / "workspace" / "skills",
         "hermes": home / ".hermes" / "skills",
         "codex": home / ".codex" / "skills",
     }.get(scheme)
@@ -76,18 +74,18 @@ def _find_skill_md(src: Path) -> Path | None:
 def _collect_skill_sources(location: Path) -> list[Path]:
     """Return every SKILL.md to install from *location*.
 
-    Honors an OpenClaw plugin bundle (``openclaw.plugin.json``/``plugin.json``
-    with a ``skills[]`` list); otherwise a single skill, else all nested SKILL.md.
+    Honors a plugin bundle (``plugin.json`` with a ``skills[]`` list); otherwise
+    a single skill, else all nested SKILL.md.
     """
     if location.is_file():
         return [location] if location.name == "SKILL.md" else []
     if not location.is_dir():
         return []
 
-    # OpenClaw plugin manifest with a skills[] bundle. Most real OpenClaw/clawdbot
-    # plugins are single-skill (no skills[]) — those fall through to the SKILL.md
-    # below; this branch only fires for genuine multi-skill bundles.
-    for manifest_name in ("openclaw.plugin.json", "clawdbot.plugin.json", "plugin.json"):
+    # A plugin manifest with a skills[] bundle. Most plugins are single-skill (no
+    # skills[]) — those fall through to the SKILL.md below; this branch only fires
+    # for genuine multi-skill bundles.
+    for manifest_name in ("plugin.json",):
         manifest = location / manifest_name
         if manifest.is_file():
             try:
@@ -193,7 +191,7 @@ def _install_one(skill_md: Path, scheme: str, spec: str, *, force: bool, dry_run
 
 
 def install_all(spec: str, *, force: bool = False, dry_run: bool = False) -> list[Path] | None:
-    """Install a foreign skill *or* an OpenClaw plugin bundle (multiple skills).
+    """Install a foreign skill *or* a plugin bundle (multiple skills).
 
     Returns the list of install dirs, or ``None`` if *spec* is not a foreign
     source (caller should then try the community installer).
@@ -219,7 +217,7 @@ def install(spec: str, *, force: bool = False, dry_run: bool = False) -> Path | 
 # ── Export ──────────────────────────────────────────────────────────────────
 
 def export(skill_id: str, fmt: str, dest: Path, *, force: bool = False, dry_run: bool = False) -> Path:
-    """Export a NAVIG skill in *fmt* (claude|hermes|openclaw) under ``dest/<id>/``."""
+    """Export a NAVIG skill in *fmt* (claude|hermes) under ``dest/<id>/``."""
     if fmt not in EXPORT_FORMATS:
         raise ValueError(f"Unknown format '{fmt}'. Choose: {', '.join(EXPORT_FORMATS)}.")
 
@@ -237,17 +235,7 @@ def export(skill_id: str, fmt: str, dest: Path, *, force: bool = False, dry_run:
         return out_dir
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    # All three read SKILL.md; claude/hermes use the minimal form, openclaw too
-    # plus a plugin wrapper so its plugin loader picks the skill up.
+    # Both formats read SKILL.md and use the minimal Claude-compatible form.
     skill_file.write_text(_claude_skill_md(skill), encoding="utf-8")
-
-    if fmt == "openclaw":
-        plugin = {
-            "name": skill.id,
-            "version": skill.version,
-            "description": skill.description or skill.name,
-            "skills": [{"id": skill.id, "path": "SKILL.md", "description": skill.description or ""}],
-        }
-        (out_dir / "openclaw.plugin.json").write_text(json.dumps(plugin, indent=2) + "\n", encoding="utf-8")
 
     return out_dir

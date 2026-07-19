@@ -11,7 +11,7 @@ def watch_start(
     """Start watching a path for changes."""
     from navig import console_helper as ch
 
-    ch.warn("navig watch is not yet implemented in this build.")
+    ch.warning("navig watch is not yet implemented in this build.")
 
 
 @watch_app.command("list")
@@ -19,4 +19,4 @@ def watch_list():
     """List active watches."""
     from navig import console_helper as ch
 
-    ch.warn("navig watch list is not yet implemented in this build.")
+    ch.warning("navig watch list is not yet implemented in this build.")

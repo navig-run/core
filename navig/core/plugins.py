@@ -44,7 +44,7 @@ import threading
 from abc import ABC
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -332,10 +332,13 @@ class PluginRegistry:
         except Exception:
             navig_home = config_dir()
 
-        # Default plugin directories
+        # Default plugin directories. (Canonical builtin discovery is
+        # navig.plugins.PluginManager; kept in sync here so this secondary
+        # registry also sees navig/builtins/.)
         self._plugin_dirs = [
             navig_home / "plugins",
-            Path(__file__).parent.parent / "plugins",  # Built-in plugins
+            Path(__file__).parent.parent / "plugins",  # host + legacy builtin loc
+            Path(__file__).parent.parent / "builtins",  # canonical builtin plugins
         ]
 
         # Ensure directories exist
@@ -511,7 +514,7 @@ class PluginRegistry:
             # Update info
             info.instance = instance
             info.state = PluginState.LOADED
-            info.loaded_at = datetime.now()  # utcnow() is deprecated in Py3.12+
+            info.loaded_at = datetime.now(timezone.utc)
             info.error = None
 
             self._load_order.append(name)
@@ -544,7 +547,7 @@ class PluginRegistry:
                 info.instance.on_enable()
 
             info.state = PluginState.ENABLED
-            info.enabled_at = datetime.now()  # utcnow() is deprecated in Py3.12+
+            info.enabled_at = datetime.now(timezone.utc)
             info.error = None
 
             self._trigger_hook("plugin:enabled", {"plugin": name})
@@ -717,7 +720,10 @@ class PluginRegistry:
         try:
             from navig.core.hooks import trigger_hook_sync
 
-            trigger_hook_sync(event.split(":")[0], event.split(":")[1], data)
+            parts = event.split(":", 1)
+            event_type = parts[0]
+            action = parts[1] if len(parts) > 1 else ""
+            trigger_hook_sync(event_type, action, context=data)
         except ImportError:
             pass  # optional dependency not installed; feature disabled
 
@@ -777,8 +783,26 @@ def load_entry_point_plugins() -> list[str]:
         eps = entry_points(group="navig.plugins")
     except TypeError:  # Python <3.10: entry_points() returns a mapping
         eps = entry_points().get("navig.plugins", [])  # type: ignore[attr-defined]
+
+    # Disabled plugins must not register ANYTHING (routes, modules, hooks) —
+    # `navig plugin disable <dist>` unwires every capability, not just CLI verbs.
+    try:
+        from navig.plugins.package import disabled_plugin_ids
+
+        disabled = disabled_plugin_ids()
+    except Exception:  # noqa: BLE001 — never block boot on the state read
+        disabled = set()
+
     for ep in eps:
         try:
+            dist = getattr(ep, "dist", None)
+            dist_name = getattr(dist, "name", None) or ep.name
+            # Match the DISTRIBUTION name only — the same identity host._pip_plugins
+            # and `navig plugin list` use. Matching bare ep.name too would let an
+            # unrelated disabled id that equals an entry-point name skip this dist.
+            if dist_name in disabled:
+                _log.info("navig plugin skipped (disabled): %s", dist_name)
+                continue
             obj = ep.load()
             reg = getattr(obj, "register", None)
             if callable(reg):

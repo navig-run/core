@@ -1,4 +1,4 @@
-"""Tests for navig.routing.trace — RouteTrace, log_trace, recent_traces."""
+"""Tests for navig.llm.routing.trace — RouteTrace, log_trace, recent_traces."""
 from __future__ import annotations
 
 import json
@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
-import navig.routing.trace as trace_mod
-from navig.routing.trace import RouteTrace, log_trace, recent_traces
+import navig.llm.routing.trace as trace_mod
+from navig.llm.routing.trace import RouteTrace, log_trace, recent_traces
 
 
 class TestRouteTrace:

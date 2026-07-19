@@ -46,8 +46,14 @@ TELEMETRY_URL: str = os.environ.get(
     "NAVIG_TELEMETRY_URL",
     "https://telemetry.navig.run",
 )
-_NAVIG_DIR: Path = config_dir()
-_PINGED_MARKER: Path = _NAVIG_DIR / ".pinged"
+# Test seam — when ``None`` (the normal state), ``_pinged_marker()`` resolves
+# at CALL time so NAVIG_CONFIG_DIR isolation set after import still applies
+# (see navig/vault/migrate.py:_legacy_db_path).
+_PINGED_MARKER: Path | None = None
+
+
+def _pinged_marker() -> Path:
+    return _PINGED_MARKER if _PINGED_MARKER is not None else config_dir() / ".pinged"
 _OPT_OUT_VAR = "NAVIG_NO_TELEMETRY"
 
 
@@ -77,19 +83,34 @@ def _machine_id() -> str | None:
     system = platform.system()
     try:
         if system == "Windows":
-            result = subprocess.run(
-                ["wmic", "csproduct", "get", "UUID"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            # Output has a header line "UUID" then the value on line [1]
-            lines = [
-                ln.strip() for ln in result.stdout.strip().splitlines() if ln.strip()
-            ]
-            if len(lines) >= 2:
-                return lines[1]  # lines[0] == "UUID" (header), lines[1] == actual value
-            return None
+            # wmic was removed in Windows 11 24H2. Get-CimInstance yields the SAME
+            # UUID (preserves existing machine-ids); fall back to the registry
+            # MachineGuid (no subprocess, always present) if PowerShell/CIM fails.
+            try:
+                result = subprocess.run(
+                    [
+                        "powershell", "-NoProfile", "-Command",
+                        "(Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                uuid = result.stdout.strip()
+                if uuid:
+                    return uuid
+            except (OSError, subprocess.SubprocessError):
+                pass
+            try:
+                import winreg  # noqa: PLC0415
+
+                with winreg.OpenKey(
+                    winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography"
+                ) as key:
+                    guid, _ = winreg.QueryValueEx(key, "MachineGuid")
+                    return str(guid).strip() or None
+            except OSError:
+                return None
 
         if system == "Linux":
             mid = Path("/etc/machine-id")
@@ -155,7 +176,7 @@ def ping_install_if_first_time() -> None:
         return
 
     # Already pinged
-    if _PINGED_MARKER.exists():
+    if _pinged_marker().exists():
         return
 
     # Print consent block before firing the ping
@@ -182,7 +203,8 @@ def ping_install_if_first_time() -> None:
 
     # Write marker regardless of success or failure so we never ask again
     try:
-        _PINGED_MARKER.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(_PINGED_MARKER, "1")
+        marker = _pinged_marker()
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(marker, "1")
     except Exception:  # noqa: BLE001
         pass

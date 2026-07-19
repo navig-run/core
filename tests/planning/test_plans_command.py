@@ -1,3 +1,20 @@
+"""`navig plans` CLI.
+
+Every test here runs in ``temp_dir``, NOT ``tmp_path`` — and that is load-bearing, not
+style. ``pytest.ini`` pins ``--basetemp=.pytest_tmp``, which lives *inside* ``core/``, so
+every ``tmp_path`` sits under NAVIG's own checkout. Space discovery walks UP from the
+given path looking for a project ``.navig/`` (``spaces/resolver.py``) and duly finds
+``core/.navig`` — so a plans command invoked under ``tmp_path`` discovers a real
+project-scope space called ``core``, belonging to the repo we are testing.
+
+That made ``test_plans_status_no_spaces`` / ``test_plans_summary_no_spaces`` assert the
+impossible ("no spaces discovered" while standing inside a NAVIG project), and left the
+``next`` / ``briefing`` tests one repo edit away from ranking that stray space first.
+``temp_dir`` is the system temp dir — no ``.navig`` ancestor, no ``.git`` ancestor — and
+is the sanctioned fixture for anything that walks upward. Both halves of the trap are
+pinned in ``tests/core/test_tmp_dir_repo_boundary.py``.
+"""
+
 from datetime import datetime
 from pathlib import Path
 
@@ -11,36 +28,36 @@ pytestmark = pytest.mark.integration
 runner = CliRunner()
 
 
-def _set_global_config_dir(monkeypatch, tmp_path) -> Path:
-    config_dir = tmp_path / ".navig-global"
+def _set_global_config_dir(monkeypatch, root: Path) -> Path:
+    config_dir = root / ".navig-global"
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(config_dir))
     return config_dir
 
 
-def test_plans_status_no_spaces(tmp_path, monkeypatch):
-    _set_global_config_dir(monkeypatch, tmp_path)
+def test_plans_status_no_spaces(temp_dir, monkeypatch):
+    _set_global_config_dir(monkeypatch, temp_dir)
 
-    result = runner.invoke(plans_app, ["status", "--path", str(tmp_path / "repo")])
+    result = runner.invoke(plans_app, ["status", "--path", str(temp_dir / "repo")])
     assert result.exit_code == 0
     assert "No spaces discovered" in result.stdout
 
 
-def test_plans_status_renders_rows(tmp_path, monkeypatch):
-    config_dir = _set_global_config_dir(monkeypatch, tmp_path)
+def test_plans_status_renders_rows(temp_dir, monkeypatch):
+    config_dir = _set_global_config_dir(monkeypatch, temp_dir)
 
     global_space = config_dir / "spaces" / "finance"
     global_space.mkdir(parents=True, exist_ok=True)
     (global_space / "VISION.md").write_text("---\ngoal: Save emergency fund\n---\n")
     (global_space / "CURRENT_PHASE.md").write_text("---\ncompletion_pct: 35\n---\n")
 
-    result = runner.invoke(plans_app, ["status", "--path", str(tmp_path / "repo")])
+    result = runner.invoke(plans_app, ["status", "--path", str(temp_dir / "repo")])
     assert result.exit_code == 0
     assert "finance" in result.stdout
     assert "35.0%" in result.stdout
 
 
-def test_plans_add_creates_entry(tmp_path, monkeypatch):
-    repo = tmp_path / "repo"
+def test_plans_add_creates_entry(temp_dir, monkeypatch):
+    repo = temp_dir / "repo"
     repo.mkdir(parents=True, exist_ok=True)
     (repo / ".navig").mkdir(parents=True, exist_ok=True)
 
@@ -64,8 +81,8 @@ def test_plans_add_creates_entry(tmp_path, monkeypatch):
     assert "- [ ] [finance] Ship onboarding wizard" in content
 
 
-def test_plans_run_alias_routes_to_add(tmp_path, monkeypatch):
-    repo = tmp_path / "repo"
+def test_plans_run_alias_routes_to_add(temp_dir, monkeypatch):
+    repo = temp_dir / "repo"
     repo.mkdir(parents=True, exist_ok=True)
     (repo / ".navig").mkdir(parents=True, exist_ok=True)
 
@@ -88,8 +105,8 @@ def test_plans_run_alias_routes_to_add(tmp_path, monkeypatch):
     assert "- [ ] [finance] Improve docs" in dev_plan.read_text(encoding="utf-8")
 
 
-def test_plans_sync_no_inbox(tmp_path, monkeypatch):
-    repo = tmp_path / "repo"
+def test_plans_sync_no_inbox(temp_dir, monkeypatch):
+    repo = temp_dir / "repo"
     (repo / ".navig" / "plans").mkdir(parents=True, exist_ok=True)
 
     result = runner.invoke(plans_app, ["sync", "--path", str(repo)])
@@ -97,8 +114,8 @@ def test_plans_sync_no_inbox(tmp_path, monkeypatch):
     assert "No inbox files found" in result.stdout
 
 
-def test_plans_sync_dry_run_keeps_inbox_file(tmp_path, monkeypatch):
-    repo = tmp_path / "repo"
+def test_plans_sync_dry_run_keeps_inbox_file(temp_dir, monkeypatch):
+    repo = temp_dir / "repo"
     inbox = repo / ".navig" / "plans" / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
     source = inbox / "raw-roadmap.md"
@@ -117,8 +134,8 @@ def test_plans_sync_dry_run_keeps_inbox_file(tmp_path, monkeypatch):
     assert not (inbox / ".processed").exists()
 
 
-def test_plans_sync_writes_and_moves_source(tmp_path, monkeypatch):
-    repo = tmp_path / "repo"
+def test_plans_sync_writes_and_moves_source(temp_dir, monkeypatch):
+    repo = temp_dir / "repo"
     inbox = repo / ".navig" / "plans" / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
     source = inbox / "raw-roadmap.md"
@@ -148,8 +165,8 @@ def test_plans_sync_writes_and_moves_source(tmp_path, monkeypatch):
     assert not source.exists()
 
 
-def test_plans_update_writes_frontmatter_completion(tmp_path, monkeypatch):
-    repo = tmp_path / "repo"
+def test_plans_update_writes_frontmatter_completion(temp_dir, monkeypatch):
+    repo = temp_dir / "repo"
     plans_dir = repo / ".navig" / "plans"
     plans_dir.mkdir(parents=True, exist_ok=True)
     target = plans_dir / "CURRENT_PHASE.md"
@@ -166,8 +183,8 @@ def test_plans_update_writes_frontmatter_completion(tmp_path, monkeypatch):
     assert f"last_updated: {datetime.now().strftime('%Y-%m-%d')}" in content
 
 
-def test_plans_next_selects_lowest_progress_with_pending_task(tmp_path, monkeypatch):
-    config_dir = _set_global_config_dir(monkeypatch, tmp_path)
+def test_plans_next_selects_lowest_progress_with_pending_task(temp_dir, monkeypatch):
+    config_dir = _set_global_config_dir(monkeypatch, temp_dir)
 
     low = config_dir / "spaces" / "health"
     low.mkdir(parents=True, exist_ok=True)
@@ -185,14 +202,14 @@ def test_plans_next_selects_lowest_progress_with_pending_task(tmp_path, monkeypa
         encoding="utf-8",
     )
 
-    result = runner.invoke(plans_app, ["next", "--path", str(tmp_path / "repo")])
+    result = runner.invoke(plans_app, ["next", "--path", str(temp_dir / "repo")])
     assert result.exit_code == 0
     assert "Space: health" in result.stdout
     assert "Sleep 8h tonight" in result.stdout
 
 
-def test_plans_briefing_includes_action_focus(tmp_path, monkeypatch):
-    config_dir = _set_global_config_dir(monkeypatch, tmp_path)
+def test_plans_briefing_includes_action_focus(temp_dir, monkeypatch):
+    config_dir = _set_global_config_dir(monkeypatch, temp_dir)
 
     health = config_dir / "spaces" / "health"
     health.mkdir(parents=True, exist_ok=True)
@@ -202,7 +219,7 @@ def test_plans_briefing_includes_action_focus(tmp_path, monkeypatch):
         encoding="utf-8",
     )
 
-    result = runner.invoke(plans_app, ["briefing", "--path", str(tmp_path / "repo")])
+    result = runner.invoke(plans_app, ["briefing", "--path", str(temp_dir / "repo")])
     assert result.exit_code == 0
     assert "Spaces Progress:" in result.stdout
     assert "Action Focus:" in result.stdout
@@ -214,16 +231,16 @@ def test_plans_briefing_includes_action_focus(tmp_path, monkeypatch):
 # ─────────────────────────────────────────────────────────────
 
 
-def test_plans_summary_no_spaces(tmp_path, monkeypatch):
-    _set_global_config_dir(monkeypatch, tmp_path)
+def test_plans_summary_no_spaces(temp_dir, monkeypatch):
+    _set_global_config_dir(monkeypatch, temp_dir)
 
-    result = runner.invoke(plans_app, ["summary", "--path", str(tmp_path / "repo")])
+    result = runner.invoke(plans_app, ["summary", "--path", str(temp_dir / "repo")])
     assert result.exit_code == 0
     assert "No spaces discovered" in result.stdout
 
 
-def test_plans_summary_single_space(tmp_path, monkeypatch):
-    config_dir = _set_global_config_dir(monkeypatch, tmp_path)
+def test_plans_summary_single_space(temp_dir, monkeypatch):
+    config_dir = _set_global_config_dir(monkeypatch, temp_dir)
 
     space = config_dir / "spaces" / "devops"
     space.mkdir(parents=True, exist_ok=True)
@@ -232,13 +249,13 @@ def test_plans_summary_single_space(tmp_path, monkeypatch):
         encoding="utf-8",
     )
 
-    result = runner.invoke(plans_app, ["summary", "--path", str(tmp_path / "repo")])
+    result = runner.invoke(plans_app, ["summary", "--path", str(temp_dir / "repo")])
     assert result.exit_code == 0
     assert "CI Pipeline" in result.stdout
 
 
-def test_plans_summary_missing_phase_shows_dash_row(tmp_path, monkeypatch):
-    config_dir = _set_global_config_dir(monkeypatch, tmp_path)
+def test_plans_summary_missing_phase_shows_dash_row(temp_dir, monkeypatch):
+    config_dir = _set_global_config_dir(monkeypatch, temp_dir)
 
     good = config_dir / "spaces" / "finance"
     good.mkdir(parents=True, exist_ok=True)
@@ -250,15 +267,15 @@ def test_plans_summary_missing_phase_shows_dash_row(tmp_path, monkeypatch):
     missing = config_dir / "spaces" / "empty"
     missing.mkdir(parents=True, exist_ok=True)
 
-    result = runner.invoke(plans_app, ["summary", "--path", str(tmp_path / "repo")])
+    result = runner.invoke(plans_app, ["summary", "--path", str(temp_dir / "repo")])
     assert result.exit_code == 0
     assert "finance" in result.stdout
     assert "empty" in result.stdout
     assert "—" in result.stdout
 
 
-def test_plans_summary_all_spaces_table(tmp_path, monkeypatch):
-    config_dir = _set_global_config_dir(monkeypatch, tmp_path)
+def test_plans_summary_all_spaces_table(temp_dir, monkeypatch):
+    config_dir = _set_global_config_dir(monkeypatch, temp_dir)
 
     for sname in ("alpha", "beta"):
         space = config_dir / "spaces" / sname
@@ -268,7 +285,7 @@ def test_plans_summary_all_spaces_table(tmp_path, monkeypatch):
             encoding="utf-8",
         )
 
-    result = runner.invoke(plans_app, ["summary", "--path", str(tmp_path / "repo")])
+    result = runner.invoke(plans_app, ["summary", "--path", str(temp_dir / "repo")])
     assert result.exit_code == 0
     assert "alpha" in result.stdout
     assert "beta" in result.stdout

@@ -121,10 +121,17 @@ class OSAdapter(ABC):
         """Get the user's home directory."""
         pass
 
-    @abstractmethod
     def get_config_directory(self) -> Path:
-        """Get the OS-appropriate config directory for NAVIG."""
-        pass
+        """NAVIG's config directory — the canonical location from the platform SSOT.
+
+        Delegates to ``navig.platform.paths.config_dir()`` so this value always
+        matches where NAVIG actually reads and writes config on every OS, instead of
+        an OS-idiomatic guess that can diverge (e.g. %APPDATA% or $XDG_CONFIG_HOME vs
+        the real ~/.navig location).
+        """
+        from navig.platform.paths import config_dir  # noqa: PLC0415
+
+        return config_dir()
 
     # ==================== System Information ====================
 

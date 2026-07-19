@@ -4,8 +4,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
-import pytest
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # _retry helpers
@@ -151,6 +151,7 @@ def test_pattern_observer_no_db_returns_empty():
 
 def test_pattern_observer_get_recent_with_db(tmp_path):
     import sqlite3
+
     from navig.agent.pattern_observer import PatternObserver
 
     db = tmp_path / "pattern_log.sqlite"
@@ -170,6 +171,7 @@ def test_pattern_observer_get_recent_with_db(tmp_path):
 
 def test_pattern_observer_respects_limit(tmp_path):
     import sqlite3
+
     from navig.agent.pattern_observer import PatternObserver
 
     db = tmp_path / "pattern_log.sqlite"
@@ -196,6 +198,7 @@ def test_pattern_observer_handles_exception():
 
 def test_pattern_record_is_dataclass():
     from dataclasses import fields
+
     from navig.agent.pattern_observer import PatternRecord
 
     flds = [f.name for f in fields(PatternRecord)]

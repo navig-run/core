@@ -9,7 +9,6 @@ import pytest
 
 from navig.core.evolution.pack import PackEvolver
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -48,8 +47,11 @@ description: Has no skills or workflows
 class TestPackEvolverValidate:
     @pytest.fixture
     def evolver(self, tmp_path: Path) -> PackEvolver:
-        with patch.object(Path, "mkdir"):  # avoid creating real dirs
-            return PackEvolver()
+        # Point the evolver AT tmp_path. The old fixture took `tmp_path` and never
+        # used it — it only patched Path.mkdir for the duration of the constructor,
+        # leaving _packs_dir as the CWD-relative "packs". See the sibling class:
+        # that made `evolve()` write the TRACKED core/packs/mock_pack/pack.yaml.
+        return PackEvolver(packs_dir=tmp_path)
 
     def test_valid_yaml_returns_none(self, evolver: PackEvolver) -> None:
         result = evolver._validate(_VALID_YAML, None)
@@ -80,8 +82,11 @@ class TestPackEvolverValidate:
 class TestPackEvolverEvolveWithMockAI:
     @pytest.fixture
     def evolver(self, tmp_path: Path) -> PackEvolver:
-        with patch.object(Path, "mkdir"):
-            return PackEvolver()
+        # `evolve()` runs the full loop through `_save()`, which writes
+        # <packs_dir>/<name>/pack.yaml. The mock AI names its pack "mock_pack", so
+        # with the old CWD-relative default this REWROTE the tracked, committed
+        # core/packs/mock_pack/pack.yaml on every run — the suite dirtied the repo.
+        return PackEvolver(packs_dir=tmp_path)
 
     def test_evolve_succeeds_with_mock_ai(self, evolver: PackEvolver) -> None:
         with patch.dict(os.environ, {"NAVIG_MOCK_AI": "1"}):
@@ -102,3 +107,18 @@ class TestPackEvolverEvolveWithMockAI:
         with patch.dict(os.environ, {"NAVIG_MOCK_AI": "1"}):
             result = evolver.evolve("testing")
         assert result.attempts >= 1
+
+
+class TestPacksDir:
+    def test_default_is_packages_dir_not_cwd(self, tmp_path, monkeypatch):
+        """REGRESSION: the default was Path("packs") — CWD-relative — so a generated pack
+        landed in whatever dir the process ran in and nothing loaded it. It must default to
+        packages_dir() (config_dir()/packs), where `navig install` writes and the loader reads."""
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        from navig.platform.paths import packages_dir
+
+        assert PackEvolver()._packs_dir == packages_dir()
+        assert PackEvolver()._packs_dir.is_absolute()
+
+    def test_explicit_packs_dir_still_wins(self, tmp_path):
+        assert PackEvolver(packs_dir=tmp_path)._packs_dir == tmp_path

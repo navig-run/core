@@ -29,6 +29,7 @@ from navig.comms.matrix_features import (
     require_matrix,
 )
 from navig.console_helper import get_console
+from navig.platform.paths import config_dir
 
 logger = logging.getLogger(__name__)
 console = get_console()
@@ -1501,7 +1502,7 @@ def store_stats():
 
     from navig.comms.matrix_store import MatrixStore
 
-    db_path = os.path.expanduser("~/.navig/matrix.db")
+    db_path = str(config_dir() / "matrix.db")
     if not os.path.exists(db_path):
         console.print("[yellow]⚠[/] Store not initialised yet (no matrix.db)")
         raise typer.Exit(0)
@@ -1531,7 +1532,7 @@ def store_rooms(
 
     from navig.comms.matrix_store import MatrixStore
 
-    db_path = os.path.expanduser("~/.navig/matrix.db")
+    db_path = str(config_dir() / "matrix.db")
     if not os.path.exists(db_path):
         console.print("[yellow]⚠[/] Store not initialised")
         raise typer.Exit(0)
@@ -1573,7 +1574,7 @@ def store_events(
 
     from navig.comms.matrix_store import MatrixStore
 
-    db_path = os.path.expanduser("~/.navig/matrix.db")
+    db_path = str(config_dir() / "matrix.db")
     if not os.path.exists(db_path):
         console.print("[yellow]⚠[/] Store not initialised")
         raise typer.Exit(0)
@@ -1613,7 +1614,7 @@ def store_prune(
 
     from navig.comms.matrix_store import MatrixStore
 
-    db_path = os.path.expanduser("~/.navig/matrix.db")
+    db_path = str(config_dir() / "matrix.db")
     if not os.path.exists(db_path):
         console.print("[yellow]⚠[/] Store not initialised")
         raise typer.Exit(0)
@@ -1642,7 +1643,7 @@ def store_bridges(
 
     from navig.comms.matrix_store import MatrixStore
 
-    db_path = os.path.expanduser("~/.navig/matrix.db")
+    db_path = str(config_dir() / "matrix.db")
     if not os.path.exists(db_path):
         console.print("[yellow]⚠[/] Store not initialised")
         raise typer.Exit(0)
@@ -1736,7 +1737,7 @@ def get_bridge_statuses() -> dict[str, bool]:
     import subprocess
 
     if not _docker_available():
-        return {key: False for key in _BRIDGE_META}
+        return dict.fromkeys(_BRIDGE_META, False)
 
     # One call to get all running container names
     try:

@@ -116,12 +116,38 @@ class TestFirstRunSkipConditions:
             _nm._check_first_run()
         engine_cls.assert_not_called()
 
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["navig", "doctor", "--json"],
+            ["navig", "tiktok", "info", "--json"],
+            ["navig", "--json", "status"],
+        ],
+    )
+    def test_skips_for_json_invocations(self, tmp_path, argv):
+        """`--json` anywhere in argv → programmatic caller → never onboard.
+
+        stdout of a --json run must carry exactly one machine-readable
+        document, and a script can never answer the wizard (some steps prompt
+        even without a TTY and pause setup on EOF).
+        """
+        (tmp_path / ".navig").mkdir(parents=True, exist_ok=True)  # no artifact
+        with (
+            patch("navig.onboarding.runner.config_dir", return_value=tmp_path / ".navig"),
+            patch.object(sys, "argv", argv),
+        ):
+            from navig.onboarding.runner import should_auto_run_onboarding
+
+            assert should_auto_run_onboarding(None) is False, (
+                f"--json invocation {argv!r} must never trigger onboarding"
+            )
+
     def test_explicit_empty_argv_does_not_leak_sys_argv(self, tmp_path):
         """argv=[] must be honoured as-is; sys.argv must not be inspected."""
         (tmp_path / ".navig").mkdir(parents=True, exist_ok=True)
         # Inject a sys.argv that would trigger onboarding if leaked
         with (
-            patch("navig.platform.paths.config_dir", return_value=tmp_path / ".navig"),
+            patch("navig.onboarding.runner.config_dir", return_value=tmp_path / ".navig"),
             patch.object(sys, "argv", ["navig", "host", "list"]),
         ):
             from navig.onboarding.runner import should_auto_run_onboarding
@@ -134,7 +160,7 @@ class TestFirstRunSkipConditions:
         """argv=None must still fall back to sys.argv for normal invocations."""
         (tmp_path / ".navig").mkdir(parents=True, exist_ok=True)
         with (
-            patch("navig.platform.paths.config_dir", return_value=tmp_path / ".navig"),
+            patch("navig.onboarding.runner.config_dir", return_value=tmp_path / ".navig"),
             patch.object(sys, "argv", ["navig", "host", "list"]),
         ):
             from navig.onboarding.runner import should_auto_run_onboarding

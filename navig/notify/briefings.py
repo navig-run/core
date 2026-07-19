@@ -53,7 +53,7 @@ def _polish(raw: str) -> str:
     if not raw:
         return ""
     try:
-        from navig.llm_generate import llm_generate
+        from navig.llm.generate import llm_generate
 
         out = llm_generate(
             messages=[
@@ -76,8 +76,16 @@ async def build_and_dispatch_briefing(*, force: bool = False) -> dict:
     settings = prefs.get_settings()
     if not settings["briefing_enabled"] and not force:
         return {"skipped": "disabled"}
+    import asyncio
+
     raw = _compose_raw()
-    text = _polish(raw) if raw else "No new activity to brief on yet — add data in Apps to start tracking."
+    # _polish is SYNC (calls llm_generate) — never run it on the gateway event
+    # loop; offload so the daemon stays responsive during the summarize call.
+    text = (
+        await asyncio.to_thread(_polish, raw)
+        if raw
+        else "No new activity to brief on yet — add data in Apps to start tracking."
+    )
     title = f"Briefing · {datetime.now().strftime('%a %d %b')}"
     channels = settings["briefing_channels"] or None
     return await get_notification_router().dispatch(

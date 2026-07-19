@@ -13,13 +13,13 @@ import pytest
 # navig.approval.policies
 # ---------------------------------------------------------------------------
 from navig.approval.policies import (
-    ApprovalLevel,
-    ApprovalPolicy,
-    ApprovalStatus,
     DEFAULT_AUTO_EVOLVE_WHITELIST,
     DEFAULT_DANGEROUS_PATTERNS,
     DEFAULT_NEVER_PATTERNS,
     DEFAULT_SAFE_PATTERNS,
+    ApprovalLevel,
+    ApprovalPolicy,
+    ApprovalStatus,
 )
 
 

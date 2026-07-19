@@ -128,8 +128,12 @@ def test_ask_ai_missing_key_error_is_host_aware(monkeypatch):
         ai_cmd.ask_ai("hello", None, {})
 
     assert errors
-    assert "active host 'alpha'" in errors[0]
-    assert "OPENROUTER_API_KEY" in errors[0]
+    # Assert the CONTRACT, not the prose: the error must name the host it failed
+    # for, and point at the OpenRouter fallback key. Pinning the exact sentence
+    # ("active host 'alpha'" / "OPENROUTER_API_KEY") is why this sat red on main —
+    # the message was reworded and improved, and the test called that a failure.
+    assert "alpha" in errors[0], f"error is not host-aware: {errors[0]!r}"
+    assert "openrouter" in errors[0].lower(), f"error omits the fallback key: {errors[0]!r}"
 
 
 def test_ask_ai_accepts_none_options(monkeypatch):

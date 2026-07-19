@@ -8,7 +8,7 @@ for better separation of concerns.
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -202,7 +202,7 @@ class ContextManager:
             try:
                 app_name = self._config.active_app_file.read_text(encoding="utf-8").strip()
                 if app_name:
-                    # Determine if this is project or user cache
+                    # Determine source label (project vs user cache).
                     local_navig_dir = Path.cwd() / ".navig"
                     if local_navig_dir.exists():
                         try:
@@ -215,7 +215,14 @@ class ContextManager:
                             source = "user"
                     else:
                         source = "user"
-                    return (app_name, source) if return_source else app_name
+                    # Validate that the cached app still exists on the current host.
+                    # Priorities 0 and 1 do this check; skipping it here would let a
+                    # stale cache entry survive a host switch.
+                    active_host = self.get_active_host()
+                    if active_host and not self._config.app_exists(active_host, app_name):
+                        pass  # stale cache — fall through to next priority
+                    else:
+                        return (app_name, source) if return_source else app_name
             except (PermissionError, OSError):
                 pass  # best-effort cleanup; ignore access/IO errors
 
@@ -237,13 +244,16 @@ class ContextManager:
                     # Single app in project - use it as the active app
                     return (local_apps[0], "project") if return_source else local_apps[0]
 
-        # Priority 5: Fall back to default app from active host
+        # Priority 5: Fall back to default app from active host — but only if it still EXISTS.
+        # Without the app_exists guard, a default_app pointing at a deleted app is resurrected as
+        # "active" (get_active_host guards every priority the same way; this one was missing it),
+        # so `navig app remove <default_app>` couldn't fully deactivate the removed app.
         host_name = self.get_active_host()
         if host_name:
             try:
                 host_config = self._config.load_host_config(host_name)
                 default_app = host_config.get("default_app")
-                if default_app:
+                if default_app and self._config.app_exists(host_name, default_app):
                     return (default_app, "default") if return_source else default_app
             except FileNotFoundError:
                 pass  # file already gone; expected
@@ -379,7 +389,7 @@ class ContextManager:
             local_config = {
                 "app": {
                     "name": target_dir.name,
-                    "initialized": datetime.now().isoformat(),
+                    "initialized": datetime.now(timezone.utc).isoformat(),
                     "version": "1.0",
                 }
             }

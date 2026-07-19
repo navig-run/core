@@ -8,7 +8,6 @@ import sys
 from pathlib import Path
 
 from navig.config import get_config_manager
-from navig.daemon.entry import NAVIG_HOME
 from navig.gateway.channels.matrix import MatrixChannelAdapter
 from navig.gateway.server import NavigGateway
 from navig.messaging.registry import (
@@ -18,6 +17,7 @@ from navig.messaging.registry import (
     supported_provider_names,
 )
 from navig.messaging.secrets import resolve_telegram_bot_token, resolve_telegram_uid
+from navig.platform import paths as _nav_paths
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
 
@@ -31,7 +31,7 @@ def _load_env() -> None:
     candidates = [
         Path.cwd() / ".env",
         project_root / ".env",
-        NAVIG_HOME / ".env",
+        _nav_paths.config_dir() / ".env",
     ]
     for candidate in candidates:
         if candidate.exists():

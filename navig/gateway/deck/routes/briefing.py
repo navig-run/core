@@ -2,19 +2,26 @@
 
 Composes facts from every available subsystem (finance, life, system, inbox,
 spaces) into category sections, then polishes each with the LLM into a crisp
-narrative. Cached; regenerated on demand from the dashboard.
+narrative.
 
-    GET  /api/deck/briefing             → latest briefing (builds if none cached)
+    GET  /api/deck/briefing             → latest briefing (builds if stale/absent)
     POST /api/deck/briefing/regenerate  → rebuild now and return it
+
+**Freshness:** the cache used to have NO expiry — `_load_cache()` returned the
+file forever, so the "Daily" briefing was frozen at whenever it was first built
+and only the Regenerate button ever moved it. It went on quoting a revenue
+figure from a past state while the Finance app showed the real one. A briefing
+is now rebuilt when it is from a previous day or older than ``_MAX_AGE``.
 
 Registered in ``navig/gateway/deck/__init__.py``.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 try:
     from aiohttp import web
@@ -24,6 +31,46 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 _CACHE: dict | None = None
+
+# A briefing older than this (or from a previous calendar day) is rebuilt on the
+# next read. Bounds the LLM polish to a handful of calls a day while keeping the
+# numbers honest — the whole point of the thing.
+_MAX_AGE = timedelta(hours=6)
+
+# One build at a time: concurrent dashboard loads must not each fire the LLM.
+_BUILD_LOCK: asyncio.Lock | None = None
+
+# Strong refs to in-flight background rebuilds (a bare create_task() can be
+# garbage-collected mid-run).
+_BG_TASKS: set = set()
+
+
+def _build_lock() -> asyncio.Lock:
+    global _BUILD_LOCK
+    if _BUILD_LOCK is None:
+        _BUILD_LOCK = asyncio.Lock()
+    return _BUILD_LOCK
+
+
+def _is_stale(briefing: dict | None) -> bool:
+    """True when the cached briefing is from a previous day or past _MAX_AGE.
+
+    An unparseable/missing timestamp counts as stale — better one extra build
+    than serving a frozen briefing forever (the bug this replaces).
+    """
+    if not isinstance(briefing, dict):
+        return True
+    raw = briefing.get("generated_at")
+    if not raw:
+        return True
+    try:
+        made = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return True
+    now = datetime.now()
+    if made.tzinfo is not None:  # naive on write, but be tolerant of old files
+        made = made.replace(tzinfo=None)
+    return made.date() != now.date() or (now - made) > _MAX_AGE
 
 
 def _ok(data: object, status: int = 200) -> "web.Response":
@@ -76,6 +123,12 @@ def _finance() -> dict | None:
         if not isinstance(snap, dict):
             return None
 
+        # The snapshot's figures are folded into ITS base currency — narrating a
+        # EUR ledger in dollars is the same lie the Finance app just stopped
+        # telling.
+        ccy = str(snap.get("currency") or "USD").upper()
+        prefix = "$" if ccy == "USD" else f"{ccy} "
+
         def money(cents) -> str:
             try:
                 c = float(cents)
@@ -83,11 +136,12 @@ def _finance() -> dict | None:
                 return "—"
             sign = "-" if c < 0 else ""
             a = abs(c)
-            if a >= 100_000_00:
-                return f"{sign}${a / 100_000_00:.1f}M"
-            if a >= 100_00:
-                return f"{sign}${a / 100_00:.1f}k"
-            return f"{sign}${a / 100:.2f}"
+            # cents → unit: 1k = 100_000 cents, 1M = 100_000_000 cents.
+            if a >= 1_000_000_00:
+                return f"{sign}{prefix}{a / 1_000_000_00:.1f}M"
+            if a >= 1_000_00:
+                return f"{sign}{prefix}{a / 1_000_00:.1f}k"
+            return f"{sign}{prefix}{a / 100:.2f}"
 
         items: list[str] = []
         if snap.get("total_cash_cents") is not None:
@@ -146,16 +200,19 @@ def _system() -> dict | None:
         ram = psutil.virtual_memory()
         items.append(f"CPU load: {cpu:.0f}%")
         items.append(f"Memory: {ram.percent:.0f}% used ({ram.used / 1e9:.1f} / {ram.total / 1e9:.1f} GB)")
-        worst = None
-        for part in psutil.disk_partitions(all=False):
-            try:
-                u = psutil.disk_usage(part.mountpoint)
-            except Exception:
-                continue
-            if worst is None or u.percent > worst[1]:
-                worst = (part.mountpoint, u.percent)
-        if worst:
-            items.append(f"Disk {worst[0]}: {worst[1]:.0f}% used")
+
+        # The SYSTEM drive only — never `psutil.disk_partitions()`.
+        #
+        # That call blocks indefinitely on a machine with a cold/disconnected
+        # network drive (measured here: >100s, never returned) and it does NOT
+        # release the GIL, so building a briefing froze the WHOLE gateway — every
+        # endpoint timed out until the daemon was restarted. `monitor` already
+        # learned this and exposes the fast system-drive path; use it.
+        from navig.commands.monitor import get_system_disk
+
+        for d in get_system_disk():
+            items.append(f"Disk {d['mountpoint']}: {d['percent']:.0f}% used")
+
         tone = "bad" if (ram.percent >= 90 or cpu >= 90) else "warn" if ram.percent >= 75 else "good"
         return _section("system", "System & Infra", "🖥️", items, tone)
     except Exception:
@@ -211,7 +268,7 @@ def _polish(sections: list[dict]) -> tuple[str, bool]:
     """Return (headline, ai_polished). Writes section['summary'] in place."""
     facts = {s["id"]: {"title": s["title"], "items": s["items"]} for s in sections}
     try:
-        from navig.llm_generate import llm_generate
+        from navig.llm.generate import llm_generate
 
         out = llm_generate(
             messages=[
@@ -285,28 +342,57 @@ def _load_cache() -> dict | None:
     return None
 
 
-async def handle_deck_briefing(request: "web.Request") -> "web.Response":
-    """Return the latest briefing, building one on first request."""
-    import asyncio
+async def _rebuild_in_background(gw) -> None:
+    """Refresh the cache off the request path (the LLM polish takes minutes)."""
+    lock = _build_lock()
+    if lock.locked():
+        return  # a rebuild is already running — don't queue a second one
+    async with lock:
+        try:
+            await asyncio.to_thread(_build, gw)
+            logger.debug("briefing refreshed in background")
+        except Exception:
+            logger.debug("background briefing rebuild failed", exc_info=True)
 
+
+async def handle_deck_briefing(request: "web.Request") -> "web.Response":
+    """Return the latest briefing; refresh it when stale.
+
+    Stale-while-revalidate: a stale briefing is served IMMEDIATELY and refreshed
+    in the background. Building blocks on an LLM polish that can take minutes —
+    doing that on the request path would hang the dashboard's briefing card
+    every time the cache expired (a worse bug than the stale copy it replaced).
+    The card renders "as of <time>", so a stale read is visible, and the next
+    load shows the fresh one.
+    """
     cached = _load_cache()
     if cached is not None:
+        if _is_stale(cached):
+            task = asyncio.create_task(_rebuild_in_background(_gateway(request)))
+            # Keep a reference so the task isn't garbage-collected mid-flight.
+            _BG_TASKS.add(task)
+            task.add_done_callback(_BG_TASKS.discard)
         return _ok(cached)
-    try:
-        briefing = await asyncio.to_thread(_build, _gateway(request))
-    except Exception as exc:
-        logger.exception("briefing build failed")
-        return _err(str(exc))
+
+    # Nothing cached at all — there is nothing to serve but a fresh build.
+    async with _build_lock():
+        fresh = _load_cache()
+        if fresh is not None:
+            return _ok(fresh)
+        try:
+            briefing = await asyncio.to_thread(_build, _gateway(request))
+        except Exception as exc:
+            logger.exception("briefing build failed")
+            return _err(str(exc))
     return _ok(briefing)
 
 
 async def handle_deck_briefing_regenerate(request: "web.Request") -> "web.Response":
     """Rebuild the briefing now (the dashboard regenerate button)."""
-    import asyncio
-
-    try:
-        briefing = await asyncio.to_thread(_build, _gateway(request))
-    except Exception as exc:
-        logger.exception("briefing regenerate failed")
-        return _err(str(exc))
+    async with _build_lock():
+        try:
+            briefing = await asyncio.to_thread(_build, _gateway(request))
+        except Exception as exc:
+            logger.exception("briefing regenerate failed")
+            return _err(str(exc))
     return _ok(briefing)

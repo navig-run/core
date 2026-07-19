@@ -1,7 +1,7 @@
 """
 Tunnel Management Commands
 
-Encrypted channels. The Schema's preferred method.
+Encrypted channels. NAVIG's preferred method.
 """
 
 from typing import Any
@@ -36,15 +36,16 @@ def start_tunnel(options: dict[str, Any]):
         ch.error(f"✗ Tunnel collapsed: {e}")
         ch.info("")
         ch.info("Recovery steps:")
-        ch.info("  1. Check tunnel status: navig tunnel status")
-        ch.info("  2. Restart tunnel: navig tunnel restart")
+        ch.info("  1. Check tunnel status: navig tunnel show")
+        ch.info("  2. Restart tunnel: navig tunnel run")
         ch.info("  3. Check for zombie processes: ps aux | grep ssh")
         ch.info("  4. Verify SSH connection: ssh user@host 'echo test'")
-        ch.info("  5. Check server logs: navig logs ssh")
+        ch.info("  5. Check server logs: navig logs show")
         if options.get("verbose"):
             import traceback
 
             ch.raw_print(traceback.format_exc())
+        raise typer.Exit(1)
 
 
 def stop_tunnel(options: dict[str, Any]):
@@ -63,6 +64,7 @@ def stop_tunnel(options: dict[str, Any]):
 
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1)
 
 
 def restart_tunnel(options: dict[str, Any]):
@@ -80,6 +82,7 @@ def restart_tunnel(options: dict[str, Any]):
 
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1)
 
 
 def show_tunnel_status(options: dict[str, Any]):
@@ -125,6 +128,7 @@ def show_tunnel_status(options: dict[str, Any]):
         ch.success("Port is accessible")
     else:
         ch.error("Port test failed")
+        raise typer.Exit(1)
 
 
 def auto_tunnel(options: dict[str, Any]):
@@ -162,7 +166,8 @@ def auto_tunnel(options: dict[str, Any]):
             ch.info(f"  PID: {info['pid']}")
     else:
         ch.error(f"✗ Recovery failed: {result['message']}")
-        ch.info("Try manually restarting: navig tunnel restart")
+        ch.info("Try manually restarting: navig tunnel run")
+        raise typer.Exit(1)
 
 
 # ============================================================================

@@ -10,11 +10,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.core.ocr
 # ---------------------------------------------------------------------------
-
 from navig.core.ocr import extract_ocr_text_from_image_bytes
 
 

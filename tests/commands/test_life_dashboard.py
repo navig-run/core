@@ -32,7 +32,6 @@ from navig.commands.life_dashboard import (
     run_life_dashboard,
 )
 
-
 # ── Fleet panel ───────────────────────────────────────────────────────────────
 
 class TestFleetPanel:
@@ -218,3 +217,24 @@ class TestRunLifeDashboard:
         ):
             run_life_dashboard()
         # No exception = pass
+
+
+# ---------------------------------------------------------------------------
+# _get_active_space() — must read the REAL active space, not the removed legacy key
+# ---------------------------------------------------------------------------
+
+def test_get_active_space_reflects_the_resolver():
+    """Regression: _get_active_space read `spaces.active` — the key `navig space switch`
+    REMOVES — so it always returned the "personal" fallback. It now delegates to the canonical
+    resolver, so the real active space flows through."""
+    from navig.commands.life_dashboard import _get_active_space
+
+    with patch("navig.commands.space.resolve_active_space", return_value="homelab"):
+        assert _get_active_space() == "homelab"
+
+
+def test_get_active_space_falls_back_to_personal_when_unset():
+    from navig.commands.life_dashboard import _get_active_space
+
+    with patch("navig.commands.space.resolve_active_space", return_value=None):
+        assert _get_active_space() == "personal"

@@ -11,7 +11,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # HitLChannel (abstract base — tested via a minimal concrete stub)
 # ---------------------------------------------------------------------------
-
 from navig.integrations.comms_router import HitLChannel
 
 

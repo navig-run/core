@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import socket
 import ssl
 import subprocess
@@ -32,7 +33,12 @@ def _err(msg: str, status: int = 500) -> "web.Response":
 
 
 def _clean_domain(s: str) -> str:
-    return (s or "").strip().lstrip("https://").lstrip("http://").rstrip("/").split("/")[0].lower()
+    return (s or "").strip().removeprefix("https://").removeprefix("http://").rstrip("/").split("/")[0].lower()
+
+
+# Custom DNS resolver (?resolver=): an IP or hostname handed to nslookup as its
+# server argument. Strict allowlist — it becomes a subprocess argument.
+_RESOLVER_RE = re.compile(r"^[A-Za-z0-9.:\-]{1,253}$")
 
 
 async def handle_deck_net_server(request: "web.Request") -> "web.Response":
@@ -69,26 +75,47 @@ async def handle_deck_net_server(request: "web.Request") -> "web.Response":
 async def handle_deck_net_dns(request: "web.Request") -> "web.Response":
     domain = _clean_domain(request.query.get("domain", ""))
     record_type = request.query.get("type", "A").upper()
+    resolver = (request.query.get("resolver") or "").strip()
     if not domain:
         return _err("missing ?domain=", status=400)
+    if not re.fullmatch(r"[A-Z0-9]{1,12}", record_type):
+        return _err("invalid ?type=", status=400)
+    if resolver and not _RESOLVER_RE.match(resolver):
+        return _err("invalid ?resolver=", status=400)
     try:
-        # Use socket for A records (fast & dependency-free); shell out to nslookup for others.
-        if record_type == "A":
+        # Use socket for A records (fast & dependency-free); shell out to
+        # nslookup for other types — and whenever a custom resolver is set,
+        # since the socket path can only use the system resolver.
+        if record_type == "A" and not resolver:
             infos = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: socket.getaddrinfo(domain, None, socket.AF_INET),
             )
             addresses = sorted({i[4][0] for i in infos})
             return _ok({"domain": domain, "type": "A", "answers": addresses})
         else:
+            argv = ["nslookup", "-type=" + record_type, domain]
+            if resolver:
+                argv.append(resolver)
             proc = await asyncio.create_subprocess_exec(
-                "nslookup", "-type=" + record_type, domain,
+                *argv,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             )
             out, err = await asyncio.wait_for(proc.communicate(), timeout=8)
             text = (out or b"").decode(errors="replace")
-            return _ok({"domain": domain, "type": record_type, "raw": text})
+            payload: dict[str, Any] = {"domain": domain, "type": record_type, "raw": text}
+            if resolver:
+                payload["resolver"] = resolver
+            return _ok(payload)
     except Exception as exc:
         return _err(str(exc))
+
+
+def _fetch_peer_cert(domain: str) -> dict:
+    """Blocking TLS handshake — must run OFF the event loop (see the handler)."""
+    ctx = ssl.create_default_context()
+    with socket.create_connection((domain, 443), timeout=6) as sock:
+        with ctx.wrap_socket(sock, server_hostname=domain) as ssock:
+            return ssock.getpeercert() or {}
 
 
 async def handle_deck_net_ssl(request: "web.Request") -> "web.Response":
@@ -96,10 +123,11 @@ async def handle_deck_net_ssl(request: "web.Request") -> "web.Response":
     if not domain:
         return _err("missing ?domain=", status=400)
     try:
-        ctx = ssl.create_default_context()
-        with socket.create_connection((domain, 443), timeout=6) as sock:
-            with ctx.wrap_socket(sock, server_hostname=domain) as ssock:
-                cert = ssock.getpeercert()
+        # The connect + TLS handshake is a BLOCKING socket call. Run it in a
+        # worker: inline it froze the whole daemon for up to the 6s timeout on
+        # every slow/unreachable host (the DNS and WHOIS handlers beside it
+        # already go through an executor — this one was the odd one out).
+        cert = await asyncio.to_thread(_fetch_peer_cert, domain)
         not_after = cert.get("notAfter", "")
         not_before = cert.get("notBefore", "")
         subject = dict(x[0] for x in cert.get("subject", []))

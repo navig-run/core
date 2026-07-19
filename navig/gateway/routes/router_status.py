@@ -23,7 +23,7 @@ async def _router_status(request: web.Request) -> web.Response:
     from aiohttp import web as _web
 
     try:
-        from navig.routing.router import get_router
+        from navig.llm.routing.router import get_router
 
         router = get_router()
         status = await router.status()
@@ -41,7 +41,7 @@ async def _router_traces(request: web.Request) -> web.Response:
     from aiohttp import web as _web
 
     try:
-        from navig.routing.trace import recent_traces
+        from navig.llm.routing.trace import recent_traces
 
         limit = int(request.query.get("limit", "50"))
         traces = recent_traces(limit=limit)
@@ -61,11 +61,11 @@ async def _router_detect(request: web.Request) -> web.Response:
         if not text:
             return _web.json_response({"error": "text required"}, status=400)
 
-        from navig.routing.detect import detect_mode
+        from navig.llm.routing.detect import detect_mode
 
         mode, confidence, reasons = detect_mode(text)
 
-        from navig.routing.capabilities import MODE_CAPABILITIES
+        from navig.llm.routing.capabilities import MODE_CAPABILITIES
 
         caps = MODE_CAPABILITIES.get(mode)
 

@@ -11,7 +11,6 @@ import pytest
 
 from navig.tui.resolvers import StatusBadge
 
-
 # ─────────────────────────────────────────────────────────────
 # StatusBadge fields
 # ─────────────────────────────────────────────────────────────

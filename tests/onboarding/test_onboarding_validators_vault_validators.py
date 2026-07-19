@@ -8,7 +8,6 @@ from __future__ import annotations
 import smtplib
 from unittest.mock import MagicMock, patch
 
-
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -362,14 +361,16 @@ class TestValidateMastodon:
 
 class TestCredentialValidatorABC:
     def test_cannot_instantiate_directly(self):
-        from navig.vault.validators import CredentialValidator
         import pytest
+
+        from navig.vault.validators import CredentialValidator
         with pytest.raises(TypeError):
             CredentialValidator()
 
     def test_subclass_must_implement_validate(self):
-        from navig.vault.validators import CredentialValidator
         import pytest
+
+        from navig.vault.validators import CredentialValidator
         class Incomplete(CredentialValidator):
             pass
         with pytest.raises(TypeError):

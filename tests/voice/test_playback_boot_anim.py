@@ -5,13 +5,12 @@ from pathlib import Path
 
 import pytest
 
+from navig.onboarding import boot_anim as _ba
 from navig.voice.playback import (
     ASSETS_DIR,
     NotificationSound,
     _resolve_asset,
 )
-from navig.onboarding import boot_anim as _ba
-
 
 # ---------------------------------------------------------------------------
 # boot_anim constants

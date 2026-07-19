@@ -440,7 +440,7 @@ class TestSummarizerFallback:
         class FakeResult:
             content = "Mocked LLM summary"
 
-        with patch("navig.llm_generate.run_llm", return_value=FakeResult()) as mock_llm:
+        with patch("navig.llm.generate.run_llm", return_value=FakeResult()) as mock_llm:
             from navig.agent.context_compressor import _default_summarizer
 
             result = _default_summarizer("some digest text")
@@ -450,7 +450,7 @@ class TestSummarizerFallback:
     def test_default_summarizer_fallback_on_error(self):
         """Default summarizer falls back to truncation when LLM fails."""
         with patch(
-            "navig.llm_generate.run_llm",
+            "navig.llm.generate.run_llm",
             side_effect=RuntimeError("no api key"),
         ):
             from navig.agent.context_compressor import _default_summarizer

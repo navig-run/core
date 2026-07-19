@@ -9,7 +9,6 @@ import pytest
 
 from navig.core.evolution.base import BaseEvolver, EvolutionResult
 
-
 # ---------------------------------------------------------------------------
 # Concrete implementations for testing
 # ---------------------------------------------------------------------------

@@ -3,8 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from navig.importers.models import ImportedItem, _VALID_TYPES, validate_item_dict
-
+from navig.importers.models import _VALID_TYPES, ImportedItem, validate_item_dict
 
 # ---------------------------------------------------------------------------
 # ImportedItem

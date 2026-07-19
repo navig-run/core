@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.connectors.gmail.oauth_config
 # ---------------------------------------------------------------------------
@@ -120,8 +119,8 @@ class TestExportBundle:
 
         with (
             patch("navig.blackbox.export.write_bundle", return_value=zip_path),
-            patch("navig.vault.core.get_vault", return_value=mock_vault, create=True),
-            patch("navig.vault.crypto.CryptoEngine", mock_crypto, create=True),
+            patch("navig.vault.core.get_vault", return_value=mock_vault),
+            patch("navig.vault.crypto.CryptoEngine", mock_crypto),
         ):
             result = export_bundle(bundle, tmp_path / "out.navbox", encrypted=True)
 
@@ -138,7 +137,7 @@ class TestExportBundle:
 
         with (
             patch("navig.blackbox.export.write_bundle", return_value=zip_path),
-            patch("navig.vault.core.get_vault", side_effect=Exception("vault error"), create=True),
+            patch("navig.vault.core.get_vault", side_effect=Exception("vault error")),
         ):
             result = export_bundle(bundle, tmp_path / "out.navbox", encrypted=True)
 

@@ -5,20 +5,19 @@ Pure-logic tests, no I/O. Async helpers mocked to avoid real sleeps.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 # ─────────────────────────────────────────────────────────────
 # navig.retry_policy
 # ─────────────────────────────────────────────────────────────
-
 from navig.retry_policy import (
-    BackoffPolicy,
-    TUNNEL_RECONNECT,
-    TELEGRAM_POLLING,
     API_RATE_LIMIT,
     CHANNEL_RESTART,
+    TELEGRAM_POLLING,
+    TUNNEL_RECONNECT,
+    BackoffPolicy,
     backoff_sleep,
     backoff_sleep_sync,
 )
@@ -168,9 +167,9 @@ from navig.token_budget import (
     BudgetTracker,
     ContinueDecision,
     StopDecision,
+    check_budget,
     create_budget_tracker,
     update_tracker,
-    check_budget,
 )
 
 # cfg that matches the documented defaults

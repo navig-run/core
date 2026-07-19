@@ -3,7 +3,7 @@ from a project directory on disk, plus an optional LLM briefing.
 
 Powers the BizOps "Add Project" flow: setting a path auto-fills the tech stack
 and runnable commands instantly (no LLM), and an explicit "Analyze" generates a
-short AI briefing via the shared :func:`navig.llm_generate.llm_generate` helper.
+short AI briefing via the shared :func:`navig.llm.generate.llm_generate` helper.
 
 Safety: we only read a whitelist of small metadata files at the top level (plus
 a shallow listing), with per-file byte caps — never an arbitrary recursive walk.
@@ -333,7 +333,7 @@ def briefing_for_path(path: str) -> dict[str, Any]:
     if not info.get("is_dir"):
         raise ValueError(f"not a directory: {path}")
 
-    from navig.llm_generate import llm_generate
+    from navig.llm.generate import llm_generate
 
     cmd_names = ", ".join(c["name"] for c in info["commands"][:20]) or "(none detected)"
     tree = ", ".join(_shallow_tree(Path(info["path"]))) or "(empty)"

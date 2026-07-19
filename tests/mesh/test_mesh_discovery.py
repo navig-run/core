@@ -14,6 +14,7 @@ Approach:
 
 import asyncio
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -188,6 +189,30 @@ class TestMeshDiscoveryIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertIn("llm", peer.capabilities)
         self.assertIn("shell", peer.capabilities)
 
+    async def test_announce_not_running_returns_false(self):
+        """announce() on a never-started discovery → False, never a raise."""
+        disc = MeshDiscovery(self.regA)  # fresh: _running=False, no sockets
+        self.assertFalse(await disc.announce())
+
+    async def test_announce_without_socket_returns_false(self):
+        """Running flag set but socket init failed → still False, no raise."""
+        disc = MeshDiscovery(self.regA)
+        disc._running = True  # simulates a socket-init failure leaving no sender
+        self.assertFalse(await disc.announce())
+
+    async def test_announce_running_sends_hello(self):
+        """announce() on a live discovery multicasts exactly one HELLO packet."""
+        import json as _json
+
+        result = await self.discA.announce()
+
+        self.assertTrue(result)
+        self.discA._sender.sendto.assert_called_once()
+        sent_bytes = self.discA._sender.sendto.call_args[0][0]
+        payload = _json.loads(sent_bytes.decode())
+        self.assertEqual(payload["type"], "hello")
+        self.assertEqual(payload["node_id"], self.regA.self_record.node_id)
+
     async def test_start_sends_hello(self):
         """start() announces the node with an immediate HELLO."""
         new_disc = MeshDiscovery(self.regA)
@@ -195,7 +220,19 @@ class TestMeshDiscoveryIntegration(unittest.IsolatedAsyncioTestCase):
         mock_sock = MagicMock()
         mock_sock.sendto = MagicMock()
         mock_sock.settimeout = MagicMock()
-        mock_sock.recvfrom = MagicMock(side_effect=TimeoutError)
+
+        # A real recvfrom() blocks up to settimeout(1.0)s before raising
+        # TimeoutError. Emulate that blocking so _listen_loop does NOT busy-spin:
+        # an instant-returning mock makes the loop hammer this MagicMock millions
+        # of times, and MagicMock records every call into unbounded lists
+        # (mock_calls / call_args_list) that grow O(n), so the process degrades to
+        # a crawl and the test hangs. Poll _running so teardown stays prompt.
+        def _recv_blocks_like_real_socket(*_args, **_kwargs):
+            while new_disc._running:
+                time.sleep(0.02)
+            raise TimeoutError
+
+        mock_sock.recvfrom = MagicMock(side_effect=_recv_blocks_like_real_socket)
 
         with (
             patch("navig.mesh.discovery._create_sender_socket", return_value=mock_sock),
@@ -208,6 +245,59 @@ class TestMeshDiscoveryIntegration(unittest.IsolatedAsyncioTestCase):
 
         # sendto should have been called (hello + goodbye)
         self.assertGreater(mock_sock.sendto.call_count, 0)
+
+
+class TestHelloReplyStorm(unittest.IsolatedAsyncioTestCase):
+    """Regression: replying to EVERY hello made two live nodes ping-pong
+    hellos at socket speed (observed ~166 pkt/s / ~2000 packets in 12s in a
+    loopback two-node run — a LAN multicast storm). A hello must be answered
+    only for previously-UNKNOWN peers; known peers ride the heartbeat loop."""
+
+    async def asyncSetUp(self):
+        self._tmpA = tempfile.TemporaryDirectory()
+        self._tmpB = tempfile.TemporaryDirectory()
+        self.regA = _make_registry(Path(self._tmpA.name), "nodeA-0001")
+        self.regB = _make_registry(Path(self._tmpB.name), "nodeB-0002")
+        self.discA = _make_discovery(self.regA)
+        self.discB = _make_discovery(self.regB)
+        self.discA._running = True
+        self.discB._running = True
+
+    async def asyncTearDown(self):
+        self._tmpA.cleanup()
+        self._tmpB.cleanup()
+
+    async def test_hello_from_unknown_peer_gets_exactly_one_reply(self):
+        await self.discA._handle_packet(_build_packet(self.regB, "hello"), "127.0.0.2")
+        self.discA._sender.sendto.assert_called_once()
+
+    async def test_hello_from_known_peer_gets_no_reply(self):
+        await self.discA._handle_packet(_build_packet(self.regB, "hello"), "127.0.0.2")
+        self.discA._sender.sendto.reset_mock()
+
+        await self.discA._handle_packet(
+            _build_packet(self.regB, "hello", seq=1), "127.0.0.2"
+        )
+        self.discA._sender.sendto.assert_not_called()
+
+    async def test_two_nodes_converge_without_storm(self):
+        # First contact: each side replies once to the unknown peer…
+        await self.discB._handle_packet(_build_packet(self.regA, "hello"), "127.0.0.1")
+        await self.discA._handle_packet(_build_packet(self.regB, "hello"), "127.0.0.2")
+        self.assertEqual(self.discA._sender.sendto.call_count, 1)
+        self.assertEqual(self.discB._sender.sendto.call_count, 1)
+
+        # …then further hellos between now-known peers produce zero replies.
+        self.discA._sender.sendto.reset_mock()
+        self.discB._sender.sendto.reset_mock()
+        await self.discB._handle_packet(
+            _build_packet(self.regA, "hello", seq=1), "127.0.0.1"
+        )
+        await self.discA._handle_packet(
+            _build_packet(self.regB, "hello", seq=1), "127.0.0.2"
+        )
+        self.discA._sender.sendto.assert_not_called()
+        self.discB._sender.sendto.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -181,7 +181,7 @@ class TestScaffolderGenerate:
         s.generate(template, tmp_path)
         assert (tmp_path / "yes.txt").exists()
 
-    def test_source_key_raises_not_implemented(self, tmp_path):
+    def test_source_key_raises_without_template_dir(self, tmp_path):
         from navig.core.scaffolder import Scaffolder
 
         s = Scaffolder()
@@ -189,7 +189,8 @@ class TestScaffolderGenerate:
             "meta": {"variables": {}},
             "structure": [{"path": "f.txt", "type": "file", "source": "ext/f.txt"}],
         }
-        with pytest.raises(NotImplementedError):
+        # 'source' is implemented but requires template_dir; omitting it must raise ValueError.
+        with pytest.raises(ValueError, match="template_dir"):
             s.generate(template, tmp_path)
 
     def test_empty_name_item_is_skipped(self, tmp_path):

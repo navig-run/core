@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 import typer
 
-
 # ---------------------------------------------------------------------------
 # typer.Exit is click.exceptions.Exit, not SystemExit — catch both
 # ---------------------------------------------------------------------------
@@ -57,8 +56,8 @@ class TestRunDocsList:
 
     def test_no_docs_dir_exits(self, tmp_path, monkeypatch):
         """When there is no docs dir, run_docs raises Exit(1)."""
-        from navig.commands.docs_cmd import run_docs
         import navig.commands.docs_cmd as _docs_mod
+        from navig.commands.docs_cmd import run_docs
 
         # Point __file__ to a dir with no docs/ subdir
         fake_dir = tmp_path / "pkg" / "commands"
@@ -66,7 +65,7 @@ class TestRunDocsList:
         monkeypatch.setattr(_docs_mod, "__file__", str(fake_dir / "docs_cmd.py"))
 
         import navig.console_helper as _ch
-        with patch.object(_ch, "error", create=True, return_value=None):
+        with patch.object(_ch, "error", return_value=None):
             with pytest.raises(Exception):  # typer.Exit or SystemExit
                 run_docs(_ctx(), None, 10, False, False)
 
@@ -117,21 +116,21 @@ class TestRunDocsSearch:
 
     def test_search_exception_exits(self):
         """If search_docs raises any Exception, run_docs exits."""
-        from navig.commands.docs_cmd import run_docs
         import navig.console_helper as _ch
+        from navig.commands.docs_cmd import run_docs
 
         with patch("navig.tools.web.search_docs", side_effect=RuntimeError("fail")):
-            with patch.object(_ch, "error", create=True, return_value=None):
+            with patch.object(_ch, "error", return_value=None):
                 with pytest.raises(_EXIT):
                     run_docs(_ctx(), "query", 5, False, False)
 
     def test_search_import_error_exits(self):
         """If web tools raise ImportError, run_docs exits."""
-        from navig.commands.docs_cmd import run_docs
         import navig.console_helper as _ch
+        from navig.commands.docs_cmd import run_docs
 
         with patch("navig.tools.web.search_docs", side_effect=ImportError("no module")):
-            with patch.object(_ch, "error", create=True, return_value=None):
+            with patch.object(_ch, "error", return_value=None):
                 with pytest.raises(_EXIT):
                     run_docs(_ctx(), "query", 5, False, False)
 
@@ -174,29 +173,29 @@ class TestRunFetch:
 
     @pytest.mark.skipif(not _has_tools_web(), reason="navig.tools.web not available")
     def test_fetch_failure_exits(self):
-        from navig.commands.docs_cmd import run_fetch
         import navig.console_helper as _ch
+        from navig.commands.docs_cmd import run_fetch
 
         with patch("navig.tools.web.web_fetch", return_value=self._fake_result(success=False)):
-            with patch.object(_ch, "error", create=True, return_value=None):
+            with patch.object(_ch, "error", return_value=None):
                 with pytest.raises(_EXIT):
                     run_fetch(_ctx(), "https://bad.url", "markdown", 10000, 30, False, False)
 
     def test_fetch_import_error_exits(self):
-        from navig.commands.docs_cmd import run_fetch
         import navig.console_helper as _ch
+        from navig.commands.docs_cmd import run_fetch
 
         with patch("navig.tools.web.web_fetch", side_effect=ImportError("missing")):
-            with patch.object(_ch, "error", create=True, return_value=None):
+            with patch.object(_ch, "error", return_value=None):
                 with pytest.raises(_EXIT):
                     run_fetch(_ctx(), "https://example.com", "markdown", 10000, 30, False, False)
 
     def test_fetch_runtime_error_exits(self):
-        from navig.commands.docs_cmd import run_fetch
         import navig.console_helper as _ch
+        from navig.commands.docs_cmd import run_fetch
 
         with patch("navig.tools.web.web_fetch", side_effect=ValueError("bad url")):
-            with patch.object(_ch, "error", create=True, return_value=None):
+            with patch.object(_ch, "error", return_value=None):
                 with pytest.raises(_EXIT):
                     run_fetch(_ctx(), "https://example.com", "markdown", 10000, 30, False, False)
 
@@ -250,29 +249,29 @@ class TestRunSearch:
 
     @pytest.mark.skipif(not _has_tools_web(), reason="navig.tools.web not available")
     def test_search_failure_exits(self):
-        from navig.commands.docs_cmd import run_search
         import navig.console_helper as _ch
+        from navig.commands.docs_cmd import run_search
 
         with patch("navig.tools.web.web_search", return_value=self._fake_search(success=False, has_results=False)):
-            with patch.object(_ch, "error", create=True, return_value=None):
+            with patch.object(_ch, "error", return_value=None):
                 with pytest.raises(_EXIT):
                     run_search(_ctx(), "query", 5, "auto", False, False)
 
     def test_search_import_error_exits(self):
-        from navig.commands.docs_cmd import run_search
         import navig.console_helper as _ch
+        from navig.commands.docs_cmd import run_search
 
         with patch("navig.tools.web.web_search", side_effect=ImportError("no module")):
-            with patch.object(_ch, "error", create=True, return_value=None):
+            with patch.object(_ch, "error", return_value=None):
                 with pytest.raises(_EXIT):
                     run_search(_ctx(), "q", 5, "auto", False, False)
 
     def test_search_runtime_error_exits(self):
-        from navig.commands.docs_cmd import run_search
         import navig.console_helper as _ch
+        from navig.commands.docs_cmd import run_search
 
         with patch("navig.tools.web.web_search", side_effect=ValueError("bad")):
-            with patch.object(_ch, "error", create=True, return_value=None):
+            with patch.object(_ch, "error", return_value=None):
                 with pytest.raises(_EXIT):
                     run_search(_ctx(), "q", 5, "auto", False, False)
 
@@ -406,57 +405,57 @@ class TestRunImport:
         return e
 
     def test_unknown_source_exits(self):
-        from navig.commands.import_cmd import _run_import
         import navig.console_helper as _ch
+        from navig.commands.import_cmd import _run_import
 
         with patch("navig.commands.import_cmd.UniversalImporter", return_value=self._engine()):
-            with patch.object(_ch, "error", create=True, return_value=None):
+            with patch.object(_ch, "error", return_value=None):
                 with pytest.raises(_EXIT):
                     _run_import(source="nonexistent", path=None, output=None, persist_bookmarks=False, json_output=False)
 
     def test_path_with_all_exits(self, tmp_path):
-        from navig.commands.import_cmd import _run_import
         import navig.console_helper as _ch
+        from navig.commands.import_cmd import _run_import
 
         existing = tmp_path / "file.json"
         existing.write_text("{}", encoding="utf-8")
 
         with patch("navig.commands.import_cmd.UniversalImporter", return_value=self._engine()):
-            with patch.object(_ch, "error", create=True, return_value=None):
+            with patch.object(_ch, "error", return_value=None):
                 with pytest.raises(_EXIT):
                     _run_import(source="all", path=str(existing), output=None, persist_bookmarks=False, json_output=False)
 
     def test_path_not_exists_exits(self, tmp_path):
-        from navig.commands.import_cmd import _run_import
         import navig.console_helper as _ch
+        from navig.commands.import_cmd import _run_import
 
         with patch("navig.commands.import_cmd.UniversalImporter", return_value=self._engine()):
-            with patch.object(_ch, "error", create=True, return_value=None):
+            with patch.object(_ch, "error", return_value=None):
                 with pytest.raises(_EXIT):
                     _run_import(source="chrome", path=str(tmp_path / "no_such.json"), output=None, persist_bookmarks=False, json_output=False)
 
     def test_run_all_no_persist(self):
-        from navig.commands.import_cmd import _run_import
         import navig.console_helper as _ch
+        from navig.commands.import_cmd import _run_import
 
         engine = self._engine()
 
         with patch("navig.commands.import_cmd.UniversalImporter", return_value=engine):
             with patch("navig.commands.import_cmd._flatten", return_value=[]):
-                with patch.object(_ch, "warning", create=True, return_value=None):
+                with patch.object(_ch, "warning", return_value=None):
                     _run_import(source="all", path=None, output=None, persist_bookmarks=False, json_output=False)
 
         engine.run_all.assert_called_once()
 
     def test_run_one_source(self):
-        from navig.commands.import_cmd import _run_import
         import navig.console_helper as _ch
+        from navig.commands.import_cmd import _run_import
 
         engine = self._engine()
 
         with patch("navig.commands.import_cmd.UniversalImporter", return_value=engine):
             with patch("navig.commands.import_cmd._flatten", return_value=[]):
-                with patch.object(_ch, "warning", create=True, return_value=None):
+                with patch.object(_ch, "warning", return_value=None):
                     _run_import(source="chrome", path=None, output=None, persist_bookmarks=False, json_output=False)
 
         engine.run_one.assert_called_once_with("chrome", path=None)
@@ -475,8 +474,8 @@ class TestRunImport:
         assert "chrome" in captured.out
 
     def test_output_writes_file(self, tmp_path):
-        from navig.commands.import_cmd import _run_import
         import navig.console_helper as _ch
+        from navig.commands.import_cmd import _run_import
 
         engine = self._engine()
         out_file = tmp_path / "result.json"
@@ -484,20 +483,20 @@ class TestRunImport:
         with patch("navig.commands.import_cmd.UniversalImporter", return_value=engine):
             with patch("navig.commands.import_cmd._flatten", return_value=[]):
                 with patch("navig.core.yaml_io.atomic_write_text") as mock_write:
-                    with patch.object(_ch, "success", create=True, return_value=None):
-                        with patch.object(_ch, "warning", create=True, return_value=None):
+                    with patch.object(_ch, "success", return_value=None):
+                        with patch.object(_ch, "warning", return_value=None):
                             _run_import(source="all", path=None, output=str(out_file), persist_bookmarks=False, json_output=False)
 
         mock_write.assert_called_once()
 
     def test_value_error_exits(self):
-        from navig.commands.import_cmd import _run_import
         import navig.console_helper as _ch
+        from navig.commands.import_cmd import _run_import
 
         engine = self._engine()
         engine.run_all.side_effect = ValueError("bad config")
 
         with patch("navig.commands.import_cmd.UniversalImporter", return_value=engine):
-            with patch.object(_ch, "error", create=True, return_value=None):
+            with patch.object(_ch, "error", return_value=None):
                 with pytest.raises(_EXIT):
                     _run_import(source="all", path=None, output=None, persist_bookmarks=False, json_output=False)

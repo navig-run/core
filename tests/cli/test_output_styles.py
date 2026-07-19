@@ -1,12 +1,12 @@
 """
-Tests for navig.output_styles — output style file parsing and resolution.
+Tests for navig.ui.output_styles — output style file parsing and resolution.
 """
 from __future__ import annotations
 
 import textwrap
 from pathlib import Path
 
-from navig.output_styles import OutputStyleConfig, _parse_style_file, load_output_styles
+from navig.ui.output_styles import OutputStyleConfig, _parse_style_file, load_output_styles
 
 # ---------------------------------------------------------------------------
 # _parse_style_file
@@ -114,7 +114,7 @@ class TestLoadOutputStyles:
         (user_dir / "same.md").write_text("---\nname: same\n---\nUser version.\n")
 
         # Parse both directories manually using _parse_style_file
-        from navig.output_styles import _parse_style_file
+        from navig.ui.output_styles import _parse_style_file
 
         user_style = _parse_style_file(user_dir / "same.md", source="user")
         proj_style = _parse_style_file(proj_dir / "same.md", source="project")

@@ -47,6 +47,12 @@
 #   #   message  — show only while the AI is writing
 #   #   never    — disable typing indicators
 #   typing_mode: instant
+#
+#   # Auto-reply to a BARE music link (Spotify/Apple/Deezer/Tidal/SoundCloud/…) in a
+#   # 1:1 chat with the same track's links on every platform (song.link). DM-only,
+#   # needs the navig-download plugin. Set enabled: false to turn it off.
+#   music_links:
+#     enabled: true
 
 
 # ── Proactive Engagement Intervals ──────────────────────────────────────────

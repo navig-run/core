@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.spaces.next_action — first_pending_task, SpaceNextAction
 # ---------------------------------------------------------------------------
@@ -42,8 +41,8 @@ class TestFirstPendingTask:
 
 class TestGetSpaceNextAction:
     def test_returns_none_when_path_not_exist(self, tmp_path):
-        from navig.spaces.next_action import get_space_next_action
         from navig.spaces.contracts import SpaceConfig, normalize_space_name
+        from navig.spaces.next_action import get_space_next_action
 
         fake_cfg = SpaceConfig(
             requested_name="devops",
@@ -56,8 +55,8 @@ class TestGetSpaceNextAction:
         assert result is None
 
     def test_returns_next_action_when_space_exists(self, tmp_path):
-        from navig.spaces.next_action import get_space_next_action
         from navig.spaces.contracts import SpaceConfig
+        from navig.spaces.next_action import get_space_next_action
         from navig.spaces.progress import SpaceProgress
 
         space_dir = tmp_path / "devops"
@@ -234,8 +233,8 @@ class TestGetConfigManager:
 
 class TestGetTunnelManager:
     def test_returns_class(self):
-        from navig.cli._singletons import _get_tunnel_manager
         import navig.cli._singletons as sng
+        from navig.cli._singletons import _get_tunnel_manager
         sng._TunnelManager = None  # reset cache
         klass = _get_tunnel_manager()
         assert klass is not None
@@ -249,8 +248,8 @@ class TestGetTunnelManager:
 
 class TestGetRemoteOperations:
     def test_returns_class(self):
-        from navig.cli._singletons import _get_remote_operations
         import navig.cli._singletons as sng
+        from navig.cli._singletons import _get_remote_operations
         sng._RemoteOperations = None  # reset cache
         klass = _get_remote_operations()
         assert klass is not None

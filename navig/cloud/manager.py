@@ -211,6 +211,25 @@ class CloudManager:
             self._mark_error(str(exc))
             raise
 
+        # Publish the STABLE lighthouse URL to the broker + bind Telegram users so
+        # the hosted Mini App resolves by api_key / telegram_id to the edge.
+        #
+        # Without this, the broker keeps whatever was last registered — typically a
+        # dead `*.trycloudflare.com` URL from a previous cloudflared session — and
+        # the Mini App resolves to that, fails with HTTP 530, re-resolves to the SAME
+        # stale URL, and shows "Connection Lost" forever. The lighthouse edge never
+        # rotates and is always reachable (it answers brain-offline 503 when the
+        # brain sleeps), so a one-shot register + bind is all that's needed — no
+        # heartbeat, no watchdog. Broker failures are non-fatal: the uplink is the
+        # data path; the broker is only a routing convenience for Mini App resolve.
+        try:
+            self._broker = BrokerClient(
+                self.broker_url, self.api_key, timeout_s=self.broker_timeout_s
+            )
+            await self._register_current_url()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("lighthouse broker register/bind skipped: %r", exc)
+
     async def _start_direct(self) -> None:
         """Direct mode: register a user-provided public URL, no cloudflared.
 
@@ -276,6 +295,16 @@ class CloudManager:
             except Exception as exc:  # noqa: BLE001
                 logger.debug("uplink.stop errored: %r", exc)
             self._uplink = None
+            # Close (but deliberately do NOT unregister) the broker: the lighthouse
+            # edge stays up after the brain stops, so keeping the stable URL
+            # resolvable lets the Mini App reach the edge and show "brain offline"
+            # rather than a dead-end 404 "not bound".
+            if self._broker is not None:
+                try:
+                    await self._broker.close()
+                except Exception:  # noqa: BLE001
+                    pass
+                self._broker = None
             self.state = CloudState(status="off")
             logger.info("Cloud offline.")
             return
@@ -409,10 +438,19 @@ class CloudManager:
             await self._bind_telegram_users()
         except BrokerError as exc:
             logger.warning("broker.register failed: %s", exc)
-            self.state.last_error = f"register: {exc}"
+            # In lighthouse mode the OUTBOUND UPLINK is the data path; the broker
+            # register is only a Mini-App-resolve convenience. A failure here (e.g.
+            # a broker that predates *.workers.dev URLs → bad_tunnel_url) is NOT a
+            # system error on an otherwise-healthy brain, so don't surface it as
+            # last_error — that trained the operator to distrust a green status.
+            # It stays in the log for debugging. Tunnel/direct modes DO depend on
+            # the broker, so there it remains a real error.
+            if self.mode != "lighthouse":
+                self.state.last_error = f"register: {exc}"
         except Exception as exc:  # noqa: BLE001
             logger.warning("broker.register errored: %r", exc)
-            self.state.last_error = f"register: {exc!r}"
+            if self.mode != "lighthouse":
+                self.state.last_error = f"register: {exc!r}"
 
     async def _bind_telegram_users(self) -> None:
         """Bind configured Telegram allowed_users to this daemon on the broker.

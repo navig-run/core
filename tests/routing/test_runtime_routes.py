@@ -67,13 +67,18 @@ def _mission_payload(node_id: str, **kwargs) -> dict:
 
 
 @pytest.fixture(autouse=True)
-def _reset_store():
-    """Isolate each test with a fresh RuntimeStore."""
+def _reset_store(tmp_path):
+    """Isolate each test with a fresh RuntimeStore in its own temp dir.
+
+    Routes flush to disk, so the store must not share a directory across
+    tests — flushed state from one test would _load() into the next.
+    """
     from navig.contracts.store import reset_runtime_store
 
-    reset_runtime_store()
+    reset_runtime_store(tmp_path / "runtime")
     yield
-    reset_runtime_store()
+    # Leave the singleton pointing at a fresh empty dir, never at test data.
+    reset_runtime_store(tmp_path / "runtime-teardown")
 
 
 # ──────────────────────── Node routes ────────────────────────────────
@@ -269,6 +274,55 @@ async def test_advance_mission_start():
         body = await r.json()
         assert body["ok"] is True
         assert body["data"]["status"] == "running"
+
+
+async def test_advance_mission_cancel_from_queued():
+    """The deck's Cancel verb: queued → cancelled via {"action": "cancel"}."""
+    pytest.importorskip("aiohttp")
+    from aiohttp.test_utils import TestClient, TestServer
+
+    gw = _build_gateway()
+    app = _build_app(gw)
+
+    async with TestClient(TestServer(app)) as client:
+        await client.post("/runtime/nodes", json=_node_payload(node_id="nC"))
+        await client.post("/runtime/missions", json=_mission_payload("nC", mission_id="mC"))
+
+        r = await client.post("/runtime/missions/mC/advance", json={"action": "cancel"})
+        assert r.status == 200
+        body = await r.json()
+        assert body["ok"] is True
+        assert body["data"]["status"] == "cancelled"
+
+        # Terminal — a second cancel is an invalid transition
+        r2 = await client.post("/runtime/missions/mC/advance", json={"action": "cancel"})
+        assert r2.status == 422
+        assert (await r2.json())["error_code"] == "invalid_transition"
+
+
+async def test_advance_mission_retry_after_failure():
+    """The deck's Retry verb: failed → queued via {"action": "retry"}."""
+    pytest.importorskip("aiohttp")
+    from aiohttp.test_utils import TestClient, TestServer
+
+    gw = _build_gateway()
+    app = _build_app(gw)
+
+    async with TestClient(TestServer(app)) as client:
+        await client.post("/runtime/nodes", json=_node_payload(node_id="nR"))
+        await client.post("/runtime/missions", json=_mission_payload("nR", mission_id="mR"))
+        await client.post("/runtime/missions/mR/advance", json={"action": "start"})
+
+        r_fail = await client.post("/runtime/missions/mR/advance", json={"action": "fail:boom"})
+        assert r_fail.status == 200
+        assert (await r_fail.json())["data"]["status"] == "failed"
+
+        r = await client.post("/runtime/missions/mR/advance", json={"action": "retry"})
+        assert r.status == 200
+        body = await r.json()
+        assert body["ok"] is True
+        assert body["data"]["status"] == "queued"
+        assert body["data"]["error"] is None
 
 
 async def test_advance_mission_invalid_action():
@@ -486,3 +540,42 @@ async def test_auth_required_when_token_set():
         # Correct token → 200
         r3 = await client.get("/runtime/nodes", headers={"Authorization": "Bearer secret-token"})
         assert r3.status == 200
+
+
+# ──────────────────────── Durability ─────────────────────────────────
+
+
+async def test_route_mutations_survive_restart():
+    """Route mutations must survive a daemon restart.
+
+    Regression: create/advance/complete never called store.flush(), so
+    deck-created missions lived only in daemon memory and vanished on
+    restart (the MCP tools flushed; the HTTP routes did not).
+    """
+    pytest.importorskip("aiohttp")
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from navig.contracts.store import get_runtime_store, reset_runtime_store
+
+    store_dir = get_runtime_store()._dir
+    gw = _build_gateway()
+    app = _build_app(gw)
+    async with TestClient(TestServer(app)) as client:
+        r = await client.post("/runtime/nodes", json=_node_payload(node_id="node-persist"))
+        assert r.status == 201
+        r = await client.post(
+            "/runtime/missions", json=_mission_payload("node-persist", mission_id="m-persist")
+        )
+        assert r.status == 201
+        r = await client.post("/runtime/missions/m-persist/advance", json={"action": "start"})
+        assert r.status == 200
+        r = await client.post("/runtime/missions/m-persist/complete", json={"outcome": "success"})
+        assert r.status == 201
+
+    # Simulate a daemon restart: a fresh store loading from the same dir.
+    reborn = reset_runtime_store(store_dir)
+    assert reborn.get_node("node-persist") is not None
+    mission = reborn.get_mission("m-persist")
+    assert mission is not None
+    assert mission.status.value == "succeeded"
+    assert any(rc.mission_id == "m-persist" for rc in reborn.list_receipts())

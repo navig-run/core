@@ -250,9 +250,17 @@ class Soul(Component):
     - Loads SOUL.md for AI personality injection
     """
 
-    # Default SOUL.md location
-    SOUL_FILE = config_dir() / "workspace" / "SOUL.md"
     SOUL_DEFAULT = Path(__file__).parent.parent / "resources" / "SOUL.default.md"
+
+    @property
+    def SOUL_FILE(self) -> Path:  # noqa: N802 — legacy constant name kept for call sites
+        """Default SOUL.md location, resolved at CALL time — never import time.
+
+        ``config_dir()`` honours ``NAVIG_CONFIG_DIR``; a class-level constant
+        would freeze the real user home before test/daemon isolation applies,
+        and this file is *written* (see ``navig/vault/migrate.py:_legacy_db_path``).
+        """
+        return config_dir() / "workspace" / "SOUL.md"
 
     def __init__(
         self,

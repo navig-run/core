@@ -67,6 +67,30 @@ class TestCheckLegacyExists:
         result = check_legacy_exists()
         assert isinstance(result, bool)
 
+    def test_default_path_resolves_at_call_time(self, tmp_path, monkeypatch):
+        """Regression: the legacy DB path must NOT be frozen at import time.
+
+        ``navig.vault.migrate`` used to compute ``_LEGACY_DB`` as a module
+        constant. This very module imports it during pytest *collection* —
+        before the session fixture isolates ``NAVIG_CONFIG_DIR`` — so the
+        constant froze to the REAL ``~/.navig/credentials/vault.db``. Every
+        ``get_vault()`` in the suite then auto-migrated the operator's real
+        credentials into the isolated test vault, poisoning
+        ``tests/vault/test_vault_commands.py`` (9 ordering-dependent
+        failures). The default path must reflect the CURRENT environment at
+        each call.
+        """
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        assert check_legacy_exists() is False  # fresh dir → no legacy DB
+
+        legacy_dir = tmp_path / "credentials"
+        legacy_dir.mkdir()
+        (legacy_dir / "vault.db").write_bytes(b"sqlite")
+        assert check_legacy_exists() is True  # same call, current env
+
+        report = MigrationReport()
+        assert report.source == legacy_dir / "vault.db"  # dataclass default too
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # vault/types.py — enums, dataclasses, PROVIDER_PRESETS

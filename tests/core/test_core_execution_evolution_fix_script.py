@@ -9,11 +9,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.core.execution
 # ---------------------------------------------------------------------------
-
 from navig.core.execution import (
     VALID_CONFIRMATION_LEVELS,
     VALID_MODES,

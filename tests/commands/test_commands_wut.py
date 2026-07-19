@@ -1,8 +1,9 @@
 """Tests for navig/commands/wut.py."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from typer.testing import CliRunner
-from unittest.mock import patch, MagicMock
 
 from navig.commands.wut import app
 

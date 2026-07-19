@@ -19,8 +19,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # navig/vault/secret_str.py — SecretStr & mask_secret
 # ---------------------------------------------------------------------------
-
-from navig.vault.secret_str import SecretStr, Secret, mask_secret
+from navig.vault.secret_str import Secret, SecretStr, mask_secret
 
 
 class TestSecretStrBasic:
@@ -157,9 +156,9 @@ class TestMaskSecret:
 
 from navig.webhooks.signatures import (
     SignatureConfig,
-    verify_signature,
-    verify_github_signature,
     extract_event_type,
+    verify_github_signature,
+    verify_signature,
 )
 
 
@@ -415,8 +414,8 @@ class TestCircuitBreakerToDict:
 
 from navig.tools.output_validator import (
     OutputValidationError,
-    validate_output,
     _naive_check,
+    validate_output,
 )
 
 

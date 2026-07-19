@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.memory._util
 # ---------------------------------------------------------------------------
@@ -46,6 +45,7 @@ class TestMemoryPaths:
     def test_navig_home_uses_env_var(self, monkeypatch, tmp_path):
         monkeypatch.setenv("NAVIG_HOME", str(tmp_path))
         from importlib import import_module, reload
+
         import navig.memory.paths as p
         result = p.navig_home()
         assert result == tmp_path

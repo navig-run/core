@@ -172,6 +172,9 @@ class Trigger:
     updated_at: str = ""
     last_fired: str = ""
     fire_count: int = 0
+    # Rolling window of recent fire timestamps (ISO), pruned to the last hour —
+    # backs max_fires_per_hour enforcement. Additive/back-compat: absent → [].
+    fire_times: list[str] = field(default_factory=list)
 
     # Schedule-specific (for SCHEDULE type)
     schedule: str = ""  # Cron expression or interval
@@ -193,19 +196,56 @@ class Trigger:
         return f"{base}-{hash_suffix}"
 
     def can_fire(self) -> bool:
-        """Check if trigger can fire (not in cooldown, within rate limit)."""
+        """Whether the trigger may fire now: enabled, past its cooldown, AND under
+        its per-hour rate limit.
+
+        ``max_fires_per_hour`` is enforced over a rolling 60-minute window of
+        ``fire_times`` (``<= 0`` disables the limit). This gate was previously a
+        lie — the limit was stored and shown but never checked, so a flapping
+        event source could fire far past it. Manual "fire now" bypasses the gate
+        but is still recorded, so it counts toward the window.
+        """
         if self.status == TriggerStatus.DISABLED:
             return False
         if self.status == TriggerStatus.COOLDOWN:
             return False
+        now = datetime.now()
         if self.last_fired:
             try:
                 last = datetime.fromisoformat(self.last_fired)
-                if datetime.now() - last < timedelta(seconds=self.cooldown_seconds):
+                if now - last < timedelta(seconds=self.cooldown_seconds):
                     return False
             except ValueError:
                 pass  # malformed value; skip
+        if self.max_fires_per_hour > 0 and self._recent_fire_count(now) >= self.max_fires_per_hour:
+            return False
         return True
+
+    def _recent_fire_count(self, now: datetime | None = None) -> int:
+        """How many recorded fires fall inside the trailing 60-minute window."""
+        cutoff = (now or datetime.now()) - timedelta(hours=1)
+        count = 0
+        for ts in self.fire_times:
+            try:
+                if datetime.fromisoformat(ts) >= cutoff:
+                    count += 1
+            except ValueError:
+                continue  # malformed timestamp; ignore
+        return count
+
+    def record_fire(self, when: datetime | None = None) -> None:
+        """Record a fire for rate-limiting and prune the window to the last hour."""
+        when = when or datetime.now()
+        cutoff = when - timedelta(hours=1)
+        kept = []
+        for ts in self.fire_times:
+            try:
+                if datetime.fromisoformat(ts) >= cutoff:
+                    kept.append(ts)
+            except ValueError:
+                continue  # drop malformed timestamps while we're here
+        kept.append(when.isoformat())
+        self.fire_times = kept
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -223,6 +263,7 @@ class Trigger:
             "updated_at": self.updated_at,
             "last_fired": self.last_fired,
             "fire_count": self.fire_count,
+            "fire_times": self.fire_times,
             "schedule": self.schedule,
             "host": self.host,
             "metric": self.metric,
@@ -245,6 +286,7 @@ class Trigger:
             updated_at=data.get("updated_at", ""),
             last_fired=data.get("last_fired", ""),
             fire_count=data.get("fire_count", 0),
+            fire_times=data.get("fire_times", []),
             schedule=data.get("schedule", ""),
             host=data.get("host", ""),
             metric=data.get("metric", ""),
@@ -537,9 +579,11 @@ class TriggerManager:
                     break
 
         # Update trigger state
+        now = datetime.now()
         trigger.status = TriggerStatus.ENABLED
-        trigger.last_fired = datetime.now().isoformat()
+        trigger.last_fired = now.isoformat()
         trigger.fire_count += 1
+        trigger.record_fire(now)  # feed the rolling max_fires_per_hour window
         self.update_trigger(trigger)
 
         duration_ms = int((time.time() - start_time) * 1000)
@@ -616,23 +660,33 @@ class TriggerManager:
             return False, str(e)
 
     def _run_workflow(self, workflow_name: str, params: dict[str, Any]) -> tuple[bool, str]:
-        """Run a workflow."""
-        from navig.commands.workflow import WorkflowManager
+        """Apply a Block (workflows were migrated to Blocks).
 
-        manager = WorkflowManager()
-        workflow = manager.load_workflow(workflow_name)
+        ``ActionType.WORKFLOW`` is retained for backward compatibility of existing
+        trigger configs, but the legacy YAML engine is retired — the target name
+        now resolves to a Block applied non-interactively. Destructive steps need
+        a named ``--approve`` a scheduled trigger cannot give, so they are blocked
+        (by design: a trigger must not silently run a destructive outcome).
+        """
+        try:
+            from navig.blocks import find_block
+            from navig.blocks.runner import apply_block
+        except Exception as exc:  # noqa: BLE001
+            return False, f"blocks unavailable: {exc}"
 
-        if not workflow:
-            return False, f"Workflow '{workflow_name}' not found"
+        block = find_block(workflow_name)
+        if block is None:
+            return False, (
+                f"No block '{workflow_name}' (workflows migrated to Blocks; "
+                "author one with `navig block new`)"
+            )
+        try:
+            run = apply_block(block, dict(params or {}), yes=True)
+        except Exception as exc:  # noqa: BLE001
+            return False, f"block '{workflow_name}' failed: {exc}"
 
-        success = manager.execute_workflow(
-            workflow,
-            variables=params,
-            skip_prompts=True,
-            verbose=False,
-        )
-
-        return success, "" if success else "Workflow execution failed"
+        ok = run.outcome == "succeeded"
+        return ok, "" if ok else f"block '{workflow_name}' → {run.outcome}"
 
     def _send_notification(
         self,
@@ -651,11 +705,42 @@ class TriggerManager:
         message = message.replace("${timestamp}", event.timestamp)
 
         if channel == "telegram":
-            # Try to send via telegram bot
+            # Send via the configured bot. telegram_send needs a target chat:
+            # prefer an explicit one from the trigger action params, else fall
+            # back to the first allowed Telegram user (the default chat).
             try:
-                from navig.commands.gateway import send_telegram_message
+                from navig.commands.telegram import telegram_send
 
-                send_telegram_message(message)
+                target = params.get("target") or params.get("chat_id")
+                if not target:
+                    from navig.commands.habit import _resolve_default_chat_id
+
+                    target = _resolve_default_chat_id()
+                if not target:
+                    return False, (
+                        "no Telegram target — set 'target' in the trigger action "
+                        "or configure telegram.allowed_users"
+                    )
+                if params.get("message"):
+                    # Custom template — keep the user's exact content + parse mode.
+                    tg_message, tg_parse = message, "Markdown"
+                else:
+                    # Default notification — richly, safely formatted (escaped HTML:
+                    # bold trigger name, code-styled event fields, italic timestamp).
+                    from navig.gateway.channels.telegram_html import (
+                        bold,
+                        code,
+                        html_escape,
+                    )
+
+                    tg_message = (
+                        f"🔔 {bold(html_escape(trigger.name))} fired\n"
+                        f"{code(event.type.value)} from {code(event.source)}"
+                    )
+                    if event.timestamp:
+                        tg_message += f"\n<i>{html_escape(event.timestamp)}</i>"
+                    tg_parse = "HTML"
+                telegram_send(target=str(target), message=tg_message, parse_mode=tg_parse)
                 return True, ""
             except Exception as e:
                 return False, f"Telegram notification failed: {e}"
@@ -663,9 +748,9 @@ class TriggerManager:
             ch.info(f"[TRIGGER] {message}")
             return True, ""
         elif channel == "log":
-            from navig.debug_logger import get_logger
+            from navig.debug_logger import get_debug_logger
 
-            logger = get_logger()
+            logger = get_debug_logger()
             logger.info("[TRIGGER] %s", message)
             return True, ""
         else:

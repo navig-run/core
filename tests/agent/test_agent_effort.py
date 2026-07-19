@@ -29,7 +29,6 @@ from navig.agent.effort import (
     supports_thinking,
 )
 
-
 # ---------------------------------------------------------------------------
 # EffortLevel
 # ---------------------------------------------------------------------------
@@ -196,18 +195,23 @@ class TestSupportsThinking:
 # ---------------------------------------------------------------------------
 
 class TestGetThinkingParams:
-    def test_anthropic_low_disabled(self):
+    # Current Anthropic API (Opus 4.8/4.7, Sonnet 4.6): budget_tokens 400s on
+    # Opus 4.x, so effort is expressed via output_config.effort; LOW/MEDIUM are
+    # effort-only, HIGH/MAX add adaptive thinking. (Was the old budget_tokens form.)
+    def test_anthropic_low_effort_only(self):
         params = get_thinking_params(EffortLevel.LOW, provider="anthropic")
-        assert params["thinking"]["type"] == "disabled"
+        assert params["output_config"]["effort"] == "low"
+        assert "thinking" not in params  # no thinking key at LOW
 
-    def test_anthropic_high_enabled(self):
+    def test_anthropic_high_adaptive(self):
         params = get_thinking_params(EffortLevel.HIGH, provider="anthropic")
-        assert params["thinking"]["type"] == "enabled"
-        assert params["thinking"]["budget_tokens"] == 32768
+        assert params["thinking"]["type"] == "adaptive"
+        assert params["output_config"]["effort"] == "high"
 
-    def test_anthropic_ultrathink_budget(self):
+    def test_anthropic_ultrathink_max(self):
         params = get_thinking_params(EffortLevel.ULTRATHINK, provider="anthropic")
-        assert params["thinking"]["budget_tokens"] == 131072
+        assert params["thinking"]["type"] == "adaptive"
+        assert params["output_config"]["effort"] == "max"
 
     def test_openai_low(self):
         params = get_thinking_params(EffortLevel.LOW, provider="openai")

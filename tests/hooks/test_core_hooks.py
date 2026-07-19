@@ -12,7 +12,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Fixture: fresh registry per test (avoid global state leak)
 # ---------------------------------------------------------------------------
@@ -153,13 +152,13 @@ class TestHookRegistry:
 
 class TestRegisterHook:
     def test_direct_call(self) -> None:
-        from navig.core.hooks import register_hook, clear_hooks, _registry
+        from navig.core.hooks import _registry, clear_hooks, register_hook
         h = MagicMock()
         register_hook("test:evt", h)
         assert h in _registry.get_handlers("test:evt")
 
     def test_decorator_usage(self) -> None:
-        from navig.core.hooks import register_hook, _registry
+        from navig.core.hooks import _registry, register_hook
 
         @register_hook("test:decorated")
         def handler(event):
@@ -168,7 +167,7 @@ class TestRegisterHook:
         assert handler in _registry.get_handlers("test:decorated")
 
     def test_unregister_hook(self) -> None:
-        from navig.core.hooks import register_hook, unregister_hook, _registry
+        from navig.core.hooks import _registry, register_hook, unregister_hook
         h = MagicMock()
         register_hook("test:unreg", h)
         result = unregister_hook("test:unreg", h)
@@ -218,7 +217,7 @@ class TestTriggerHook:
 
     @pytest.mark.asyncio
     async def test_returns_hook_event(self) -> None:
-        from navig.core.hooks import trigger_hook, HookEvent
+        from navig.core.hooks import HookEvent, trigger_hook
         event = await trigger_hook("x", "y")
         assert isinstance(event, HookEvent)
 
@@ -247,8 +246,9 @@ class TestTriggerHookSync:
         assert calls == [True]
 
     def test_async_handler_skipped_with_warning(self) -> None:
-        from navig.core.hooks import register_hook, trigger_hook_sync
         import logging
+
+        from navig.core.hooks import register_hook, trigger_hook_sync
         async def h(event):
             pass
         register_hook("sync:async_skip", h)
@@ -262,14 +262,14 @@ class TestTriggerHookSync:
 
 class TestUtilities:
     def test_create_hook_event(self) -> None:
-        from navig.core.hooks import create_hook_event, HookEvent
+        from navig.core.hooks import HookEvent, create_hook_event
         e = create_hook_event("memory", "search", context={"q": "test"})
         assert isinstance(e, HookEvent)
         assert e.event_key == "memory:search"
         assert e.context == {"q": "test"}
 
     def test_hook_stats_counts(self) -> None:
-        from navig.core.hooks import register_hook, hook_stats
+        from navig.core.hooks import hook_stats, register_hook
         h1 = MagicMock()
         h2 = MagicMock()
         register_hook("stats:test", h1)

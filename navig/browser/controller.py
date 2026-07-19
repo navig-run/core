@@ -1,5 +1,6 @@
 """Browser automation controller using Playwright."""
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -107,6 +108,11 @@ class BrowserController:
     def is_running(self) -> bool:
         """Check if browser is running."""
         return self._page is not None
+
+    @property
+    def page(self):
+        """The live Playwright page (for advanced use: interception, routing)."""
+        return self._page
 
     async def start(self):
         """Start browser instance."""
@@ -307,6 +313,55 @@ class BrowserController:
         await self._ensure_started()
         screenshot_bytes = await self._page.screenshot(type="jpeg", quality=quality)
         return base64.b64encode(screenshot_bytes).decode("utf-8")
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # COORDINATE INPUT + JS EVAL — raw CDP-style control (navig cdp)
+    # ──────────────────────────────────────────────────────────────────────────
+
+    async def move_mouse(self, x: float, y: float, steps: int = 1) -> bool:
+        """Move the mouse to viewport coordinates (x, y).
+
+        Uses Playwright's mouse (dispatched as CDP Input events). ``steps`` > 1
+        interpolates the movement for more human-like motion.
+        """
+        await self._ensure_started()
+        await self._page.mouse.move(x, y, steps=max(1, steps))
+        return True
+
+    async def click_xy(self, x: float, y: float, button: str = "left", clicks: int = 1) -> bool:
+        """Click at viewport coordinates (x, y).
+
+        Coordinate-based click for when no selector/ref is available (e.g. a
+        canvas, or an Electron app surface). ``button`` is left|right|middle.
+        """
+        await self._ensure_started()
+        await self._page.mouse.click(x, y, button=button, click_count=max(1, clicks))
+        return True
+
+    async def eval_js(self, expression: str) -> Any:
+        """Evaluate a JavaScript expression in the page and return the result.
+
+        The result must be JSON-serialisable (Playwright serialises it across
+        the CDP boundary). Raises on a JS error so callers can surface it.
+        """
+        await self._ensure_started()
+        return await self._page.evaluate(expression)
+
+    async def key_press(self, key: str) -> bool:
+        """Press a key or key combination on the focused element / page.
+
+        Accepts Playwright key syntax, e.g. ``"Enter"``, ``"Control+A"``,
+        ``"Escape"``. Unlike :meth:`press`, this does not target a selector.
+        """
+        await self._ensure_started()
+        await self._page.keyboard.press(key)
+        return True
+
+    async def scroll_wheel(self, delta_x: float = 0, delta_y: float = 0) -> bool:
+        """Scroll the page by a mouse-wheel delta (positive delta_y = down)."""
+        await self._ensure_started()
+        await self._page.mouse.wheel(delta_x, delta_y)
+        return True
 
     # ──────────────────────────────────────────────────────────────────────────
     # A11Y INTELLIGENCE — Phase 1+2 additions
@@ -618,6 +673,69 @@ class BrowserController:
         """Clear all cookies."""
         await self._ensure_started()
         await self._context.clear_cookies()
+
+    # ── Authenticated-session persistence + persistent scripts ────────────────
+
+    async def export_storage_state(self) -> dict[str, Any]:
+        """Export the full Playwright storage state (cookies + per-origin localStorage).
+
+        This is the serializable authenticated-session blob the vault persists so
+        auto-login can "restore, don't retype" on a later visit.
+        """
+        await self._ensure_started()
+        return await self._context.storage_state()
+
+    async def restore_storage_state(self, state: dict[str, Any]) -> None:
+        """Restore a previously-exported storage state onto the live context.
+
+        Cookies are applied immediately. localStorage is seeded via a persistent
+        init-script per origin (present on the next navigation to that origin),
+        because the context is already open — we cannot pass ``storage_state`` to
+        ``new_context()`` on an attached (CDP) browser.
+        """
+        await self._ensure_started()
+        cookies = state.get("cookies") or []
+        if cookies:
+            await self._context.add_cookies(cookies)
+        for origin in state.get("origins") or []:
+            origin_url = origin.get("origin")
+            items = origin.get("localStorage") or []
+            if not origin_url or not items:
+                continue
+            script = (
+                "(() => { try {"
+                f"  if (window.location && window.location.origin === {json.dumps(origin_url)}) {{"
+                f"    const items = {json.dumps(items)};"
+                "    for (const it of items) {"
+                "      try { window.localStorage.setItem(it.name, it.value); } catch (e) {}"
+                "    }"
+                "  }"
+                "} catch (e) {} })();"
+            )
+            await self._context.add_init_script(script)
+
+    async def add_init_script(self, script: str) -> None:
+        """Register a persistent script that runs at document-start on every page.
+
+        The real "userscript" primitive: Playwright ``add_init_script`` →
+        CDP ``Page.addScriptToEvaluateOnNewDocument``. Unlike a one-shot
+        ``eval_js``/``evaluate``, this re-runs before page scripts on every
+        navigation, in current and future pages of the context.
+        """
+        await self._ensure_started()
+        await self._context.add_init_script(script)
+
+    async def bring_to_front(self) -> bool:
+        """Raise this page's window to the foreground so the user can see it.
+
+        Best-effort — returns False if the browser refuses (e.g. headless).
+        """
+        await self._ensure_started()
+        try:
+            await self._page.bring_to_front()
+            return True
+        except Exception:  # noqa: BLE001
+            return False
 
     async def go_back(self) -> bool:
         """Navigate back."""

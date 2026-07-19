@@ -408,8 +408,12 @@ class AIClient:
                 from navig.providers import FallbackManager
 
                 self._fallback_manager = FallbackManager()
-            except ImportError:
-                pass  # optional dependency not installed; feature disabled
+            except ImportError as exc:
+                # Optional provider dependency missing, OR a provider module that fails to
+                # import. Log it (don't bare-pass) so a keyed-but-unusable provider is
+                # diagnosable under --debug; chat() then raises a message naming this failure
+                # rather than the generic "no provider" text.
+                logger.debug("provider system (FallbackManager) unavailable: %s", exc)
         return self._fallback_manager
 
     def _trim_messages_for_retry(self, messages: list, keep_recent: int = 4) -> list:
@@ -491,6 +495,26 @@ class AIClient:
         # GitHub Models — free tier via GitHub PAT
         if self.provider == "github_models":
             return await self._chat_github_models(messages, temperature, max_tokens, model=model)
+
+        # Registry providers (xai, anthropic, google, groq, cerebras, mistral, …) are
+        # selected by `_detect_provider_from_registry` but have no direct branch above.
+        # Route them through the full provider system (FallbackManager), which resolves
+        # the key from env/vault via the registry — otherwise a detected-and-keyed
+        # provider would spuriously report "No AI provider available".
+        if self.provider != "none":
+            fallback_mgr = self._get_fallback_manager()
+            if fallback_mgr:
+                return await self._chat_with_providers(
+                    fallback_mgr, messages, temperature, max_tokens
+                )
+            # Provider was detected (a key is present) but the provider system could not
+            # be loaded — surface *that* rather than telling the user to configure a
+            # provider they already configured.
+            raise RuntimeError(
+                f"Provider '{self.provider}' was selected but the provider system "
+                "(navig.providers.FallbackManager) could not be loaded — check the optional "
+                "provider dependency is installed."
+            )
 
         # No provider available
         raise RuntimeError(

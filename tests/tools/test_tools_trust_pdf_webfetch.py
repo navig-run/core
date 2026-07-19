@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.tools.trust_boundary — pure functions
 # ---------------------------------------------------------------------------
@@ -39,7 +38,7 @@ class TestWrapExternal:
 
 class TestIsExternallyWrapped:
     def test_true_for_wrapped(self):
-        from navig.tools.trust_boundary import wrap_external, is_externally_wrapped
+        from navig.tools.trust_boundary import is_externally_wrapped, wrap_external
         wrapped = wrap_external("data", source="src")
         assert is_externally_wrapped(wrapped) is True
 
@@ -54,18 +53,18 @@ class TestIsExternallyWrapped:
 
 class TestUnwrapExternal:
     def test_unwraps_correctly(self):
-        from navig.tools.trust_boundary import wrap_external, unwrap_external
+        from navig.tools.trust_boundary import unwrap_external, wrap_external
         wrapped = wrap_external("inner content", source="https://test.com")
         inner = unwrap_external(wrapped)
         assert inner == "inner content"
 
     def test_raises_for_unwrapped(self):
-        from navig.tools.trust_boundary import unwrap_external, TrustBoundaryError
+        from navig.tools.trust_boundary import TrustBoundaryError, unwrap_external
         with pytest.raises(TrustBoundaryError):
             unwrap_external("not wrapped")
 
     def test_multiline_roundtrip(self):
-        from navig.tools.trust_boundary import wrap_external, unwrap_external
+        from navig.tools.trust_boundary import unwrap_external, wrap_external
         original = "line one\nline two\nline three"
         wrapped = wrap_external(original, source="test")
         assert unwrap_external(wrapped) == original
@@ -73,7 +72,7 @@ class TestUnwrapExternal:
 
 class TestExtractSource:
     def test_extracts_url(self):
-        from navig.tools.trust_boundary import wrap_external, extract_source
+        from navig.tools.trust_boundary import extract_source, wrap_external
         wrapped = wrap_external("data", source="https://example.com")
         assert extract_source(wrapped) == "https://example.com"
 
@@ -87,6 +86,17 @@ class TestExtractSource:
 # ---------------------------------------------------------------------------
 
 class TestPdfTool:
+    @pytest.fixture(autouse=True)
+    def _stub_pdf_extraction(self):
+        # Stub the optional pypdf/PyMuPDF/OCR extraction backend so these tests
+        # verify the tool's ToolResult wrapping deterministically (the extractor
+        # itself is covered by the inbox tests).
+        with patch(
+            "navig.inbox.extract._extract_pdf",
+            return_value=("Sample extracted text.", {"pages": 1, "ocr_fallback": False}),
+        ):
+            yield
+
     def _make_tool(self):
         from navig.tools.pdf_tool import PdfTool
         return PdfTool()

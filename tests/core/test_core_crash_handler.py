@@ -9,8 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from navig.core.crash_handler import CrashHandler, _MAX_CRASH_LOGS, crash_handler
-
+from navig.core.crash_handler import _MAX_CRASH_LOGS, CrashHandler, crash_handler
 
 # ---------------------------------------------------------------------------
 # Constants

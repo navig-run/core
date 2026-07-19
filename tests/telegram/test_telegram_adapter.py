@@ -9,7 +9,6 @@ import pytest
 from navig.messaging.adapter import DeliveryStatus, InboundEvent, ResolvedTarget
 from navig.messaging.adapters.telegram_adapter import TelegramMessagingAdapter
 
-
 # ── fixtures ──────────────────────────────────────────────────
 
 

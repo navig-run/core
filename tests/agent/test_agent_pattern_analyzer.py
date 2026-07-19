@@ -7,7 +7,6 @@ import pytest
 
 from navig.agent.pattern_analyzer import PatternAnalyzer, ScoredPattern
 
-
 # ---------------------------------------------------------------------------
 # ScoredPattern dataclass
 # ---------------------------------------------------------------------------

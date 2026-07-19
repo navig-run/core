@@ -2,7 +2,7 @@
 navig/commands/deploy.py — NAVIG Deploy command group.
 
 Provides:
-  navig deploy run        — Deploy the active app to the active host
+  navig host deploy        — Deploy the active app to the active host
   navig deploy rollback   — Restore from last deploy snapshot
   navig deploy history    — Show recent deploy log
   navig deploy status     — Last deploy state + health check
@@ -312,7 +312,7 @@ def deploy_rollback(
         console.print(
             f"[red]No snapshot found[/red] for app '[cyan]{app_name}[/cyan]' on host '[cyan]{host_name}[/cyan]'."
         )
-        console.print("Run [bold]navig deploy run[/bold] first.")
+        console.print("Run [bold]navig host deploy[/bold] first.")
         raise typer.Exit(1)
 
     console.print(
@@ -585,8 +585,8 @@ def deploy_init(
     console.print("\nNext steps:")
     console.print("  1. Review and edit the generated file")
     console.print("  2. [bold]navig deploy check[/bold]   — validate config + test connectivity")
-    console.print("  3. [bold]navig deploy run --dry-run[/bold]   — preview deploy steps")
-    console.print("  4. [bold]navig deploy run[/bold]   — deploy")
+    console.print("  3. [bold]navig host deploy --dry-run[/bold]   — preview deploy steps")
+    console.print("  4. [bold]navig host deploy[/bold]   — deploy")
 
 
 @deploy_app.command("check")

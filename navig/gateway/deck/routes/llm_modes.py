@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def _get_llm_router():
     try:
-        from navig.llm_router import get_llm_router
+        from navig.llm.router import get_llm_router
 
         return get_llm_router()
     except Exception as e:
@@ -25,7 +25,7 @@ from navig.gateway.deck.routes._utils import _get_vault
 
 
 def _get_provider_key_status() -> dict:
-    from navig.llm_router import PROVIDER_ENV_KEYS, SUPPORTED_PROVIDERS
+    from navig.llm.router import PROVIDER_ENV_KEYS, SUPPORTED_PROVIDERS
 
     status = {}
     vault = _get_vault()
@@ -88,7 +88,7 @@ async def handle_deck_llm_modes_update(request: "web.Request") -> "web.Response"
     if not mode:
         return web.json_response({"error": "mode is required"}, status=400)
 
-    from navig.llm_router import CANONICAL_MODES, LLMModeRouter
+    from navig.llm.router import CANONICAL_MODES, LLMModeRouter
 
     canonical = LLMModeRouter.resolve_mode(mode)
     if canonical not in CANONICAL_MODES:

@@ -10,9 +10,9 @@ from navig.gateway.channels.task_card import (
     STATE_ICON,
     STATE_WEIGHT,
     THROTTLE_SECONDS,
+    StepState,
     TaskStep,
     TaskView,
-    StepState,
     _progress_bar,
     build_keyboard,
     make_task,
@@ -21,7 +21,6 @@ from navig.gateway.channels.task_card import (
     render_compact,
 )
 from navig.gateway.channels.utils.decorators import RateLimiter
-
 
 # ---------------------------------------------------------------------------
 # StepState enum

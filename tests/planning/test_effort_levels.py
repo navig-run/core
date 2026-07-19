@@ -16,6 +16,7 @@ from __future__ import annotations
 import pytest
 
 from navig.agent.effort import (
+    ANTHROPIC_EFFORT,
     ANTHROPIC_THINKING_BUDGET,
     DEEPSEEK_THINKING_BUDGET,
     EFFORT_ALIASES,
@@ -149,17 +150,37 @@ class TestBudgetMaps:
 class TestGetThinkingParams:
     """Provider-specific param generation."""
 
-    def test_anthropic_high(self):
+    # Anthropic's CURRENT API (Opus 4.8/4.7, Sonnet 4.6): `budget_tokens` is REMOVED
+    # and now 400s. Depth/spend is controlled by `output_config.effort` (GA, no beta
+    # header), optionally combined with adaptive thinking — see navig/agent/effort.py.
+    # These tests used to assert the OLD `thinking: {type: enabled, budget_tokens: N}`
+    # shape, so "greening" them by changing the code would have made NAVIG send a
+    # request Anthropic rejects. Re-aimed at the shipped contract instead.
+
+    def test_anthropic_high_uses_effort_plus_adaptive_thinking(self):
         params = get_thinking_params(EffortLevel.HIGH, provider="anthropic")
-        assert params == {"thinking": {"type": "enabled", "budget_tokens": 32768}}
+        assert params == {
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "high"},
+        }
 
-    def test_anthropic_low_disabled(self):
+    def test_anthropic_low_is_effort_only_no_thinking_key(self):
+        # LOW/MEDIUM stay effort-only: no `thinking` key at all (cheapest, and no
+        # thinking blocks to replay across tool turns).
         params = get_thinking_params(EffortLevel.LOW, provider="anthropic")
-        assert params == {"thinking": {"type": "disabled"}}
+        assert params == {"output_config": {"effort": "low"}}
+        assert "thinking" not in params
 
-    def test_anthropic_ultrathink(self):
+    def test_anthropic_ultrathink_uses_adaptive_thinking(self):
         params = get_thinking_params(EffortLevel.ULTRATHINK, provider="anthropic")
-        assert params["thinking"]["budget_tokens"] == 131072
+        assert params["thinking"] == {"type": "adaptive"}
+        assert params["output_config"]["effort"] == ANTHROPIC_EFFORT[EffortLevel.ULTRATHINK]
+
+    @pytest.mark.parametrize("level", list(EffortLevel))
+    def test_anthropic_never_sends_removed_budget_tokens(self, level):
+        """Regression guard: `budget_tokens` was REMOVED from Anthropic's API and 400s."""
+        params = get_thinking_params(level, provider="anthropic")
+        assert "budget_tokens" not in params.get("thinking", {})
 
     def test_openai_medium(self):
         params = get_thinking_params(EffortLevel.MEDIUM, provider="openai")
@@ -280,4 +301,9 @@ class TestCompletionRequestExtraBody:
             model="test",
             extra_body=params,
         )
-        assert req.extra_body == {"thinking": {"type": "enabled", "budget_tokens": 32768}}
+        # Current Anthropic shape (see TestGetThinkingParams): effort + adaptive
+        # thinking, never the removed `budget_tokens`.
+        assert req.extra_body == {
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "high"},
+        }

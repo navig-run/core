@@ -34,14 +34,14 @@ async def _probe(spec: str | None) -> int:
     if spec and ":" in spec:
         provider, model = spec.split(":", 1)
     else:
-        from navig.llm_router import resolve_llm
+        from navig.llm.router import resolve_llm
 
         cfg = resolve_llm(mode="small_talk")
         provider, model = cfg.provider, cfg.model
 
     provider_cfg = get_builtin_provider(provider)
     if provider_cfg is None:
-        from navig.llm_router import PROVIDER_BASE_URLS
+        from navig.llm.router import PROVIDER_BASE_URLS
 
         provider_cfg = ProviderConfig(
             name=provider,

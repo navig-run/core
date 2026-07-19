@@ -23,7 +23,6 @@ from navig.memory.embeddings import (
     get_embedding_provider,
 )
 
-
 # ──────────────────────────────────────────────────────────────────────
 # EmbeddingConfig defaults
 # ──────────────────────────────────────────────────────────────────────
@@ -233,7 +232,7 @@ class TestCachedEmbeddingProvider:
         # Write a cache file first
         vec = [0.9, 0.1, 0.0]
         import hashlib
-        key = hashlib.md5("preloaded".encode()).hexdigest()
+        key = hashlib.md5(b"preloaded").hexdigest()
         cache_file = tmp_path / "embeddings_cache.json"
         cache_file.write_text(json.dumps({key: vec}))
 

@@ -1,4 +1,4 @@
-"""Tests for navig.llm_routing_types — dataclasses, protocols, factory."""
+"""Tests for navig.llm.types — dataclasses, protocols, factory."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import pytest
 
 class TestModelSelection:
     def _make(self, **kwargs):
-        from navig.llm_routing_types import ModelSelection
+        from navig.llm.types import ModelSelection
 
         defaults = dict(provider_name="openai", model_name="gpt-4o")
         defaults.update(kwargs)
@@ -27,7 +27,7 @@ class TestModelSelection:
 
     def test_defaults(self):
         from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
-        from navig.llm_routing_types import ModelSelection
+        from navig.llm.types import ModelSelection
 
         sel = ModelSelection(provider_name="x", model_name="m")
         assert sel.temperature == _DEFAULT_TEMPERATURE
@@ -71,7 +71,7 @@ class TestModelSelection:
 
 class TestLLMResult:
     def _make(self, **kwargs):
-        from navig.llm_routing_types import LLMResult
+        from navig.llm.types import LLMResult
 
         defaults = dict(content="hello")
         defaults.update(kwargs)
@@ -103,7 +103,7 @@ class TestLLMResult:
         assert r.total_tokens == 0
 
     def test_with_selection(self):
-        from navig.llm_routing_types import LLMResult, ModelSelection
+        from navig.llm.types import LLMResult, ModelSelection
 
         sel = ModelSelection(provider_name="openai", model_name="gpt-4o")
         r = LLMResult(content="x", selection=sel)
@@ -117,7 +117,7 @@ class TestLLMResult:
 
 class TestLLMChunk:
     def test_defaults(self):
-        from navig.llm_routing_types import LLMChunk
+        from navig.llm.types import LLMChunk
 
         chunk = LLMChunk(content="delta")
         assert chunk.content == "delta"
@@ -127,7 +127,7 @@ class TestLLMChunk:
         assert chunk.raw == {}
 
     def test_all_fields(self):
-        from navig.llm_routing_types import LLMChunk
+        from navig.llm.types import LLMChunk
 
         chunk = LLMChunk(
             content="x",
@@ -147,7 +147,7 @@ class TestLLMChunk:
 
 class TestRoutingContext:
     def test_defaults(self):
-        from navig.llm_routing_types import RoutingContext
+        from navig.llm.types import RoutingContext
 
         ctx = RoutingContext()
         assert ctx.user_input == ""
@@ -164,7 +164,7 @@ class TestRoutingContext:
         assert ctx.metadata == {}
 
     def test_custom(self):
-        from navig.llm_routing_types import RoutingContext
+        from navig.llm.types import RoutingContext
 
         ctx = RoutingContext(
             user_input="hello",
@@ -180,7 +180,7 @@ class TestRoutingContext:
         assert ctx.timeout == 30.0
 
     def test_messages_mutable_default(self):
-        from navig.llm_routing_types import RoutingContext
+        from navig.llm.types import RoutingContext
 
         a = RoutingContext()
         b = RoutingContext()
@@ -195,7 +195,7 @@ class TestRoutingContext:
 
 class TestProtocolChecks:
     def test_mode_router_protocol_satisfied_by_duck(self):
-        from navig.llm_routing_types import ModeRouterProtocol
+        from navig.llm.types import ModeRouterProtocol
 
         class FakeRouter:
             def resolve_mode(self, hint: str) -> str:
@@ -207,7 +207,7 @@ class TestProtocolChecks:
         assert isinstance(FakeRouter(), ModeRouterProtocol)
 
     def test_mode_router_protocol_not_satisfied_without_methods(self):
-        from navig.llm_routing_types import ModeRouterProtocol
+        from navig.llm.types import ModeRouterProtocol
 
         class Incomplete:
             def resolve_mode(self, hint: str) -> str:
@@ -217,7 +217,7 @@ class TestProtocolChecks:
         assert not isinstance(Incomplete(), ModeRouterProtocol)
 
     def test_model_router_protocol_satisfied(self):
-        from navig.llm_routing_types import (
+        from navig.llm.types import (
             ModelRouterProtocol,
             ModelSelection,
             RoutingContext,
@@ -230,7 +230,7 @@ class TestProtocolChecks:
         assert isinstance(FakeModelRouter(), ModelRouterProtocol)
 
     def test_provider_factory_protocol_satisfied(self):
-        from navig.llm_routing_types import LLMClientProtocol, ProviderFactoryProtocol
+        from navig.llm.types import LLMClientProtocol, ProviderFactoryProtocol
 
         class FakeFactory:
             def get_client(self, provider_name: str, **kwargs) -> LLMClientProtocol:
@@ -246,7 +246,7 @@ class TestProtocolChecks:
 
 class TestUnifiedProviderFactory:
     def test_get_client_caches_result(self):
-        from navig.llm_routing_types import UnifiedProviderFactory
+        from navig.llm.types import UnifiedProviderFactory
 
         factory = UnifiedProviderFactory()
         mock_client = MagicMock()
@@ -259,7 +259,7 @@ class TestUnifiedProviderFactory:
         m.assert_called_once()
 
     def test_different_providers_not_shared(self):
-        from navig.llm_routing_types import UnifiedProviderFactory
+        from navig.llm.types import UnifiedProviderFactory
 
         factory = UnifiedProviderFactory()
         clients = iter([MagicMock(), MagicMock()])
@@ -272,7 +272,7 @@ class TestUnifiedProviderFactory:
 
     @pytest.mark.asyncio
     async def test_close_all_clears_cache(self):
-        from navig.llm_routing_types import UnifiedProviderFactory
+        from navig.llm.types import UnifiedProviderFactory
 
         factory = UnifiedProviderFactory()
         mock_client = AsyncMock()
@@ -286,7 +286,7 @@ class TestUnifiedProviderFactory:
 
     @pytest.mark.asyncio
     async def test_close_all_swallows_errors(self):
-        from navig.llm_routing_types import UnifiedProviderFactory
+        from navig.llm.types import UnifiedProviderFactory
 
         factory = UnifiedProviderFactory()
         bad_client = AsyncMock()
@@ -306,21 +306,21 @@ class TestUnifiedProviderFactory:
 
 class TestGetProviderFactory:
     def test_returns_singleton(self):
-        import navig.llm_routing_types as m
+        import navig.llm.types as m
 
         # Reset singleton for isolation
         m._factory = None
-        from navig.llm_routing_types import get_provider_factory
+        from navig.llm.types import get_provider_factory
 
         f1 = get_provider_factory()
         f2 = get_provider_factory()
         assert f1 is f2
 
     def test_singleton_thread_safe(self):
-        import navig.llm_routing_types as m
+        import navig.llm.types as m
 
         m._factory = None
-        from navig.llm_routing_types import get_provider_factory
+        from navig.llm.types import get_provider_factory
 
         results = []
 

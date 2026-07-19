@@ -7,11 +7,10 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 # routing/trace.py
 # ──────────────────────────────────────────────────────────────────────────────
-from navig.routing.trace import RouteTrace, log_trace, recent_traces
+from navig.llm.routing.trace import RouteTrace, log_trace, recent_traces
 
 
 class TestRouteTrace:
@@ -58,14 +57,14 @@ class TestRouteTrace:
 class TestLogTrace:
     def test_log_creates_file(self, tmp_path, monkeypatch):
         log_file = tmp_path / "logs" / "router_traces.jsonl"
-        monkeypatch.setattr("navig.routing.trace.TRACE_LOG_PATH", log_file)
+        monkeypatch.setattr("navig.llm.routing.trace.TRACE_LOG_PATH", log_file)
         rt = RouteTrace(trace_id="t1", mode="coding")
         log_trace(rt)
         assert log_file.exists()
 
     def test_log_writes_valid_json(self, tmp_path, monkeypatch):
         log_file = tmp_path / "logs" / "router_traces.jsonl"
-        monkeypatch.setattr("navig.routing.trace.TRACE_LOG_PATH", log_file)
+        monkeypatch.setattr("navig.llm.routing.trace.TRACE_LOG_PATH", log_file)
         rt = RouteTrace(trace_id="abc", mode="summarize", confidence=0.8)
         log_trace(rt)
         line = log_file.read_text(encoding="utf-8").strip()
@@ -74,14 +73,14 @@ class TestLogTrace:
 
     def test_log_appends_multiple(self, tmp_path, monkeypatch):
         log_file = tmp_path / "logs" / "router_traces.jsonl"
-        monkeypatch.setattr("navig.routing.trace.TRACE_LOG_PATH", log_file)
+        monkeypatch.setattr("navig.llm.routing.trace.TRACE_LOG_PATH", log_file)
         log_trace(RouteTrace(trace_id="1"))
         log_trace(RouteTrace(trace_id="2"))
         lines = log_file.read_text(encoding="utf-8").strip().split("\n")
         assert len(lines) == 2
 
     def test_log_never_raises_on_io_error(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("navig.routing.trace.TRACE_LOG_PATH", Path("/::invalid::"))
+        monkeypatch.setattr("navig.llm.routing.trace.TRACE_LOG_PATH", Path("/::invalid::"))
         # Should not raise
         log_trace(RouteTrace(trace_id="x"))
 
@@ -89,7 +88,7 @@ class TestLogTrace:
 class TestRecentTraces:
     def test_no_file_returns_empty(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "navig.routing.trace.TRACE_LOG_PATH", tmp_path / "absent.jsonl"
+            "navig.llm.routing.trace.TRACE_LOG_PATH", tmp_path / "absent.jsonl"
         )
         assert recent_traces() == []
 
@@ -97,7 +96,7 @@ class TestRecentTraces:
         log_file = tmp_path / "traces.jsonl"
         for i in range(5):
             log_file.open("a").write(json.dumps({"trace_id": str(i)}) + "\n")
-        monkeypatch.setattr("navig.routing.trace.TRACE_LOG_PATH", log_file)
+        monkeypatch.setattr("navig.llm.routing.trace.TRACE_LOG_PATH", log_file)
         result = recent_traces(limit=10)
         assert len(result) == 5
 
@@ -105,14 +104,14 @@ class TestRecentTraces:
         log_file = tmp_path / "traces.jsonl"
         for i in range(20):
             log_file.open("a").write(json.dumps({"trace_id": str(i)}) + "\n")
-        monkeypatch.setattr("navig.routing.trace.TRACE_LOG_PATH", log_file)
+        monkeypatch.setattr("navig.llm.routing.trace.TRACE_LOG_PATH", log_file)
         result = recent_traces(limit=5)
         assert len(result) == 5
 
     def test_returns_dicts(self, tmp_path, monkeypatch):
         log_file = tmp_path / "traces.jsonl"
         log_file.write_text(json.dumps({"mode": "coding"}) + "\n", encoding="utf-8")
-        monkeypatch.setattr("navig.routing.trace.TRACE_LOG_PATH", log_file)
+        monkeypatch.setattr("navig.llm.routing.trace.TRACE_LOG_PATH", log_file)
         result = recent_traces()
         assert isinstance(result[0], dict)
 

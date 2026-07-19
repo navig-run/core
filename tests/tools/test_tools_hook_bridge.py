@@ -6,7 +6,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import navig.tools.hook_bridge as bridge_mod
-from navig.tools.hook_bridge import ToolHookBridge, _make_after_handler, _make_before_handler, _make_denied_handler, _make_error_handler
+from navig.tools.hook_bridge import (
+    ToolHookBridge,
+    _make_after_handler,
+    _make_before_handler,
+    _make_denied_handler,
+    _make_error_handler,
+)
 from navig.tools.hooks import ToolEvent, ToolExecutionEvent
 
 

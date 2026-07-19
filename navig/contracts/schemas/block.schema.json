@@ -1,0 +1,168 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://navig.run/schemas/block.schema.json",
+  "title": "NAVIG Block manifest (BLOCK.md frontmatter)",
+  "description": "Machine spec for an installable, executable, verifiable outcome. Frontmatter is authoritative for execution; the markdown body is the human how-to article.",
+  "type": "object",
+  "required": ["id", "spec_version", "name", "version", "category", "license"],
+  "additionalProperties": true,
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "spec_version": { "type": "integer", "const": 1 },
+    "name": { "type": "string" },
+    "version": { "type": "string" },
+    "category": { "type": "string" },
+    "license": { "type": "string" },
+    "description": { "type": "string" },
+    "author": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "allowed-tools": { "type": ["array", "string"] },
+    "target": { "type": "string", "enum": ["local"], "default": "local" },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key"],
+        "properties": {
+          "key": { "type": "string" },
+          "type": { "type": "string", "enum": ["string", "int", "number", "boolean", "path", "enum", "secret"] },
+          "label": { "type": "string" },
+          "required": { "type": "boolean" },
+          "default": {},
+          "pattern": { "type": "string" },
+          "values": { "type": "array", "items": { "type": "string" } },
+          "must_exist": { "type": "boolean" },
+          "vault": { "type": "string" }
+        }
+      }
+    },
+    "requires": {
+      "type": "object",
+      "description": "Preconditions the runner enforces before applying: tools on PATH, plugins installed, and detect probes passing. Every declared key is enforced — there are no reserved/ignored keys (a requirement the gate silently ignores is worse than none). Express an OS-permission or any other environment precondition as a `detect` probe.",
+      "additionalProperties": false,
+      "properties": {
+        "tools": {
+          "type": "array",
+          "description": "External binaries that must be on PATH. A bare name, or a mapping carrying the exact install command.",
+          "items": { "$ref": "#/$defs/requirement" }
+        },
+        "plugins": {
+          "type": "array",
+          "description": "NAVIG plugins that must be installed. A bare name, or a mapping carrying the exact install command.",
+          "items": { "$ref": "#/$defs/requirement" }
+        },
+        "detect": {
+          "type": "array",
+          "description": "Runtime availability probes — read-only argv commands run before a real apply (never in dry-run) and by `navig block doctor`.",
+          "items": {
+            "type": "object",
+            "required": ["run"],
+            "properties": {
+              "label": { "type": "string", "description": "Human name for what this checks" },
+              "run": { "type": "array", "items": { "type": "string" }, "description": "argv (shell=false) — a read-only availability check" },
+              "expect_exit": { "type": "integer", "default": 0 },
+              "expect_output": { "type": "string", "description": "Optional stdout substring that must be present" },
+              "hint": { "type": "string", "description": "How to satisfy this probe when it fails" }
+            }
+          }
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "enum": ["materialize", "command", "skill", "prompt", "instruction", "block"] },
+          "safety": { "type": "string", "description": "Descriptive only; the runner computes effective risk from capabilities." },
+          "capabilities": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "e.g. exec:steamcmd, network:steamcommunity.com, filesystem:write:workdir, secret:steam.session, ssh, sudo, publish"
+          },
+          "argv": { "type": "array", "items": { "type": "string" }, "description": "command: executed with shell=false; never a shell string" },
+          "cwd": { "type": "string" },
+          "timeout_seconds": { "type": "integer" },
+          "network": { "type": "string", "enum": ["none", "required"] },
+          "secret_env": { "type": "object", "description": "{ENV_VAR: inputs.key} — the ONLY channel for secret values" },
+          "capture": { "type": "object", "description": "{out_key: regex} captured from stdout" },
+          "src": { "type": "string", "description": "materialize: block-relative source file" },
+          "content": { "type": "string", "description": "materialize: inline templated content" },
+          "dest": { "type": "string", "description": "materialize: templated destination (path-confined)" },
+          "skill": { "type": "string" },
+          "text": { "type": "string" },
+          "use": { "type": "string", "description": "block: child block id" },
+          "inputs": { "type": "object" },
+          "verify": { "type": "object" }
+        }
+      }
+    },
+    "verify": {
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["none", "file_exists", "command"] },
+        "level": { "type": "string", "enum": ["self-check", "external-check"] },
+        "argv": { "type": "array", "items": { "type": "string" } },
+        "cwd": { "type": "string" },
+        "timeout_seconds": { "type": "integer" },
+        "path": { "type": "string" },
+        "expect": {
+          "type": "object",
+          "properties": {
+            "exit_code": { "type": "integer" },
+            "output_contains": { "type": "string" },
+            "output_regex": { "type": "string" }
+          }
+        }
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key"],
+        "properties": {
+          "key": { "type": "string" },
+          "type": { "type": "string" },
+          "from": { "type": "string" }
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "properties": {
+        "sign": { "type": "boolean", "description": "device signing lands in Stage 3" },
+        "redact": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "marketplace": {
+      "type": "object",
+      "description": "Present only when paid; omit for free. Mirrors the community-registry convention.",
+      "properties": {
+        "pricing_model": { "type": "string", "enum": ["free", "tier", "buy_once"] },
+        "included_in_tier": { "type": "string" },
+        "price_cents": { "type": "integer" },
+        "currency": { "type": "string" }
+      }
+    }
+  },
+  "$defs": {
+    "requirement": {
+      "description": "A required tool or plugin: either a bare name, or a mapping that carries the EXACT command which installs it. Prefer the mapping — a generic fallback hint (`pip install <name>`) is often wrong, and a diagnostic that prints a command which does not work is worse than one that prints none.",
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "required": ["name"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "install": { "type": "string", "description": "The exact command that satisfies this requirement, e.g. `npm install -g agent-device@latest`. When the install is genuinely platform-specific (steamcmd: apt / brew / a vendor zip), point at the authoritative source instead of inventing a command that is wrong on most machines." }
+          }
+        }
+      ]
+    }
+  }
+}

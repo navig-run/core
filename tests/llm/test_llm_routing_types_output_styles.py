@@ -16,14 +16,13 @@ from pathlib import Path
 
 import pytest
 
-from navig.llm_routing_types import (
+from navig.llm.types import (
     LLMChunk,
     LLMResult,
     ModelSelection,
     RoutingContext,
 )
-from navig.output_styles import _parse_style_file
-
+from navig.ui.output_styles import _parse_style_file
 
 # ---------------------------------------------------------------------------
 # ModelSelection

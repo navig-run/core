@@ -34,6 +34,38 @@ def _get_config():
     return get_config_manager()
 
 
+def _humanize_fallback_reason(raw: str | None) -> str:
+    """Readable phrase for a rotation notice — the ONE canonical humanizer shared
+    with the chat boundary and deck API (navig.llm.fallback_policy.describe_category),
+    so every surface describes a rotation the same way."""
+    from navig.llm.fallback_policy import describe_category
+
+    return describe_category(raw)
+
+
+def _client_platform_context() -> tuple[str, str]:
+    """Return ``(client_os, client_arch)`` for OS-correct AI hints — never raises.
+
+    This is *optional, informative* context (it just helps the model suggest
+    OS-appropriate commands), exactly like the process probe below it — so it must
+    fail as gracefully. ``platform.release()``/``version()`` can shell out via
+    ``platform._syscmd_ver`` and, on odd locales/code pages, raise; that must never
+    crash ``navig ask``. Each field degrades to ``"unknown"`` independently so a
+    release() hiccup doesn't also lose the architecture.
+    """
+    try:
+        client_os = f"{platform.system()} {platform.release()}".strip() or "unknown"
+    except Exception as exc:  # noqa: BLE001 — OS label is a non-critical hint
+        logger.debug("Client OS detection failed: %s", exc)
+        client_os = "unknown"
+    try:
+        client_arch = platform.machine() or "unknown"
+    except Exception as exc:  # noqa: BLE001 — arch label is a non-critical hint
+        logger.debug("Client arch detection failed: %s", exc)
+        client_arch = "unknown"
+    return client_os, client_arch
+
+
 def _format_openrouter_missing_key_error(config_manager, server_name: str) -> str:
     """Build host-aware guidance for missing OpenRouter key in ask flow."""
     ai_cfg = (config_manager.global_config or {}).get("ai") or {}
@@ -46,9 +78,11 @@ def _format_openrouter_missing_key_error(config_manager, server_name: str) -> st
         ),
     ]
     return (
-        f"OpenRouter API key not configured for active host '{server_name}'. "
-        f"Checked sources: {', '.join(source_checks)}. "
-        "Set one with: navig config set ai.api_key <key>"
+        f"No routable AI connection, and no OpenRouter fallback key for host '{server_name}'. "
+        f"Recommended: connect a provider with [bold]navig connect login claude-max[/bold] "
+        f"(or [bold]navig connect add openai-api[/bold]), then [bold]navig connect test[/bold]. "
+        f"Checked OpenRouter sources: {', '.join(source_checks)}. "
+        "Or set a fallback key with: navig config set ai.api_key <key>"
     )
 
 
@@ -125,7 +159,7 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
         raise typer.Exit(2)
 
     # Gather context
-    ch.dim("The Schema's engines are analyzing...\n")
+    ch.dim("NAVIG is thinking…\n")
 
     if synthetic_local_context:
         server_config = {
@@ -150,13 +184,15 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
 
     remote_ops = RemoteOperations(config_manager)
 
-    # Always inject client platform so the AI gives OS-correct commands.
+    # Always inject client platform so the AI gives OS-correct commands. Optional,
+    # informative context — degrade gracefully, never crash the ask over it.
     root_directory = Path.home().anchor or os.path.abspath(os.sep)
+    client_os, client_arch = _client_platform_context()
     context: dict = {
         "server": server_config,
         "directory": root_directory,
-        "client_os": f"{platform.system()} {platform.release()}",
-        "client_arch": platform.machine(),
+        "client_os": client_os,
+        "client_arch": client_arch,
     }
 
     # Gather running processes (optional, can fail gracefully)
@@ -229,6 +265,17 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
                     raise
         else:
             response = ask_fn(question, context, model_override=model)
+
+        # Surface an account/model rotation (e.g. a capped Claude Max account →
+        # a sibling subscription) so it's never a silent swap.
+        _fb = getattr(ai, "last_fallback", None)
+        if _fb:
+            _to = _fb.get("to") or _fb.get("model") or "another account"
+            _reason = _humanize_fallback_reason(_fb.get("reason"))
+            ch.warning(
+                f"Primary connection was {_reason} — answered with {_to} instead.",
+                "Rotated automatically; run 'navig connect list' to see your accounts.",
+            )
 
         # Render as markdown using console_helper
         ch.print_markdown(response)
@@ -569,13 +616,18 @@ def ai_providers(
         if test:
             # Test provider connection
             provider_name = test.lower()
-            api_key, source = auth.resolve_auth(provider_name)
-            if not api_key:
-                console.print(f"[red]✗ No API key configured for {provider_name}[/red]")
-                console.print(f"  Add one with: navig ai providers --add {provider_name}")
+            from navig.providers.inference import resolve_provider_credential
+
+            api_key, oauth_token = resolve_provider_credential(provider_name)
+            if not api_key and not oauth_token:
+                console.print(f"[red]✗ No credential configured for {provider_name}[/red]")
+                console.print(
+                    f"  Add one with: navig ai providers --add {provider_name}  (or `navig connect`)"
+                )
                 return
 
-            console.print(f"[dim]Testing {provider_name} (key from: {source})...[/dim]")
+            _src = "subscription/connection" if oauth_token else "key store"
+            console.print(f"[dim]Testing {provider_name} (from: {_src})...[/dim]")
 
             # Quick test - try to list models or make a tiny request
             import asyncio
@@ -588,7 +640,7 @@ def ai_providers(
                 return
 
             try:
-                client = create_client(config, api_key=api_key, timeout=10)
+                client = create_client(config, api_key=api_key, oauth_token=oauth_token, timeout=10)
                 # Make a minimal request to test auth
                 from navig.providers import CompletionRequest, Message
 
@@ -625,10 +677,26 @@ def ai_providers(
         table.add_column("Source")
         table.add_column("Models", style="dim")
 
+        # Providers backed by a routable connection (e.g. claude-max OAuth
+        # subscription) count as configured even with no API key in the key store.
+        try:
+            from navig.providers.connect import list_connections
+            from navig.providers.inference import _provider_of
+
+            _conn_providers = {
+                _provider_of(c) for c in list_connections() if c.get("is_routable")
+            }
+        except Exception:  # noqa: BLE001
+            _conn_providers = set()
+
         for name, config in BUILTIN_PROVIDERS.items():
             api_key, source = auth.resolve_auth(name)
-            key_status = "✓ configured" if api_key else "✗ not set"
-            key_style = "green" if api_key else "red"
+            if api_key:
+                key_status, key_style = "✓ configured", "green"
+            elif name in _conn_providers:
+                key_status, key_style, source = "✓ subscription", "green", (source or "connection")
+            else:
+                key_status, key_style = "✗ not set", "red"
 
             model_count = len(config.models)
             models_str = f"{model_count} models" if model_count else "dynamic"

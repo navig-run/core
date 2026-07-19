@@ -39,12 +39,35 @@ async def handle_api_events(request: "web.Request") -> "web.Response":
     events.  Falls back to heartbeat-only streaming when the event queue is
     absent so the connection still stays open.
     """
+    # Telegram-Mini-App lockdown: when deck.telegram_only is on, the event stream
+    # is no longer open. EventSource can't set headers, so the client passes the
+    # Telegram initData as the `?init_data=` query param; validate it against the
+    # bot token (same HMAC as the deck REST surface). Reject otherwise.
+    from navig.gateway.deck.auth import (
+        deck_auth_max_age,
+        deck_bot_token,
+        deck_telegram_only,
+        validate_init_data,
+    )
+    from navig.gateway.middleware import cors_headers_for
+
+    if deck_telegram_only():
+        init_data = request.query.get("init_data", "")
+        token = deck_bot_token()
+        result = validate_init_data(init_data, token, deck_auth_max_age()) if (init_data and token) else None
+        if not (result and result.get("user")):
+            logger.warning("SSE /api/events unauthorized: telegram_only requires valid initData")
+            return web.json_response(
+                {"error": "unauthorized", "detail": "Valid Telegram WebApp initData required"},
+                status=401,
+                headers=cors_headers_for(request),
+            )
+
     # CORS headers MUST be on the StreamResponse before prepare() flushes
     # the wire. The post-handler CORS middleware can't reach them on streaming
     # responses (headers are gone by the time the handler returns), which
     # caused browser-blocked SSE after ~5s when the Relay was served from
     # https://relay.navig.run and the daemon from a *.trycloudflare.com tunnel.
-    from navig.gateway.middleware import cors_headers_for
     response = web.StreamResponse(
         headers={
             "Content-Type": "text/event-stream",

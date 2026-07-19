@@ -11,27 +11,21 @@ import sys
 # Conditional imports based on platform
 if sys.platform == "win32":
     try:
-        from .ahk import (  # noqa: F401
-            AHKAdapter,
-            AHKError,
-            AHKExecutionError,
-            AHKNotFoundError,
-            AHKSafetyError,
-        )
+        # `ahk` exports AHKAdapter + AHKStatus; the old AHKError/AHKExecutionError/
+        # AHKNotFoundError/AHKSafetyError hierarchy was removed (nothing imports it). Those
+        # dead names made this whole import raise ImportError, so even on Windows the package
+        # exported NOTHING (`__all__ = []`). Import only what exists.
+        from .ahk import AHKAdapter, AHKStatus  # noqa: F401
 
-        __all__ = [
-            "AHKAdapter",
-            "AHKError",
-            "AHKNotFoundError",
-            "AHKExecutionError",
-            "AHKSafetyError",
-        ]
+        __all__ = ["AHKAdapter", "AHKStatus"]
 
-        # Also export AI module if available
+        # Also export the AI generator if its optional deps are installed. `AHKScriptArchive`
+        # no longer exists in ahk_ai, so importing it alongside AHKAIGenerator used to fail
+        # the whole block and drop AHKAIGenerator too.
         try:
-            from .ahk_ai import AHKAIGenerator, AHKScriptArchive  # noqa: F401
+            from .ahk_ai import AHKAIGenerator  # noqa: F401
 
-            __all__.extend(["AHKAIGenerator", "AHKScriptArchive"])
+            __all__.append("AHKAIGenerator")
         except ImportError:
             pass  # optional dependency not installed; feature disabled
 

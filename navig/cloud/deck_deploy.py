@@ -33,12 +33,12 @@ from typing import Any
 import requests
 
 from navig.cloud.lighthouse_deploy import (
+    _TIMEOUT,
     CF_API,
     COMPAT_DATE,
     DeployError,
     _headers,
     _result,
-    _TIMEOUT,
     enable_workers_dev,
     get_workers_subdomain,
     resolve_account_id,

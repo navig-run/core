@@ -12,7 +12,6 @@ from navig.mcp.tools.inventory import (
     register,
 )
 
-
 # ── helpers ──────────────────────────────────────────────────
 
 

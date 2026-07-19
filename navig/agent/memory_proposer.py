@@ -45,14 +45,14 @@ def propose_from_command_patterns(
     """
     try:
         from navig.agent.pattern_analyzer import PatternAnalyzer
-        from navig.agent.pattern_observer import DEFAULT_DB_PATH, PatternObserver
+        from navig.agent.pattern_observer import PatternObserver
         from navig.memory.key_facts import KeyFact, KeyFactStore
     except ImportError as exc:
         logger.debug("pattern proposer unavailable: %s", exc)
         return []
 
     try:
-        records = PatternObserver(DEFAULT_DB_PATH).get_recent(limit=record_limit)
+        records = PatternObserver().get_recent(limit=record_limit)
     except Exception as exc:  # noqa: BLE001
         logger.debug("pattern log read failed: %s", exc)
         return []

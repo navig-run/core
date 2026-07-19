@@ -7,7 +7,6 @@ import pytest
 
 from navig.contracts.execution_receipt import ExecutionReceipt, ReceiptOutcome
 
-
 # ── helpers ──────────────────────────────────────────────────
 
 

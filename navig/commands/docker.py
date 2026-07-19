@@ -117,6 +117,7 @@ def docker_logs(
 
     if result.returncode != 0:
         ch.error(f"Failed to get logs for container: {container}")
+        raise _t.Exit(1)
 
 
 def docker_exec(
@@ -222,7 +223,7 @@ def docker_compose(
     ]
     if action not in valid_actions:
         ch.error(f"Invalid action: {action}", f"Valid actions: {', '.join(valid_actions)}")
-        return
+        raise _t.Exit(1)
 
     import shlex
 
@@ -274,6 +275,7 @@ def docker_compose(
         ch.success(f"✓ Docker compose {action} completed")
     else:
         ch.error(f"Docker compose {action} failed")
+        raise _t.Exit(1)
 
 
 def docker_inspect(
@@ -312,6 +314,7 @@ def docker_inspect(
 
     if result.returncode != 0:
         ch.error(f"Failed to inspect container: {container}")
+        raise _t.Exit(1)
 
 
 def docker_restart(
@@ -362,6 +365,7 @@ def docker_restart(
         ch.success(f"✓ Container {container} restarted")
     else:
         ch.error(f"Failed to restart container: {container}")
+        raise _t.Exit(1)
 
 
 def docker_stop(container: str, options: dict[str, Any], timeout: int = 10):
@@ -397,6 +401,7 @@ def docker_stop(container: str, options: dict[str, Any], timeout: int = 10):
         ch.success(f"✓ Container {container} stopped")
     else:
         ch.error(f"Failed to stop container: {container}")
+        raise _t.Exit(1)
 
 
 def docker_start(container: str, options: dict[str, Any]):
@@ -420,6 +425,7 @@ def docker_start(container: str, options: dict[str, Any]):
         ch.success(f"✓ Container {container} started")
     else:
         ch.error(f"Failed to start container: {container}")
+        raise _t.Exit(1)
 
 
 def docker_stats(options: dict[str, Any], container: str | None = None, no_stream: bool = True):

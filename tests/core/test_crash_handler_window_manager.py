@@ -12,7 +12,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # CrashHandler
 # ---------------------------------------------------------------------------
-from navig.core.crash_handler import CrashHandler, _MAX_CRASH_LOGS
+from navig.core.crash_handler import _MAX_CRASH_LOGS, CrashHandler
 
 
 class TestCrashHandlerDebugMode:

@@ -1,5 +1,11 @@
 """
-Cross-Platform Automation Workflow Engine
+Cross-Platform Automation Workflow Engine  (System B — desktop GUI automation)
+
+⚠️ This is the agent's "hands": click/type/window actions via platform adapters
+(schema: action/args/platform/capture/if). It is NOT the `navig task`/`flow`
+command-sequence system (`navig/commands/workflow.py` = System A, superseded by
+Blocks). Do not migrate this into Blocks — the agent depends on it.
+See `docs/blocks-vs-workflows.md`.
 """
 
 import os
@@ -19,7 +25,7 @@ except ImportError:
 
 from navig.console_helper import error, info, warning
 from navig.core.safe_eval import safe_eval
-from navig.platform.paths import config_dir
+from navig.platform.paths import workflows_dir
 
 
 @dataclass
@@ -41,15 +47,38 @@ class Workflow:
 
 class WorkflowEngine:
     def __init__(self):
-        self._navig_root = Path(__file__).parent.parent.parent
-        self._workflows_dir = self._navig_root / "workflows"
-        self._workflows_dir.mkdir(exist_ok=True)
         self._workflow_cache: dict[str, tuple[float, Workflow]] = {}
+        self._workflows_dir_override: Path | None = None
 
         # Lazy load adapters
         self._ahk = None
         self._linux = None
         self._macos = None
+
+    @property
+    def _workflows_dir(self) -> Path:
+        """Where a user's automation workflows live: ``<config_dir>/workflows``.
+
+        This used to be ``Path(__file__).parent.parent.parent / "workflows"`` — the
+        directory *containing* the ``navig`` package. In a checkout that is ``core/``; in a
+        real install it is **site-packages**. And ``__init__`` did ``.mkdir()`` on it, so
+        merely CONSTRUCTING this engine (six call sites do, including the agent's action
+        registry) created a junk ``workflows/`` folder inside site-packages — or raised
+        PermissionError on any install where site-packages is not writable.
+
+        It was also simply the wrong place: nothing has ever written a workflow there, so
+        the directory was always empty, and ``load_workflow`` only ever found anything via
+        its ``config_dir()`` fallback. Resolved lazily via a property, never at import or
+        construction, so ``NAVIG_CONFIG_DIR`` isolation is honoured (the class of bug swept
+        in #189). Assignable (`engine._workflows_dir = tmp` in tests) via the override.
+        """
+        if self._workflows_dir_override is not None:
+            return self._workflows_dir_override
+        return workflows_dir()
+
+    @_workflows_dir.setter
+    def _workflows_dir(self, value: Path) -> None:
+        self._workflows_dir_override = value
 
     @property
     def ahk(self):
@@ -88,11 +117,12 @@ class WorkflowEngine:
 
     def load_workflow(self, name: str) -> Workflow | None:
         """Load workflow from YAML file."""
-        # Check standard locations
+        # The third entry used to be a distinct fallback, because _workflows_dir pointed at
+        # the package's parent directory. Now that it resolves to <config_dir>/workflows —
+        # the only place workflows have ever actually lived — it IS that fallback.
         possible_paths = [
             self._workflows_dir / f"{name}.yaml",
             self._workflows_dir / f"{name}.yml",
-            config_dir() / "workflows" / f"{name}.yaml",
         ]
 
         target_path = None
@@ -138,7 +168,7 @@ class WorkflowEngine:
             error(f"Failed to load workflow {name}: {e}")
             return None
 
-    def execute_workflow(self, workflow: Workflow, variables: dict[str, str] = None):
+    def execute_workflow(self, workflow: Workflow, variables: dict[str, str] | None = None):
         """Execute a cross-platform workflow."""
         info(f"Executing workflow: {workflow.name}")
 
@@ -206,8 +236,12 @@ class WorkflowEngine:
 
         return current_vars
 
-    def _execute_action(self, action: str, args: dict[str, Any]) -> Any:
+    def _execute_action(self, action: str | None, args: dict[str, Any]) -> Any:
         """Dispatch action to appropriate adapter."""
+        if not action:
+            warning("Workflow step is missing an 'action' key — skipping.")
+            return None
+
         # Platform-independent actions
         if action == "wait":
             time.sleep(float(args.get("seconds", 1.0)))

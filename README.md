@@ -18,9 +18,11 @@
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey?style=flat-square" alt="Platform">
 </p>
 
-> [!WARNING]
-> **NAVIG is experimental software under active development.**
-> APIs, CLI commands, and config formats may change between releases. Not yet recommended for production-critical environments without review.
+> [!NOTE]
+> **NAVIG 3.x is a stable release.** The CLI contract (`navig <resource> <action>`) is stable
+> and changes follow [semantic versioning](https://semver.org). Review the [CHANGELOG](CHANGELOG.md)
+> before upgrading across major versions. As with any tool that operates live infrastructure, use
+> read-only inspection and dry runs first in production-critical environments.
 
 ---
 
@@ -29,7 +31,7 @@
 NAVIG CLI uses [Nerd Font](https://www.nerdfonts.com/) glyphs for Powerline-style status bars and icons. Install once per machine:
 
 ```powershell
-pwsh scripts/Install-NerdFont.ps1
+pwsh navig/builtin/scripts/Install-NerdFont.ps1
 ```
 
 | Platform | Recommended terminal | Additional step |
@@ -124,8 +126,8 @@ NAVIG is not a configuration management tool (not Ansible). It is not a deployme
 | **MCP integration** | Expose tools and resources to AI editors and compatible clients |
 | **Daemon & gateway** | Background service with Telegram and Matrix channel support |
 | **Telegram Manager** | Full-account Telegram organizer (MTProto): search/move/forward/dedupe + a business-conversation AI catcher, emoji-AI, deletion alerts, and rich-message replies — owner-only ([docs](docs/TELEGRAM_MANAGER.md) · [cheatsheet](docs/TELEGRAM_CHEATSHEET.md)) |
-| **GitHub mirroring** | `navig github` — search, backup, and clone GitHub repos (flat or nested) via [farmore](https://github.com/miztizm/farmore), token from the vault |
-| **TikTok** | `navig tiktok` — download videos, extract metadata + top comments, and AI-brief any link (via [rapidok](https://github.com/miztizm/rapidok) + yt-dlp) |
+| **GitHub mirroring** | `navig github` — search, backup, and clone GitHub repos (flat or nested), token from the vault |
+| **TikTok** | `navig tiktok` — download videos, extract metadata + top comments, and AI-brief any link (via yt-dlp) |
 
 ---
 

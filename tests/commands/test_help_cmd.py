@@ -4,8 +4,8 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
-import typer
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from navig.commands.help_cmd import run_help

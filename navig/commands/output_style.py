@@ -29,7 +29,7 @@ output_style_app = typer.Typer(
 @output_style_app.command("list")
 def style_list() -> None:
     """List all discovered output styles (project, user, and built-in)."""
-    from navig.output_styles import load_output_styles
+    from navig.ui.output_styles import load_output_styles
 
     styles = load_output_styles()
     if not styles:
@@ -41,7 +41,7 @@ def style_list() -> None:
         return
 
     try:
-        from navig.output_styles import get_active_style
+        from navig.ui.output_styles import get_active_style
 
         active = get_active_style()
         active_name = active.name if active else None
@@ -69,7 +69,7 @@ def style_list() -> None:
 
 def _active_name_safe() -> str | None:
     try:
-        from navig.output_styles import get_active_style
+        from navig.ui.output_styles import get_active_style
 
         s = get_active_style()
         return s.name if s else None
@@ -82,7 +82,7 @@ def style_use(
     name: Annotated[str, typer.Argument(help="Name of the style to activate.")],
 ) -> None:
     """Activate an output style by name."""
-    from navig.output_styles import load_output_styles, set_active_style
+    from navig.ui.output_styles import load_output_styles, set_active_style
 
     available = {s.name: s for s in load_output_styles()}
     if name not in available:
@@ -99,7 +99,7 @@ def style_use(
 @output_style_app.command("off")
 def style_off() -> None:
     """Clear the active output style (use default AI behaviour)."""
-    from navig.output_styles import set_active_style
+    from navig.ui.output_styles import set_active_style
 
     set_active_style(None)
     ch.success("Output style cleared — using default AI response format.")
@@ -110,7 +110,7 @@ def style_show(
     name: Annotated[str, typer.Argument(help="Name of the style to display.")],
 ) -> None:
     """Print a style's prompt text and metadata."""
-    from navig.output_styles import load_output_styles
+    from navig.ui.output_styles import load_output_styles
 
     available = {s.name: s for s in load_output_styles()}
     style = available.get(name)

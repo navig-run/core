@@ -50,6 +50,15 @@ ELECT_PROMOTE = "elect_promote"  # winner claims the leader role
 ELECT_YIELD = "elect_yield"  # current leader gracefully steps down
 ELECT_ACK = "elect_ack"  # peer acknowledges yield / takeover offer
 
+# Leader's periodic state-snapshot broadcast — imported by navig.mesh.sync_manager,
+# whose `_leader_tick` has always done `from navig.mesh.discovery import ELECT_SYNC`
+# against a name that was never defined here. That ImportError is swallowed by the
+# broadcast's `except Exception`, so the send silently did nothing. It is NOT yet routed
+# on receive (that is Phase 2, together with actually constructing a SyncManager — see
+# sync_manager's module docstring); this constant exists so the send path is correct and
+# the two halves cannot drift apart again.
+ELECT_SYNC = "elect_sync"  # leader broadcasts a state-snapshot hash
+
 
 def _build_packet(
     registry: NodeRegistry,
@@ -251,6 +260,27 @@ class MeshDiscovery:
 
         logger.info("[mesh.discovery] Stopped")
 
+    async def announce(self) -> bool:
+        """On-demand discovery nudge — multicast one extra HELLO right now.
+
+        Peers that hear it upsert this node immediately and reply with their
+        own HELLO (see ``_handle_packet``), so the local registry converges
+        within ~1 heartbeat interval instead of waiting for the next beat.
+        No new packet types, LAN-only — the same ``hello`` the loops use.
+
+        Safe to call at any time: returns ``False`` (never raises) when the
+        discovery loop is not running or the send socket is unavailable —
+        every mesh op degrades gracefully to local.
+        """
+        if not self._running or self._sender is None:
+            return False
+        try:
+            await self._send("hello")
+            return True
+        except Exception as e:  # noqa: BLE001 — degrade, never hard-fail
+            logger.debug("[mesh.discovery] announce failed: %s", e)
+            return False
+
     # ───────────────────────── Send ────────────────────────────────────
 
     async def _send(self, ptype: str) -> None:
@@ -387,6 +417,11 @@ class MeshDiscovery:
                 except Exception as e:
                     if self._running:
                         logger.debug("[mesh.discovery] Recv error: %s", e)
+                        # Back off before retrying: a receiver socket that errors
+                        # *instantly* (closed/broken) would otherwise spin this
+                        # loop at 100% CPU. TimeoutError is already throttled by
+                        # settimeout(1.0), so only unexpected errors pause here.
+                        await asyncio.sleep(0.5)
         except asyncio.CancelledError:
             pass  # task cancelled; expected during shutdown
 
@@ -460,8 +495,12 @@ class MeshDiscovery:
             except Exception:  # noqa: BLE001
                 pass
 
-        # Reply with our own HELLO so the new peer knows about us immediately
-        if ptype == "hello":
+        # Reply with our own HELLO so a NEW peer knows about us immediately.
+        # Only for previously-unknown peers: an unconditional reply makes two
+        # live nodes ping-pong hellos at socket speed (observed ~166 pkt/s in a
+        # loopback two-node test — a LAN multicast storm). Known peers already
+        # learn about us through the heartbeat loop.
+        if ptype == "hello" and not existing:
             await self._send("hello")
 
         # Route election packets to the election manager

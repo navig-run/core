@@ -16,7 +16,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # navig/ui/bars.py — _make_bar
 # ---------------------------------------------------------------------------
-
 from navig.ui.bars import _EMPTY_RICH, _EMPTY_SAFE, _FILL_RICH, _FILL_SAFE, _make_bar
 
 

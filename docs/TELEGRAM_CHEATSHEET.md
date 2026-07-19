@@ -58,10 +58,10 @@ access, never a command). Set `both` to let a counterparty ping, `off` to disabl
 `tool` ∈ `translate · summarize · context · explain · ocr · transcribe · download`.
 `who`: **owner** (only you) · **both** (you + counterparty, still sandboxed) · **off**.
 
-## 🎵 TikTok (rapidok + yt-dlp)
+## 🎵 TikTok (yt-dlp)
 
 ```bash
-navig tiktok download <url> [-o DIR] [--watermark]   # organized download (rapidok)
+navig tiktok download <url> [-o DIR] [--watermark]   # organized download
 navig tiktok profile  <@user> [--max N] [-o DIR]     # whole profile
 navig tiktok info     <url>                          # creator · country · description · stats
 navig tiktok comments <url> [--top N]                # top comments by likes

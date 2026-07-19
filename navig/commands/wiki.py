@@ -20,12 +20,11 @@ from pathlib import Path
 from typing import Any
 
 import typer
-import yaml
 
 from navig import console_helper as ch
 from navig.config import ConfigManager
-from navig.core.yaml_io import atomic_write_text
-from navig.platform.paths import config_dir
+from navig.core.yaml_io import atomic_write_text, safe_load_yaml
+from navig.platform.paths import wiki_dir
 
 # Wiki folder structure
 WIKI_STRUCTURE = {
@@ -145,7 +144,7 @@ def get_wiki_path(config: ConfigManager) -> Path:
 
 def get_global_wiki_path() -> Path:
     """Get the global wiki directory path."""
-    return config_dir() / "wiki"
+    return wiki_dir()
 
 
 def ensure_wiki_initialized(wiki_path: Path) -> bool:
@@ -248,12 +247,15 @@ def init_wiki(wiki_path: Path, force: bool = False) -> bool:
 
 
 def get_wiki_config(wiki_path: Path) -> dict[str, Any]:
-    """Load wiki configuration."""
+    """Load wiki configuration, tolerating a missing or corrupt config file.
+
+    A hand-edited or damaged ``.meta/config.yaml`` must not crash the wiki
+    commands that read it — ``safe_load_yaml`` returns ``None`` on missing/empty/
+    unreadable, and a non-mapping is treated as "no config" (defaults apply).
+    """
     config_file = wiki_path / ".meta" / "config.yaml"
-    if config_file.exists():
-        with open(config_file, encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    return {}
+    data = safe_load_yaml(config_file)
+    return data if isinstance(data, dict) else {}
 
 
 def list_wiki_pages(

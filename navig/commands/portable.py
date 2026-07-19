@@ -14,7 +14,7 @@ def portable_create(
     """Create a portable NAVIG bundle."""
     from navig import console_helper as ch
 
-    ch.warn("navig portable create is not yet implemented in this build.")
+    ch.warning("navig portable create is not yet implemented in this build.")
 
 
 @portable_app.command("validate")
@@ -22,4 +22,4 @@ def portable_validate(path: str = typer.Argument(".", help="Path to portable bun
     """Validate a portable NAVIG bundle."""
     from navig import console_helper as ch
 
-    ch.warn("navig portable validate is not yet implemented in this build.")
+    ch.warning("navig portable validate is not yet implemented in this build.")

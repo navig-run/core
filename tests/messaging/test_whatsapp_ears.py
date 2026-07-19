@@ -8,7 +8,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/gateway/channels/whatsapp.py
 # ---------------------------------------------------------------------------
@@ -49,6 +48,7 @@ class TestWhatsAppChannelConfigInit:
     def test_env_api_key_used(self):
         with patch.dict("os.environ", {"WHATSAPP_BRIDGE_API_KEY": "mykey"}):
             from navig.gateway.channels import whatsapp as wa_mod
+
             # Force using the env by providing no explicit api_key
             from navig.gateway.channels.whatsapp import WhatsAppChannelConfig
             cfg = WhatsAppChannelConfig()

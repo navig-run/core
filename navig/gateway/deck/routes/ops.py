@@ -10,10 +10,28 @@ try:
 except ImportError:
     web = None
 
+from navig.core.coerce import coerce_bool
+
 logger = logging.getLogger(__name__)
 
 # Module-level start time for cheap uptime calculation
 _START_TS = time.monotonic()
+
+# Persisted ops toggles and their defaults. This is the ONE source of truth so the
+# snapshot (handle_deck_ops) and the flip (handle_deck_ops_toggle) can't disagree —
+# they diverged before: the snapshot defaulted auto_continue / auto_dispatch to
+# False (OFF) while the flip defaulted them to True, so the first "turn on" click
+# computed `not True → False` and nothing changed (the toggle needed two clicks).
+# `power` is intentionally NOT here — it is live daemon status ("we are answering
+# the request"), not a stored preference, so writing it is a no-op.
+_TOGGLE_DEFAULTS: dict[str, bool] = {
+    "smart_ai": True,
+    "auto_continue": False,
+    "auto_dispatch": False,
+}
+
+# Every writable toggle: the stored prefs above plus `power` (status; no-op write).
+_ALLOWED_TOGGLES: frozenset[str] = frozenset({"power", *_TOGGLE_DEFAULTS})
 
 
 def _fmt_uptime(seconds: float) -> str:
@@ -51,10 +69,10 @@ async def handle_deck_ops(request: "web.Request") -> "web.Response":
 
     toggles = {
         "power": True,  # daemon is running (we are answering the request)
-        "smart_ai": bool(ai_cfg.get("smart_ai", True)),
-        "auto_continue": bool(ai_cfg.get("auto_continue", False)),
+        "smart_ai": bool(ai_cfg.get("smart_ai", _TOGGLE_DEFAULTS["smart_ai"])),
+        "auto_continue": bool(ai_cfg.get("auto_continue", _TOGGLE_DEFAULTS["auto_continue"])),
         # Auto-dispatch critical+safe actions without a human in the loop.
-        "auto_dispatch": bool(ai_cfg.get("auto_dispatch", False)),
+        "auto_dispatch": bool(ai_cfg.get("auto_dispatch", _TOGGLE_DEFAULTS["auto_dispatch"])),
     }
 
     # ── Session ───────────────────────────────────────────────────────────────
@@ -154,25 +172,25 @@ async def handle_deck_ops_toggle(request: "web.Request") -> "web.Response":
     toggle = str(body.get("toggle", "")).strip()
     value = body.get("value")  # optional; if absent, flip current
 
-    _ALLOWED = {"power", "smart_ai", "auto_continue", "auto_dispatch"}
-    if toggle not in _ALLOWED:
+    if toggle not in _ALLOWED_TOGGLES:
         return web.json_response(
             {"ok": False, "error": f"unknown toggle '{toggle}'"}, status=400
         )
 
+    default = _TOGGLE_DEFAULTS.get(toggle, True)
     cfg = _get_config_manager()
     if cfg:
         try:
             ai_cfg = cfg.get("ai") or {}
-            current = bool(ai_cfg.get(toggle, True))
-            new_val = (not current) if value is None else bool(value)
+            current = coerce_bool(ai_cfg.get(toggle, default), default)
+            new_val = (not current) if value is None else coerce_bool(value, default)
             cfg.set(f"ai.{toggle}", new_val)
             return web.json_response({"ok": True, "toggle": toggle, "value": new_val})
         except Exception as exc:
             logger.debug("ops toggle error: %s", exc)
 
-    # Graceful degradation — return success with the requested value
-    new_val = True if value is None else bool(value)
+    # Graceful degradation — echo the requested value (no stored state to flip here).
+    new_val = default if value is None else coerce_bool(value, default)
     return web.json_response({"ok": True, "toggle": toggle, "value": new_val})
 
 

@@ -22,6 +22,19 @@ if TYPE_CHECKING:
 logger = get_debug_logger()
 
 
+def _format_account_rotation_notice(fb: dict[str, Any]) -> str:
+    """One plain-text line telling the chat user NAVIG answered on a different
+    account/model (a capped Claude Max subscription → a sibling). Plain text (no
+    markdown) so it renders under any Telegram parse mode. Reason phrasing is the
+    shared canonical one (navig.llm.fallback_policy.describe_category) so chat, the
+    CLI, and the deck API all describe a rotation identically."""
+    from navig.llm.fallback_policy import describe_category
+
+    to = str(fb.get("to") or "another account").strip()
+    why = describe_category(fb.get("reason"))
+    return f"↻ Primary account was {why} — answered with {to}."
+
+
 class ChannelRouter:
     """
     Routes messages from channels to agents.
@@ -241,6 +254,14 @@ class ChannelRouter:
                 agent_lang = getattr(agent, "_last_detected_language", "")
                 if agent_lang and agent_lang != last_detected_language:
                     metadata["_updated_language"] = agent_lang
+                # Surface an account rotation (e.g. a capped Claude Max account →
+                # a sibling subscription) at the chat boundary — programmatic
+                # agent-to-agent callers (coordinator/delegate) invoke
+                # run_agentic directly and never pass through here, so only
+                # user-facing chat replies get the notice.
+                _acct_fb = getattr(agent, "_last_account_fallback", None)
+                if _acct_fb:
+                    response = f"{response}\n\n{_format_account_rotation_notice(_acct_fb)}"
                 return response
         except Exception as e:
             logger.error("Conversational agent error: %s", e)
@@ -298,6 +319,14 @@ class ChannelRouter:
         if hasattr(self, "_conv_agents"):
             self._conv_agents.clear()
             logger.debug("ConversationalAgent cache flushed")
+            # Tear down any per-chat browser sessions those agents owned so we
+            # don't leak Chromium. Idle-GC is the backstop if this is skipped.
+            try:
+                from navig.agent.tools.browser_session import close_all
+
+                close_all()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("browser close_all on flush failed: %s", exc)
 
     async def warmup(self) -> None:
         """Pre-pay the conversational cold start so the FIRST real message is fast.
@@ -375,21 +404,25 @@ class ChannelRouter:
             pass  # Non-critical — never block message routing
 
     async def _broadcast_status(self, session_key: str, message: str):
-        """Broadcast status update to session."""
-        # This will send real-time updates via WebSocket
+        """Broadcast status update to session.
+
+        Goes through ``ws_broadcast.broadcast_ws`` so per-connection topic
+        subscriptions (``{"action": "subscribe", "topic": …}`` on ``/ws``) are
+        honored: unsubscribed connections still get everything (backward
+        compatible), subscribed ones only get matching topics.
+        """
         try:
-            if hasattr(self.gateway, "ws_connections"):
-                for ws in self.gateway.ws_connections:
-                    try:
-                        await ws.send_json(
-                            {
-                                "type": "status",
-                                "session": session_key,
-                                "message": message,
-                            }
-                        )
-                    except Exception:  # noqa: BLE001
-                        pass  # best-effort; failure is non-critical
+            from navig.gateway.ws_broadcast import broadcast_ws
+
+            await broadcast_ws(
+                self.gateway,
+                {
+                    "type": "status",
+                    "session": session_key,
+                    "message": message,
+                },
+                topic="status",
+            )
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 

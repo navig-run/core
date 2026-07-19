@@ -336,7 +336,9 @@ class SessionManager:
     async def _summarize_messages(self, messages: list[dict]) -> str:
         """Generate AI summary of messages."""
         try:
-            from navig.ai import ask_ai
+            # `ask_ai` never existed in navig.ai; the module function is
+            # `ask_ai_with_context(prompt, ..., model=...)`, which takes the same model arg.
+            from navig.ai import ask_ai_with_context
 
             # Build text to summarize
             text = "\n".join(
@@ -353,7 +355,7 @@ Conversation:
 Summary:"""
 
             summary = await asyncio.get_running_loop().run_in_executor(
-                None, lambda: ask_ai(prompt, model="fast")
+                None, lambda: ask_ai_with_context(prompt, model="fast")
             )
 
             return summary.strip()

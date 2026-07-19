@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -68,39 +69,53 @@ class VaultStore:
         self.vault_dir = vault_dir
         self._db_path = vault_dir / self.DB_FILE
         self._conn: sqlite3.Connection | None = None
+        # ONE sqlite connection is shared by every thread (check_same_thread=
+        # False) and sqlite transaction state is CONNECTION-global — so all
+        # access must serialize behind this re-entrant lock. Without it,
+        # parallel readers (e.g. a council fan-out resolving credentials from
+        # 5 threads at once) interleave each other's BEGIN..COMMIT windows
+        # ("cannot start a transaction within a transaction") and collide on
+        # the connection's cached statements (SQLITE_MISUSE: "bad parameter
+        # or other API misuse").
+        self._lock = threading.RLock()
 
     # ── Connection ──────────────────────────────────────────────────────────
 
     def _connect(self) -> sqlite3.Connection:
-        if self._conn is None:
-            self.vault_dir.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(
-                str(self._db_path),
-                check_same_thread=False,
-                isolation_level=None,  # autocommit; we use explicit transactions
-            )
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys=ON")
-            conn.executescript(_CREATE_SQL)
-            # Add last_used_at column if upgrading from older schema
-            try:
-                conn.execute("ALTER TABLE vault_items ADD COLUMN last_used_at TEXT")
-            except sqlite3.OperationalError:
-                pass  # Column already exists
-            self._conn = conn
-        return self._conn
+        with self._lock:
+            if self._conn is None:
+                self.vault_dir.mkdir(parents=True, exist_ok=True)
+                conn = sqlite3.connect(
+                    str(self._db_path),
+                    check_same_thread=False,
+                    isolation_level=None,  # autocommit; we use explicit transactions
+                )
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA foreign_keys=ON")
+                conn.executescript(_CREATE_SQL)
+                # Add last_used_at column if upgrading from older schema
+                try:
+                    conn.execute("ALTER TABLE vault_items ADD COLUMN last_used_at TEXT")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+                self._conn = conn
+            return self._conn
 
     @contextmanager
     def _tx(self) -> Iterator[sqlite3.Connection]:
-        conn = self._connect()
-        conn.execute("BEGIN")
-        try:
-            yield conn
-            conn.execute("COMMIT")
-        except Exception:
-            conn.execute("ROLLBACK")
-            raise
+        # Hold the store lock for the WHOLE transaction: BEGIN..COMMIT is
+        # connection-global state, so another thread must not slip its own
+        # statement (or BEGIN) into this window.
+        with self._lock:
+            conn = self._connect()
+            conn.execute("BEGIN")
+            try:
+                yield conn
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
 
     # ── CRUD ────────────────────────────────────────────────────────────────
 
@@ -141,14 +156,16 @@ class VaultStore:
 
     def get(self, label: str) -> VaultItem | None:
         """Retrieve an item by label (exact match)."""
-        conn = self._connect()
-        row = conn.execute("SELECT * FROM vault_items WHERE label = ?", (label,)).fetchone()
+        with self._lock:
+            conn = self._connect()
+            row = conn.execute("SELECT * FROM vault_items WHERE label = ?", (label,)).fetchone()
         return self._row_to_item(row) if row else None
 
     def get_by_id(self, item_id: str) -> VaultItem | None:
         """Retrieve an item by its UUID."""
-        conn = self._connect()
-        row = conn.execute("SELECT * FROM vault_items WHERE id = ?", (item_id,)).fetchone()
+        with self._lock:
+            conn = self._connect()
+            row = conn.execute("SELECT * FROM vault_items WHERE id = ?", (item_id,)).fetchone()
         return self._row_to_item(row) if row else None
 
     def list(
@@ -157,7 +174,6 @@ class VaultStore:
         provider: str | None = None,
     ) -> list[VaultItem]:
         """List items, optionally filtered by kind and/or provider."""
-        conn = self._connect()
         clauses: list[str] = []
         params: list[object] = []
         if kind is not None:
@@ -167,17 +183,22 @@ class VaultStore:
             clauses.append("provider = ?")
             params.append(provider)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-        rows = conn.execute(f"SELECT * FROM vault_items {where} ORDER BY label", params).fetchall()
+        with self._lock:
+            conn = self._connect()
+            rows = conn.execute(
+                f"SELECT * FROM vault_items {where} ORDER BY label", params
+            ).fetchall()
         return [self._row_to_item(r) for r in rows]
 
     def search(self, query: str) -> list[VaultItem]:
         """Full-text search over label and provider fields."""
-        conn = self._connect()
         pat = f"%{query}%"
-        rows = conn.execute(
-            "SELECT * FROM vault_items WHERE label LIKE ? OR provider LIKE ? ORDER BY label",
-            (pat, pat),
-        ).fetchall()
+        with self._lock:
+            conn = self._connect()
+            rows = conn.execute(
+                "SELECT * FROM vault_items WHERE label LIKE ? OR provider LIKE ? ORDER BY label",
+                (pat, pat),
+            ).fetchall()
         return [self._row_to_item(r) for r in rows]
 
     def delete(self, label: str) -> bool:
@@ -188,11 +209,12 @@ class VaultStore:
 
     def count(self, provider: str | None = None) -> int:
         """Total number of items in the vault, optionally filtered by provider."""
-        if provider:
-            return self._connect().execute(
-                "SELECT COUNT(*) FROM vault_items WHERE provider = ?", (provider,)
-            ).fetchone()[0]
-        return self._connect().execute("SELECT COUNT(*) FROM vault_items").fetchone()[0]
+        with self._lock:
+            if provider:
+                return self._connect().execute(
+                    "SELECT COUNT(*) FROM vault_items WHERE provider = ?", (provider,)
+                ).fetchone()[0]
+            return self._connect().execute("SELECT COUNT(*) FROM vault_items").fetchone()[0]
 
     # ── Audit log ────────────────────────────────────────────────────────────
 
@@ -200,10 +222,11 @@ class VaultStore:
         """Update last_used_at for an item (non-transactional best-effort)."""
         try:
             now = datetime.now(timezone.utc).isoformat()
-            self._connect().execute(
-                "UPDATE vault_items SET last_used_at = ? WHERE id = ?",
-                (now, item_id),
-            )
+            with self._lock:
+                self._connect().execute(
+                    "UPDATE vault_items SET last_used_at = ? WHERE id = ?",
+                    (now, item_id),
+                )
         except Exception:  # noqa: BLE001
             pass  # Non-critical; do not surface errors on usage tracking
 
@@ -226,22 +249,32 @@ class VaultStore:
 
     def get_audit(self, item_id: str) -> list[dict]:
         """Return audit log for a specific item, newest first."""
-        rows = (
-            self._connect()
-            .execute(
-                "SELECT * FROM vault_audit WHERE item_id = ? ORDER BY ts DESC",
-                (item_id,),
+        with self._lock:
+            rows = (
+                self._connect()
+                .execute(
+                    "SELECT * FROM vault_audit WHERE item_id = ? ORDER BY ts DESC",
+                    (item_id,),
+                )
+                .fetchall()
             )
-            .fetchall()
-        )
         return [dict(r) for r in rows]
 
     # ── Lifecycle ────────────────────────────────────────────────────────────
 
     def close(self) -> None:
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+        with self._lock:
+            if self._conn:
+                # Flush the WAL into the main DB before closing so a later connection
+                # (e.g. the next process/test) always sees every committed write —
+                # without this, rapid open/close cycles can leave writes stranded in
+                # the -wal file and a fresh connection reads a stale DB.
+                try:
+                    self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                except Exception:  # noqa: BLE001
+                    pass
+                self._conn.close()
+                self._conn = None
 
     def db_path(self) -> Path:
         return self._db_path

@@ -409,7 +409,7 @@ class PlanExecuteAgent:
     async def _llm_call(self, system: str, user_message: str) -> str:
         """Make a single LLM call and return the text content."""
         try:
-            from navig.llm_generate import run_llm
+            from navig.llm.generate import run_llm
             result = await asyncio.to_thread(
                 run_llm,
                 user_message,

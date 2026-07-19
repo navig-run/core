@@ -318,8 +318,9 @@ def get_debug_logger() -> logging.Logger:
         logger.setLevel(logging.DEBUG)
         try:
             from navig.config import get_config_manager
+            from navig.platform.paths import debug_log_path
 
-            log_path = get_config_manager().base_dir / "debug.log"
+            log_path = debug_log_path()
             log_path.parent.mkdir(parents=True, exist_ok=True)
             fh = RotatingFileHandler(
                 log_path,

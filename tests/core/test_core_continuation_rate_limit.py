@@ -4,29 +4,29 @@ Batch 79: navig/core/continuation.py, navig/core/rate_limit_tracker.py
 from __future__ import annotations
 
 import time
-import pytest
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # core/continuation.py
 # ---------------------------------------------------------------------------
 from navig.core.continuation import (
-    normalize_profile_name,
     ContinuationPolicy,
-    policy_from_context,
-    policy_to_context,
-    merge_policy,
+    apply_busy_suppression,
+    busy_window_seconds,
     classify_continuation_state,
+    consume_skip,
+    decision_sensitivity_for_profile,
+    get_busy_suppression,
     is_decision_point,
     is_decision_point_for_profile,
-    decision_sensitivity_for_profile,
-    suppression_windows_for_profile,
-    busy_window_seconds,
-    apply_busy_suppression,
-    get_busy_suppression,
-    should_auto_continue,
-    consume_skip,
     mark_continued,
+    merge_policy,
+    normalize_profile_name,
+    policy_from_context,
+    policy_to_context,
+    should_auto_continue,
+    suppression_windows_for_profile,
 )
 
 
@@ -226,12 +226,12 @@ class TestMarkContinuedAndConsume:
 from navig.core.rate_limit_tracker import (
     RateLimitBucket,
     RateLimitState,
-    parse_rate_limit_headers,
-    format_rate_limit_display,
-    format_rate_limit_compact,
+    _bar,
     _fmt_count,
     _fmt_seconds,
-    _bar,
+    format_rate_limit_compact,
+    format_rate_limit_display,
+    parse_rate_limit_headers,
 )
 
 

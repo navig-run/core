@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.personas.contracts — PersonaConfig, normalize_persona_name, validate_persona_name
 # ---------------------------------------------------------------------------

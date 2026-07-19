@@ -86,6 +86,7 @@ def test_coerce_bool_default():
 
 def test_parse_reg_path_hkcu():
     import winreg
+
     from navig.mcp.tools.windows import _parse_reg_path
 
     hive, subkey = _parse_reg_path(r"HKCU:\Software\MyApp")
@@ -95,6 +96,7 @@ def test_parse_reg_path_hkcu():
 
 def test_parse_reg_path_hklm():
     import winreg
+
     from navig.mcp.tools.windows import _parse_reg_path
 
     hive, subkey = _parse_reg_path(r"HKLM:\SOFTWARE\MyApp")
@@ -157,6 +159,7 @@ def test_tool_process_list_returns_processes():
 
 def test_tool_registry_get_returns_value():
     import winreg
+
     from navig.mcp.tools.windows import _tool_registry_get
 
     with patch("winreg.OpenKey") as mock_open, \

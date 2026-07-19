@@ -204,7 +204,7 @@ def test_user_show_exception_handled():
 
     with (
         patch("navig.config.ConfigManager", side_effect=Exception("no config")),
-        patch("navig.console_helper.warn", create=True),
+        patch("navig.console_helper.warning"),
     ):
         result = runner.invoke(user_app, ["show"])
     assert result.exit_code == 0

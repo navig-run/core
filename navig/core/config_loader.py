@@ -104,11 +104,16 @@ def _load_yaml_recursive(path: Path, seen_paths: set[Path], depth: int = 0) -> A
 
     seen_paths.add(path)
 
-    with open(path, encoding="utf-8") as f:
-        try:
-            data = yaml.safe_load(f) or {}
-        except yaml.YAMLError as e:
-            raise ConfigLoaderError(f"YAML error in {path}: {e}") from e
+    # Retry transient OS-level read failures (Windows: a sharing violation while
+    # another process os.replace()s this very file, an antivirus holding it open).
+    # A plain open() here surfaced as "config is empty" — and the next save then wrote
+    # that emptiness back over everything. See yaml_io.read_text_retrying.
+    from navig.core.yaml_io import read_text_retrying
+
+    try:
+        data = yaml.safe_load(read_text_retrying(path)) or {}
+    except yaml.YAMLError as e:
+        raise ConfigLoaderError(f"YAML error in {path}: {e}") from e
 
     # Process the loaded data structure
     return _process_includes(data, path.parent, seen_paths, depth)
@@ -132,8 +137,9 @@ def _process_includes(data: Any, base_dir: Path, seen_paths: set[Path], depth: i
                 if not inc_path.exists():
                     raise FileNotFoundError(f"Included file not found: {inc_path}")
 
-                # Recurse into included file
-                content = _load_yaml_recursive(inc_path, seen_paths.copy(), depth + 1)
+                # Recurse into included file, sharing the same seen_paths so
+                # circular includes like A→B→A are properly detected.
+                content = _load_yaml_recursive(inc_path, seen_paths, depth + 1)
 
                 if not isinstance(content, dict):
                     raise ConfigLoaderError(f"Included file {inc_path} must be a dictionary")

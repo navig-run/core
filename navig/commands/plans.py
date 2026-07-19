@@ -144,6 +144,7 @@ def plans_run(
     space: str | None = typer.Option(None, "--space", help="Space tag for the entry"),
     path: str | None = typer.Option(None, "--path", "-p", help="Workspace path"),
 ) -> None:
+    """Deprecated alias for `plans add` — add a goal to a plan."""
     typer.secho("`plans run` is deprecated. Use `plans add`.", fg=typer.colors.YELLOW)
     plans_add(goal=goal, file=file, space=space, path=path)
 
@@ -155,6 +156,7 @@ def plans_add(
     space: str | None = typer.Option(None, "--space", help="Space tag for the entry"),
     path: str | None = typer.Option(None, "--path", "-p", help="Workspace path"),
 ) -> None:
+    """Add a goal to a plan file (defaults to DEV_PLAN.md)."""
     plans_dir = _plans_dir(path)
     _ensure_baseline_files(plans_dir)
 
@@ -189,6 +191,7 @@ def plans_add(
 def plans_briefing(
     path: str | None = typer.Option(None, "--path", "-p", help="Workspace path"),
 ) -> None:
+    """Print a daily briefing of active work across all spaces."""
     cwd = Path(path).resolve() if path else Path.cwd()
     lines = ["Daily spaces briefing:"]
     lines.extend(build_spaces_briefing_lines(cwd=cwd, max_items=5))
@@ -200,6 +203,7 @@ def plans_next(
     space: str | None = typer.Option(None, "--space", help="Specific space to inspect"),
     path: str | None = typer.Option(None, "--path", "-p", help="Workspace path"),
 ) -> None:
+    """Show the best next action across spaces (or a specific space)."""
     cwd = Path(path).resolve() if path else Path.cwd()
     action = (
         get_space_next_action(normalize_space_name(space), cwd=cwd)
@@ -226,6 +230,7 @@ def plans_sync(
     backend: str = typer.Option("cli_llm", "--backend", "-b", help="Backend caller metadata"),
     path: str | None = typer.Option(None, "--path", "-p", help="Workspace path"),
 ) -> None:
+    """Route .navig/plans/inbox files into the right space plans."""
     from navig.agents.inbox_router import InboxRouterAgent, execute_plan, list_inbox_files
 
     plans_dir = _plans_dir(path)
@@ -338,6 +343,7 @@ def plans_update(
     file: str = typer.Argument("CURRENT_PHASE.md", help="Plan markdown file to update"),
     path: str | None = typer.Option(None, "--path", "-p", help="Workspace path"),
 ) -> None:
+    """Recompute a plan file's completion from its checklist."""
     plans_dir = _plans_dir(path)
     _ensure_baseline_files(plans_dir)
     target = _target_plan_file(plans_dir, file)

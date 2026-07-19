@@ -461,7 +461,7 @@ class TelegramVoiceMixin:
             import asyncio
             import logging
 
-            from navig.llm_generate import run_llm
+            from navig.llm.generate import run_llm
 
             prompt = f"Extract or generate a 2-4 word title for this text. Reply ONLY with the title without any quotes or punctuation.\n\nText: {text[:1000]}"
 

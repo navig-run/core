@@ -21,10 +21,15 @@ Design
   time (or constructed inline for call-site flexibility).
 - :func:`resolve_host` resolves the URL's hostname to its canonical IPv4/IPv6
   addresses via ``socket.getaddrinfo`` and checks each against the blocked
-  ranges.  DNS is resolved before the request so that the validated IP is the
-  same one the HTTP library uses (no TOCTOU via mid-request DNS rebinding).
+  ranges.  Validation runs before any request, and :func:`safe_fetch`
+  re-validates every redirect hop.  NOTE: the httpx client re-resolves DNS at
+  connect time, so this does **not** by itself defend against *active* DNS
+  rebinding (a hostile resolver handing a public IP to the validator and a
+  private IP to the client a moment later); pinning the connection to the
+  validated IP would be required for that, and is a known follow-up.
 - :func:`safe_fetch` wraps ``httpx.AsyncClient`` (imported lazily to keep
-  startup cost zero when HTTP is not needed).
+  startup cost zero when HTTP is not needed) and follows redirects itself so
+  each hop must pass the SSRF policy.
 
 Blocked ranges when ``allow_private_network=False`` (the default)
 ------------------------------------------------------------------
@@ -206,9 +211,18 @@ def resolve_host(hostname: str) -> list[str]:
 async def safe_fetch(
     url: str,
     policy: SsrfPolicy | None = None,
+    *,
+    max_redirects: int = 5,
     **httpx_kwargs,
 ):
     """Validate *url* and perform an async GET request via ``httpx``.
+
+    Every URL — the initial one AND each redirect hop — is re-validated with
+    :func:`check_url` before it is fetched, so an ``http://ok.example`` that
+    ``302``s to ``http://169.254.169.254/`` (cloud metadata) is blocked, not
+    followed.  Redirects are therefore handled here, not by httpx: a
+    ``follow_redirects`` kwarg is ignored, because letting httpx follow would
+    jump to the redirect target's IP without re-checking the SSRF policy.
 
     Parameters
     ----------
@@ -216,17 +230,24 @@ async def safe_fetch(
         Absolute URL to fetch.
     policy:
         SSRF policy.  Defaults to ``SsrfPolicy()`` (private blocked).
+    max_redirects:
+        Maximum number of redirect hops to follow (each re-validated).  A chain
+        longer than this raises ``ValueError`` rather than looping forever.
     **httpx_kwargs:
-        Forwarded verbatim to ``httpx.AsyncClient.get()``.
+        Forwarded to ``httpx.AsyncClient.get()`` — except ``follow_redirects``,
+        which is managed here.
 
     Returns
     -------
-    httpx.Response
+    httpx.Response — the first non-redirect response.
 
     Raises
     ------
     SsrfBlockedError:
-        If the URL is blocked by the policy (before any network I/O).
+        If the initial URL, or any redirect target, resolves into a blocked
+        range (before that hop's network I/O).
+    ValueError:
+        If a URL is malformed, or the redirect chain exceeds *max_redirects*.
     ImportError:
         If ``httpx`` is not installed.
     """
@@ -239,8 +260,63 @@ async def safe_fetch(
             "Install it with: pip install httpx"
         ) from exc
 
-    async with httpx.AsyncClient() as client:
-        return await client.get(url, **httpx_kwargs)
+    # Follow redirects ourselves so every hop is re-checked against the SSRF
+    # policy; httpx's own follow_redirects would jump to a blocked IP unchecked.
+    httpx_kwargs.pop("follow_redirects", None)
+    current = url
+    async with httpx.AsyncClient(follow_redirects=False) as client:
+        for _ in range(max_redirects + 1):
+            response = await client.get(current, **httpx_kwargs)
+            location = response.headers.get("location")
+            if response.is_redirect and location:
+                current = str(urllib.parse.urljoin(current, location))
+                check_url(current, policy)  # re-validate the redirect target
+                continue
+            return response
+    raise ValueError(
+        f"safe_fetch: redirect chain exceeded {max_redirects} hops starting at {url!r}"
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Config-driven policy
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def policy_from_config() -> SsrfPolicy:
+    """Build the SSRF policy from global config — best-effort, secure by default.
+
+    Reads (all optional):
+      - ``net.ssrf.allow_private_network`` — when true, private/loopback targets
+        are permitted (e.g. an agent legitimately fetching a local dev server).
+        Default ``false`` so a prompt-injected agent cannot reach internal
+        services (cloud metadata, the local daemon, private hosts).
+      - ``net.ssrf.allowed_domains`` — exact hostnames always permitted.
+
+    The boolean is coerced with :func:`navig.core.coerce.coerce_bool`, so the
+    string ``"false"`` that ``navig config set`` stores cannot silently flip the
+    guard on (the classic ``bool("false") is True`` trap). Any config-read
+    failure falls back to the secure default ``SsrfPolicy()`` — a broken config
+    must never *disable* the guard.
+    """
+    try:
+        from navig.config import get_config_manager  # noqa: PLC0415
+        from navig.core.coerce import coerce_bool  # noqa: PLC0415
+
+        cfg = get_config_manager().get_global_config()
+        net = cfg.get("net", {}) if isinstance(cfg, dict) else {}
+        ssrf_cfg = net.get("ssrf", {}) if isinstance(net, dict) else {}
+
+        allow_private = coerce_bool(ssrf_cfg.get("allow_private_network"), default=False)
+        raw_domains = ssrf_cfg.get("allowed_domains") or []
+        domains = (
+            tuple(str(d).strip() for d in raw_domains if str(d).strip())
+            if isinstance(raw_domains, (list, tuple))
+            else ()
+        )
+        return SsrfPolicy(allow_private_network=allow_private, allowed_domains=domains)
+    except Exception:  # noqa: BLE001 — a broken config must never disable the guard
+        return SsrfPolicy()
 
 
 # ──────────────────────────────────────────────────────────────────────────────

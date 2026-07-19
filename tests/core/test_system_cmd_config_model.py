@@ -138,8 +138,9 @@ class TestNavigConfig:
 # ---------------------------------------------------------------------------
 # navig.commands.system_cmd — system CLI commands
 # ---------------------------------------------------------------------------
-from navig.commands.system_cmd import system_app
 from typer.testing import CliRunner
+
+from navig.commands.system_cmd import system_app
 
 _runner = CliRunner()
 

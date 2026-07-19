@@ -174,8 +174,10 @@ class WikiReadTool(BaseTool):
             return ToolResult(name=self.name, success=False, error="'page' arg is required")
 
         # Resolve path against known wiki roots
+        from navig.platform.paths import config_dir  # noqa: PLC0415
+
         candidates: list[Path] = []
-        for base in [_resolve_wiki_root(), Path("~/.navig/wiki").expanduser()]:
+        for base in [_resolve_wiki_root(), config_dir() / "wiki"]:
             p = base / page
             if not p.suffix:
                 p = p.with_suffix(".md")

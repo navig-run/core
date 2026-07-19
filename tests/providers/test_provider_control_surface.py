@@ -264,7 +264,7 @@ class TestRouterSessionOverrides:
     def test_route_with_session_tier_override_sets_model(self):
         """When session_tier_overrides specifies a model for big tier,
         the route decision should have that model."""
-        from navig.routing.router import RouteRequest, UnifiedRouter
+        from navig.llm.routing.router import RouteRequest, UnifiedRouter
 
         router = UnifiedRouter(config={})
         request = RouteRequest(
@@ -284,7 +284,7 @@ class TestRouterSessionOverrides:
 
     def test_route_without_overrides_no_model(self):
         """Without session overrides, route decision has no explicit model."""
-        from navig.routing.router import RouteRequest, UnifiedRouter
+        from navig.llm.routing.router import RouteRequest, UnifiedRouter
 
         router = UnifiedRouter(config={})
         request = RouteRequest(
@@ -298,7 +298,7 @@ class TestRouterSessionOverrides:
 
     def test_session_override_maps_small_mode_correctly(self):
         """Session override for 'small' tier should apply when mode is small_talk."""
-        from navig.routing.router import RouteRequest, UnifiedRouter
+        from navig.llm.routing.router import RouteRequest, UnifiedRouter
 
         router = UnifiedRouter(config={})
         request = RouteRequest(
@@ -315,7 +315,7 @@ class TestRouterSessionOverrides:
         assert decision.mode == "small_talk"
 
     def test_session_override_maps_coder_mode_correctly(self):
-        from navig.routing.router import RouteRequest, UnifiedRouter
+        from navig.llm.routing.router import RouteRequest, UnifiedRouter
 
         router = UnifiedRouter(config={})
         request = RouteRequest(
@@ -338,37 +338,31 @@ class TestRouterSessionOverrides:
 
 
 class TestSlashRegistryEntries:
-    """New commands are registered in _SLASH_REGISTRY."""
+    """These provider/model controls MOVED from Telegram slash commands to the
+    Deck (Vault & Admin · Account → Model Tier) + inline keyboards — see the
+    comment at telegram_commands.py ("/provider_show /provider_reset moved to
+    Deck …"). The handlers remain on ``TelegramCommandsMixin`` and are invoked
+    from telegram_keyboards.py, so we assert the handlers still exist (the
+    functionality is preserved, just re-surfaced) rather than slash-registration."""
 
-    def test_provider_hybrid_registered(self):
-        from navig.gateway.channels.telegram_commands import _SLASH_REGISTRY
+    def _mixin(self):
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+        return TelegramCommandsMixin
 
-        cmds = {e.command for e in _SLASH_REGISTRY}
-        assert "provider_hybrid" in cmds
+    def test_provider_hybrid_handler_exists(self):
+        assert hasattr(self._mixin(), "_handle_provider_hybrid")
 
-    def test_provider_vision_registered(self):
-        from navig.gateway.channels.telegram_commands import _SLASH_REGISTRY
+    def test_provider_vision_handler_exists(self):
+        assert hasattr(self._mixin(), "_handle_provider_vision")
 
-        cmds = {e.command for e in _SLASH_REGISTRY}
-        assert "provider_vision" in cmds
+    def test_provider_show_handler_exists(self):
+        assert hasattr(self._mixin(), "_handle_provider_show")
 
-    def test_provider_show_registered(self):
-        from navig.gateway.channels.telegram_commands import _SLASH_REGISTRY
+    def test_provider_reset_handler_exists(self):
+        assert hasattr(self._mixin(), "_handle_provider_reset")
 
-        cmds = {e.command for e in _SLASH_REGISTRY}
-        assert "provider_show" in cmds
-
-    def test_provider_reset_registered(self):
-        from navig.gateway.channels.telegram_commands import _SLASH_REGISTRY
-
-        cmds = {e.command for e in _SLASH_REGISTRY}
-        assert "provider_reset" in cmds
-
-    def test_models_reset_registered(self):
-        from navig.gateway.channels.telegram_commands import _SLASH_REGISTRY
-
-        cmds = {e.command for e in _SLASH_REGISTRY}
-        assert "models_reset" in cmds
+    def test_models_reset_handler_exists(self):
+        assert hasattr(self._mixin(), "_handle_models_reset")
 
     def test_new_commands_have_handlers(self):
         from navig.gateway.channels.telegram_commands import _SLASH_REGISTRY
@@ -553,7 +547,7 @@ class TestBugRegressions:
 
     def test_mode_to_tier_covers_summarize_and_research(self):
         """BUG-11: _MODE_TO_TIER module constant must include summarize and research."""
-        from navig.routing.router import _MODE_TO_TIER
+        from navig.llm.routing.router import _MODE_TO_TIER
 
         assert "summarize" in _MODE_TO_TIER
         assert "research" in _MODE_TO_TIER

@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import pytest
 
-from navig.routing.detect import (
+from navig.llm.routing.detect import (
     _is_casual,
     _is_greeting,
     detect_mode,
 )
-
 
 # ---------------------------------------------------------------------------
 # _is_greeting

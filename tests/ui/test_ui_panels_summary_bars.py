@@ -7,7 +7,6 @@ import pytest
 
 from navig.ui.models import ActionItem, CauseScore, DiffLine, Metric, SummaryResult
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

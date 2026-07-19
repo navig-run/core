@@ -46,12 +46,22 @@ async def handle_deck_cloud_status(request: "web.Request") -> "web.Response":
     enabled = bool(cfg.get("cloud.enabled", True))
     broker_url = cfg.get("cloud.broker_url", "https://api.navig.run")
     public_url = (cfg.get("cloud.public_url") or "").strip()
+    # Reachability + deck-deploy state, so a single /cloud/status read tells the
+    # onboarding UI everything (it was previously blind to Lighthouse mode and to
+    # the deployed deck URL). `cloud_mode` is the persisted intent
+    # (lighthouse|direct|tunnel|""); `mode` stays the legacy direct/tunnel binary.
+    cloud_mode = (cfg.get("cloud.mode") or "").strip()
+    lighthouse_url = (cfg.get("cloud.lighthouse_url") or "").strip()
+    deck_public_url = (cfg.get("deck.public_url") or "").strip()
 
     payload: dict[str, Any] = {
         "enabled": enabled,
         "broker_url": broker_url,
         "public_url": public_url,
         "mode": "direct" if public_url else "tunnel",
+        "cloud_mode": cloud_mode,
+        "lighthouse_url": lighthouse_url,
+        "deck_public_url": deck_public_url,
         "status": "off",
         "tunnel_url": None,
         "last_heartbeat_at": None,

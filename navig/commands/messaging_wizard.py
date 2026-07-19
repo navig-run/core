@@ -109,7 +109,11 @@ def _vault_has(key: str) -> bool:
         v = _get_vault()
         if v is None:
             return False
-        return bool((v.get_secret(key) or "").strip())
+        from navig.vault.core import reveal_secret
+
+        # reveal_secret unwraps the SecretStr; the old bare .strip() raised and was
+        # swallowed, so _vault_has always reported False even for present keys.
+        return bool(reveal_secret(v, key))
     except Exception:
         return False
 

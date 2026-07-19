@@ -27,7 +27,6 @@ from navig.license.relay_gate import (
     evaluate_relay_access,
 )
 
-
 # ──────────────────────────────────────────────────────────────────────
 # A test double for LicenseStatus. The real dataclass lives in
 # navig.license.keys; we keep the field surface minimal here so a future

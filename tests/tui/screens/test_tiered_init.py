@@ -23,6 +23,7 @@ class TestTieredInitConfig:
 
     def test_class_is_screen_subclass(self):
         from textual.screen import Screen
+
         from navig.tui.screens.tiered_init import TieredInitScreen
         assert issubclass(TieredInitScreen, Screen)
 

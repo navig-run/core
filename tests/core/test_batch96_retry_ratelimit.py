@@ -13,12 +13,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from navig.core.retry_utils import (
-    RetryConfig,
-    async_retry,
-    jittered_backoff,
-    retry_sync,
-)
 from navig.core.rate_limit_tracker import (
     RateLimitBucket,
     RateLimitState,
@@ -28,7 +22,12 @@ from navig.core.rate_limit_tracker import (
     format_rate_limit_display,
     parse_rate_limit_headers,
 )
-
+from navig.core.retry_utils import (
+    RetryConfig,
+    async_retry,
+    jittered_backoff,
+    retry_sync,
+)
 
 # ===========================================================================
 # jittered_backoff

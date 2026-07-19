@@ -145,6 +145,29 @@ def is_enabled(path: str | Path) -> bool:
     return True if e is None else bool(e.get("enabled", True))
 
 
+def is_trusted(path: str | Path) -> bool | None:
+    """Space trust for bundled active capabilities (.navig/plugins, hooks, MCP).
+
+    Returns True/False when the user has decided, None when never asked.
+    Unknown spaces are None (untrusted until confirmed) — passive content
+    (skills/prompts/personas) does not require trust.
+    """
+    e = next((x for x in load_registry()["spaces"] if _norm(x.get("path", "")) == _norm(path)), None)
+    if e is None or "trusted" not in e:
+        return None
+    return bool(e.get("trusted"))
+
+
+def set_trusted(id_or_path: str, trusted: bool) -> bool:
+    reg = load_registry()
+    e = _find(reg, id_or_path)
+    if e is None:
+        return False
+    e["trusted"] = trusted
+    save_registry(reg)
+    return True
+
+
 def mark_active(path: str | Path) -> None:
     reg = load_registry()
     rp = _norm(path)

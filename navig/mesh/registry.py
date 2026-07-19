@@ -177,14 +177,12 @@ def _derive_node_id() -> str:
 
 
 def _detect_os() -> str:
-    # sys.platform is a string constant set at interpreter init — 0ms, no subprocess.
-    # platform.system() on Windows 3.12+ triggers a WMI query that can hang.
-    p = sys.platform
-    if p == "win32":
-        return "windows"
-    if p == "darwin":
-        return "macos"
-    return "linux"
+    # OS label for the mesh node fingerprint. Delegates to the platform SSOT (fast
+    # sys.platform, no WMI). WSL collapses to 'linux' so node fingerprints stay stable.
+    from navig.platform.paths import current_os  # noqa: PLC0415
+
+    os_name = current_os()
+    return "linux" if os_name == "wsl" else os_name
 
 
 def _measure_load() -> float:

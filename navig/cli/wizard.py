@@ -631,7 +631,7 @@ WantedBy=multi-user.target
                 capture_output=True,
             )
         else:
-            service_path.write_text(service_content)
+            service_path.write_text(service_content, encoding="utf-8")
 
         # Reload and enable
         subprocess.run(["sudo", "systemctl", "daemon-reload"], check=True)
@@ -678,7 +678,7 @@ def _install_launchd() -> bool:
 
     try:
         plist_path.parent.mkdir(parents=True, exist_ok=True)
-        plist_path.write_text(plist_content)
+        plist_path.write_text(plist_content, encoding="utf-8")
 
         # Load the agent
         subprocess.run(["launchctl", "load", str(plist_path)], check=True)

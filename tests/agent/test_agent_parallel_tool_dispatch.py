@@ -37,8 +37,8 @@ def _tool_call(name, args, tc_id=None):
 def _apply_common_patches(monkeypatch, registry):
     monkeypatch.setattr("navig.agent.tools.register_all_tools", lambda: None)
     monkeypatch.setattr("navig.agent.agent_tool_registry._AGENT_REGISTRY", registry)
-    monkeypatch.setattr("navig.llm_router.suggest_toolsets", lambda user_input: [])
-    monkeypatch.setattr("navig.llm_router.resolve_llm", lambda mode="coding": _fake_llm_config())
+    monkeypatch.setattr("navig.llm.router.suggest_toolsets", lambda user_input: [])
+    monkeypatch.setattr("navig.llm.router.resolve_llm", lambda mode="coding": _fake_llm_config())
     monkeypatch.setattr("navig.providers.get_builtin_provider", lambda name: object())
 
     class _FakeAuth:
@@ -108,7 +108,7 @@ class TestParallelToolDispatch:
 
         monkeypatch.setattr(
             "navig.providers.create_client",
-            lambda provider_cfg, api_key=None, timeout=120.0: _FakeClient(),
+            lambda provider_cfg, api_key=None, timeout=120.0, **kwargs: _FakeClient(),
         )
 
         agent = ConvAgent()
@@ -168,7 +168,7 @@ class TestParallelToolDispatch:
 
         monkeypatch.setattr(
             "navig.providers.create_client",
-            lambda provider_cfg, api_key=None, timeout=120.0: _FakeClient(),
+            lambda provider_cfg, api_key=None, timeout=120.0, **kwargs: _FakeClient(),
         )
 
         agent = ConvAgent()
@@ -234,7 +234,7 @@ class TestParallelToolDispatch:
 
         monkeypatch.setattr(
             "navig.providers.create_client",
-            lambda provider_cfg, api_key=None, timeout=120.0: _FakeClient(),
+            lambda provider_cfg, api_key=None, timeout=120.0, **kwargs: _FakeClient(),
         )
 
         agent = ConvAgent()

@@ -11,7 +11,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-
 # ============================================================================
 # navig.lazy_loader
 # ============================================================================
@@ -61,6 +60,7 @@ class TestLazyModule:
 
     def test_nonexistent_module_raises(self):
         import pytest
+
         from navig.lazy_loader import LazyModule
 
         lm = LazyModule("navig._nonexistent_module_9x9x9")

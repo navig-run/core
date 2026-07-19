@@ -1,0 +1,11 @@
+# Builtin quick actions. Shape: a MAPPING of action name -> entry — the same shape
+# `navig action add` writes (`data[name] = {...}`) and the only shape `_load_all_actions`
+# absorbs. This file used to be a single flat action document (`id: status`, `command: ...`),
+# so the loader walked its keys and found strings where it expected entry dicts, absorbed
+# nothing, and the one builtin action shipped in every wheel while never once appearing in
+# `navig action list`.
+status:
+  description: Quick status check
+  command: navig dashboard --no-live
+  created: "2026-02-08T13:56:35"
+  tags: [core, monitoring]

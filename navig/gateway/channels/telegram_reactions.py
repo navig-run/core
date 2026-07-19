@@ -128,7 +128,8 @@ class TelegramReactionsMixin:
             _first = next((r.get("emoji", "") for r in new_reactions if r.get("type") == "emoji"), "")
             _allow_both = False
             try:
-                from navig.telegram import ai_actions as _tg_ai, permissions as _tg_perm
+                from navig.telegram import ai_actions as _tg_ai
+                from navig.telegram import permissions as _tg_perm
 
                 _tool = _tg_ai.emoji_to_tool(_first)
                 _allow_both = bool(_tool and _tool in _tg_ai.LLM_TOOLS

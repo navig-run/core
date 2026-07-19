@@ -107,6 +107,79 @@ def _sanitize_openai_body(body: dict[str, Any], provider_name: str) -> dict[str,
     return out
 
 
+def _openai_tool_choice(tool_choice: Any) -> Any:
+    """OpenAI accepts only 'auto'|'none'|'required' as a bare string; a specific
+    tool NAME must be the object form. (Anthropic handles the named case itself.)"""
+    if tool_choice in (None, "auto", "none", "required"):
+        return tool_choice
+    return {"type": "function", "function": {"name": tool_choice}}
+
+
+def _openai_wire_messages(messages: list) -> list[dict[str, Any]]:
+    """Serialize Message objects to OpenAI chat wire format, PRESERVING tool-call
+    fields — ``assistant.tool_calls`` and ``tool.tool_call_id``/``name``. Dropping
+    them 400s a multi-turn tool round-trip (a 'tool' role message must carry a
+    ``tool_call_id``, and the assistant turn must carry its ``tool_calls``)."""
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        msg: dict[str, Any] = {"role": m.role, "content": m.content}
+        name = getattr(m, "name", None)
+        if name:
+            msg["name"] = name
+        tcs = getattr(m, "tool_calls", None)
+        if tcs:
+            msg["tool_calls"] = tcs  # already OpenAI-shaped dicts
+        tcid = getattr(m, "tool_call_id", None)
+        if tcid:
+            msg["tool_call_id"] = tcid
+        out.append(msg)
+    return out
+
+
+def _anthropic_wire_messages(messages: list) -> list[dict[str, Any]]:
+    """Translate non-system Message objects to Anthropic's message format,
+    including tool calling: an assistant turn's ``tool_calls`` become ``tool_use``
+    content blocks; a ``role='tool'`` result becomes a ``tool_result`` block inside
+    a ``user`` message (merged with adjacent tool results — Anthropic requires all
+    results for a turn in a single user message and rejects a bare ``tool`` role)."""
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        role = m.role
+        if role == "tool":
+            block = {
+                "type": "tool_result",
+                "tool_use_id": getattr(m, "tool_call_id", "") or "",
+                "content": m.content or "",
+            }
+            if out and out[-1]["role"] == "user" and isinstance(out[-1]["content"], list):
+                out[-1]["content"].append(block)
+            else:
+                out.append({"role": "user", "content": [block]})
+            continue
+        tcs = getattr(m, "tool_calls", None)
+        if role == "assistant" and tcs:
+            blocks: list[dict[str, Any]] = []
+            if m.content:
+                blocks.append({"type": "text", "text": m.content})
+            for tc in tcs:
+                fn = tc.get("function", {}) if isinstance(tc, dict) else {}
+                raw_args = fn.get("arguments") if fn else None
+                try:
+                    args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
+                blocks.append({
+                    "type": "tool_use",
+                    "id": tc.get("id", "") if isinstance(tc, dict) else "",
+                    "name": fn.get("name", "") if fn else "",
+                    "input": args,
+                })
+            out.append({"role": "assistant", "content": blocks})
+            continue
+        out.append({"role": role, "content": m.content})
+    return out
+
+
 @dataclass
 class Message:
     """A chat message."""
@@ -229,9 +302,14 @@ class BaseProviderClient(ABC):
         config: ProviderConfig,
         api_key: str | None = None,
         timeout: float = 60.0,
+        oauth_token: str | None = None,
     ):
         self.config = config
         self.api_key = api_key
+        # A Claude.ai subscription OAuth token (Bearer). Mutually exclusive with
+        # api_key on Anthropic — see anthropic_oauth for why it must present as
+        # the official CLI.
+        self.oauth_token = oauth_token
         self.timeout = timeout
         self._client = None  # httpx.AsyncClient | None
 
@@ -314,6 +392,11 @@ class BaseProviderClient(ABC):
             message = response_body
             error_type = None
 
+        # A provider can send {"error":{"message":null}} → message is non-str;
+        # coerce before `.lower()` below (else AttributeError masks the real error).
+        if not isinstance(message, str):
+            message = str(message) if message is not None else response_body
+
         # Determine if retryable and classify error
         retryable = status_code in (429, 500, 502, 503, 504)
 
@@ -347,7 +430,7 @@ class OpenAIClient(BaseProviderClient):
         # Build request body
         body: dict[str, Any] = {
             "model": request.model,
-            "messages": [{"role": m.role, "content": m.content} for m in request.messages],
+            "messages": _openai_wire_messages(request.messages),
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
             "stream": request.stream,
@@ -356,7 +439,7 @@ class OpenAIClient(BaseProviderClient):
         if request.tools:
             body["tools"] = [t.to_openai_format() for t in request.tools]
             if request.tool_choice:
-                body["tool_choice"] = request.tool_choice
+                body["tool_choice"] = _openai_tool_choice(request.tool_choice)
 
         if request.stop:
             body["stop"] = request.stop
@@ -388,7 +471,9 @@ class OpenAIClient(BaseProviderClient):
                 raise self._parse_error(response.status_code, response.text)
 
             data = response.json()
-            choice = data.get("choices", [{}])[0]
+            # `choices` can be present-but-empty (content filter / some compatible
+            # backends) — `.get(..., [{}])[0]` would IndexError on []; guard with `or`.
+            choice = (data.get("choices") or [{}])[0]
             message = choice.get("message", {})
 
             # Parse tool calls
@@ -425,7 +510,7 @@ class OpenAIClient(BaseProviderClient):
 
         body: dict[str, Any] = {
             "model": request.model,
-            "messages": [{"role": m.role, "content": m.content} for m in request.messages],
+            "messages": _openai_wire_messages(request.messages),
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
             "stream": True,
@@ -439,10 +524,14 @@ class OpenAIClient(BaseProviderClient):
         if request.tools:
             body["tools"] = [t.to_openai_format() for t in request.tools]
             if request.tool_choice:
-                body["tool_choice"] = request.tool_choice
+                body["tool_choice"] = _openai_tool_choice(request.tool_choice)
 
         if request.stop:
             body["stop"] = request.stop
+
+        # Same provider-specific scrubbing as complete() — NVIDIA NIM's strict
+        # deserializer rejects the same fields on the streaming endpoint too.
+        body = _sanitize_openai_body(body, provider_name=self.name)
 
         try:
             async with client.stream(
@@ -456,9 +545,9 @@ class OpenAIClient(BaseProviderClient):
 
                 async for line in response.aiter_lines():
                     line = line.strip()
-                    if not line or not line.startswith("data: "):
+                    if not line or not line.startswith("data:"):
                         continue
-                    payload = line[6:]  # strip "data: "
+                    payload = line[5:].lstrip()  # tolerate "data:" and "data: "  # strip "data: "
                     if payload == "[DONE]":
                         break
                     try:
@@ -528,17 +617,69 @@ class AnthropicClient(BaseProviderClient):
         return system_content
 
     def _build_headers(self) -> dict[str, str]:
-        """Build Anthropic-specific headers."""
+        """Build Anthropic-specific headers.
+
+        Two distinct auth modes:
+          * OAuth (Claude.ai Pro/Max subscription): must present as the official
+            Claude Code CLI (Bearer + oauth beta + claude-cli UA + x-app:cli, and
+            crucially NO x-api-key). See :mod:`navig.providers.anthropic_oauth`.
+          * API key: plain ``x-api-key`` + version.
+        """
+        if self.oauth_token:
+            from navig.providers.anthropic_oauth import build_oauth_headers
+
+            # config.headers first so OAuth-critical headers always win.
+            return {**self.config.headers, **build_oauth_headers(self.oauth_token)}
+
         headers = {
             "Content-Type": "application/json",
             "anthropic-version": "2023-06-01",
             **self.config.headers,
         }
-
         if self.api_key:
             headers["x-api-key"] = self.api_key
-
         return headers
+
+    def _frame_system(self, system_content: Any) -> Any:
+        """In OAuth mode the system MUST be an array led by the Claude Code block."""
+        if self.oauth_token:
+            from navig.providers.anthropic_oauth import frame_oauth_system
+
+            return frame_oauth_system(system_content)
+        return system_content
+
+    async def _post_with_retry(self, client, body: dict[str, Any]):
+        """POST /v1/messages, retrying 429/529/5xx with backoff that honors
+        Retry-After. Returns the 200 response or raises a ProviderError."""
+        import asyncio
+
+        from navig.providers.anthropic_oauth import (
+            MAX_RETRIES,
+            compute_backoff,
+            is_retryable_status,
+            parse_retry_after,
+        )
+
+        last = None
+        for attempt in range(MAX_RETRIES + 1):
+            response = await client.post(f"{self.base_url}/v1/messages", json=body)
+            if response.status_code == 200:
+                return response
+            last = response
+            # A SUBSCRIPTION/account rate-limit won't clear in seconds — retrying
+            # 5× with backoff just looks like a hang. Fail FAST with the clear
+            # message so the operator sees "rate limited" instead of a stall.
+            # (A generic/transient 429 without the account wording still retries.)
+            if response.status_code == 429:
+                _b = (response.text or "").lower()
+                if "account" in _b and "rate limit" in _b:
+                    raise self._parse_error(response.status_code, response.text)
+            if is_retryable_status(response.status_code) and attempt < MAX_RETRIES:
+                ra = parse_retry_after(response.headers.get("retry-after"))
+                await asyncio.sleep(compute_backoff(attempt, ra))
+                continue
+            raise self._parse_error(response.status_code, response.text)
+        raise self._parse_error(last.status_code, last.text)
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         """Execute chat completion using Anthropic API."""
@@ -546,16 +687,22 @@ class AnthropicClient(BaseProviderClient):
 
         # Separate system message
         system_content = None
-        messages = []
+        non_system = []
         for m in request.messages:
             if m.role == "system":
                 system_content = m.content
             else:
-                messages.append({"role": m.role, "content": m.content})
+                non_system.append(m)
+        # Translate to Anthropic format (tool_use / tool_result blocks).
+        messages = _anthropic_wire_messages(non_system)
 
         # F-12: inject Anthropic prompt-caching markers on system + first 2 user messages
         if request.cache_control:
             system_content = self._apply_cache_control(system_content, messages)
+
+        # OAuth subscription: the system MUST be an array led by the Claude Code
+        # identity block (caller's own system goes second). No-op for API keys.
+        system_content = self._frame_system(system_content)
 
         # Build request body
         body: dict[str, Any] = {
@@ -588,23 +735,19 @@ class AnthropicClient(BaseProviderClient):
             body.update(request.extra_body)
 
         try:
-            response = await client.post(
-                f"{self.base_url}/v1/messages",
-                json=body,
-            )
-
-            if response.status_code != 200:
-                raise self._parse_error(response.status_code, response.text)
+            response = await self._post_with_retry(client, body)
 
             data = response.json()
 
-            # Parse content blocks
-            content_text = None
+            # Parse content blocks — concatenate ALL text blocks (Anthropic can
+            # split text or emit it around tool_use blocks; keeping only the last
+            # silently truncated the reply).
+            text_parts: list[str] = []
             tool_calls = []
 
             for block in data.get("content", []):
                 if block.get("type") == "text":
-                    content_text = block.get("text")
+                    text_parts.append(block.get("text") or "")
                 elif block.get("type") == "tool_use":
                     tool_calls.append(
                         ToolCall(
@@ -615,7 +758,7 @@ class AnthropicClient(BaseProviderClient):
                     )
 
             return CompletionResponse(
-                content=content_text,
+                content="".join(text_parts) if text_parts else None,
                 tool_calls=tool_calls if tool_calls else None,
                 finish_reason=data.get("stop_reason"),
                 usage={
@@ -644,16 +787,21 @@ class AnthropicClient(BaseProviderClient):
         client = await self._get_client()
 
         system_content = None
-        messages = []
+        non_system = []
         for m in request.messages:
             if m.role == "system":
                 system_content = m.content
             else:
-                messages.append({"role": m.role, "content": m.content})
+                non_system.append(m)
+        # Translate to Anthropic format (tool_use / tool_result blocks).
+        messages = _anthropic_wire_messages(non_system)
 
         # Same cache marker injection as complete() — streamed turns cache too.
         if request.cache_control:
             system_content = self._apply_cache_control(system_content, messages)
+
+        # OAuth subscription: enforce the Claude Code system framing (see complete()).
+        system_content = self._frame_system(system_content)
 
         body: dict[str, Any] = {
             "model": request.model,
@@ -693,18 +841,41 @@ class AnthropicClient(BaseProviderClient):
 
                 current_tool_id = ""
                 current_tool_name = ""
+                # Anthropic reports input + cache tokens in message_start.usage and
+                # only output_tokens in message_delta.usage — carry the former so
+                # the final usage chunk has the real prompt + cache counts (else the
+                # consumer records 0 prompt / 0 cache tokens and mis-bills caching).
+                _in_tokens = 0
+                _cache_read = 0
+                _cache_write = 0
 
                 async for line in response.aiter_lines():
                     line = line.strip()
-                    if not line or not line.startswith("data: "):
+                    if not line or not line.startswith("data:"):
                         continue
-                    payload = line[6:]
+                    payload = line[5:].lstrip()  # tolerate "data:" and "data: "
                     try:
                         event = json.loads(payload)
                     except json.JSONDecodeError:
                         continue
 
                     event_type = event.get("type", "")
+
+                    # Anthropic can emit a mid-stream error event (rate_limit /
+                    # overloaded) after a 200 was established. Surface it as a
+                    # retryable ProviderError instead of silently truncating.
+                    if event_type == "error":
+                        from navig.providers.anthropic_oauth import sse_error
+
+                        parsed = sse_error(event)
+                        if parsed:
+                            etype, emsg = parsed
+                            raise ProviderError(
+                                message=emsg,
+                                provider=self.name,
+                                error_type=etype,
+                                retryable=etype in ("rate_limit", "overloaded", "overloaded_error"),
+                            )
 
                     if event_type == "content_block_start":
                         block = event.get("content_block", {})
@@ -735,13 +906,20 @@ class AnthropicClient(BaseProviderClient):
                         yield StreamChunk(
                             finish_reason=event.get("delta", {}).get("stop_reason"),
                             usage={
+                                "prompt_tokens": _in_tokens,
                                 "completion_tokens": event.get("usage", {}).get("output_tokens", 0),
+                                "cache_read_input_tokens": _cache_read,
+                                "cache_creation_input_tokens": _cache_write,
                             },
                             provider=self.name,
                         )
 
                     elif event_type == "message_start":
                         msg = event.get("message", {})
+                        _u = msg.get("usage", {}) or {}
+                        _in_tokens = _u.get("input_tokens", 0) or 0
+                        _cache_read = _u.get("cache_read_input_tokens", 0) or 0
+                        _cache_write = _u.get("cache_creation_input_tokens", 0) or 0
                         yield StreamChunk(
                             model=msg.get("model"),
                             provider=self.name,
@@ -768,6 +946,7 @@ def create_client(
     api_key: str | None = None,
     timeout: float = 60.0,
     airllm_config: Any | None = None,
+    oauth_token: str | None = None,
 ) -> BaseProviderClient:
     """
     Create a provider client based on configuration.
@@ -797,7 +976,7 @@ def create_client(
         )
 
     client_class = CLIENT_CLASSES.get(config.api, OpenAIClient)
-    return client_class(config, api_key=api_key, timeout=timeout)
+    return client_class(config, api_key=api_key, timeout=timeout, oauth_token=oauth_token)
 
 
 def get_builtin_provider(name: str) -> ProviderConfig | None:

@@ -5,7 +5,6 @@ from __future__ import annotations
 from navig.ui.diff import diff_lines_from_text
 from navig.ui.models import DiffLine, DiffPreview
 
-
 # ──────────────────────────────────────────────────────────────
 # diff_lines_from_text
 # ──────────────────────────────────────────────────────────────

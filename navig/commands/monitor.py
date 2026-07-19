@@ -17,7 +17,7 @@ import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, NamedTuple
 
 try:
     import psutil  # type: ignore[import-untyped]
@@ -48,6 +48,11 @@ def _psutil_available() -> bool:
 _last_cpu_overall: float = 0.0
 _cpu_primed: bool = False
 
+# Only ever paid once, when there is no prior reading at all (see
+# _cpu_percent_nonblocking) — enough of a window for a real number, short enough
+# that no caller notices. Every later read is a free delta sample.
+_CPU_FIRST_SAMPLE_S = 0.12
+
 
 def _prime_cpu() -> None:
     global _cpu_primed
@@ -67,17 +72,24 @@ _prime_cpu()
 
 
 def _cpu_percent_nonblocking() -> float:
-    """Overall CPU % since the last call — never blocks."""
+    """Overall CPU % since the last call — effectively never blocks."""
     global _last_cpu_overall
     if not _psutil_available():
         return 0.0
     _prime_cpu()
     try:
         val = round(float(psutil.cpu_percent(interval=None)), 1)
-        # interval=None returns 0.0 on the very first call after prime; keep the
-        # last good reading in that case.
         if val > 0:
             _last_cpu_overall = val
+            return _last_cpu_overall
+        # A delta sample taken right after priming has no window to measure and
+        # returns a flat 0.0 — which is a LIE, not a reading, and it was the
+        # first thing the dashboard showed after a daemon start. With no prior
+        # reading to fall back on, pay for one short bounded sample instead.
+        if _last_cpu_overall == 0.0:
+            val = round(float(psutil.cpu_percent(interval=_CPU_FIRST_SAMPLE_S)), 1)
+            if val > 0:
+                _last_cpu_overall = val
         return _last_cpu_overall
     except Exception:
         return _last_cpu_overall
@@ -125,15 +137,68 @@ def get_system_disk() -> list[dict[str, Any]]:
 
 
 # ── Background-refreshed partition list ──────────────────────────────────────
-# ``psutil.disk_partitions`` can block for seconds (cold/network drives). It's
-# never called inline: we serve the last known list and refresh in the disk pool,
-# so a request never waits on it (first call returns [] until the refresh lands).
+# ``psutil.disk_partitions`` can block for seconds — and on Windows with a cold
+# mapped network drive it blocks FOREVER (proven on the operator's machine: it
+# never returned, and because it doesn't release the GIL it froze the whole
+# gateway). It is never called inline: the list is cached and refreshed in the
+# disk pool.
 _PARTITIONS_TTL = 300.0
 _partitions_cache: tuple[float, list[Any]] | None = None
 _partitions_future: Any = None
 
+# Windows GetDriveType codes. REMOTE (network) and CDROM are the ones whose
+# volume-info / usage probes hang; FIXED and REMOVABLE answer instantly.
+_DRIVE_REMOVABLE = 2
+_DRIVE_FIXED = 3
 
-def _cached_partitions(max_partitions: int) -> list[Any]:
+
+class _Part(NamedTuple):
+    """Duck-types psutil's ``sdiskpart`` for the fields the probe uses."""
+
+    mountpoint: str
+    fstype: str = ""
+
+
+def _enumerate_partitions() -> list[Any]:
+    """Volumes worth probing. On Windows this never touches ``disk_partitions``.
+
+    ``psutil.disk_partitions()`` asks each volume for its filesystem type, which
+    hangs on a disconnected network drive. Enumerating the drive letters
+    ourselves is a mount-table lookup instead — ``os.listdrives()`` +
+    ``GetDriveTypeW``, both measured at 0.000s — and lets us skip the drive types
+    that hang (REMOTE, CDROM) before anything touches them.
+    """
+    if os.name != "nt" or not hasattr(os, "listdrives"):
+        return list(psutil.disk_partitions(all=False))
+    try:
+        import ctypes
+
+        get_drive_type = ctypes.windll.kernel32.GetDriveTypeW
+    except Exception:  # noqa: BLE001 — no ctypes/kernel32: fall back
+        return list(psutil.disk_partitions(all=False))
+
+    out: list[Any] = []
+    for drive in os.listdrives():
+        try:
+            kind = get_drive_type(str(drive))
+        except Exception:  # noqa: BLE001
+            continue
+        if kind in (_DRIVE_FIXED, _DRIVE_REMOVABLE):
+            out.append(_Part(mountpoint=str(drive)))
+        else:
+            logger.debug("skipping drive %s (type %s: hangs on probe)", drive, kind)
+    return out
+
+
+def _cached_partitions(max_partitions: int, first_scan_timeout: float = 1.0) -> list[Any]:
+    """The partition list, refreshed in the pool — never blocking the caller.
+
+    On the FIRST call there is nothing cached, so we wait up to
+    ``first_scan_timeout`` for the scan rather than returning an empty list and
+    making the caller show "no disks" until something asks again. The wait is
+    bounded and the scan stays in the pool, so even a pathological enumeration
+    can only cost that timeout, never a hang.
+    """
     global _partitions_cache, _partitions_future
     now = time.monotonic()
     if _partitions_future is not None and _partitions_future.done():
@@ -144,7 +209,18 @@ def _cached_partitions(max_partitions: int) -> list[Any]:
         _partitions_future = None
     fresh = _partitions_cache is not None and (now - _partitions_cache[0] < _PARTITIONS_TTL)
     if not fresh and _partitions_future is None:
-        _partitions_future = _DISK_POOL.submit(lambda: psutil.disk_partitions(all=False))
+        _partitions_future = _DISK_POOL.submit(_enumerate_partitions)
+
+    if _partitions_cache is None and _partitions_future is not None:
+        # Nothing to serve yet — give the scan a bounded moment to land.
+        done, _ = wait([_partitions_future], timeout=first_scan_timeout)
+        if done:
+            try:
+                _partitions_cache = (time.monotonic(), list(_partitions_future.result()))
+            except Exception:  # noqa: BLE001
+                pass
+            _partitions_future = None
+
     parts = _partitions_cache[1] if _partitions_cache else []
     return parts[:max_partitions]
 
@@ -350,8 +426,13 @@ def get_uptime_info() -> dict[str, Any]:
     }
 
 
-def get_services_info(max_services: int = 40) -> dict[str, Any]:
-    """Running services. Windows: psutil; Linux: systemctl."""
+def get_services_info(max_services: int = 40, include_stopped: bool = False) -> dict[str, Any]:
+    """Services list. Windows: psutil; Linux: systemctl.
+
+    Default = running services only (the dashboard view). ``include_stopped``
+    lists every installed service with its real status — the System app's
+    "Show all services" setting requests this via ``?services=all``.
+    """
     plat = platform.system().lower()
     out_platform = "windows" if plat == "windows" else ("darwin" if plat == "darwin" else "linux")
     services: list[dict[str, Any]] = []
@@ -360,14 +441,23 @@ def get_services_info(max_services: int = 40) -> dict[str, Any]:
         if not _psutil_available():
             return {"platform": out_platform, "count": 0, "services": []}
         try:
-            running = [s for s in psutil.win_service_iter() if s.status() == "running"]
-            total = len(running)
-            for svc in sorted(running, key=lambda s: s.name())[:max_services]:
+            matched = []
+            for s in psutil.win_service_iter():
+                try:
+                    status = s.status()
+                except Exception:
+                    continue
+                if include_stopped or status == "running":
+                    matched.append((s, status))
+            total = len(matched)
+            # Running services first, then by name — the interesting ones surface.
+            matched.sort(key=lambda t: (t[1] != "running", t[0].name()))
+            for svc, status in matched[:max_services]:
                 try:
                     services.append({
                         "name": svc.name(),
                         "display_name": svc.display_name(),
-                        "status": "running",
+                        "status": status,
                     })
                 except Exception:
                     continue
@@ -378,30 +468,30 @@ def get_services_info(max_services: int = 40) -> dict[str, Any]:
 
     # Linux / Darwin via systemctl
     try:
+        cmd = ["systemctl", "list-units", "--type=service", "--no-pager", "--no-legend"]
+        cmd.insert(3, "--all" if include_stopped else "--state=running")
         result = subprocess.run(
-            [
-                "systemctl",
-                "list-units",
-                "--type=service",
-                "--state=running",
-                "--no-pager",
-                "--no-legend",
-            ],
+            cmd,
             capture_output=True,
             text=True,
             timeout=_PROBE_TIMEOUT,
         )
         lines = [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
         total = len(lines)
-        for ln in lines[:max_services]:
+        rows = []
+        for ln in lines:
+            # Columns: UNIT LOAD ACTIVE SUB DESCRIPTION
             parts = ln.split(None, 4)
             if not parts:
                 continue
-            services.append({
+            status = parts[3] if len(parts) > 3 else "unknown"
+            rows.append({
                 "name": parts[0],
                 "display_name": parts[4] if len(parts) > 4 else parts[0],
-                "status": "running",
+                "status": status,
             })
+        rows.sort(key=lambda r: (r["status"] != "running", r["name"]))
+        services = rows[:max_services]
         return {"platform": out_platform, "count": total, "services": services}
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return {"platform": out_platform, "count": 0, "services": []}
@@ -453,7 +543,7 @@ def get_ports_info(max_ports: int = 50) -> list[dict[str, Any]]:
     return out
 
 
-def get_all_monitoring() -> dict[str, Any]:
+def get_all_monitoring(all_services: bool = False) -> dict[str, Any]:
     """One-shot snapshot for the Deck UI — all sections in a single call.
 
     Uses the fast system-only disk path: the snapshot powers the dashboard's
@@ -466,7 +556,14 @@ def get_all_monitoring() -> dict[str, Any]:
         "memory": get_memory_info(),
         "cpu": get_cpu_info(),
         "uptime": get_uptime_info(),
-        "services": get_services_info(),
+        # The all-services view must actually SHOW the stopped tail: with the
+        # default 40-row cap and running-first ordering, a machine with >40
+        # running services would list an identical page and only the count
+        # would change (caught live 2026-07-12: 126 running / 320 total).
+        "services": get_services_info(
+            max_services=1000 if all_services else 40,
+            include_stopped=all_services,
+        ),
         "ports": get_ports_info(),
         "ts": datetime.now(timezone.utc).isoformat(),
     }

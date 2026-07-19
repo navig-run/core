@@ -298,7 +298,7 @@ def stack_info():
         ch.console.print()
         ch.header("Environment (.env)")
         try:
-            for line in env_file.read_text().splitlines():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     key = line.split("=", 1)[0]

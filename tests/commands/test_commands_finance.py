@@ -1,8 +1,9 @@
 """Tests for navig/commands/finance.py."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from typer.testing import CliRunner
-from unittest.mock import patch, MagicMock
 
 from navig.commands.finance import finance_app
 
@@ -93,26 +94,26 @@ def test_status_help_exits_0():
 # ---------------------------------------------------------------------------
 
 def test_balance_exits_0():
-    with patch("navig.console_helper.warn", create=True):
+    with patch("navig.console_helper.warning"):
         result = runner.invoke(finance_app, ["balance", "ledger.beancount"])
     assert result.exit_code == 0
 
 
 def test_balance_calls_warn():
-    with patch("navig.console_helper.warn", create=True) as mock_warn:
+    with patch("navig.console_helper.warning") as mock_warn:
         runner.invoke(finance_app, ["balance", "myfile.beancount"])
     mock_warn.assert_called_once()
 
 
 def test_balance_warn_says_not_implemented():
-    with patch("navig.console_helper.warn", create=True) as mock_warn:
+    with patch("navig.console_helper.warning") as mock_warn:
         runner.invoke(finance_app, ["balance", "x.beancount"])
     call_arg = mock_warn.call_args[0][0]
     assert "not yet implemented" in call_arg
 
 
 def test_balance_no_ledger_still_runs():
-    with patch("navig.console_helper.warn", create=True):
+    with patch("navig.console_helper.warning"):
         result = runner.invoke(finance_app, ["balance"])
     assert result.exit_code == 0
 

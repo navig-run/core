@@ -240,6 +240,23 @@ def register_lsp_tools() -> None:
         logger.debug("LSP tools not available (skip): %s", exc)
 
 
+def register_browser_tools() -> None:
+    """Register the batchable ``browser_tool`` (headless Playwright agent browser).
+
+    The import is Playwright-free (the engine is imported lazily on first use), so
+    registration always succeeds; the tool returns a clean "install chromium" error
+    at call time if Playwright is missing.
+    """
+    try:
+        from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+        from navig.agent.tools.browser_tools import BrowserTool
+
+        _AGENT_REGISTRY.register(BrowserTool(), toolset="browser")
+        logger.debug("Agent browser tool registered")
+    except ImportError as exc:
+        logger.debug("Browser tool not available (skip): %s", exc)
+
+
 def register_all_tools() -> None:
     """Register all available built-in agent tools.
 
@@ -260,6 +277,7 @@ def register_all_tools() -> None:
         ("git", register_git_tools),
         ("remote_executor", register_remote_executor_tools),
         ("lsp", register_lsp_tools),
+        ("browser", register_browser_tools),
     ]:
         try:
             fn()

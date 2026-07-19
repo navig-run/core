@@ -26,10 +26,9 @@ def list_server_templates_cmd(options: dict[str, Any]):
         if enabled_only:
             ch.warning(f"No enabled templates for server '{server}'")
         else:
-            ch.warning(
-                f"No templates initialized for server '{server}'",
-                "Run 'navig server inspect' to auto-detect templates",
-            )
+            # (used to say "Run 'navig server inspect'" — there is no such
+            # command, so the empty state sent you nowhere.)
+            ch.warning(f"No templates initialized for server '{server}'")
         return
 
     if options.get("raw") or options.get("plain"):
@@ -74,10 +73,8 @@ def show_template_config_cmd(template_name: str, options: dict[str, Any]):
     config = template_manager.get_template_config(server, template_name, include_template=True)
 
     if config is None:
-        ch.error(
-            f"Template '{template_name}' not initialized for server '{server}'",
-            "Run 'navig server inspect' to auto-detect templates",
-        )
+        # (used to say "Run 'navig server inspect'" — no such command exists.)
+        ch.error(f"Template '{template_name}' not initialized for server '{server}'")
         return
 
     if options.get("raw"):

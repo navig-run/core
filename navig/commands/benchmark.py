@@ -14,4 +14,4 @@ def benchmark_run(
     """Run benchmarks and show timing results."""
     from navig import console_helper as ch
 
-    ch.warn("navig benchmark is not yet implemented in this build.")
+    ch.warning("navig benchmark is not yet implemented in this build.")

@@ -65,6 +65,13 @@ async def _cached(key: str, fn: Callable[[], object]) -> object:
 
 async def handle_deck_monitor_all(request: "web.Request") -> "web.Response":
     try:
+        # ?services=all → every installed service with its real status (the
+        # System app's "Show all services" setting). Separate cache key — the
+        # two variants must not serve each other's payload.
+        if request.query.get("services") == "all":
+            return _ok(await _cached(
+                "all_full", lambda: monitor.get_all_monitoring(all_services=True),
+            ))
         return _ok(await _cached("all", monitor.get_all_monitoring))
     except Exception as exc:
         logger.exception("monitor snapshot failed")
@@ -105,6 +112,11 @@ async def handle_deck_monitor_uptime(request: "web.Request") -> "web.Response":
 
 async def handle_deck_monitor_services(request: "web.Request") -> "web.Response":
     try:
+        if request.query.get("all") in ("1", "true", "all"):
+            return _ok({"services": await _cached(
+                "services_all",
+                lambda: monitor.get_services_info(max_services=1000, include_stopped=True),
+            )})
         return _ok({"services": await _cached("services", monitor.get_services_info)})
     except Exception as exc:
         logger.exception("monitor/services failed")

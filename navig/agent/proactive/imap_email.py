@@ -191,8 +191,13 @@ class IMAPEmailProvider(EmailProvider):
 
             with SMTP_SSL(self.smtp_host, self.smtp_port) as smtp:
                 smtp.login(self.email_address, self.password)
-                smtp.send_message(msg)
+                # send_message returns a dict of recipients the server REFUSED
+                # (it only raises when ALL are refused) — surface a partial refusal
+                # instead of reporting a clean success.
+                refused = smtp.send_message(msg)
 
+            if refused:
+                raise RuntimeError(f"recipients refused: {', '.join(refused)}")
             return True
 
         loop = asyncio.get_running_loop()

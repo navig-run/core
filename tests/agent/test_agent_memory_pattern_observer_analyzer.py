@@ -5,14 +5,14 @@ Batch 80: navig/agent/memory.py, navig/agent/pattern_observer.py,
 from __future__ import annotations
 
 import sqlite3
-import pytest
 from pathlib import Path
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # agent/memory.py
 # ---------------------------------------------------------------------------
-from navig.agent.memory import get_memory, _LegacyMemoryAdapter
+from navig.agent.memory import _LegacyMemoryAdapter, get_memory
 
 
 class TestLegacyMemoryAdapter:

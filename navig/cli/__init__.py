@@ -233,7 +233,7 @@ def main(
     debug_log: bool = typer.Option(
         False,
         "--debug-log",
-        help="Enable debug logging to file (.navig/debug.log)",
+        help="Enable debug logging to a file (run `navig paths` for its location — under the OS log dir, not ~/.navig)",
     ),
     no_cache: bool = typer.Option(
         False,
@@ -584,7 +584,7 @@ def search_command(
         "auto",
         "--provider",
         "-p",
-        help="Search provider: auto, brave, duckduckgo, perplexity, gemini, grok, kimi",
+        help="Search provider: auto, mojeek, brave, tavily, serpapi, duckduckgo, firecrawl, perplexity",
     ),
     plain: bool = typer.Option(
         False,
@@ -1194,7 +1194,7 @@ def ask_compat(
     """Ask AI about server/configuration."""
     from navig.agent.effort import resolve_effort
     from navig.commands.ai import ask_ai
-    from navig.routing.detect import detect_mode
+    from navig.llm.routing.detect import detect_mode
 
     if effort is not None:
         try:
@@ -1272,7 +1272,7 @@ def init_local_command(
 # ── wiki_app, dispatch/contacts → all via _EXTERNAL_CMD_MAP in registration.py
 
 
-# ── bridge/farmore/copilot, bot_app → navig.commands.gateway via _EXTERNAL_CMD_MAP
+# ── bridge/copilot, bot_app → navig.commands.gateway via _EXTERNAL_CMD_MAP
 
 
 # ============================================================================

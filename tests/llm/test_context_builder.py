@@ -252,6 +252,7 @@ class TestFullPipeline:
             timeout=120.0,
             base_url=None,
             thinking_params=None,
+            connection_id=None,
         ):
             captured_calls.append(
                 {
@@ -263,9 +264,9 @@ class TestFullPipeline:
             )
             return "Mocked LLM response", 0, 0, {}
 
-        with patch("navig.llm_generate._call_provider_rich", side_effect=fake_call_provider_rich):
+        with patch("navig.llm.generate._call_provider_rich", side_effect=fake_call_provider_rich):
             # Also need llm_modes config to be present for the router path
-            with patch("navig.llm_generate._has_llm_modes_config", return_value=True):
+            with patch("navig.llm.generate._has_llm_modes_config", return_value=True):
                 # Mock resolve_llm to return a valid config
                 mock_resolved = MagicMock()
                 mock_resolved.provider = "openai"
@@ -278,8 +279,8 @@ class TestFullPipeline:
                 mock_resolved.is_uncensored = False
                 mock_resolved.resolution_reason = "test"
 
-                with patch("navig.llm_router.resolve_llm", return_value=mock_resolved):
-                    from navig.llm_generate import run_llm
+                with patch("navig.llm.router.resolve_llm", return_value=mock_resolved):
+                    from navig.llm.generate import run_llm
 
                     result = run_llm(
                         messages=[
@@ -316,7 +317,7 @@ class TestFullPipeline:
 
 
 def test_enrich_messages_includes_key_facts_translation_prefix():
-    from navig.llm_generate import _enrich_messages_with_context
+    from navig.llm.generate import _enrich_messages_with_context
 
     messages = [
         {"role": "system", "content": "sys"},
@@ -350,8 +351,8 @@ def test_enrich_messages_includes_key_facts_translation_prefix():
         def fake_call_provider(provider, model, messages, **kw):
             return "Response without context"
 
-        with patch("navig.llm_generate._call_provider", side_effect=fake_call_provider):
-            with patch("navig.llm_generate._has_llm_modes_config", return_value=True):
+        with patch("navig.llm.generate._call_provider", side_effect=fake_call_provider):
+            with patch("navig.llm.generate._has_llm_modes_config", return_value=True):
                 mock_resolved = MagicMock()
                 mock_resolved.provider = "openai"
                 mock_resolved.model = "gpt-4o-mini"
@@ -363,8 +364,8 @@ def test_enrich_messages_includes_key_facts_translation_prefix():
                 mock_resolved.is_uncensored = False
                 mock_resolved.resolution_reason = "test"
 
-                with patch("navig.llm_router.resolve_llm", return_value=mock_resolved):
-                    from navig.llm_generate import run_llm
+                with patch("navig.llm.router.resolve_llm", return_value=mock_resolved):
+                    from navig.llm.generate import run_llm
 
                     result = run_llm(
                         messages=[{"role": "user", "content": "hello"}],
@@ -472,7 +473,7 @@ class TestEnrichMessages:
     """Test the message enrichment helper in llm_generate."""
 
     def test_empty_context_no_change(self):
-        from navig.llm_generate import _enrich_messages_with_context
+        from navig.llm.generate import _enrich_messages_with_context
 
         msgs = [{"role": "user", "content": "hello"}]
         empty = {
@@ -485,7 +486,7 @@ class TestEnrichMessages:
         assert result == msgs
 
     def test_context_injected_as_system_message(self):
-        from navig.llm_generate import _enrich_messages_with_context
+        from navig.llm.generate import _enrich_messages_with_context
 
         msgs = [{"role": "user", "content": "hello"}]
         ctx = {
@@ -507,7 +508,7 @@ class TestEnrichMessages:
         assert "prev msg" in result[0]["content"]
 
     def test_context_inserted_after_existing_system(self):
-        from navig.llm_generate import _enrich_messages_with_context
+        from navig.llm.generate import _enrich_messages_with_context
 
         msgs = [
             {"role": "system", "content": "You are helpful"},

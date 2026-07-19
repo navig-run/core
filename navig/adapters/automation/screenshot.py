@@ -8,13 +8,11 @@ Backend priority chain (lowest number = highest priority):
 The active backend is selected once per process via
 ``get_screenshot_backend()``, which reads the ``NAVIG_SCREENSHOT_BACKEND``
 environment variable (default ``"auto"``).
-
-Ported and hardened from CursorTouch/Windows-MCP (MIT licence)
-desktop/screenshot.py.
 """
 
 from __future__ import annotations
 
+import abc
 import os
 import sys
 from functools import lru_cache
@@ -35,12 +33,15 @@ _BACKEND_REGISTRY: dict[str, type[_ScreenshotBackend]] = {}
 # ─── Backend base & registry ──────────────────────────────────────────────────
 
 
-class _ScreenshotBackend:
+class _ScreenshotBackend(abc.ABC):
     """Abstract base class for screenshot backends.
 
     Subclasses are auto-registered via ``__init_subclass__``.  Each subclass
     must declare a ``name`` (unique identifier) and ``priority`` (lower =
-    preferred).
+    preferred), and implement both abstract methods below — the base is a real
+    ``abc.ABC`` so a subclass that forgets one can't be instantiated (a clear
+    ``TypeError`` at construction, not a late ``NotImplementedError`` on call),
+    and the base itself can never be used as a (broken) backend.
     """
 
     name: str = ""
@@ -51,10 +52,12 @@ class _ScreenshotBackend:
         if cls.name:
             _BACKEND_REGISTRY[cls.name] = cls
 
+    @abc.abstractmethod
     def is_available(self) -> bool:
         """Return True if this backend's dependencies are importable."""
         raise NotImplementedError
 
+    @abc.abstractmethod
     def capture_region(
         self,
         left: int,

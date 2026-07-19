@@ -128,12 +128,10 @@ class ContextCompressor:
         self.frozen_tail = frozen_tail
         # Load config overrides
         try:
-            from navig.config import config
+            from navig.config import get as _cfg_get
 
             self.threshold = float(
-                getattr(config, "agent", {}).get("context_compress_threshold", self.threshold)
-                if hasattr(getattr(config, "agent", None), "get")
-                else self.threshold
+                _cfg_get("agent.context_compress_threshold", self.threshold)
             )
         except Exception:
             pass
@@ -232,7 +230,7 @@ class ContextCompressor:
         """Replace the compressible middle with an LLM summary.
 
         Frozen head and tail are preserved.  The middle block is extracted,
-        formatted, and summarised via :func:`~navig.llm_generate.run_llm`.
+        formatted, and summarised via :func:`~navig.llm.generate.run_llm`.
         """
         if len(messages) <= (self.frozen_head + self.frozen_tail + 1):
             return messages  # too short to compress
@@ -295,10 +293,10 @@ class ContextCompressor:
         )
 
         try:
-            from navig.llm_generate import run_llm
+            from navig.llm.generate import run_llm
 
             result = run_llm(
-                prompt=template,
+                [{"role": "user", "content": template}],
                 temperature=_SUMMARISE_TEMPERATURE,
                 max_tokens=_SUMMARISE_MAX_TOKENS,
             )
@@ -525,12 +523,16 @@ class ReactiveCompactor:
 
 
 def _default_summarizer(digest: str) -> str:
-    """Fallback summarizer using :func:`~navig.llm_generate.run_llm`."""
+    """Fallback summarizer using :func:`~navig.llm.generate.run_llm`."""
     prompt = _REACTIVE_SUMMARY_TEMPLATE.format(digest=digest)
     try:
-        from navig.llm_generate import run_llm
+        from navig.llm.generate import run_llm
 
-        result = run_llm(prompt=prompt, temperature=_SUMMARISE_TEMPERATURE, max_tokens=_SUMMARISE_MAX_TOKENS)
+        result = run_llm(
+            [{"role": "user", "content": prompt}],
+            temperature=_SUMMARISE_TEMPERATURE,
+            max_tokens=_SUMMARISE_MAX_TOKENS,
+        )
         if result and result.content:
             return result.content.strip()
     except Exception as exc:

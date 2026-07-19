@@ -9,14 +9,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.core.security
 # ---------------------------------------------------------------------------
-
 from navig.core.security import (
-    DEFAULT_REDACT_PATTERNS,
     DANGEROUS_PATTERNS,
+    DEFAULT_REDACT_PATTERNS,
     SAFE_EXECUTABLES,
     MissingEnvVarError,
     RedactingFormatter,
@@ -38,7 +36,6 @@ from navig.core.security import (
     substitute_env_vars,
     validate_command_safety,
 )
-
 
 # ── redact_sensitive_text ────────────────────────────────────────────────────
 

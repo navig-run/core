@@ -1,16 +1,22 @@
-# Healthcheck Skill
-**id:** healthcheck
-**name:** System Healthcheck
-**version:** 1.0.0
-**category:** system
-**tags:** health, status, monitoring, diagnostics
-**platforms:** linux, macos, windows
-**tools:** bash_exec, memory_store
-**safety:** low
-**user_invocable:** true
-**description:** Run a lightweight system healthcheck and store a summary snapshot.
-
 ---
+id: healthcheck
+name: System Healthcheck
+version: 1.0.0
+category: system
+tags: [health, status, monitoring, diagnostics]
+platforms: [linux, macos, windows]
+tools: [bash_exec, memory_store]
+safety: safe
+user_invocable: true
+description: >
+  Run a lightweight, non-destructive system healthcheck — disk usage, memory, CPU
+  load, process count, hostname — and store a structured snapshot in session memory.
+  Use when the user says "run a healthcheck", "check system health", "how's the
+  server doing", "is everything ok", or asks for a status/diagnostics snapshot of the
+  current host. Read-only: runs only inspection commands, never mutates the system.
+---
+
+# Healthcheck Skill
 
 ## Description
 

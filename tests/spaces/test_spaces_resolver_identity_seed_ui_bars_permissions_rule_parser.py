@@ -15,7 +15,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/spaces/resolver.py
 # ---------------------------------------------------------------------------
@@ -97,7 +96,16 @@ class TestDiscoverSpacePaths:
         fake_config.mkdir()
         fake_cwd = tmp_path / "workdir"
         fake_cwd.mkdir()
-        with patch("navig.spaces.resolver.paths.config_dir", return_value=fake_config):
+        # Isolate the project walk-up too: pytest's tmp lives inside the repo,
+        # so the scan would find the repo's own .navig and leak a 'project'
+        # entry (this test is about container emptiness, not project discovery).
+        # NOTE: registry reads go through navig.spaces.registry's own `paths`
+        # binding — patching only resolver.paths does not isolate them.
+        with (
+            patch("navig.spaces.resolver.paths.config_dir", return_value=fake_config),
+            patch("navig.spaces.registry.paths.config_dir", return_value=fake_config),
+            patch("navig.spaces.resolver._find_project_navig_root", return_value=None),
+        ):
             result = discover_space_paths(cwd=fake_cwd)
         assert result == {}
 
@@ -172,8 +180,9 @@ class TestGenerateSeed:
         assert len(result) in (64, 32)
 
     def test_deterministic_on_same_inputs(self) -> None:
-        from navig.identity.seed import generate_seed
         import hashlib
+
+        from navig.identity.seed import generate_seed
         raw = "12345678901234kernel:5.0johndoeLinux"
         expected = hashlib.sha256(raw.encode("utf-8")).hexdigest()
         with (
@@ -242,32 +251,32 @@ class TestMakeBar:
         assert isinstance(empty, str)
 
     def test_total_width_correct(self) -> None:
-        from navig.ui.bars import _make_bar, _BAR_WIDTH
+        from navig.ui.bars import _BAR_WIDTH, _make_bar
         for fill in (0.0, 0.25, 0.5, 0.75, 1.0):
             filled, empty = _make_bar(fill)
             # Safe mode: '#' and '.'; Rich mode: block chars — each is one char
             assert len(filled) + len(empty) == _BAR_WIDTH
 
     def test_full_fill(self) -> None:
-        from navig.ui.bars import _make_bar, _BAR_WIDTH
+        from navig.ui.bars import _BAR_WIDTH, _make_bar
         filled, empty = _make_bar(1.0)
         assert len(filled) == _BAR_WIDTH
         assert empty == ""
 
     def test_empty_fill(self) -> None:
-        from navig.ui.bars import _make_bar, _BAR_WIDTH
+        from navig.ui.bars import _BAR_WIDTH, _make_bar
         filled, empty = _make_bar(0.0)
         assert filled == ""
         assert len(empty) == _BAR_WIDTH
 
     def test_clamps_below_zero(self) -> None:
-        from navig.ui.bars import _make_bar, _BAR_WIDTH
+        from navig.ui.bars import _BAR_WIDTH, _make_bar
         filled, empty = _make_bar(-1.0)
         assert filled == ""
         assert len(empty) == _BAR_WIDTH
 
     def test_clamps_above_one(self) -> None:
-        from navig.ui.bars import _make_bar, _BAR_WIDTH
+        from navig.ui.bars import _BAR_WIDTH, _make_bar
         filled, empty = _make_bar(99.0)
         assert len(filled) == _BAR_WIDTH
         assert empty == ""

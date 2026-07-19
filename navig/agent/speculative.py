@@ -76,7 +76,13 @@ def _env_float(name: str, default: float, *, min_value: float, max_value: float)
 # Tool classification — speculation whitelist
 # ─────────────────────────────────────────────────────────────
 
-#: Tools that are safe to speculate (read-only, idempotent).
+#: Tools safe to speculate + serve from the 60s cache. The bar is stricter than
+#: "read-only": the result must stay valid within the TTL. A local *mutating* tool
+#: clears the cache (see SpeculativeExecutor.execute), so file/git/code reads are
+#: fine — an edit invalidates them. But reads whose result changes EXTERNALLY, with
+#: no local tool to trigger that clear (a background task's status/output, live host
+#: metrics, streaming logs), must NOT be here: a stale 60s hit returns wrong state
+#: (e.g. "running" for a task that already finished). Those are excluded on purpose.
 READ_ONLY_TOOLS: frozenset[str] = frozenset(
     {
         "read_file",
@@ -99,10 +105,7 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "navig_file_get",
         "navig_db_list",
         "navig_host_show",
-        "navig_host_test",
-        "navig_host_monitor",
         "navig_docker_ps",
-        "navig_docker_logs",
         "navig_app_list",
         "navig_app_show",
         "navig_web_vhosts",
@@ -117,10 +120,7 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "lsp_symbols",
         "get_plan_context",
         "todo_show",
-        "background_task_status",
-        "background_task_output",
         "worktree_list",
-        "coordinator_status",
     }
 )
 
@@ -346,7 +346,7 @@ class SpeculativeCache:
             args_hash=key,
             result=result,
             created_at=time.time(),
-            ttl=ttl or self.DEFAULT_TTL,
+            ttl=ttl if ttl is not None else self.DEFAULT_TTL,  # 0 is a valid TTL, not "use default"
         )
         self._evict_if_needed()
 

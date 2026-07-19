@@ -12,14 +12,13 @@ Covers:
 - LinksDB.search (FTS and fallback)
 """
 
-from pathlib import Path
-from datetime import datetime
 import json
+from datetime import datetime
+from pathlib import Path
 
 import pytest
 
-from navig.memory.links_db import LinksDB, LinkRecord
-
+from navig.memory.links_db import LinkRecord, LinksDB
 
 # ─────────────────────────────────────────────────────────────
 # LinkRecord

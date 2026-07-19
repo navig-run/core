@@ -1,10 +1,10 @@
 """
 AI Assistant Integration
 
-Context-aware assistance from The Schema's analysis engines.
+Context-aware assistance from NAVIG's analysis engines.
 Supports multiple AI providers via the providers system.
 
-Provides context-aware assistance from The Schema's analysis engines.
+Provides context-aware assistance from NAVIG's analysis engines.
 Supports multiple AI providers via the providers system.
 """
 
@@ -89,6 +89,9 @@ class AIAssistant:
         self.config = config_manager
         self.api_url = "https://openrouter.ai/api/v1/chat/completions"
         self._fallback_manager = None
+        # Set when the last ask() rotated to a different account/model — the CLI
+        # reads it to show "used account B" instead of a silent swap.
+        self.last_fallback: dict[str, Any] | None = None
 
     # Class-level singleton for ConversationStore — opened once, reused across calls
     _conv_store: ClassVar[Any | None] = None
@@ -135,6 +138,9 @@ class AIAssistant:
         Returns:
             AI response text
         """
+        # Fresh per call — the CLI reads this after ask() to surface a rotation.
+        self.last_fallback = None
+
         # Get system prompt
         system_prompt = self.config.get_ai_system_prompt()
 
@@ -224,14 +230,93 @@ class AIAssistant:
         # Memory enrichment (system_prompt) is preserved; only the dispatch
         # path changes.  effort=None falls through to the normal provider path.
         if effort is not None:
-            from navig.llm_generate import run_llm
+            from navig.llm.generate import run_llm
 
             _messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"{context_str}\n\nUSER QUESTION: {question}"},
             ]
             _result = run_llm(_messages, model_override=model_override, effort=effort)
+            _fb = (getattr(_result, "raw", None) or {}).get("fallback")
+            if _fb:
+                self.last_fallback = _fb
             return _result.content or ""
+
+        # ── AI Connections (navig connect) take priority ─────────────────────
+        # Route through the operator-selected connection (default, or the one
+        # matching a `provider:model` override) so `navig ask` uses claude-max /
+        # API-key / local connections instead of the legacy OpenRouter host path.
+        # Falls through to the provider/OpenRouter path only when no connection
+        # is routable; a delegated external runtime raises an honest error.
+        try:
+            from navig.providers.inference import (
+                ExternalNotRoutable,
+                NoRoutableConnection,
+                complete_via_connection,
+                has_routable_connection,
+            )
+
+            if has_routable_connection(model_override):
+                def _record_fallback(info: dict[str, Any]) -> None:
+                    self.last_fallback = info
+
+                return complete_via_connection(
+                    system_prompt=system_prompt,
+                    user_content=f"{context_str}\n\nUSER QUESTION: {question}",
+                    model_spec=model_override,
+                    temperature=_DEFAULT_TEMPERATURE,
+                    max_tokens=_DEFAULT_MAX_TOKENS,
+                    on_fallback=_record_fallback,
+                )
+        except ExternalNotRoutable:
+            raise  # honest, user-facing — do not silently fall back
+        except NoRoutableConnection as _exc:
+            logger.debug("no routable connection, using legacy path: %s", _exc)
+        except Exception as _exc:  # noqa: BLE001
+            # A routable connection WAS chosen but the call itself failed (e.g. a
+            # Claude Pro/Max rate-limit). Surface that clearly instead of silently
+            # falling through to a DIFFERENT provider (the legacy OpenRouter path,
+            # whose stale default models then 400/404 and crash) — that just
+            # confuses the operator about which provider actually ran.
+            #
+            # Classify with the SAME categorizer the rotation loop used, not ad-hoc
+            # string matching (which missed "quota"/"ratelimit" and gave no
+            # guidance for auth/billing). complete_via_connection has ALREADY
+            # rotated across every account for these categories (all _ROTATE_WORTHY
+            # + account-wide), so "every connected account" is accurate here.
+            from navig.llm.fallback_policy import (
+                AUTH,
+                PAYMENT,
+                RATE_LIMITED,
+                categorize_error,
+            )
+
+            _cat = categorize_error(_exc)
+            _switch = (
+                "or use `--model <other-provider:model>` (e.g. an API-key provider)."
+            )
+            if _cat == RATE_LIMITED:
+                raise RuntimeError(
+                    "Your Claude/AI subscription is rate-limited — every connected "
+                    "account is capped. Options: wait for the limit window to reset; "
+                    "connect another account with `navig connect login claude-max` "
+                    f"(NAVIG rotates across accounts automatically); {_switch}"
+                ) from _exc
+            if _cat == AUTH:
+                raise RuntimeError(
+                    "Your AI connection failed to authenticate — every connected "
+                    "account's credential was rejected (expired or revoked). "
+                    "Reconnect with `navig connect login` (or re-add the API key), "
+                    f"{_switch}"
+                ) from _exc
+            if _cat == PAYMENT:
+                raise RuntimeError(
+                    "Your AI connection has a billing problem — every connected "
+                    "account is out of credit or the plan has lapsed. Top up or "
+                    "renew the plan, connect another account with "
+                    f"`navig connect login`, {_switch}"
+                ) from _exc
+            raise RuntimeError(f"Selected AI connection failed: {_exc}") from _exc
 
         # Try the new provider system first if available
         fallback_mgr = self._get_fallback_manager() if use_fallback else None
@@ -531,7 +616,7 @@ def ask_ai_with_context(
     Returns:
         AI response text
     """
-    from navig.llm_generate import llm_generate  # noqa: PLC0415
+    from navig.llm.generate import llm_generate  # noqa: PLC0415
 
     # Build messages list
     messages: list[dict[str, str]] = []

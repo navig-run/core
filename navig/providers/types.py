@@ -224,7 +224,7 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
         name="google",
         base_url="https://generativelanguage.googleapis.com/v1beta/openai",
         api=ModelApi.OPENAI_COMPLETIONS,
-        auth_header="Authorization",
+        auth_header=True,
         models=[
             ModelDefinition(
                 id="gemini-2.5-flash",

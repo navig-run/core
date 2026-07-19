@@ -31,11 +31,21 @@ logger = logging.getLogger(__name__)
 
 _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "bridge": ("navig.commands.bridge", "bridge_app"),
-    "github": ("navig.commands.farmore", "farmore_app"),  # primary name
-    "farmore": ("navig.commands.farmore", "farmore_app"),  # back-compat alias
-    "tiktok": ("navig.commands.tiktok", "tiktok_app"),
-    "tt": ("navig.commands.tiktok", "tiktok_app"),
+    # github now ships in the navig-github plugin via the `navig.commands`
+    # entry-point group (discovered by _entry_point_commands()). No hardcoded entry.
+    # tiktok / tt now ship in the navig-download plugin via the `navig.commands`
+    # entry-point group (discovered by _entry_point_commands()). No hardcoded entry.
+    # blackbox / bb: the recorder capability (capability_registry OPTIONAL) — was
+    # declared but never wired into the CLI; register it so `navig blackbox` works.
+    "blackbox": ("navig.commands.blackbox", "blackbox_app"),
+    "bb": ("navig.commands.blackbox", "blackbox_app"),
     "copilot": ("navig.commands.ask", "copilot_app"),
+    # generate: analyse (video→briefing) + AI generate (image/video/audio). Canonical
+    # name; `media` is a DEPRECATED alias — both invoke media_app and the app callback
+    # warns when run as `media`. The navig-download plugin adds top-level `download`/
+    # `tiktok` verbs via its own entry-point group.
+    "generate": ("navig.commands.media", "media_app"),
+    "media": ("navig.commands.media", "media_app"),
     "inbox": ("navig.commands.inbox", "inbox_app"),
     "sync": ("navig.commands.sync", "sync_app"),
     "agent": ("navig.commands.agent", "agent_app"),
@@ -46,18 +56,26 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "formation": ("navig.commands.formation", "formation_app"),
     "council": ("navig.commands.council", "council_app"),
     "auto": ("navig.commands.auto", "auto_app"),
+    "cdp": ("navig.commands.cdp", "cdp_app"),
+    "do": ("navig.commands.do", "do_app"),
+    "gmail": ("navig.commands.gmail", "gmail_app"),
     "evolve": ("navig.commands.evolution", "evolution_app"),
     "script": ("navig.commands.script", "script_app"),
-    "calendar": ("navig.commands.calendar", "calendar_app"),
+    # calendar now ships in the navig-calendar plugin via the `navig.commands`
+    # entry-point group. Providers stay in core (navig.agent.proactive).
     "mode": ("navig.commands.mode", "mode_app"),
-    "email": ("navig.commands.email", "email_app"),
+    # email now ships in the navig-email plugin via the `navig.commands` entry-point.
     "voice": ("navig.commands.voice", "voice_app"),
     "crash": ("navig.commands.crash", "crash_app"),
     "telegram": ("navig.commands.telegram", "telegram_app"),
     "tg": ("navig.commands.telegram", "telegram_app"),        # hidden alias
     "matrix": ("navig.commands.matrix", "matrix_app"),
     "mx": ("navig.commands.matrix", "matrix_app"),            # hidden alias
+    # `store` = the hub for everything connectable ("doctor of wiring").
+    # SQLite maintenance (the old `navig store`) moved to `navig db local`;
+    # hidden forwards live inside the store app for one release.
     "store": ("navig.commands.store", "store_app"),
+    "hub": ("navig.commands.store", "store_app"),  # hidden alias
     "vault": ("navig.commands.vault", "vault_app"),
     "cred": ("navig.commands.vault", "cred_app"),             # deprecated → navig vault
     "cred-profile": ("navig.commands.vault", "profile_app"),  # deprecated → navig vault profile
@@ -65,6 +83,8 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "flux": ("navig.commands.flux", "flux_app"),
     "fx": ("navig.commands.flux", "flux_app"),                # hidden alias
     "ai": ("navig.commands.ai", "ai_app"),
+    "connect": ("navig.commands.connect_cmd", "connect_app"),
+    "connections": ("navig.commands.connect_cmd", "connect_app"),  # hidden alias
     "brain": ("navig.commands.brain", "brain_app"),
     "backup": ("navig.commands.backup", "backup_app"),
     "tunnel": ("navig.commands.tunnel", "tunnel_app"),
@@ -73,8 +93,12 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "skill": ("navig.commands.skills", "skills_app"),
     "plugin": ("navig.commands.plugin", "plugin_app"),
     "plugins": ("navig.commands.plugin", "plugin_app"),
+    "modules": ("navig.commands.modules_cmd", "modules_app"),
+    "module": ("navig.commands.modules_cmd", "modules_app"),   # singular alias
     "history": ("navig.commands.history", "history_app"),
     "hist": ("navig.commands.history", "history_app"),        # hidden alias
+    "ledger": ("navig.commands.ledger", "ledger_app"),
+    "audit": ("navig.commands.audit", "audit_app"),
     "trigger": ("navig.commands.triggers", "trigger_app"),
     "insights": ("navig.commands.insights", "insights_app"),
     "server-template": ("navig.commands.server_template", "server_template_app"),
@@ -85,6 +109,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "queue": ("navig.commands.gateway", "queue_app"),
     "task": ("navig.commands.workflow", "task_app"),
     "install": ("navig.commands.install", "install_app"),
+    "block": ("navig.commands.block", "block_app"),
     "quick": ("navig.commands.suggest", "quick_app"),
     "q": ("navig.commands.suggest", "quick_app"),             # hidden alias
     "hosts": ("navig.commands.local", "hosts_app"),
@@ -127,6 +152,11 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "s": ("navig.commands.server", "server_app"),             # hidden alias
     "db": ("navig.commands.db", "db_app"),
     "database": ("navig.commands.db", "db_app"),
+    # Both of these were fully implemented Typer apps that nothing ever
+    # registered — so `navig deploy init` (which deploy.py's OWN error message
+    # tells you to run) and `navig action list` (likewise) did not exist.
+    "deploy": ("navig.commands.deploy", "deploy_app"),
+    "action": ("navig.commands.action", "action_app"),
     "cost": ("navig.commands.cost", "cost_app"),
     "output-style": ("navig.commands.output_style", "output_style_app"),
     "links": ("navig.commands.links", "links_app"),
@@ -145,6 +175,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "docker": ("navig.commands.docker", "docker_app"),
     "prompts": ("navig.commands.prompts", "prompts_app"),
     "browser": ("navig.commands.browser", "browser_app"),
+    # cdp/do/gmail (auto-login browser surfaces) are registered once above, near "auto".
     "import": ("navig.commands.import_cmd", "import_app"),
     "dispatch": ("navig.commands.dispatch", "dispatch_app"),
     "contacts": ("navig.commands.dispatch", "contacts_app"),
@@ -164,6 +195,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "snapshot": ("navig.commands.snapshot", "app"),
     "replay": ("navig.commands.replay", "app"),
     "cloud": ("navig.commands.cloud", "app"),
+    "repo": ("navig.commands.repo", "repo_app"),
     "lighthouse": ("navig.commands.lighthouse", "app"),
     "license": ("navig.commands.license", "app"),
     "miniapp": ("navig.commands.miniapp", "app"),
@@ -185,9 +217,6 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "mount": ("navig.commands.mount", "mount_app"),
     "update": ("navig.commands.update", "update_app"),
     "proactive": ("navig.commands.proactive", "proactive_app"),
-    "package": ("navig.commands.package", "package_app"),
-    "pack": ("navig.commands.package", "package_app"),
-    "packs": ("navig.commands.package", "package_app"),
     "memory": ("navig.commands.memory", "memory_app"),
     "connector": ("navig.commands.connector_cmd", "connector_app"),
     "menu": ("navig.commands.menu", "menu_app"),
@@ -196,21 +225,61 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "test": ("navig.commands.menu", "test_app"),     # shortcut → navig-menu run test
 }
 
-# Commands that should be hidden from `--help` output.
-# Covers all short aliases, deprecated names, and internal routing shims.
-_HIDDEN_COMMANDS: frozenset[str] = frozenset({
+# Hiding a command from `--help` and declaring it non-public are TWO DIFFERENT THINGS,
+# and conflating them silently deleted real commands from the docs.
+#
+# `navig.registry.manifest` derives a command's status from its Typer `hidden` flag, and
+# `build_public_manifest()` drops anything hidden. That manifest is not just cosmetic — it
+# feeds `navig help`, the deck's command schema (`/api/deck/cli`), navig.run/commands, and
+# every agent that asks navig what commands exist. So a name parked in the old single
+# `_HIDDEN_COMMANDS` set to de-clutter `--help` also became undiscoverable: `navig ai`
+# (12 cmds), `navig brain` (which navig-bridge itself shells out to), and `navig cost` were
+# all live, unique capabilities that no other name served, and all three were invisible.
+#
+# Hence two sets. `--help` hides the union (unchanged); only ALIASES leave the manifest.
+
+# Duplicate names for a group ALSO registered under a canonical, visible name — verified
+# by comparing the backing Typer instance, not by eyeballing. The canonical command
+# documents every subcommand, so publishing these is pure duplication.
+_ALIAS_COMMANDS: frozenset[str] = frozenset({
     # Short aliases
     "tg", "mx", "fx", "h", "a", "f", "l", "s", "t", "q",
-    # Long aliases / deprecated
-    "database", "hist", "ctx", "ct",
-    "cred", "cred-profile", "secret", "alias",
-    "continuation", "ai", "brain", "cost",
-    "output-style", "software", "hosts",
-    "day", "life", "habit", "habits",
-    "health",  # compat shim → stack
-    "cert", "key", "firewall", "dns", "port", "proxy",  # compat → other commands
-    "env", "job",
+    # Long aliases → canonical
+    "database",     # → db
+    "hist",         # → history
+    "ctx",          # → context
+    "ct",           # → contacts
+    "connections",  # → connect
+    "hub",          # → store
+    "cred",         # → vault
+    "secret",       # → vault
+    "alias",        # → script
+    "health",       # → stack
+    "cert",         # → web
+    "key",          # → host
+    "firewall",     # → local
+    "dns",          # → local
+    "port",         # → local
+    "proxy",        # → tunnel
+    "env",          # → config
+    "job",          # → flow
+    "habits",       # → habit
+    "day",          # → life
+    # Deprecated, replaced by a SUBcommand (so no visible top-level group serves it).
+    "cred-profile",  # → navig vault profile
 })
+
+# Real, unique capabilities. Nothing else serves them, so they are PUBLIC API and must
+# stay in the manifest — they are merely unlisted from `--help` to keep the top-level
+# command list readable.
+_UNLISTED_COMMANDS: frozenset[str] = frozenset({
+    "ai", "brain", "cost", "continuation",
+    "hosts", "software", "output-style",
+    "habit", "life",
+})
+
+# What `--help` hides. Derived, so the two sets above cannot drift out of sync with it.
+_HIDDEN_COMMANDS: frozenset[str] = _ALIAS_COMMANDS | _UNLISTED_COMMANDS
 
 # =============================================================================
 # Global-flag stripping
@@ -296,6 +365,15 @@ def _resolve_cli_target_from_argv(argv: list[str] | None = None) -> str | None:
 _registered_app_cmds: WeakKeyDictionary = WeakKeyDictionary()
 _registration_lock = threading.Lock()
 
+# Cache of discovered `navig.commands` entry-point commands (name → EntryPoint).
+# Populated once per process. Reading entry-point *names* is cheap (metadata only,
+# no module import); a plugin's module is imported only when its command is
+# actually registered (fast path preserved). This is the CLI analogue of the
+# `navig.connectors` / `navig.plugins` entry-point groups — it lets extracted
+# plugin packages (e.g. navig-download's `tiktok`) self-register without a hardcoded
+# entry in `_EXTERNAL_CMD_MAP`.
+_ENTRY_POINT_CMDS: dict[str, object] | None = None
+
 
 def _clear_registration_cache(target_app: typer.Typer | None = None) -> None:  # type: ignore[name-defined]
     """Clear the registration idempotency cache.
@@ -351,12 +429,36 @@ def _register_external_commands(
         return
 
     # ------------------------------------------------------------------
+    # Fast path: target is a plugin-provided command (navig.commands
+    # entry-point) → import only it. Checked BEFORE the unknown-command
+    # early-return below, else extracted commands would never register.
+    # ------------------------------------------------------------------
+    if target is not None and target in _entry_point_commands():
+        _try_register_ep(target_app, target, already)
+        return
+
+    # ------------------------------------------------------------------
     # Flat top-level command: `navig wire <path> [--opts]`
     # (a real command, not an add_typer group, so options after the
     #  positional path parse correctly).
     # ------------------------------------------------------------------
     if target == "wire":
         _try_register_wire(target_app, already)
+        return
+
+    # ------------------------------------------------------------------
+    # Flat top-level command: `navig apply <block> [--input k=v] [--opts]`
+    # ------------------------------------------------------------------
+    if target == "apply":
+        _try_register_apply(target_app, already)
+        return
+
+    # ------------------------------------------------------------------
+    # Flat top-level command: `navig undo [op-id] [--list] [--yes] [--json]`
+    # (T-068 — options after the optional positional id must parse)
+    # ------------------------------------------------------------------
+    if target == "undo":
+        _try_register_undo(target_app, already)
         return
 
     # ------------------------------------------------------------------
@@ -378,7 +480,15 @@ def _register_external_commands(
     for cmd_name in _EXTERNAL_CMD_MAP:
         _try_register_one(target_app, cmd_name, already)
 
+    # Plugin-provided commands (navig.commands entry-points). Runs AFTER the
+    # built-in map so a hardcoded name wins the idempotency race during any
+    # transition period (the `already` set dedups).
+    for cmd_name in _entry_point_commands():
+        _try_register_ep(target_app, cmd_name, already)
+
     _try_register_wire(target_app, already)
+    _try_register_apply(target_app, already)
+    _try_register_undo(target_app, already)
 
     if sys.platform == "win32":
         _try_register_ahk(target_app, already)
@@ -411,6 +521,94 @@ def _try_register_one(
         )
 
 
+def _entry_point_commands() -> dict[str, object]:
+    """Discover the `navig.commands` entry-point group (name → EntryPoint).
+
+    Cached per process. Mirrors ``navig.connectors.bootstrap`` discovery — names
+    only (no import) so the CLI fast path stays fast.
+
+    Commands whose providing plugin is disabled are DROPPED here (one tiny JSON
+    read of ``~/.navig/disabled_commands.json``, regenerated by ``PluginHost``
+    on every enable/disable) and stashed in :data:`_DISABLED_EP_CMDS` — they
+    fall through to the unknown-command path, where the suggest-and-activate
+    flow (`navig.cli.providers`) explains how to re-enable them.
+    """
+    global _ENTRY_POINT_CMDS
+    if _ENTRY_POINT_CMDS is not None:
+        return _ENTRY_POINT_CMDS
+    out: dict[str, object] = {}
+    try:
+        from importlib.metadata import entry_points
+
+        try:
+            eps = entry_points(group="navig.commands")
+        except TypeError:  # Python <3.10 API shape
+            eps = entry_points().get("navig.commands", [])  # type: ignore[attr-defined]
+        for ep in eps:
+            out[ep.name] = ep
+    except Exception as exc:  # noqa: BLE001 — discovery must never break the CLI
+        logger.debug("[navig] entry-point command discovery skipped: %s", exc)
+    if out:
+        for cmd, plugin_id in _disabled_command_map().items():
+            if cmd in out:
+                del out[cmd]
+                _DISABLED_EP_CMDS[cmd] = plugin_id
+    _ENTRY_POINT_CMDS = out
+    return out
+
+
+# command name → providing (disabled) plugin id; filled by _entry_point_commands()
+_DISABLED_EP_CMDS: dict[str, str] = {}
+
+
+def _disabled_command_map() -> dict[str, str]:
+    """Read ~/.navig/disabled_commands.json ({command: plugin_id}); {} if absent."""
+    try:
+        import json
+
+        from navig.platform.paths import config_dir
+
+        f = config_dir() / "disabled_commands.json"
+        if not f.exists():
+            return {}
+        data = json.loads(f.read_text(encoding="utf-8"))
+        return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+    except Exception as exc:  # noqa: BLE001 — never break the CLI over a state file
+        logger.debug("[navig] disabled_commands.json unreadable: %s", exc)
+        return {}
+
+
+def _try_register_ep(
+    target_app: typer.Typer,  # type: ignore[name-defined]
+    cmd_name: str,
+    already: set[str],
+) -> None:
+    """Register a single `navig.commands` entry-point command if not already done.
+
+    ``ep.load()`` returns the referenced object (a ``typer.Typer``), imported only
+    now — matching the lazy behaviour of ``_try_register_one``.
+    """
+    if cmd_name in already:
+        return
+    ep = _entry_point_commands().get(cmd_name)
+    if ep is None:
+        return
+    try:
+        sub = ep.load()  # type: ignore[attr-defined]
+        target_app.add_typer(
+            sub,
+            name=cmd_name,
+            hidden=(cmd_name in _HIDDEN_COMMANDS),
+        )
+        already.add(cmd_name)
+    except Exception as exc:
+        logger.warning(
+            "[navig] entry-point command '%s' unavailable (registration failed: %s)",
+            cmd_name,
+            exc,
+        )
+
+
 def _try_register_wire(
     target_app: typer.Typer,  # type: ignore[name-defined]
     already: set[str],
@@ -426,6 +624,41 @@ def _try_register_wire(
         already.add("wire")
     except Exception as exc:  # noqa: BLE001
         logger.warning("[navig] command 'wire' unavailable (registration failed: %s)", exc)
+
+
+def _try_register_apply(
+    target_app: typer.Typer,  # type: ignore[name-defined]
+    already: set[str],
+) -> None:
+    """Register `navig apply <block>` as a flat top-level command, so options
+    after the positional block id/spec parse correctly (mirrors `navig wire`)."""
+    if "apply" in already:
+        return
+    try:
+        from navig.commands.block import apply_command
+
+        target_app.command("apply")(apply_command)
+        already.add("apply")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[navig] command 'apply' unavailable (registration failed: %s)", exc)
+
+
+def _try_register_undo(
+    target_app: typer.Typer,  # type: ignore[name-defined]
+    already: set[str],
+) -> None:
+    """Register `navig undo` as a flat top-level command (not an add_typer group),
+    so `navig undo <op-id> --yes` parses options after the optional positional id
+    (mirrors `navig wire` / `navig apply`)."""
+    if "undo" in already:
+        return
+    try:
+        from navig.commands.undo import undo_command
+
+        target_app.command("undo")(undo_command)
+        already.add("undo")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[navig] command 'undo' unavailable (registration failed: %s)", exc)
 
 
 def _try_register_ahk(

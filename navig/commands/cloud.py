@@ -56,22 +56,26 @@ def _truncate(key: str) -> str:
 
 
 def _ensure_api_key() -> str:
-    cfg = _config()
-    key = (cfg.get("deck.api_key") or "").strip()
-    if not key:
-        key = "navig_" + secrets.token_urlsafe(32)
-        cfg.set("deck.api_key", key, scope="global")
-        cfg.save(scope="global")
-    return key
+    """The install's deck key — RESTORED from the vault mirror if config lost it.
+
+    This used to mint a fresh key whenever config was empty, which silently
+    re-identified the whole install after a config wipe (sha256(key) is the Lighthouse
+    tenant). Delegated to the one shared implementation.
+    """
+    from navig.cloud import deck_key
+
+    return deck_key.ensure_in_config(_config())
 
 
 def _gateway_port() -> int:
-    # Canonical resolver: reads the nested ``gateway.port`` from config (the flat
-    # ``cfg.get("gateway.port")`` here does not resolve the dotted key and would fall
-    # back to a stale default, making status probe the wrong port).
-    from navig.gateway_client import gateway_cli_defaults
+    # Canonical CLIENT resolver: prefer the live gateway's discovery file
+    # (~/.navig/gateway.json — the self-healing bind may have landed it off the
+    # configured port, e.g. WinNAT swallowing 8789), else the nested
+    # ``gateway.port`` from config (a flat ``cfg.get("gateway.port")`` here
+    # would not resolve the dotted key and would probe a stale default).
+    from navig.gateway_client import gateway_live_defaults
 
-    return gateway_cli_defaults()[0]
+    return gateway_live_defaults()[0]
 
 
 def _gateway_status_url() -> str:
@@ -417,6 +421,49 @@ def cloud_disconnect() -> None:
         ch.dim("If you want to force-stop now, restart the gateway: `navig gateway restart`.")
 
 
+def _repoint_telegram_webhook(cfg) -> None:
+    """Re-point every derivative of ``deck.api_key`` after a rotation.
+
+    The key's sha256 IS the Lighthouse tenant (the Durable Object the edge routes to),
+    and its raw value is embedded in the Mini App link. Rotating without re-pointing
+    leaves Telegram POSTing to a tenant nothing is attached to: the edge queues every
+    update and acks 202, so the bot goes 100% deaf with no error anywhere (this really
+    happened — see navig/cloud/rotation.py for the full inventory).
+
+    We repair what we own and tell the operator, precisely, what only they can fix.
+    Best-effort: a rotation must never hard-fail because Telegram is briefly down —
+    the gateway also self-heals the webhook tenant on its next start.
+    """
+    from navig import console_helper as ch
+    from navig.cloud import rotation
+
+    try:
+        fixed, failed = rotation.repoint_owned(cfg)
+    except Exception as exc:  # noqa: BLE001 — never fail the rotation on this
+        ch.warning(
+            f"Could not re-point reachability after the rotation ({exc}). Restart the "
+            "gateway (it self-heals the webhook) or run `navig lighthouse redeploy`."
+        )
+        return
+
+    for label in fixed:
+        ch.success(f"Re-pointed: {label}")
+    for label in failed:
+        ch.warning(f"Could NOT re-point: {label}")
+    if failed:
+        ch.dim("  Restart the gateway (it self-heals the webhook) or `navig lighthouse redeploy`.")
+
+    # The ones living in systems we cannot reach. Silence here means silent data loss:
+    # the edge keeps accepting these POSTs and queues them for a tenant that will never
+    # connect, so the caller sees success while the events simply vanish.
+    manual = rotation.manual_repoint_urls(cfg)
+    if manual:
+        ch.warning("These point at the OLD tenant and only YOU can update them:")
+        for where, url in manual:
+            ch.info(f"  {where}", url)
+        ch.dim("  Until updated, traffic to the old URL is accepted and silently dropped.")
+
+
 @app.command("key")
 def cloud_key(
     reveal: bool = typer.Option(False, "--reveal", help="Print the full api_key (sensitive!)."),
@@ -433,10 +480,17 @@ def cloud_key(
         if confirm.strip().lower() != "yes":
             ch.warning("Cancelled.")
             return
+        from navig.cloud import deck_key
+
         key = "navig_" + secrets.token_urlsafe(32)
         cfg.set("deck.api_key", key, scope="global")
         cfg.save(scope="global")
+        # A DELIBERATE rotation must overwrite the recovery mirror — otherwise a later
+        # config wipe would "restore" the key we just retired, pointing the install at a
+        # tenant whose webhook/Mini App bindings have already moved on.
+        deck_key.backup(key)
         ch.success(f"New api_key: {key}")
+        _repoint_telegram_webhook(cfg)
         ch.dim("Restart the gateway so the new key is registered with the broker.")
         return
 

@@ -85,19 +85,19 @@ class WindowManager:
             if not target_title:
                 continue
 
-            # Find best match in current windows
+            # Find best match in current windows.
+            # Priority: (1) exact title match → break immediately.
+            # (2) process + class fallback — keep scanning in case a later
+            # window has an exact title match.
             match = None
             for cur in current_windows:
-                # Perfect match
                 if cur.title == target_title:
                     match = cur
-                    break
-                # Process + Class match (fallback if title changed)
+                    break  # exact title wins; stop searching
+                # Fallback: process + class match (title may have changed).
+                # Do NOT break — an exact title match later in the list wins.
                 if cur.process_name == target_proc and cur.class_name == target_class:
                     match = cur
-                    # Don't break, prefer exact title match later? No, this is imprecise.
-                    # Let's stick to title match first, fallback to class/process if unique?
-                    # Too complex for now. Title matching is primary.
 
             if match:
                 # Restore state

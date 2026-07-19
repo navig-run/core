@@ -552,7 +552,7 @@ class TelegramVoiceBot:
     async def _call_llm(self, text: str) -> str | None:
         """Route text through navig-core's UnifiedRouter."""
         try:
-            from navig.routing.router import RouteRequest, get_router
+            from navig.llm.routing.router import RouteRequest, get_router
 
             router = get_router()
             messages = [

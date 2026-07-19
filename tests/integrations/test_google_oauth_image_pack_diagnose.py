@@ -137,7 +137,16 @@ def test_image_pack_handler_is_callable():
     assert callable(handler)
 
 
-def test_image_pack_required_config():
+def test_image_pack_declares_no_single_required_key():
+    """`image_generate` is multi-provider, so NO single key is required.
+
+    This used to assert ``"OPENAI_API_KEY" in meta.required_config`` — a leftover from
+    the single-provider era. The tool now supports recraft / openai_gpt_image / openai /
+    gemini_flash / gemini_pro / stability / local, and any ONE provider key enables it
+    (see the comment above ``required_config`` in image_pack.py). Declaring
+    OPENAI_API_KEY as *required* would tell the user the tool is unusable without OpenAI,
+    which is false — it works fine on Recraft, Gemini, Stability or a local model.
+    """
     from navig.tools.domains.image_pack import register_tools
     from navig.tools.router import ToolMeta
 
@@ -145,7 +154,10 @@ def test_image_pack_required_config():
     register_tools(registry)
     meta = registry.register.call_args[0][0]
     assert isinstance(meta, ToolMeta)
-    assert "OPENAI_API_KEY" in meta.required_config
+    assert meta.required_config == []
+    # ...and the multi-provider contract is actually advertised to the caller.
+    assert "recraft" in meta.description.lower()
+    assert "provider" in meta.parameters_schema
 
 
 def test_image_pack_has_prompt_parameter():

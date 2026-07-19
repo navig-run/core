@@ -3,7 +3,7 @@
 Actions are lightweight named shortcuts stored as YAML files in store/actions/.
 
 Scan roots (in priority order):
-  1. navig-core/store/actions/   (built-in actions)
+  1. navig/builtin/actions/     (built-in actions, shipped in the wheel)
   2. ~/.navig/store/actions/     (user actions)
   3. packages/*/actions/         (package-provided actions)
   4. ~/.navig/packages/*/actions/ (user package actions)
@@ -26,7 +26,7 @@ import typer
 
 from navig import console_helper as ch
 from navig.console_helper import get_console
-from navig.core.yaml_io import safe_load_yaml
+from navig.core.yaml_io import ConfigReadError, load_yaml_for_update, safe_load_yaml
 
 action_app = typer.Typer(
     name="action",
@@ -50,6 +50,24 @@ def _get_user_actions_file() -> Path:
         actions_dir = config_dir() / "store" / "actions"
     actions_dir.mkdir(parents=True, exist_ok=True)
     return actions_dir / "user.yaml"
+
+
+def _load_user_actions_for_write(user_file: Path) -> dict:
+    """Load the user actions file for a read-modify-WRITE, refusing to guess.
+
+    A single transient read failure that collapsed to ``{}`` would make the next
+    ``action add`` write a file containing ONLY the new action, silently deleting every
+    other one (the config-wipe class: a failed READ must never become a destructive
+    WRITE). A file that exists with content but is unreadable/unparseable is a refusal,
+    not a blank slate. The decision lives in the one shared guard,
+    :func:`navig.core.yaml_io.load_yaml_for_update`.
+    """
+    try:
+        return load_yaml_for_update(user_file)
+    except ConfigReadError:
+        ch.error(f"Could not read {user_file} — refusing to overwrite it.")
+        ch.dim("Fix or move that file, then retry. Your existing actions are untouched.")
+        raise typer.Exit(1) from None
 
 
 def _load_all_actions() -> list[dict[str, Any]]:
@@ -85,7 +103,6 @@ def _load_all_actions() -> list[dict[str, Any]]:
 
     try:
         from navig.platform.paths import (
-            builtin_packages_dir,
             builtin_store_dir,
             packages_dir,
             store_dir,
@@ -93,7 +110,7 @@ def _load_all_actions() -> list[dict[str, Any]]:
 
         _absorb_dir(builtin_store_dir() / "actions")
         _absorb_dir(store_dir() / "actions")
-        for root in (builtin_packages_dir(), packages_dir()):
+        for root in (packages_dir(),):
             if root.exists():
                 for pkg in root.iterdir():
                     _absorb_dir(pkg / "actions")
@@ -191,7 +208,7 @@ def action_add(
             raise typer.Exit(1)
 
     user_file = _get_user_actions_file()
-    data: dict = safe_load_yaml(user_file) or {}
+    data: dict = _load_user_actions_for_write(user_file)
 
     data[name] = {
         "command": command,
@@ -226,7 +243,7 @@ def action_remove(
         ch.error(f"Action '{name}' not found in user actions.")
         raise typer.Exit(1)
 
-    data: dict = safe_load_yaml(user_file) or {}
+    data: dict = _load_user_actions_for_write(user_file)
 
     if name not in data:
         ch.error(f"Action '{name}' not found in {user_file}.")

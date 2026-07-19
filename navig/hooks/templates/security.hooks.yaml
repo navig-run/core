@@ -1,0 +1,23 @@
+# NAVIG security hooks — a ready-to-use PreToolUse gate.
+#
+# Install: copy to one of
+#   ~/.navig/hooks.yaml    (global — every space)
+#   <space>/.navig/hooks.yaml   (project — extends/overrides global)
+# then restart the daemon (`navig gateway start`). Remove the file to disable.
+#
+# The gate runs the bundled, stdlib-only `navig.hooks.security_scan` module in front of
+# every tool call. It blocks (exit 2) only on unambiguous catastrophes — `rm -rf /`,
+# `curl … | sh`, `git push --force` to main, hard reset, fork bombs, disk wipes — and on
+# writing an obvious secret (private key, AWS/GitHub/Slack token, literal Bearer). Everything
+# else is allowed instantly, so it is safe to keep on. Verify the rules with:
+#   python -m navig.hooks.security_scan --self-test
+hooks:
+  enabled: true
+  timeout_seconds: 10
+  allow_network: false          # the scan never needs the network; keep SSRF guard on
+  definitions:
+    - event: PreToolUse
+      # no `tool:` filter → runs for every tool; the script self-filters to shell +
+      # file-writing tools and fast-returns (exit 0) for everything else.
+      command: "python -m navig.hooks.security_scan"
+      description: "Block catastrophic shell commands and obvious secret writes before they run."

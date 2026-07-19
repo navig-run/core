@@ -22,7 +22,6 @@ from __future__ import annotations
 
 from navig.platform.paths import (
     audio_configs_dir,
-    builtin_packages_dir,
     builtin_store_dir,
     cache_dir,
     check_docker,
@@ -78,7 +77,6 @@ __all__ = [
     "entity_json_path",
     "onboarding_json_path",
     "builtin_store_dir",
-    "builtin_packages_dir",
     "store_dir",
     "packages_dir",
     "audio_configs_dir",

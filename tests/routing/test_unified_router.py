@@ -25,7 +25,7 @@ class TestCreateGenericProvider:
 
     def test_create_provider_xai_returns_instance(self, monkeypatch):
         monkeypatch.setenv("GROK_KEY", "grok-test-key")
-        from navig.routing.router import UnifiedRouter
+        from navig.llm.routing.router import UnifiedRouter
 
         router = UnifiedRouter(config={})
         provider = router._create_provider("xai")
@@ -35,7 +35,7 @@ class TestCreateGenericProvider:
 
     def test_create_provider_anthropic_returns_instance(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-test-key")
-        from navig.routing.router import UnifiedRouter
+        from navig.llm.routing.router import UnifiedRouter
 
         router = UnifiedRouter(config={})
         provider = router._create_provider("anthropic")
@@ -43,7 +43,7 @@ class TestCreateGenericProvider:
 
     def test_create_provider_unknown_returns_none(self):
         """A completely unknown provider with no key should return None."""
-        from navig.routing.router import UnifiedRouter
+        from navig.llm.routing.router import UnifiedRouter
 
         router = UnifiedRouter(config={})
         provider = router._create_provider("totally_fake_provider_12345")
@@ -51,7 +51,7 @@ class TestCreateGenericProvider:
 
     def test_create_provider_ollama_still_works(self):
         """Ensure the special-cased providers still work."""
-        from navig.routing.router import UnifiedRouter
+        from navig.llm.routing.router import UnifiedRouter
 
         router = UnifiedRouter(config={})
         provider = router._create_provider("ollama")
@@ -66,7 +66,7 @@ class TestProviderChain:
     """_get_provider_chain() should prepend user-configured providers."""
 
     def test_default_chain_without_user_config(self):
-        from navig.routing.router import UnifiedRouter
+        from navig.llm.routing.router import UnifiedRouter
 
         router = UnifiedRouter(config={})
         with patch.object(router, "_discover_user_providers", return_value=[]):
@@ -74,7 +74,7 @@ class TestProviderChain:
         assert chain == ["mcp_bridge", "openrouter", "github_models", "ollama"]
 
     def test_chain_prepends_default_provider(self):
-        from navig.routing.router import UnifiedRouter
+        from navig.llm.routing.router import UnifiedRouter
 
         router = UnifiedRouter(config={"ai": {"default_provider": "xai"}})
         chain = router._get_provider_chain()
@@ -85,7 +85,7 @@ class TestProviderChain:
 
     def test_chain_deduplicates(self):
         """If user chooses 'openrouter' (already in static chain), no dups."""
-        from navig.routing.router import UnifiedRouter
+        from navig.llm.routing.router import UnifiedRouter
 
         router = UnifiedRouter(config={"ai": {"default_provider": "openrouter"}})
         chain = router._get_provider_chain()
@@ -96,11 +96,11 @@ class TestProviderChain:
 
 class TestSmallTalkLatencyRouting:
     def test_low_confidence_small_talk_does_not_failup(self):
-        from navig.routing.router import RouteRequest, UnifiedRouter
+        from navig.llm.routing.router import RouteRequest, UnifiedRouter
 
         router = UnifiedRouter(config={})
         with patch(
-            "navig.routing.router.detect_mode",
+            "navig.llm.routing.router.detect_mode",
             return_value=("small_talk", 0.55, ["medium_single_line"]),
         ):
             decision = router.route(
@@ -115,7 +115,7 @@ class TestSmallTalkLatencyRouting:
 
     @pytest.mark.asyncio
     async def test_latency_sensitive_small_talk_prefers_fast_chain(self):
-        from navig.routing.router import RouteRequest, UnifiedRouter
+        from navig.llm.routing.router import RouteRequest, UnifiedRouter
 
         router = UnifiedRouter(config={})
 
@@ -130,7 +130,7 @@ class TestSmallTalkLatencyRouting:
             return f"Provider {provider_name} handled this request successfully."
 
         with patch(
-            "navig.routing.router.detect_mode",
+            "navig.llm.routing.router.detect_mode",
             return_value=("small_talk", 0.8, ["short_question"]),
         ):
             with patch.object(
@@ -153,7 +153,7 @@ class TestSmallTalkLatencyRouting:
 
     @pytest.mark.asyncio
     async def test_latency_sensitive_small_talk_ignores_llm_modes_override(self):
-        from navig.routing.router import RouteRequest, UnifiedRouter
+        from navig.llm.routing.router import RouteRequest, UnifiedRouter
 
         router = UnifiedRouter(
             config={
@@ -179,7 +179,7 @@ class TestSmallTalkLatencyRouting:
             return "Quick response for latency-sensitive small talk."
 
         with patch(
-            "navig.routing.router.detect_mode",
+            "navig.llm.routing.router.detect_mode",
             return_value=("small_talk", 0.8, ["short_question"]),
         ):
             with patch.object(
@@ -208,14 +208,14 @@ class TestDiscoverUserProviders:
     """_discover_user_providers() should find providers from all config sources."""
 
     def test_from_ai_default_provider(self):
-        from navig.routing.router import UnifiedRouter
+        from navig.llm.routing.router import UnifiedRouter
 
         router = UnifiedRouter(config={"ai": {"default_provider": "xai"}})
         providers = router._discover_user_providers()
         assert "xai" in providers
 
     def test_from_llm_modes(self):
-        from navig.routing.router import UnifiedRouter
+        from navig.llm.routing.router import UnifiedRouter
 
         router = UnifiedRouter(
             config={
@@ -232,7 +232,7 @@ class TestDiscoverUserProviders:
         assert "groq" in providers
 
     def test_from_hybrid_router_tiers(self):
-        from navig.routing.router import UnifiedRouter
+        from navig.llm.routing.router import UnifiedRouter
 
         router = UnifiedRouter(
             config={
@@ -255,7 +255,7 @@ class TestDiscoverUserProviders:
         assert "xai" in providers
 
     def test_empty_config_returns_empty(self):
-        from navig.routing.router import UnifiedRouter
+        from navig.llm.routing.router import UnifiedRouter
 
         router = UnifiedRouter(config={})
         providers = router._discover_user_providers()
@@ -436,7 +436,7 @@ class TestModeRoutingGateRemoval:
 
         # Patch get_router so the unified router raises → falls to legacy
         with patch(
-            "navig.routing.router.get_router",
+            "navig.llm.routing.router.get_router",
             side_effect=ImportError("mocked"),
         ):
             result = await agent._get_ai_response("hello")
@@ -471,7 +471,7 @@ class TestModeModelPreference:
     MODES = ["coding", "small_talk", "big_tasks", "summarize", "research"]
 
     def test_all_providers_present_in_all_modes(self):
-        from navig.routing.capabilities import MODE_MODEL_PREFERENCE
+        from navig.llm.routing.capabilities import MODE_MODEL_PREFERENCE
 
         for mode in self.MODES:
             assert mode in MODE_MODEL_PREFERENCE, f"Mode '{mode}' missing"
@@ -481,23 +481,23 @@ class TestModeModelPreference:
                 )
 
     def test_xai_coding_model(self):
-        from navig.routing.capabilities import MODE_MODEL_PREFERENCE
+        from navig.llm.routing.capabilities import MODE_MODEL_PREFERENCE
 
         assert MODE_MODEL_PREFERENCE["coding"]["xai"] == "grok-3"
 
     def test_xai_small_talk_model(self):
-        from navig.routing.capabilities import MODE_MODEL_PREFERENCE
+        from navig.llm.routing.capabilities import MODE_MODEL_PREFERENCE
 
         assert MODE_MODEL_PREFERENCE["small_talk"]["xai"] == "grok-3-mini"
 
     def test_anthropic_coding_model(self):
-        from navig.routing.capabilities import MODE_MODEL_PREFERENCE
+        from navig.llm.routing.capabilities import MODE_MODEL_PREFERENCE
 
         model = MODE_MODEL_PREFERENCE["coding"]["anthropic"]
         assert "claude" in model.lower()
 
     def test_google_research_model(self):
-        from navig.routing.capabilities import MODE_MODEL_PREFERENCE
+        from navig.llm.routing.capabilities import MODE_MODEL_PREFERENCE
 
         model = MODE_MODEL_PREFERENCE["research"]["google"]
         assert "gemini" in model.lower()

@@ -1,6 +1,9 @@
 """Bot-side TikTok actions: detect links, offer a card + buttons, analyse/download.
 
-Wires :mod:`navig.tiktok.engine` into the Telegram bot + business layer. Every
+Wires :mod:`navig_download.tiktok.engine` (the optional **navig-download** plugin) into
+the Telegram bot + business layer. When that plugin isn't installed this module
+fails to import; its 3 call-sites (business / keyboards / reply_actions) already
+guard the import in ``try/except`` and simply skip, so core stays inert. Every
 action is gated by the owner's ``download`` per-tool policy (owner|both|off, see
 :mod:`navig.telegram.permissions`) — a counterparty can only trigger it when the
 owner allows. The AI briefing is the same no-tools, text-in/text-out call used by
@@ -13,7 +16,7 @@ import html as _html
 import logging
 import os
 
-from navig.tiktok import engine
+from navig_download.tiktok import engine
 
 from . import permissions
 
@@ -122,13 +125,28 @@ async def _do_analyse(channel, chat_id: int, url: str) -> None:
     try:
         result = await engine.analyse(url)
     except engine.TikTokUnavailable:
-        await channel.send_message(chat_id, "TikTok engine unavailable — `pip install rapidok`.", parse_mode=None)
+        await channel.send_message(chat_id, "TikTok engine unavailable — reinstall navig-download.", parse_mode=None)
+        return
+    except engine.TikTokBlocked:
+        # Honesty: a bot-wall is NOT "couldn't analyse" — say so and how to escalate.
+        await channel.send_message(
+            chat_id,
+            "🚧 TikTok blocked this request (bot-wall). Try again shortly, or configure a "
+            "proxy / cookies for the scraper.",
+            parse_mode=None)
         return
     except Exception as exc:  # noqa: BLE001
         logger.warning("tiktok analyse failed: %s", exc)
         await channel.send_message(chat_id, "Couldn't analyse that video.", parse_mode=None)
         return
     meta = result["meta"]
+    if meta.get("comments_blocked"):
+        # Distinguish "no comments" from "comments gated" so the brief isn't misread.
+        await channel.send_message(
+            chat_id,
+            f"ℹ️ Comments were gated (TikTok reported {meta.get('comment_count') or 0:,} but "
+            "served none) — the briefing below uses the description only.",
+            parse_mode=None)
     brief = result["brief"] or _fallback_brief(meta)
     # The brief is markdown (headings/bullets/quotes) — send it as a RICH message so
     # Telegram renders it natively; send_rich_message falls back to HTML if needed.
@@ -149,9 +167,9 @@ async def _do_download(channel, chat_id: int, url: str) -> None:
             return
         with open(path, "rb") as fh:
             data = fh.read()
-        await channel.send_video(chat_id, data, caption="⬇️ via NAVIG · rapidok")
+        await channel.send_video(chat_id, data, caption="⬇️ via NAVIG")
     except engine.TikTokUnavailable:
-        await channel.send_message(chat_id, "Downloader unavailable — `pip install rapidok`.", parse_mode=None)
+        await channel.send_message(chat_id, "Downloader unavailable — reinstall navig-download.", parse_mode=None)
     except Exception as exc:  # noqa: BLE001
         logger.warning("tiktok download failed: %s", exc)
         await channel.send_message(chat_id, "Couldn't download that video.", parse_mode=None)

@@ -6,7 +6,7 @@ Modules covered:
 - navig.blackbox.seal       (seal_bundle, is_sealed, unseal)
 - navig.connectors.errors   (ConnectorError hierarchy)
 - navig.hooks.events        (HookEvent, HookContext, HookResult)
-- navig.routing.trace       (RouteTrace, log_trace, recent_traces)
+- navig.llm.routing.trace       (RouteTrace, log_trace, recent_traces)
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from unittest.mock import patch
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # navig._daemon_defaults
@@ -467,7 +466,7 @@ class TestHookResult:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# navig.routing.trace
+# navig.llm.routing.trace
 # ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -475,7 +474,7 @@ class TestRouteTrace:
     """RouteTrace dataclass construction and to_dict."""
 
     def test_defaults(self):
-        from navig.routing.trace import RouteTrace
+        from navig.llm.routing.trace import RouteTrace
 
         t = RouteTrace()
         assert t.trace_id == ""
@@ -484,7 +483,7 @@ class TestRouteTrace:
         assert t.fallbacks_tried == []
 
     def test_custom_values(self):
-        from navig.routing.trace import RouteTrace
+        from navig.llm.routing.trace import RouteTrace
 
         t = RouteTrace(
             trace_id="abc123",
@@ -499,7 +498,7 @@ class TestRouteTrace:
         assert t.input_tokens == 500
 
     def test_to_dict_returns_dict(self):
-        from navig.routing.trace import RouteTrace
+        from navig.llm.routing.trace import RouteTrace
 
         t = RouteTrace(trace_id="x")
         d = t.to_dict()
@@ -507,7 +506,7 @@ class TestRouteTrace:
         assert d["trace_id"] == "x"
 
     def test_to_dict_includes_all_fields(self):
-        from navig.routing.trace import RouteTrace
+        from navig.llm.routing.trace import RouteTrace
 
         t = RouteTrace()
         d = t.to_dict()
@@ -519,7 +518,7 @@ class TestRouteTrace:
         assert expected_keys <= set(d.keys())
 
     def test_to_dict_serializable(self):
-        from navig.routing.trace import RouteTrace
+        from navig.llm.routing.trace import RouteTrace
 
         t = RouteTrace(trace_id="json-test", reasons=["speed", "cost"])
         result = json.dumps(t.to_dict())
@@ -532,8 +531,8 @@ class TestLogTrace:
     """log_trace — appends JSON lines to trace log file."""
 
     def test_creates_file(self, tmp_path):
-        from navig.routing import trace as trace_mod
-        from navig.routing.trace import RouteTrace, log_trace
+        from navig.llm.routing import trace as trace_mod
+        from navig.llm.routing.trace import RouteTrace, log_trace
 
         log_path = tmp_path / "traces.jsonl"
         with patch.object(trace_mod, "TRACE_LOG_PATH", log_path):
@@ -541,8 +540,8 @@ class TestLogTrace:
         assert log_path.exists()
 
     def test_writes_valid_jsonl(self, tmp_path):
-        from navig.routing import trace as trace_mod
-        from navig.routing.trace import RouteTrace, log_trace
+        from navig.llm.routing import trace as trace_mod
+        from navig.llm.routing.trace import RouteTrace, log_trace
 
         log_path = tmp_path / "traces.jsonl"
         with patch.object(trace_mod, "TRACE_LOG_PATH", log_path):
@@ -552,8 +551,8 @@ class TestLogTrace:
         assert data["trace_id"] == "t2"
 
     def test_appends_multiple(self, tmp_path):
-        from navig.routing import trace as trace_mod
-        from navig.routing.trace import RouteTrace, log_trace
+        from navig.llm.routing import trace as trace_mod
+        from navig.llm.routing.trace import RouteTrace, log_trace
 
         log_path = tmp_path / "traces.jsonl"
         with patch.object(trace_mod, "TRACE_LOG_PATH", log_path):
@@ -567,8 +566,8 @@ class TestRecentTraces:
     """recent_traces — reads last N traces from JSONL file."""
 
     def test_returns_empty_when_file_missing(self, tmp_path):
-        from navig.routing import trace as trace_mod
-        from navig.routing.trace import recent_traces
+        from navig.llm.routing import trace as trace_mod
+        from navig.llm.routing.trace import recent_traces
 
         missing = tmp_path / "no_file.jsonl"
         with patch.object(trace_mod, "TRACE_LOG_PATH", missing):
@@ -576,8 +575,8 @@ class TestRecentTraces:
         assert result == []
 
     def test_returns_traces_from_file(self, tmp_path):
-        from navig.routing import trace as trace_mod
-        from navig.routing.trace import RouteTrace, log_trace, recent_traces
+        from navig.llm.routing import trace as trace_mod
+        from navig.llm.routing.trace import RouteTrace, log_trace, recent_traces
 
         log_path = tmp_path / "traces.jsonl"
         with patch.object(trace_mod, "TRACE_LOG_PATH", log_path):
@@ -588,8 +587,8 @@ class TestRecentTraces:
         assert result[0]["trace_id"] == "r1"
 
     def test_respects_limit(self, tmp_path):
-        from navig.routing import trace as trace_mod
-        from navig.routing.trace import RouteTrace, log_trace, recent_traces
+        from navig.llm.routing import trace as trace_mod
+        from navig.llm.routing.trace import RouteTrace, log_trace, recent_traces
 
         log_path = tmp_path / "traces.jsonl"
         with patch.object(trace_mod, "TRACE_LOG_PATH", log_path):

@@ -423,7 +423,12 @@ def _run_ai_security_analysis(checks, local_ops, options: dict):
     console.print("\n[cyan]═══ AI Security Analysis ═══[/cyan]\n")
 
     try:
-        from navig.ai import query_ai
+        # `query_ai(prompt, context=...)` never existed in navig.ai — the import failed and
+        # the AI security analysis always reported "not available". The module function is
+        # `ask_ai_with_context(prompt, ...)`; the audit data goes into the prompt (it is the
+        # material to analyse, not a system persona), and a non-import failure is caught by
+        # the broad `except` below.
+        from navig.ai import ask_ai_with_context
 
         # Gather context
         system_info = local_ops.get_system_info()
@@ -451,7 +456,7 @@ Open Ports:
 Be concise and actionable."""
 
         ch.info("Querying AI for security analysis...")
-        response = query_ai(prompt, context=context)
+        response = ask_ai_with_context(f"{prompt}\n\n{context}")
 
         if response:
             console.print(Panel(response, title="🤖 AI Security Analysis", border_style="cyan"))

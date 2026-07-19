@@ -51,6 +51,15 @@ def should_auto_run_onboarding(argv: Sequence[str] | None = None) -> bool:
     if any(v in os.environ for v in ("_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE")):
         return False
 
+    # A `--json` invocation is programmatic: stdout must carry exactly one
+    # machine-readable document, and the caller is a script that can never
+    # answer the wizard (some steps prompt even without a TTY and pause setup
+    # on EOF). Skip first-run onboarding entirely — the next human invocation
+    # runs it. Deliberately a cheap argv scan: nothing has parsed argv yet at
+    # this point in the bootstrap, and a Typer-level parse would be wrong here.
+    if "--json" in raw_args:
+        return False
+
     navig_dir = config_dir()
     if (navig_dir / "onboarding.json").exists():
         return False
@@ -284,22 +293,35 @@ def _print_verification_dashboard(
     _out("")
 
 
+# The ONE canonical map of "deferred integration → (command that finishes it, why it
+# matters)". Every command here MUST actually exist: matrix/email/social/telegram have no
+# top-level `<x> setup` verb (`navig matrix setup` exits 2), so those are finished by
+# re-running the wizard — `navig init --reconfigure` revisits exactly those steps.
+# Lighthouse/deck have real deploy verbs.
+#
+# This lives at module scope, and is a SINGLE SOURCE OF TRUTH, because it had a second,
+# hand-copied twin in navig/tui/screens/review.py that still advertised the fake
+# `navig matrix setup` / `navig social setup` long after this one was fixed. Two copies
+# drift; one does not. `tests/onboarding/test_onboarding_operator_fixes.py` asserts every
+# command here resolves in the CLI.
+INTEGRATION_FIX_HINTS: dict[str, tuple[str, str]] = {
+    "matrix": ("navig init --reconfigure", "receive alerts and run commands via Matrix chat"),
+    "email": ("navig init --reconfigure", "SMTP notifications for workflows and alerts"),
+    "social-networks": ("navig init --reconfigure", "social network integrations (Twitter/X, etc.)"),
+    "telegram-bot": ("navig init --reconfigure", "receive alerts and run commands via Telegram bot"),
+    "lighthouse": ("navig lighthouse deploy", "always-on access (Telegram/SMS/remote deck) with no tunnel"),
+    "deck-deploy": ("navig miniapp deploy", "publish your own Deck UI / Telegram Mini App to Cloudflare"),
+}
+
+
 def _deferred_integration_commands(
     state: EngineState,
     step_tiers: dict[str, str],
 ) -> list[tuple[str, str]]:
-    cmd_map = {
-        "matrix": ("navig matrix setup", "receive alerts and run commands via Matrix chat"),
-        "email": ("navig email setup", "SMTP notifications for workflows and alerts"),
-        "social-networks": ("navig social setup", "social network integrations (Twitter/X, etc.)"),
-        "telegram-bot": ("navig telegram setup", "receive alerts and run commands via Telegram bot"),
-        "lighthouse": ("navig lighthouse deploy", "always-on access (Telegram/SMS/remote deck) with no tunnel"),
-        "deck-deploy": ("navig miniapp deploy", "publish your own Deck UI / Telegram Mini App to Cloudflare"),
-    }
     status_by_id = {rec.id: rec.status for rec in state.steps}
 
     deferred: list[tuple[str, str]] = []
-    for step_id, (cmd, description) in cmd_map.items():
+    for step_id, (cmd, description) in INTEGRATION_FIX_HINTS.items():
         if step_tiers.get(step_id) != "optional":
             continue
         if status_by_id.get(step_id) in ("skipped", "failed"):

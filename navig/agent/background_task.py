@@ -27,8 +27,17 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────
 
 MAX_CONCURRENT = 10
-OUTPUT_DIR = config_dir() / "bg_tasks"
 _PROC_GRACEFUL_TIMEOUT: float = 5.0  # seconds to wait for process termination before SIGKILL
+
+
+def _default_output_dir() -> Path:
+    """Resolve the bg-task output dir at CALL time — never import time.
+
+    ``config_dir()`` honours ``NAVIG_CONFIG_DIR``; a module-level constant
+    would freeze the real user home before test/daemon isolation applies
+    (see ``navig/vault/migrate.py:_legacy_db_path``).
+    """
+    return config_dir() / "bg_tasks"
 
 
 # ─────────────────────────────────────────────────────────────
@@ -80,7 +89,7 @@ class BackgroundTaskManager:
         self._output_handles: dict[int, object] = {}  # open file handles
         self._monitor_futures: dict[int, asyncio.Task] = {}  # monitor coroutines
         self._next_id: int = 1
-        self._output_dir: Path = output_dir or OUTPUT_DIR
+        self._output_dir: Path = output_dir or _default_output_dir()
 
     # ── public API ──────────────────────────────────────────
 
@@ -328,14 +337,17 @@ class BackgroundTaskManager:
             except asyncio.TimeoutError:
                 # Still running after stall threshold — log and keep waiting
                 # without a hard limit so long-running deploys are not killed.
+                # (This used to say "Use 'navig task kill <id>' to abort" — there
+                # is no such command, and `navig task` is a different system
+                # entirely: it manages saved tasks, not the agent's in-flight
+                # subprocesses. Do not promise an escape hatch that isn't there.)
                 logger.warning(
                     "Background task #%d (%s) has been running for %.0fs with no "
-                    "completion — possible SSH channel stall. "
-                    "Use 'navig task kill %d' to abort if stuck.",
+                    "completion — possible SSH channel stall. Still waiting; it will "
+                    "be reaped when the daemon restarts.",
                     task.task_id,
                     task.label,
                     self._STALL_WARN_SECONDS,
-                    task.task_id,
                 )
                 exit_code = await proc.wait()
             task.exit_code = exit_code
@@ -386,7 +398,7 @@ def get_manager(output_dir: Path | None = None) -> BackgroundTaskManager:
     """Return the module-level BackgroundTaskManager singleton.
 
     Creates the instance on first call. If *output_dir* is supplied on the
-    first call it overrides the default ``OUTPUT_DIR``.
+    first call it overrides the default ``_default_output_dir()``.
     """
     global _manager
     if _manager is None:

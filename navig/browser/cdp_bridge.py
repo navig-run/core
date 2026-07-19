@@ -46,6 +46,16 @@ class CDPBridge(BrowserController):
         self.tab_index = tab_index
         self._cdp_endpoint = f"http://localhost:{debug_port}"
 
+    def _connection_hint(self) -> str:
+        """Human hint shown when the CDP connection fails (overridden by CloudBridge)."""
+        return (
+            f"Make sure Chrome is running with --remote-debugging-port={self.debug_port}."
+        )
+
+    def _display_endpoint(self) -> str:
+        """Loggable endpoint — CloudBridge overrides this to strip its auth token."""
+        return self._cdp_endpoint
+
     async def start(self):
         """Attach to an existing browser via CDP (no new process launched)."""
         if self._browser:
@@ -57,30 +67,37 @@ class CDPBridge(BrowserController):
         async_playwright = _get_playwright()
         self._playwright = await async_playwright().start()
 
-        logger.info("[CDPBridge] Connecting to %s ...", self._cdp_endpoint)
+        logger.info("[CDPBridge] Connecting to %s ...", self._display_endpoint())
         try:
             self._browser = await self._playwright.chromium.connect_over_cdp(self._cdp_endpoint)
         except Exception as exc:
             await self._playwright.stop()
             self._playwright = None
             raise RuntimeError(
-                f"[CDPBridge] Could not connect to Chrome at {self._cdp_endpoint}. "
-                f"Make sure Chrome is running with --remote-debugging-port={self.debug_port}. "
+                f"[CDPBridge] Could not connect to Chrome at {self._display_endpoint()}. "
+                f"{self._connection_hint()} "
                 f"Error: {exc}"
             ) from exc
 
-        # Attach to existing context + page
+        # Attach across ALL contexts. When the caller didn't ask for a specific
+        # tab (tab_index 0), prefer a real page over an about:blank/new-tab page
+        # so screenshots and actions land on something meaningful by default.
         contexts = self._browser.contexts
-        if contexts:
-            self._context = contexts[0]
-            pages = self._context.pages
-            if pages:
-                idx = min(self.tab_index, len(pages) - 1)
-                self._page = pages[idx]
-                logger.info("[CDPBridge] Attached to tab %d: %s", idx, self._page.url)
+        all_pages = [p for ctx in contexts for p in ctx.pages]
+        if all_pages:
+            if self.tab_index:
+                idx = min(self.tab_index, len(all_pages) - 1)
+                self._page = all_pages[idx]
             else:
-                self._page = await self._context.new_page()
-                logger.info("[CDPBridge] No open tabs — created new page")
+                real = next((p for p in all_pages if p.url and p.url != "about:blank"), None)
+                self._page = real or all_pages[0]
+                idx = all_pages.index(self._page)
+            self._context = self._page.context
+            logger.info("[CDPBridge] Attached to tab %d: %s", idx, self._page.url)
+        elif contexts:
+            self._context = contexts[0]
+            self._page = await self._context.new_page()
+            logger.info("[CDPBridge] No open tabs — created new page")
         else:
             # No existing context — create one (unusual but safe fallback)
             self._context = await self._browser.new_context()
@@ -109,15 +126,28 @@ class CDPBridge(BrowserController):
             self._playwright = None
             logger.info("[CDPBridge] Disconnected (browser still running)")
 
+    def _all_pages(self) -> list:
+        """Every open page across ALL browser contexts (not just the attached one).
+
+        connect_over_cdp can surface multiple contexts; enumerating only the
+        attached context hid tabs. This flattens them in a stable order.
+        """
+        if self._browser is not None:
+            pages: list = []
+            for ctx in self._browser.contexts:
+                pages.extend(ctx.pages)
+            return pages
+        if self._context is not None:
+            return list(self._context.pages)
+        return []
+
     async def list_tabs(self) -> list[dict]:
-        """List all open tabs in the attached browser.
+        """List all open tabs across every browser context.
 
         Returns list of {index, url, title} dicts.
         """
-        if not self._context:
-            return []
         result = []
-        for i, page in enumerate(self._context.pages):
+        for i, page in enumerate(self._all_pages()):
             try:
                 title = await page.title()
             except Exception:
@@ -126,10 +156,8 @@ class CDPBridge(BrowserController):
         return result
 
     async def switch_tab(self, index: int) -> bool:
-        """Switch the active page to a different tab by index."""
-        if not self._context:
-            return False
-        pages = self._context.pages
+        """Switch the active page to a different tab by index (across contexts)."""
+        pages = self._all_pages()
         if index < 0 or index >= len(pages):
             logger.warning(
                 "[CDPBridge] Tab index %d out of range (have %d tabs)",
@@ -138,9 +166,41 @@ class CDPBridge(BrowserController):
             )
             return False
         self._page = pages[index]
+        # Keep the active context in sync with the selected page.
+        self._context = self._page.context
         await self._page.bring_to_front()
         logger.info("[CDPBridge] Switched to tab %d: %s", index, self._page.url)
         return True
+
+    async def switch_to(self, *, index: int | None = None, url: str | None = None) -> dict:
+        """Make a specific open tab the active target, by index or URL substring.
+
+        Returns {"ok": bool, "url": str, "index": int} describing the new active
+        page. Matching by *url* picks the first page whose URL contains the
+        substring (case-insensitive).
+        """
+        pages = self._all_pages()
+        if not pages:
+            return {"ok": False, "error": "no open tabs"}
+        target_idx: int | None = None
+        if index is not None:
+            if 0 <= index < len(pages):
+                target_idx = index
+        elif url:
+            needle = url.lower()
+            for i, page in enumerate(pages):
+                if needle in (page.url or "").lower():
+                    target_idx = i
+                    break
+        if target_idx is None:
+            return {"ok": False, "error": "no tab matched the given index/url"}
+        self._page = pages[target_idx]
+        self._context = self._page.context
+        try:
+            await self._page.bring_to_front()
+        except Exception:  # noqa: BLE001
+            pass  # non-fatal (e.g. background page)
+        return {"ok": True, "index": target_idx, "url": self._page.url}
 
 
 def auto_detect_cdp_port() -> int | None:

@@ -5,12 +5,12 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from typer.testing import CliRunner
 
 # ---------------------------------------------------------------------------
 # navig.commands.watch_cmd
 # ---------------------------------------------------------------------------
 from navig.commands.watch_cmd import watch_app
-from typer.testing import CliRunner
 
 _runner = CliRunner()
 

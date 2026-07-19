@@ -973,7 +973,7 @@ async def test_providers_header_is_clean_and_shows_current_models(monkeypatch):
         "navig.commands.init.mark_chat_onboarding_step_completed",
         lambda step_id, navig_dir=None: marked.append(step_id) or True,
     )
-    monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
+    monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
 
     await bot._handle_providers(123, 456)
     assert marked == []
@@ -1026,7 +1026,7 @@ async def test_providers_online_bridge_does_not_override_router_current_provider
         probe=(True, "http://127.0.0.1:11435"),
         provider_info=_provider,
     )
-    monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
+    monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
 
     await bot._handle_providers(123, 456)
 
@@ -1280,7 +1280,7 @@ async def test_providers_screen_shows_noai_selection_state(monkeypatch):
     bot = _make_provider_bot([], vault=None)
     bot._user_model_prefs = {}
     bot._user_model_prefs[456] = "noai"
-    monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
+    monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
 
     await bot._handle_providers(123, 456)
     text = bot.messages[-1][1]

@@ -11,12 +11,11 @@ import os
 import pytest
 
 from navig.vault.crypto import (
-    CryptoEngine,
-    CryptoError,
     _KEY_LEN,
     _NONCE_LEN,
+    CryptoEngine,
+    CryptoError,
 )
-
 
 # ─── generate_dek ─────────────────────────────────────────────────────────────
 

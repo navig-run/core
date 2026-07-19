@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import navig.comms.matrix_features as mf
 from navig.comms.matrix_features import (
     MATRIX_FEATURE_DEFAULTS,
     get_all_features,
@@ -13,7 +14,6 @@ from navig.comms.matrix_features import (
     require_feature,
     require_matrix,
 )
-import navig.comms.matrix_features as mf
 
 
 def _fake_cfg(matrix_cfg: dict) -> MagicMock:

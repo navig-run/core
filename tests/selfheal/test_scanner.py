@@ -26,7 +26,7 @@ class TestScanFiltersbelowConfidence:
     ) -> None:
         """Findings with confidence < min_confidence must not appear in results."""
         # LLM returns one finding with confidence 0.93; threshold is 0.95
-        with patch("navig.llm_generate.llm_generate", return_value=mock_llm_response):
+        with patch("navig.llm.generate.llm_generate", return_value=mock_llm_response):
             results = scan_files(
                 tmp_repo / "navig",
                 config={"min_confidence": 0.95},
@@ -50,7 +50,7 @@ class TestScanFiltersbelowConfidence:
                 }
             ]
         )
-        with patch("navig.llm_generate.llm_generate", return_value=findings_at_threshold):
+        with patch("navig.llm.generate.llm_generate", return_value=findings_at_threshold):
             results = scan_files(
                 tmp_repo / "navig",
                 config={"min_confidence": 0.80},
@@ -59,7 +59,7 @@ class TestScanFiltersbelowConfidence:
 
     def test_empty_llm_response_returns_empty_list(self, tmp_repo: Path) -> None:
         """An empty LLM response must yield an empty findings list (no crash)."""
-        with patch("navig.llm_generate.llm_generate", return_value="[]"):
+        with patch("navig.llm.generate.llm_generate", return_value="[]"):
             results = scan_files(tmp_repo / "navig", config={"min_confidence": 0.80})
         assert results == []
 
@@ -102,7 +102,7 @@ class TestScanReturnsPydanticModels:
         self, tmp_repo: Path, mock_llm_response: str
     ) -> None:
         """Every item in the returned list must be a ScanFinding."""
-        with patch("navig.llm_generate.llm_generate", return_value=mock_llm_response):
+        with patch("navig.llm.generate.llm_generate", return_value=mock_llm_response):
             results = scan_files(tmp_repo / "navig", config={"min_confidence": 0.80})
         assert all(isinstance(f, ScanFinding) for f in results)
 
@@ -139,7 +139,7 @@ class TestScanReturnsPydanticModels:
                 },
             ]
         )
-        with patch("navig.llm_generate.llm_generate", return_value=multi_severity_response):
+        with patch("navig.llm.generate.llm_generate", return_value=multi_severity_response):
             results = scan_files(tmp_repo / "navig", config={"min_confidence": 0.80})
 
         if len(results) >= 2:

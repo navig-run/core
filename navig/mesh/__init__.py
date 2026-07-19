@@ -12,6 +12,7 @@ Phase scope: LAN only. Internet/blockchain routing is Phase 2.
 Each node remains fully functional if the mesh is unreachable.
 """
 
+from navig.mesh.agent_card import A2A_PROTOCOL_VERSION, build_agent_card
 from navig.mesh.auth import HMAC_FIELD, attach_hmac, load_secret, verify_payload
 from navig.mesh.discovery import MeshDiscovery
 from navig.mesh.registry import NodeRecord, NodeRegistry, get_registry
@@ -25,4 +26,6 @@ __all__ = [
     "attach_hmac",
     "verify_payload",
     "HMAC_FIELD",
+    "build_agent_card",
+    "A2A_PROTOCOL_VERSION",
 ]

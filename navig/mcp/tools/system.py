@@ -3,6 +3,8 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit
 
+from navig.core.coerce import coerce_bool
+
 logger = logging.getLogger(__name__)
 
 
@@ -307,7 +309,9 @@ def _tool_web_fetch(server: Any, args: dict[str, Any]) -> dict[str, Any]:
         config = get_web_config(server._config)
         fetch_config = config.get("fetch", {})
 
-        if not fetch_config.get("enabled", True):
+        # coerce_bool: `navig config set web.fetch.enabled false` stores the STRING "false"
+        # (truthy) — without this the kill-switch never actually disables the tool.
+        if not coerce_bool(fetch_config.get("enabled", True), default=True):
             return {"error": "Web fetch is disabled in configuration"}
 
         # Execute fetch
@@ -350,7 +354,8 @@ def _tool_web_search(server: Any, args: dict[str, Any]) -> dict[str, Any]:
         config = get_web_config(server._config)
         search_config = config.get("search", {})
 
-        if not search_config.get("enabled", True):
+        # coerce_bool: kill-switch defeated by the config-set string footgun otherwise.
+        if not coerce_bool(search_config.get("enabled", True), default=True):
             return {"error": "Web search is disabled in configuration"}
 
         # Execute search

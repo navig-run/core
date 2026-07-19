@@ -8,7 +8,7 @@ Handles app configuration CRUD operations.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -250,6 +250,7 @@ class AppManager:
                             ch.dim(
                                 f"✓ Deleted app '{app_name}' from {location} config (individual file)"
                             )
+                        self._clear_default_app_reference(host_name, app_name)
                         return True
                 except Exception:
                     pass
@@ -266,10 +267,27 @@ class AppManager:
                     from navig import console_helper as ch
 
                     ch.dim(f"✓ Deleted app '{app_name}' from host '{host_name}' (legacy format)")
+                self._clear_default_app_reference(host_name, app_name)
                 return True
         except FileNotFoundError:
             pass  # best-effort: file not found; skip
         return False
+
+    def _clear_default_app_reference(self, host_name: str, app_name: str) -> None:
+        """Drop a host's ``default_app`` if it pointed at the just-deleted app.
+
+        Otherwise the reference dangles: ``get_active_app``'s default fallback would resurface
+        the deleted app (guarded now, but only against non-existence), and a re-added same-name
+        app would silently inherit "default". Best-effort — the app is already deleted, so a
+        cleanup failure must never turn a successful delete into an error. Removes the key rather
+        than auto-promoting another app (picking a new default is the operator's choice)."""
+        try:
+            host_config = self._config.load_host_config(host_name)
+            if host_config.get("default_app") == app_name:
+                host_config.pop("default_app", None)
+                self._config.save_host_config(host_name, host_config)
+        except Exception:  # noqa: BLE001
+            pass  # best-effort cleanup; deletion already succeeded
 
     # ================================================================
     # Individual App File Support
@@ -363,8 +381,8 @@ class AppManager:
         if "metadata" not in app_config:
             app_config["metadata"] = {}
         if "created" not in app_config["metadata"]:
-            app_config["metadata"]["created"] = datetime.now().isoformat()
-        app_config["metadata"]["updated"] = datetime.now().isoformat()
+            app_config["metadata"]["created"] = datetime.now(timezone.utc).isoformat()
+        app_config["metadata"]["updated"] = datetime.now(timezone.utc).isoformat()
 
         atomic_write_yaml(app_config, app_file)
 
@@ -467,10 +485,74 @@ class AppManager:
         return results
 
 
-# Backward compatibility aliases
-app_exists = AppManager.exists
-list_apps = AppManager.list_apps
-find_hosts_with_app = AppManager.find_hosts_with_app
-load_app_config = AppManager.load
-save_app_config = AppManager.save
-delete_app_config = AppManager.delete
+# ---------------------------------------------------------------------------
+# Backward compatibility shims (deprecated — use AppManager directly)
+# ---------------------------------------------------------------------------
+
+import warnings as _warnings
+
+
+def app_exists(config: object, host_name: str, app_name: str) -> bool:  # type: ignore[override]
+    """Deprecated. Use ``AppManager(config).exists(host_name, app_name)``."""
+    _warnings.warn(
+        "navig.core.apps.app_exists() is deprecated; use AppManager.exists() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return AppManager(config).exists(host_name, app_name)
+
+
+def list_apps(config: object, host_name: str) -> list[str]:  # type: ignore[override]
+    """Deprecated. Use ``AppManager(config).list_apps(host_name)``."""
+    _warnings.warn(
+        "navig.core.apps.list_apps() is deprecated; use AppManager.list_apps() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return AppManager(config).list_apps(host_name)
+
+
+def find_hosts_with_app(config: object, app_name: str) -> list[str]:  # type: ignore[override]
+    """Deprecated. Use ``AppManager(config).find_hosts_with_app(app_name)``."""
+    _warnings.warn(
+        "navig.core.apps.find_hosts_with_app() is deprecated; use AppManager.find_hosts_with_app() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return AppManager(config).find_hosts_with_app(app_name)
+
+
+def load_app_config(config: object, host_name: str, app_name: str) -> dict:  # type: ignore[override]
+    """Deprecated. Use ``AppManager(config).load(host_name, app_name)``."""
+    _warnings.warn(
+        "navig.core.apps.load_app_config() is deprecated; use AppManager.load() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return AppManager(config).load(host_name, app_name)
+
+
+def save_app_config(
+    config: object,
+    host_name: str,
+    app_name: str,
+    app_config: dict,
+    use_individual_file: bool = True,
+) -> None:  # type: ignore[override]
+    """Deprecated. Use ``AppManager(config).save(...)``."""
+    _warnings.warn(
+        "navig.core.apps.save_app_config() is deprecated; use AppManager.save() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    AppManager(config).save(host_name, app_name, app_config, use_individual_file=use_individual_file)
+
+
+def delete_app_config(config: object, host_name: str, app_name: str) -> bool:  # type: ignore[override]
+    """Deprecated. Use ``AppManager(config).delete(host_name, app_name)``."""
+    _warnings.warn(
+        "navig.core.apps.delete_app_config() is deprecated; use AppManager.delete() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return AppManager(config).delete(host_name, app_name)

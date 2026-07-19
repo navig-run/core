@@ -9,7 +9,6 @@ import pytest
 
 from navig.notify.producers.self_errors import NotifyErrorHandler, _Throttle
 
-
 # ── Throttle (pure) ───────────────────────────────────────────────────────────
 
 

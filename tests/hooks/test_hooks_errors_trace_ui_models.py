@@ -7,15 +7,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch, mock_open, MagicMock
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
 # ─────────────────────────────────────────────────────────────
 # navig.hooks.events
 # ─────────────────────────────────────────────────────────────
-
-from navig.hooks.events import HookEvent, HookContext, HookResult
+from navig.hooks.events import HookContext, HookEvent, HookResult
 
 
 class TestHookEvent:
@@ -113,11 +112,11 @@ class TestHookResult:
 # ─────────────────────────────────────────────────────────────
 
 from navig.connectors.errors import (
-    ConnectorError,
-    ConnectorAuthError,
-    ConnectorNotFoundError,
-    ConnectorDegradedError,
     ConnectorAPIError,
+    ConnectorAuthError,
+    ConnectorDegradedError,
+    ConnectorError,
+    ConnectorNotFoundError,
     ConnectorRateLimitError,
 )
 
@@ -202,10 +201,10 @@ class TestConnectorRateLimitError:
 
 
 # ─────────────────────────────────────────────────────────────
-# navig.routing.trace
+# navig.llm.routing.trace
 # ─────────────────────────────────────────────────────────────
 
-from navig.routing.trace import RouteTrace, log_trace, recent_traces
+from navig.llm.routing.trace import RouteTrace, log_trace, recent_traces
 
 
 class TestRouteTrace:
@@ -241,7 +240,7 @@ class TestLogTrace:
     def test_writes_json_line(self, tmp_path):
         trace = RouteTrace(trace_id="x1", provider="openai")
         fake_path = tmp_path / "traces.jsonl"
-        with patch("navig.routing.trace.TRACE_LOG_PATH", fake_path):
+        with patch("navig.llm.routing.trace.TRACE_LOG_PATH", fake_path):
             log_trace(trace)
         line = fake_path.read_text(encoding="utf-8").strip()
         data = json.loads(line)
@@ -250,7 +249,7 @@ class TestLogTrace:
     def test_does_not_raise_on_write_failure(self):
         trace = RouteTrace(trace_id="x2")
         with patch("builtins.open", side_effect=OSError("disk full")), \
-             patch("navig.routing.trace.TRACE_LOG_PATH") as mock_path:
+             patch("navig.llm.routing.trace.TRACE_LOG_PATH") as mock_path:
             mock_path.parent.mkdir.return_value = None
             log_trace(trace)  # must not raise
 
@@ -258,7 +257,7 @@ class TestLogTrace:
 class TestRecentTraces:
     def test_returns_empty_when_file_not_exists(self, tmp_path):
         fake_path = tmp_path / "nonexistent.jsonl"
-        with patch("navig.routing.trace.TRACE_LOG_PATH", fake_path):
+        with patch("navig.llm.routing.trace.TRACE_LOG_PATH", fake_path):
             result = recent_traces()
         assert result == []
 
@@ -267,7 +266,7 @@ class TestRecentTraces:
         line2 = json.dumps({"trace_id": "b"})
         fake_path = tmp_path / "traces.jsonl"
         fake_path.write_text(f"{line1}\n{line2}\n", encoding="utf-8")
-        with patch("navig.routing.trace.TRACE_LOG_PATH", fake_path):
+        with patch("navig.llm.routing.trace.TRACE_LOG_PATH", fake_path):
             result = recent_traces(limit=10)
         assert len(result) == 2
         assert result[0]["trace_id"] == "a"
@@ -276,7 +275,7 @@ class TestRecentTraces:
         lines = "\n".join(json.dumps({"trace_id": str(i)}) for i in range(10))
         fake_path = tmp_path / "traces.jsonl"
         fake_path.write_text(lines + "\n", encoding="utf-8")
-        with patch("navig.routing.trace.TRACE_LOG_PATH", fake_path):
+        with patch("navig.llm.routing.trace.TRACE_LOG_PATH", fake_path):
             result = recent_traces(limit=3)
         assert len(result) <= 3
 
@@ -286,13 +285,13 @@ class TestRecentTraces:
 # ─────────────────────────────────────────────────────────────
 
 from navig.ui.models import (
-    StatusChip,
-    Metric,
-    CauseScore,
-    Event,
     ActionItem,
+    CauseScore,
     DiffLine,
     DiffPreview,
+    Event,
+    Metric,
+    StatusChip,
     SummaryResult,
 )
 

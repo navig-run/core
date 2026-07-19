@@ -182,7 +182,7 @@ class MemoryStore:
 
     def _load(self) -> None:
         try:
-            data = json.loads(self._persist_path.read_text())  # type: ignore[union-attr]
+            data = json.loads(self._persist_path.read_text(encoding="utf-8"))  # type: ignore[union-attr]
             for k, v in data.items():
                 self._store[k] = MemoryEntry(
                     key=k,

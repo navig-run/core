@@ -16,21 +16,33 @@ if TYPE_CHECKING:
 
 def _sync_generate(**kwargs):
     """Sync wrapper for async ImageGenerator.generate()."""
-    from navig.tools.image_generation import ImageGenerator
+    from navig.tools.image_generation import ImageGenerator, ImageProvider
+
+    # Map a friendly provider string onto the enum (default: config/env).
+    provider = kwargs.pop("provider", None)
+    if provider:
+        kwargs["provider"] = ImageProvider(provider)
 
     gen = ImageGenerator()
+
+    async def _run():
+        # generate + close on the SAME loop (the client is bound to it).
+        try:
+            return await gen.generate(**kwargs)
+        finally:
+            await gen.close()
+
     try:
         asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop — safe to call asyncio.run() directly
+        result = asyncio.run(_run())
+    else:
         # Running inside an active event loop — use a thread to avoid blocking it
         import concurrent.futures
 
         with concurrent.futures.ThreadPoolExecutor() as pool:
-            result = pool.submit(asyncio.run, gen.generate(**kwargs)).result()
-    except RuntimeError:
-        # No running loop — safe to call asyncio.run() directly
-        result = asyncio.run(gen.generate(**kwargs))
-    finally:
-        asyncio.run(gen.close())
+            result = pool.submit(asyncio.run, _run()).result()
     return [
         {"url": img.url, "local_path": str(img.local_path) if img.local_path else None}
         for img in result
@@ -44,13 +56,23 @@ def register_tools(registry: ToolRegistry) -> None:
         ToolMeta(
             name="image_generate",
             domain=ToolDomain.IMAGE,
-            description="Generate images from text prompts (DALL-E, Stability, Local).",
+            description=(
+                "Generate images from text prompts. Providers: recraft (raster+vector), "
+                "openai_gpt_image, openai (dall-e-3), gemini_flash, gemini_pro, stability, local."
+            ),
             safety=SafetyLevel.MODERATE,
             parameters_schema={
                 "prompt": {
                     "type": "string",
                     "required": True,
                     "description": "Image description",
+                },
+                "provider": {
+                    "type": "string",
+                    "description": (
+                        "recraft | openai_gpt_image | openai | gemini_flash | gemini_pro | "
+                        "stability | local (omit to use configured default)"
+                    ),
                 },
                 "size": {
                     "type": "string",
@@ -63,8 +85,9 @@ def register_tools(registry: ToolRegistry) -> None:
                     "description": "Number of images",
                 },
             },
-            required_config=["OPENAI_API_KEY"],
-            tags=["image", "generate", "creative"],
+            # No single hard requirement — any one provider key enables the tool.
+            required_config=[],
+            tags=["image", "generate", "creative", "recraft", "gemini"],
         ),
         handler=_sync_generate,
     )

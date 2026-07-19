@@ -161,7 +161,9 @@ def analyze_and_suggest_solutions(
         else:
             # Fallback: provide generic helpful hint
             ch.info("\n💡 Tip: Check the error message above for details")
-            ch.info("💡 Tip: Use 'navig assistant analyze' for system analysis")
+            # (used to name 'navig assistant analyze' — there is no `assistant`
+            # command; `navig doctor` is the real system check.)
+            ch.info("💡 Tip: Run 'navig doctor' to check your setup")
 
     except Exception as e:
         # Don't crash if analysis fails

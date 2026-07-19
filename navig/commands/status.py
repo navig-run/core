@@ -174,9 +174,9 @@ def _print_cloud_status_section(*, show_all: bool) -> None:
         return
 
     api_key = cfg.get("deck.api_key", "") or ""
-    from navig.gateway_client import gateway_cli_defaults
+    from navig.gateway_client import gateway_live_defaults
 
-    port = gateway_cli_defaults()[0]
+    port = gateway_live_defaults()[0]
     truncated = "<unset>"
     if api_key:
         truncated = f"{api_key[:4]}…{api_key[-4:]}" if len(api_key) > 10 else "***"

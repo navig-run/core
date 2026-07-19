@@ -2,7 +2,7 @@
 Server Auto-Discovery Module
 
 Automatically detect server configuration, services, and environment details.
-The Schema sees all. Catalogues all. Knows all.
+NAVIG discovers, catalogues, and maps every asset.
 """
 
 import os

@@ -1,9 +1,17 @@
 """
 Mesh gateway routes.
 
-GET  /mesh/peers       → returns NodeRegistry.to_api_dict() (self + all known peers)
-POST /mesh/ping        → add/refresh a peer manually (URL in body), for NAT-traversal
-POST /mesh/route       → proxy a ChatRequest to the best available peer
+GET  /mesh/peers          → returns NodeRegistry.to_api_dict() (self + all known peers)
+POST /mesh/ping           → add/refresh a peer manually (URL in body), for NAT-traversal
+POST /mesh/route          → proxy a ChatRequest to the best available peer
+POST /mesh/discovery/scan → on-demand discovery nudge: HELLO multicast over the LIVE
+                            MeshDiscovery + a registry snapshot ({scanning:false} when
+                            mesh is disabled — graceful, never a hard failure)
+
+A2A (Agent2Agent) discovery — expose this node as a standard agent:
+GET  /.well-known/agent-card.json → this node's A2A Agent Card (canonical path)
+GET  /.well-known/agent.json      → legacy A2A alias (older drafts)
+GET  /mesh/agents                 → every mesh peer rendered as an A2A Agent Card
 
 These routes extend the existing API — nothing existing is changed.
 """
@@ -40,6 +48,124 @@ def register(app: web.Application, gateway: NavigGateway) -> None:
     app.router.add_post("/mesh/target", _set_target(gateway))
     app.router.add_delete("/mesh/target", _clear_target(gateway))
     app.router.add_post("/mesh/discovery/scan", _scan(gateway))
+    # A2A discovery — the well-known Agent Card + a mesh→A2A bridge listing.
+    app.router.add_get("/.well-known/agent-card.json", _agent_card(gateway))
+    app.router.add_get("/.well-known/agent.json", _agent_card(gateway))  # legacy alias
+    app.router.add_get("/mesh/agents", _agents(gateway))
+    # A2A messaging — JSON-RPC 2.0 endpoint the Agent Card advertises as its url.
+    app.router.add_post("/a2a", _a2a_rpc(gateway))
+
+
+# ────────────────────── GET /.well-known/agent-card.json ─────────────
+
+
+def _agent_card(gw: NavigGateway):
+    """Serve this node's A2A Agent Card (public discovery — no auth).
+
+    The card is the standard way an A2A client learns what this node can do;
+    it advertises only the same low-sensitivity metadata already gossiped over
+    the LAN mesh (hostname, OS, capabilities), never secrets.
+    """
+
+    async def h(r: web.Request) -> web.Response:
+        from navig.mesh.agent_card import build_agent_card
+
+        registry = get_registry(gw.storage_dir)
+        card = build_agent_card(registry.self_record)
+        return web.json_response(card)
+
+    return h
+
+
+# ─────────────────────────── GET /mesh/agents ────────────────────────
+
+
+def _agents(gw: NavigGateway):
+    """Render every known mesh node (self + peers) as an A2A Agent Card.
+
+    This is the bridge that turns LAN mesh discovery into A2A discovery: one
+    fetch yields a standard Agent Card for each reachable NAVIG node.
+    """
+
+    async def h(r: web.Request) -> web.Response:
+        from navig.mesh.agent_card import build_agent_card
+
+        registry = get_registry(gw.storage_dir)
+        cards = [build_agent_card(registry.self_record)]
+        cards.extend(build_agent_card(peer) for peer in registry.get_peers())
+        return json_ok({"agents": cards})
+
+    return h
+
+
+# ─────────────────────────── POST /a2a ───────────────────────────────
+
+
+def _a2a_rpc(gw: NavigGateway):
+    """A2A JSON-RPC 2.0 endpoint — run a message against the local agent.
+
+    Discovery (the Agent Card) is public, but *acting* on this node runs the
+    NAVIG agent (which can touch real infrastructure), so this endpoint is
+    authenticated with the same bearer guard as ``/mesh/route``. v0 supports
+    the ``message/send`` method and replies with an A2A Message.
+    """
+
+    async def h(r: web.Request) -> web.Response:
+        from navig.mesh import a2a
+
+        auth = require_bearer_auth(r, gw)
+        if auth is not None:
+            return auth
+
+        try:
+            body = await r.json()
+        except Exception:
+            return web.json_response(
+                a2a.rpc_error(None, a2a.PARSE_ERROR, "Invalid JSON")
+            )
+
+        ok, reason = a2a.validate_request(body)
+        if not ok:
+            return web.json_response(
+                a2a.rpc_error(body.get("id") if isinstance(body, dict) else None,
+                              a2a.INVALID_REQUEST, reason)
+            )
+
+        req_id = body.get("id")
+        method = body["method"]
+        if method != a2a.METHOD_MESSAGE_SEND:
+            return web.json_response(
+                a2a.rpc_error(req_id, a2a.METHOD_NOT_FOUND, f"Unknown method: {method}")
+            )
+
+        params = body.get("params") or {}
+        message = params.get("message")
+        if not isinstance(message, dict):
+            return web.json_response(
+                a2a.rpc_error(req_id, a2a.INVALID_PARAMS, "params.message is required")
+            )
+
+        text = a2a.extract_text(message)
+        if not text:
+            return web.json_response(
+                a2a.rpc_error(req_id, a2a.INVALID_PARAMS, "message has no text part")
+            )
+
+        try:
+            metadata = {"scope": "personal", "flags": {}, "source": "a2a"}
+            reply = await gw.router.route_message(
+                channel="a2a", user_id="a2a", message=text, metadata=metadata
+            )
+            return web.json_response(
+                a2a.rpc_result(req_id, a2a.build_message(reply or ""))
+            )
+        except Exception as e:
+            logger.warning("[a2a] message/send failed: %s", e)
+            return web.json_response(
+                a2a.rpc_error(req_id, a2a.INTERNAL_ERROR, f"agent error: {e}")
+            )
+
+    return h
 
 
 # ─────────────────────────── GET /mesh/peers ─────────────────────────
@@ -287,29 +413,36 @@ def _clear_target(gw: NavigGateway):
 
 def _scan(gw: NavigGateway):
     """
-    Trigger an immediate LAN discovery scan (UDP multicast + active probing).
-    Non-blocking — returns immediately; listen on /mesh/peers for results.
+    Trigger an immediate LAN discovery nudge over the LIVE MeshDiscovery.
+
+    The gateway holds exactly one running ``MeshDiscovery`` instance
+    (``server.py:_init_autonomous_modules`` → ``gw._mesh_discovery``); its
+    ``announce()`` multicasts one extra HELLO — peers upsert us and reply
+    with their own HELLO, so the registry converges within ~1 heartbeat
+    interval. No new packet types, no WAN, no second discovery instance.
+
+    Degrades gracefully (Phase-1 rule): mesh disabled / loop not running →
+    200 with ``scanning: false`` — never a hard failure.
     """
 
     async def h(r: web.Request) -> web.Response:
-        import asyncio
-
-        try:
-            from navig.mesh.discovery import NavigDiscovery
-
-            registry = get_registry(gw.storage_dir)
-            discovery = NavigDiscovery(registry)
-
-            async def _do_scan() -> None:
-                try:
-                    await discovery.probe_lan_range()
-                except Exception as e:
-                    logger.warning("[mesh.routes] Scan error: %s", e)
-
-            asyncio.create_task(_do_scan())
-            return json_ok({"scanning": True, "hint": "poll /mesh/peers in ~2s"})
-        except Exception as e:
-            logger.warning("[mesh.routes] Could not start scan: %s", e)
-            return json_ok({"scanning": False, "error": str(e)})
+        discovery = getattr(gw, "_mesh_discovery", None)
+        announced = False
+        if discovery is not None:
+            try:
+                announced = bool(await discovery.announce())
+            except Exception as e:  # noqa: BLE001 — mesh ops never hard-fail
+                logger.warning("[mesh.routes] Scan announce failed: %s", e)
+        if not announced:
+            return json_ok({"scanning": False, "reason": "mesh not running"})
+        snapshot = get_registry(gw.storage_dir).to_api_dict()
+        return json_ok(
+            {
+                "scanning": True,
+                "self": snapshot.get("self"),
+                "peers": snapshot.get("peers", []),
+                "hint": "poll /mesh/peers in ~2s for late repliers",
+            }
+        )
 
     return h

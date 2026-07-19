@@ -7,7 +7,7 @@ pytestmark = pytest.mark.unit
 
 def test_valid_llm_modes_config():
     """Valid llm_modes + uncensored_overrides pass Pydantic validation."""
-    from navig.llm_router import LLMRouterConfig
+    from navig.llm.router import LLMRouterConfig
 
     config = {
         "llm_modes": {
@@ -71,7 +71,7 @@ def test_valid_llm_modes_config():
 
 def test_default_config():
     """Default config (no input) produces valid defaults."""
-    from navig.llm_router import LLMRouterConfig
+    from navig.llm.router import LLMRouterConfig
 
     cfg = LLMRouterConfig()
     assert cfg.llm_modes.small_talk.provider == "ollama"
@@ -85,7 +85,7 @@ def test_temperature_out_of_range():
     """Out-of-range temperature raises ValidationError."""
     from pydantic import ValidationError
 
-    from navig.llm_router import LLMModeConfig
+    from navig.llm.router import LLMModeConfig
 
     with pytest.raises(ValidationError):
         LLMModeConfig(temperature=3.0)
@@ -98,7 +98,7 @@ def test_max_tokens_out_of_range():
     """Invalid max_tokens raises ValidationError."""
     from pydantic import ValidationError
 
-    from navig.llm_router import LLMModeConfig
+    from navig.llm.router import LLMModeConfig
 
     with pytest.raises(ValidationError):
         LLMModeConfig(max_tokens=0)
@@ -109,7 +109,7 @@ def test_max_tokens_out_of_range():
 
 def test_unknown_provider_warns(caplog):
     """Unknown provider logs a warning but doesn't fail."""
-    from navig.llm_router import LLMModeConfig
+    from navig.llm.router import LLMModeConfig
 
     cfg = LLMModeConfig(provider="banana_ai", model="test")
     assert cfg.provider == "banana_ai"
@@ -117,7 +117,7 @@ def test_unknown_provider_warns(caplog):
 
 def test_extra_fields_allowed():
     """Extra fields in config don't cause errors (ConfigDict extra=allow)."""
-    from navig.llm_router import LLMModeConfig
+    from navig.llm.router import LLMModeConfig
 
     cfg = LLMModeConfig(
         provider="openai",
@@ -129,7 +129,7 @@ def test_extra_fields_allowed():
 
 def test_mode_get_set():
     """LLMModesConfig.get_mode and set_mode work correctly."""
-    from navig.llm_router import LLMModeConfig, LLMModesConfig
+    from navig.llm.router import LLMModeConfig, LLMModesConfig
 
     modes = LLMModesConfig()
     cfg = modes.get_mode("coding")
@@ -143,7 +143,7 @@ def test_mode_get_set():
 
 def test_modes_to_dict():
     """LLMModesConfig.to_dict serializes all 5 modes."""
-    from navig.llm_router import LLMModesConfig
+    from navig.llm.router import LLMModesConfig
 
     modes = LLMModesConfig()
     d = modes.to_dict()

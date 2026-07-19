@@ -14,7 +14,7 @@ and block until the deck answers, or `create(...)` a non-blocking request with
 an `on_answer` callback that runs when the user responds.
 """
 
-from navig.requests.registry import RequestRegistry, UserRequest
 from navig.requests.autodispatch import should_auto_dispatch
+from navig.requests.registry import RequestRegistry, UserRequest
 
 __all__ = ["RequestRegistry", "UserRequest", "should_auto_dispatch"]

@@ -15,9 +15,9 @@ async def send_email(to: str, subject: str, body: str) -> tuple[bool, str]:
     if not to:
         return False, "no recipient configured"
     try:
+        from navig.connectors.auth_manager import ConnectorAuthManager
         from navig.connectors.bootstrap import ensure_connectors_loaded
         from navig.connectors.registry import get_connector_registry
-        from navig.connectors.auth_manager import ConnectorAuthManager
         from navig.connectors.types import Action, ActionType
 
         ensure_connectors_loaded()

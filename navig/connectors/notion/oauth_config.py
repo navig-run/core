@@ -1,8 +1,11 @@
 """Notion OAuth configuration."""
 from __future__ import annotations
+
 import os
-from navig.providers.oauth import OAuthProviderConfig
+
 from navig.connectors.oauth_redirect import connector_redirect_uri
+from navig.providers.oauth import OAuthProviderConfig
+
 
 def build_notion_oauth_config(client_id: str, client_secret: str | None = None) -> OAuthProviderConfig:
     return OAuthProviderConfig(

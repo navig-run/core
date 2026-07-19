@@ -12,7 +12,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/storage/tx_helpers.py
 # ---------------------------------------------------------------------------
@@ -263,12 +262,19 @@ class TestCircuitBreaker:
 
     def test_failure_in_half_open_returns_to_open(self) -> None:
         from navig.connectors.circuit_breaker import CircuitState
-        cb = self._cb(failure_threshold=1, recovery_timeout=0.001)
-        cb.record_failure()
-        time.sleep(0.01)
-        _ = cb.state  # promote to HALF_OPEN
-        cb.record_failure()  # recovery probe failed
-        assert cb.state == CircuitState.OPEN
+        # Deterministic, not time-raced. The old version used recovery_timeout=0.001 and
+        # `time.sleep`, then asserted OPEN right after the re-failure — but `.state`
+        # auto-promotes OPEN→HALF_OPEN once recovery_timeout elapses, so under parallel
+        # load any >1 ms scheduling delay before that final read turned OPEN back into
+        # HALF_OPEN and the test failed. Use a long timeout and AGE the failure to force
+        # the HALF_OPEN promotion, so the read after the re-failure (µs later, ≪ timeout)
+        # can never auto-promote.
+        cb = self._cb(failure_threshold=1, recovery_timeout=30.0)
+        cb.record_failure()  # → OPEN
+        cb._last_failure_time -= cb.recovery_timeout + 1  # pretend it happened long ago
+        assert cb.state == CircuitState.HALF_OPEN  # promoted on read
+        cb.record_failure()  # recovery probe failed → OPEN, resets _last_failure_time = now
+        assert cb.state == CircuitState.OPEN  # fresh failure ≪ timeout → stays OPEN
 
     def test_custom_failure_threshold(self) -> None:
         from navig.connectors.circuit_breaker import CircuitState

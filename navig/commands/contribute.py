@@ -143,8 +143,8 @@ def scan_cmd(
     cfg_typed = _get_contribute_config(cfg)
 
     from navig.selfheal.git_manager import (  # noqa: PLC0415
-        _CORE_REPO_DIR,
         clone_or_update,
+        core_repo_dir,
         create_branch,
         fork_repo,
         get_github_username,
@@ -164,7 +164,7 @@ def scan_cmd(
         _console.print(f"[red]GitHub token error:[/red] {exc}")
         _console.print(
             "Set up your token with:\n"
-            "  [cyan]navig vault provider set github_contribute[/cyan]\n"
+            "  [cyan]navig vault set github_contribute <token>[/cyan]\n"
             "  or export NAVIG_GITHUB_TOKEN=<your-pat>"
         )
         raise typer.Exit(1) from exc
@@ -183,7 +183,7 @@ def scan_cmd(
                 _console.print(f"[red]Git setup failed:[/red] {exc}")
                 raise typer.Exit(1) from exc
     else:
-        repo_path = _CORE_REPO_DIR
+        repo_path = core_repo_dir()
         _console.print("[dim]Dry-run mode: skipping fork/sync.[/dim]")
 
     # ------------------------------------------------------------------
@@ -275,10 +275,11 @@ def status_cmd() -> None:
     table.add_row("Target repo", cfg_typed.upstream_repo)
     table.add_row("Contributor alias", cfg_typed.alias or "—")
 
-    from navig.selfheal.git_manager import _CORE_REPO_DIR  # noqa: PLC0415
+    from navig.selfheal.git_manager import core_repo_dir  # noqa: PLC0415
 
-    table.add_row("Local clone", str(_CORE_REPO_DIR))
-    clone_exists = (_CORE_REPO_DIR / ".git").exists()
+    clone_dir = core_repo_dir()
+    table.add_row("Local clone", str(clone_dir))
+    clone_exists = (clone_dir / ".git").exists()
     table.add_row("Clone present", "[green]yes[/green]" if clone_exists else "[dim]no[/dim]")
 
     _console.print(table)

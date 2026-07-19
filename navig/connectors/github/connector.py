@@ -6,7 +6,13 @@ from typing import Any
 
 from navig.connectors.base import BaseConnector, ConnectorManifest
 from navig.connectors.types import (
-    Action, ActionResult, ActionType, ConnectorDomain, HealthStatus, Resource, ResourceType,
+    Action,
+    ActionResult,
+    ActionType,
+    ConnectorDomain,
+    HealthStatus,
+    Resource,
+    ResourceType,
 )
 
 try:

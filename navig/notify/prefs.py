@@ -9,14 +9,13 @@ from typing import Any
 from navig.notify import store
 from navig.notify.types import CHANNEL_KEYS, TYPE_KEYS
 
-
 # ── Matrix ───────────────────────────────────────────────────────────────────
 
 def get_matrix() -> dict[str, dict[str, bool]]:
     """Return {type: {channel: enabled}} for every type/channel."""
     store.init_db()
     rows = store.conn().execute("SELECT type, channel, enabled FROM notify_matrix").fetchall()
-    out: dict[str, dict[str, bool]] = {t: {c: False for c in CHANNEL_KEYS} for t in TYPE_KEYS}
+    out: dict[str, dict[str, bool]] = {t: dict.fromkeys(CHANNEL_KEYS, False) for t in TYPE_KEYS}
     for r in rows:
         out.setdefault(r["type"], {})[r["channel"]] = bool(r["enabled"])
     return out

@@ -1,7 +1,10 @@
 ﻿"""Tests for navig/tui/widgets/summary_panel.py."""
 from __future__ import annotations
+
 from types import SimpleNamespace
+
 import pytest
+
 
 def _cfg(**kw):
     d = dict(host="prod", app="app", user="u", status="ok", profile_name="alice",

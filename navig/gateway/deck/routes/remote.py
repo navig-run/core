@@ -26,6 +26,8 @@ try:
 except ImportError:
     web = None
 
+from navig.gateway.deck.routes._utils import run_on_host
+
 logger = logging.getLogger(__name__)
 
 
@@ -49,38 +51,12 @@ def _q(s: str) -> str:
 
 
 async def _ssh(host: str, command: str, timeout: float = 30.0) -> tuple[bool, str, str]:
-    """Run a command on `host` via the project SSH executor in a thread."""
-    try:
-        from navig.discovery import ServerDiscovery  # type: ignore[import]
-        from navig.config import get_config_manager  # type: ignore[import]
-    except Exception as exc:
-        return False, "", f"navig backend unavailable: {exc}"
-    cfg = get_config_manager()
-    # ServerDiscovery takes the host's SSH config *dict* (host/user/port/key…),
-    # not the ConfigManager. Load the named host's config first.
-    try:
-        if not cfg.host_exists(host):
-            return False, "", f"host '{host}' not configured"
-        ssh_config = cfg.load_host_config(host)
-    except Exception as exc:
-        return False, "", f"could not load host '{host}': {exc}"
-    try:
-        disco = ServerDiscovery(ssh_config)
-    except Exception as exc:
-        return False, "", f"host '{host}' invalid config: {exc}"
-    loop = asyncio.get_event_loop()
-    try:
-        result = await asyncio.wait_for(
-            loop.run_in_executor(None, lambda: disco._execute_ssh(command)),
-            timeout=timeout,
-        )
-        if isinstance(result, tuple) and len(result) == 3:
-            return result[0], result[1] or "", result[2] or ""
-        return False, "", "unexpected ssh result shape"
-    except asyncio.TimeoutError:
-        return False, "", f"timed out after {timeout}s"
-    except Exception as exc:
-        return False, "", str(exc)
+    """Run a command on a CONFIGURED `host` via the project SSH executor, off the event loop.
+
+    Delegates to the shared ``run_on_host`` runner (``_utils``) — the ONE SSH runner both this and
+    ``database._run_remote`` use, so a fix lands in both (see #426).
+    """
+    return await run_on_host(host, command, timeout)
 
 
 # ─── Hosts ───────────────────────────────────────────────────────────────────
@@ -217,8 +193,9 @@ async def handle_deck_remote_backup(request: "web.Request") -> "web.Response":
     if not host:
         # Local-side backup status — best effort
         try:
-            from pathlib import Path
-            p = Path.home() / ".navig" / "backup" / "status.json"
+            from navig.platform.paths import config_dir
+
+            p = config_dir() / "backup" / "status.json"
             if p.exists():
                 import json
                 return _ok({"source": "local", "data": json.loads(p.read_text(encoding="utf-8"))})

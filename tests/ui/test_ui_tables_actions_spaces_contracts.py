@@ -7,7 +7,6 @@ import pytest
 
 from navig.ui.models import ActionItem, CauseScore
 
-
 # ---------------------------------------------------------------------------
 # navig.ui.tables — render_findings_table, render_fleet_table
 # ---------------------------------------------------------------------------
@@ -184,9 +183,16 @@ class TestNormalizeSpaceName:
         assert normalize_space_name("career-space") == "career"
         assert normalize_space_name("devops-space") == "devops"
 
-    def test_unknown_returns_default(self):
+    def test_freeform_name_keeps_its_own_slug(self):
+        """Free-form directory spaces must NOT collapse to "default".
+
+        Asserting `== "default"` here pinned a BUG that was deliberately fixed: it
+        silently broke directory spaces like `homelab`, which all resolved to the
+        default space. Only an empty name defaults.
+        """
         from navig.spaces.contracts import normalize_space_name
-        assert normalize_space_name("unknown-form") == "default"
+        assert normalize_space_name("unknown-form") == "unknown-form"
+        assert normalize_space_name("") == "default"
 
     def test_case_insensitive(self):
         from navig.spaces.contracts import normalize_space_name

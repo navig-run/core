@@ -1,8 +1,9 @@
 """Tests for navig/commands/explain.py."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from typer.testing import CliRunner
-from unittest.mock import patch, MagicMock
 
 from navig.commands.explain import app
 
@@ -47,31 +48,31 @@ def test_no_args_exits_nonzero_or_shows_help():
 # explain command <name>
 # ---------------------------------------------------------------------------
 
-_WARN = "navig.console_helper.warn"
+_WARN = "navig.console_helper.warning"
 _CREATE = {"create": True}
 
 
 def test_explain_command_exits_0():
-    with patch(_WARN, **_CREATE):
+    with patch(_WARN):
         result = runner.invoke(app, ["command", "mycommand"])
     assert result.exit_code == 0
 
 
 def test_explain_command_calls_warn():
-    with patch(_WARN, create=True) as mock_warn:
+    with patch(_WARN) as mock_warn:
         runner.invoke(app, ["command", "mycommand"])
     mock_warn.assert_called_once()
 
 
 def test_explain_command_warn_includes_name():
-    with patch(_WARN, create=True) as mock_warn:
+    with patch(_WARN) as mock_warn:
         runner.invoke(app, ["command", "my-special-cmd"])
     call_arg = mock_warn.call_args[0][0]
     assert "my-special-cmd" in call_arg
 
 
 def test_explain_command_warn_says_not_implemented():
-    with patch(_WARN, create=True) as mock_warn:
+    with patch(_WARN) as mock_warn:
         runner.invoke(app, ["command", "test"])
     call_arg = mock_warn.call_args[0][0]
     assert "not yet implemented" in call_arg
@@ -92,26 +93,26 @@ def test_explain_command_help_exits_0():
 # ---------------------------------------------------------------------------
 
 def test_explain_config_exits_0():
-    with patch(_WARN, create=True):
+    with patch(_WARN):
         result = runner.invoke(app, ["config", "MY_KEY"])
     assert result.exit_code == 0
 
 
 def test_explain_config_calls_warn():
-    with patch(_WARN, create=True) as mock_warn:
+    with patch(_WARN) as mock_warn:
         runner.invoke(app, ["config", "MY_KEY"])
     mock_warn.assert_called_once()
 
 
 def test_explain_config_warn_includes_key():
-    with patch(_WARN, create=True) as mock_warn:
+    with patch(_WARN) as mock_warn:
         runner.invoke(app, ["config", "database.host"])
     call_arg = mock_warn.call_args[0][0]
     assert "database.host" in call_arg
 
 
 def test_explain_config_warn_says_not_implemented():
-    with patch(_WARN, create=True) as mock_warn:
+    with patch(_WARN) as mock_warn:
         runner.invoke(app, ["config", "timeout"])
     call_arg = mock_warn.call_args[0][0]
     assert "not yet implemented" in call_arg
@@ -132,26 +133,26 @@ def test_explain_config_help_exits_0():
 # ---------------------------------------------------------------------------
 
 def test_explain_concept_exits_0():
-    with patch(_WARN, create=True):
+    with patch(_WARN):
         result = runner.invoke(app, ["concept", "vault"])
     assert result.exit_code == 0
 
 
 def test_explain_concept_calls_warn():
-    with patch(_WARN, create=True) as mock_warn:
+    with patch(_WARN) as mock_warn:
         runner.invoke(app, ["concept", "vault"])
     mock_warn.assert_called_once()
 
 
 def test_explain_concept_warn_includes_topic():
-    with patch(_WARN, create=True) as mock_warn:
+    with patch(_WARN) as mock_warn:
         runner.invoke(app, ["concept", "identity-sigil"])
     call_arg = mock_warn.call_args[0][0]
     assert "identity-sigil" in call_arg
 
 
 def test_explain_concept_warn_says_not_implemented():
-    with patch(_WARN, create=True) as mock_warn:
+    with patch(_WARN) as mock_warn:
         runner.invoke(app, ["concept", "agents"])
     call_arg = mock_warn.call_args[0][0]
     assert "not yet implemented" in call_arg
@@ -172,7 +173,7 @@ def test_explain_concept_help_exits_0():
 # ---------------------------------------------------------------------------
 
 def test_explain_command_warn_called_exactly_once():
-    with patch(_WARN, create=True) as mock_warn:
+    with patch(_WARN) as mock_warn:
         runner.invoke(app, ["command", "ls"])
     assert mock_warn.call_count == 1
 
@@ -180,7 +181,7 @@ def test_explain_command_warn_called_exactly_once():
 def test_each_subcommand_has_distinct_output_message():
     messages = []
     for sub, arg in [("command", "ls"), ("config", "timeout"), ("concept", "tunnel")]:
-        with patch(_WARN, create=True) as mock_warn:
+        with patch(_WARN) as mock_warn:
             runner.invoke(app, [sub, arg])
         messages.append(mock_warn.call_args[0][0])
     assert len(set(messages)) == 3

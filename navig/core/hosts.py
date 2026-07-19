@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import yaml
@@ -270,7 +270,7 @@ class HostManager:
         # Add timestamp to metadata
         if "metadata" not in config:
             config["metadata"] = {}
-        config["metadata"]["last_updated"] = datetime.now().isoformat()
+        config["metadata"]["last_updated"] = datetime.now(timezone.utc).isoformat()
 
         # Ensure hosts directory exists
         host_file.parent.mkdir(parents=True, exist_ok=True)
@@ -326,9 +326,61 @@ class HostManager:
         return False
 
 
-# Backward compatibility aliases
-host_exists = HostManager.exists
-list_hosts = HostManager.list_hosts
-load_host_config = HostManager.load
-save_host_config = HostManager.save
-delete_host_config = HostManager.delete
+# ---------------------------------------------------------------------------
+# Backward compatibility shims (deprecated — use HostManager directly)
+# ---------------------------------------------------------------------------
+# These module-level functions existed before HostManager was introduced.
+# They now emit a DeprecationWarning and delegate to HostManager so that
+# existing call sites continue to work while migration happens.
+
+import warnings as _warnings
+
+
+def host_exists(config: object, host_name: str) -> bool:  # type: ignore[override]
+    """Deprecated. Use ``HostManager(config).exists(host_name)``."""
+    _warnings.warn(
+        "navig.core.hosts.host_exists() is deprecated; use HostManager.exists() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return HostManager(config).exists(host_name)
+
+
+def list_hosts(config: object) -> list[str]:  # type: ignore[override]
+    """Deprecated. Use ``HostManager(config).list_hosts()``."""
+    _warnings.warn(
+        "navig.core.hosts.list_hosts() is deprecated; use HostManager.list_hosts() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return HostManager(config).list_hosts()
+
+
+def load_host_config(config: object, host_name: str, use_cache: bool = True) -> dict:  # type: ignore[override]
+    """Deprecated. Use ``HostManager(config).load(host_name)``."""
+    _warnings.warn(
+        "navig.core.hosts.load_host_config() is deprecated; use HostManager.load() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return HostManager(config).load(host_name, use_cache=use_cache)
+
+
+def save_host_config(config: object, host_name: str, data: dict) -> None:  # type: ignore[override]
+    """Deprecated. Use ``HostManager(config).save(host_name, data)``."""
+    _warnings.warn(
+        "navig.core.hosts.save_host_config() is deprecated; use HostManager.save() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    HostManager(config).save(host_name, data)
+
+
+def delete_host_config(config: object, host_name: str) -> bool:  # type: ignore[override]
+    """Deprecated. Use ``HostManager(config).delete(host_name)``."""
+    _warnings.warn(
+        "navig.core.hosts.delete_host_config() is deprecated; use HostManager.delete() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return HostManager(config).delete(host_name)

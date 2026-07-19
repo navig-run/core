@@ -16,7 +16,6 @@ from navig.cache_store import (
 )
 from navig.core.dict_utils import deep_merge, now_iso, truncate_output, utc_now
 
-
 # ---------------------------------------------------------------------------
 # dict_utils helpers
 # ---------------------------------------------------------------------------

@@ -178,14 +178,14 @@ def try_install_nerd_font() -> bool:
 
 
 def _find_install_script() -> Path | None:
-    """Find Install-NerdFont.ps1 relative to this package."""
-    candidates = [
-        # Dev checkout: navig/ui/_capabilities.py → ../../scripts/
-        Path(__file__).parent.parent.parent / "scripts" / "Install-NerdFont.ps1",
-        # Installed in a venv / site-packages (scripts bundled via package data)
-        Path(sys.prefix) / "scripts" / "Install-NerdFont.ps1",
-    ]
-    for c in candidates:
-        if c.exists():
-            return c
-    return None
+    """Find Install-NerdFont.ps1 in the packaged script store.
+
+    It used to be looked up at `<repo>/core/scripts/` — outside the navig package, so it
+    shipped in no wheel and this always returned None for an installed navig: onboarding
+    then told the user to run `pwsh scripts/Install-NerdFont.ps1`, a file they do not have.
+    The script now lives in the builtin store and ships with the package.
+    """
+    from navig.platform.paths import builtin_store_dir
+
+    script = builtin_store_dir() / "scripts" / "Install-NerdFont.ps1"
+    return script if script.exists() else None

@@ -18,7 +18,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # navig/connectors/google_oauth_constants.py
 # ---------------------------------------------------------------------------
-
 from navig.connectors.google_oauth_constants import (
     GOOGLE_AUTH_URL,
     GOOGLE_TOKEN_URL,
@@ -405,7 +404,6 @@ class TestRateLimiter:
 
     def test_old_requests_purged_after_window(self):
         from datetime import timedelta
-        from unittest.mock import patch
 
         rl = RateLimiter(max_requests=2, window_minutes=1)
         uid = 4001

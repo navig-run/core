@@ -1,8 +1,10 @@
 """Unified messaging — threads, contacts, send across adapters.
 
 Backed by `navig.store.threads.ThreadStore` and `navig.store.contacts.ContactStore`
-(the same stores the Telegram messaging mixin uses). Sending defers to the
-routing engine in `navig.commands.dispatch`.
+(the same stores the Telegram messaging mixin uses). Sending goes through the
+shared `navig.messaging.send.route_and_send` seam — the same one the CLI
+(`navig dispatch send`) uses — so routing resolution and delivery tracking are
+identical across surfaces.
 
 Routes:
   GET  /api/deck/messages/threads               list threads (filter ?adapter=)
@@ -214,26 +216,26 @@ async def handle_deck_messages_send(request: "web.Request") -> "web.Response":
     if not target or not msg:
         return _err("'target' and 'body' are required", status=400)
     try:
-        from navig.commands.dispatch import RoutingEngine  # type: ignore[import]
-        from navig.store.contacts import get_contact_store  # type: ignore[import]
-        from navig.store.threads import get_thread_store  # type: ignore[import]
-        from navig.messaging.registry import get_adapter_registry  # type: ignore[import]
-        engine = RoutingEngine(get_contact_store(), get_thread_store(), get_adapter_registry())
-        # The engine resolves target → adapter → dispatches; signature is best-effort
-        # since the routing engine surface is internal. Surface a tidy receipt.
+        # Shared with the CLI (`navig dispatch send`) via one seam so routing and
+        # delivery tracking behave identically; here we just map its exceptions
+        # to HTTP status codes.
+        from navig.messaging.routing import NoRouteError
+        from navig.messaging.send import AdapterUnavailableError, route_and_send
+
         try:
-            decision = engine.resolve(target, network=network)
-            adapter = get_adapter_registry().get(decision.adapter_name)
-            receipt = await adapter.send(decision.resolved_target, msg)
-            return _ok({
-                "ok": bool(getattr(receipt, "ok", False)),
-                "adapter": decision.adapter_name,
-                "target": target,
-                "id": getattr(receipt, "id", None) or "",
-                "error": getattr(receipt, "error", "") or "",
-            })
-        except Exception as inner:
-            return _err(f"send failed: {inner}", status=502)
+            decision, receipt = await route_and_send(target, msg, network=network)
+        except NoRouteError as exc:
+            return _err(str(exc), status=404)
+        except AdapterUnavailableError as exc:
+            return _err(str(exc), status=502)
+
+        return _ok({
+            "ok": bool(receipt.ok),
+            "adapter": decision.adapter_name,
+            "target": target,
+            "id": receipt.message_id or "",
+            "error": receipt.error or "",
+        })
     except Exception as exc:
         logger.exception("messages send failed")
         return _err(str(exc))

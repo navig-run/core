@@ -19,6 +19,7 @@ PROVIDER_ENV_KEYS: dict[str, tuple[str, ...]] = {
     "grok": ("GROK_API_KEY", "XAI_API_KEY", "GROK_KEY"),
     "mistral": ("MISTRAL_API_KEY",),
     "deepseek": ("DEEPSEEK_API_KEY",),
+    "cerebras": ("CEREBRAS_API_KEY",),
     "siliconflow": ("SILICONFLOW_API_KEY",),
     "cohere": ("COHERE_API_KEY",),
     "together": ("TOGETHER_API_KEY",),
@@ -97,7 +98,9 @@ def provider_has_vault_key(provider_id: str) -> bool:
         if vault is None:
             return False
 
-        labels: list[str] = [f"{provider_id}/api_key"]
+        # Bare provider id first — that is the canonical PROVIDER-kind label
+        # `navig vault add <provider>` writes; the compound labels are alternates.
+        labels: list[str] = [provider_id, f"{provider_id}/api_key"]
         try:
             from navig.vault.resolver import vault_labels_for_env
 
@@ -106,12 +109,12 @@ def provider_has_vault_key(provider_id: str) -> bool:
         except Exception:  # noqa: BLE001
             pass
 
+        from navig.vault.core import reveal_secret
+
         for label in labels:
-            try:
-                secret = (vault.get_secret(label) or "").strip()
-            except Exception:  # noqa: BLE001
-                continue
-            if secret:
+            # reveal_secret unwraps the SecretStr; the old bare .strip() raised and
+            # was swallowed, so present keys were scanned as absent.
+            if reveal_secret(vault, label):
                 return True
     except Exception:  # noqa: BLE001
         return False

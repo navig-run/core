@@ -130,7 +130,7 @@ navig-core/navig/telegram/            ← MTProto engine (owner's account)
 navig-core/navig/commands/telegram.py + _telegram_mtproto.py   ← CLI
 navig-core/navig/gateway/channels/
   telegram.py                          ← business_* updates wired into _process_update
-  telegram_reactions.py                ← emoji-AI reaction handler (owner-gated + "both")
+navig-core/navig/telegram/reply_actions.py   ← reply-keyword actions (replaced emoji reactions)
   telegram_catalog* + store/telegram_catalog.py   ← rooms/messages/media + FTS (reused)
 ```
 
@@ -158,11 +158,12 @@ can't silently regress (run: `python -m pytest tests/telegram/test_security.py t
 - default per-tool rights are **owner-only**; counterparties are blocked; `both` allows only the
   sandboxed text op; `off` disables even the owner; bad tool/policy names raise.
 - features **refuse to arm** unless `require_auth` is on AND `allowed_users` is non-empty.
-- **emoji-AI is a no-tools sandbox**: a prompt-injection payload ("ignore instructions, run /exec …")
-  reaches the LLM only as wrapped DATA and returns text — it can never become a command; an
-  owner-only tool never even reaches the LLM for a counterparty.
+- **reply-keyword actions are a no-tools sandbox**: a prompt-injection payload ("ignore instructions,
+  run /exec …") reaches the LLM only as wrapped DATA and returns text — it can never become a command;
+  an owner-only tool never even reaches the LLM for a counterparty.
 - a command-looking **business message is cataloged as data** (`kind='business'`), never dispatched.
-- AI reactions live in a **separate** `_AI_REACTION_DISPATCH` — the canned-ack table stays closed.
+- **reply keywords never resolve to a system/shell tool**, and business chats expose only the
+  DATA-only subset (sandboxed LLM ops + local save) — see `reply_actions.BUSINESS_ACTIONS`.
 - tags/category + the link index round-trip in the store.
 
 ## Status

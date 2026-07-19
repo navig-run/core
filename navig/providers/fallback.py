@@ -287,10 +287,13 @@ class FallbackManager:
         if not config:
             raise ValueError(f"Unknown provider: {provider}")
 
-        # Resolve API key
-        api_key, source = self.auth.resolve_auth(key)
+        # Resolve credential — connection-first (claude-max OAuth subscription /
+        # stored key), then the shared key store.
+        from navig.providers.inference import resolve_provider_credential
 
-        client = create_client(config, api_key=api_key, timeout=timeout)
+        api_key, oauth_token = resolve_provider_credential(key)
+
+        client = create_client(config, api_key=api_key, oauth_token=oauth_token, timeout=timeout)
         self._clients[key] = client
         return client
 

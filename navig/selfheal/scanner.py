@@ -1,7 +1,7 @@
 """navig.selfheal.scanner — LLM-powered code-quality scanner.
 
 Reads local ``.py`` source files, sends batches to the configured LLM via
-``navig.llm_generate.llm_generate``, and returns structured
+``navig.llm.generate.llm_generate``, and returns structured
 :class:`ScanFinding` objects filtered by confidence threshold.
 
 Security constraints
@@ -229,7 +229,7 @@ def scan_files(
         findings = scan_files(repo_root)
     """
     # Defer heavy LLM import to keep startup fast (<50 ms rule).
-    from navig.llm_generate import llm_generate  # noqa: PLC0415
+    from navig.llm.generate import llm_generate  # noqa: PLC0415
 
     cfg: dict = config or {}
     min_confidence: float = float(cfg.get("min_confidence", _DEFAULT_MIN_CONFIDENCE))

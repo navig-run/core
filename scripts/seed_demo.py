@@ -29,8 +29,9 @@ from pathlib import Path
 # Allow running straight from the repo: `python scripts/seed_demo.py`
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from navig.platform import paths  # noqa: E402
 from navig.store.board import BoardStore  # noqa: E402
+
+from navig.platform import paths  # noqa: E402
 from navig.store.contacts import ContactStore  # noqa: E402
 from navig.store.threads import ThreadStore  # noqa: E402
 

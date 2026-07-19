@@ -12,7 +12,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/commands/config.py — pure helpers
 # ---------------------------------------------------------------------------
@@ -304,8 +303,8 @@ class TestGetTimePeriod:
 
     def test_morning_range(self):
         fn = self._fn()
-        from unittest.mock import patch
         from datetime import datetime
+        from unittest.mock import patch
         with patch("navig.commands.suggest.datetime") as mock_dt:
             mock_dt.now.return_value.hour = 7
             assert fn() == "morning"

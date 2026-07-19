@@ -5,14 +5,13 @@ Tests for BlockType enum, progress_bar, renderBlock (stdout capture).
 import pytest
 
 from navig.core.renderer import (
-    BlockType,
-    DIVIDER,
     _STYLES,
+    DIVIDER,
+    BlockType,
     progress_bar,
     renderBlock,
     renderMetric,
 )
-
 
 # ---------------------------------------------------------------------------
 # BlockType enum

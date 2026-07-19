@@ -12,7 +12,6 @@ import pytest
 from navig.agent.proactive.ics_calendar import ICSCalendarProvider
 from navig.agent.proactive.providers import CalendarEvent
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

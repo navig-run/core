@@ -6,9 +6,9 @@ from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
-from navig.commands.system_cmd import system_app
 from navig.commands.debug_cmd import debug_app
 from navig.commands.mesh import mesh_app
+from navig.commands.system_cmd import system_app
 
 runner = CliRunner()
 
@@ -125,135 +125,103 @@ def test_system_clean_help():
 # debug_app
 # ---------------------------------------------------------------------------
 
-def test_debug_default_no_log():
-    fake_path = MagicMock(spec=Path)
-    fake_path.exists.return_value = False
-    fake_path.__truediv__ = lambda self, other: fake_path
+# The `debug` command resolves the log through `debug_log_path()` (== `log_dir()/debug.log`)
+# — NOT `config_dir()/debug.log`. These tests used to patch `config_dir` and hand-build the
+# path with a `MagicMock(spec=Path).__truediv__` chain, so after #192 ("every diagnostic read
+# a debug.log the logger never writes") pointed the command at the real resolver, the mock no
+# longer intercepted anything: the command read the OPERATOR'S ACTUAL logs and the assertions
+# failed. Patch the real resolver, against a real temp file — isolated, and no MagicMock path
+# fakery to rot. `_isolate_debug_paths` also empties the two log dirs the default view lists,
+# so a real `~/.navig/logs` cannot leak into output.
 
-    with patch("navig.commands.debug_cmd.config_dir", return_value=fake_path):
+
+def _isolate_debug_paths(tmp_path: Path):
+    """Patch debug_cmd's three path resolvers at once: the debug log itself plus the two
+    directories the default view enumerates. Returns the debug-log Path (does not create it)."""
+    log = tmp_path / "debug.log"
+    empty_a = tmp_path / "logs_a"
+    empty_b = tmp_path / "logs_b"
+    empty_a.mkdir()
+    empty_b.mkdir()
+    return log, patch.multiple(
+        "navig.commands.debug_cmd",
+        debug_log_path=lambda: log,
+        log_dir=lambda: empty_a,
+        config_dir=lambda: empty_b,
+    )
+
+
+def test_debug_default_no_log(tmp_path):
+    _log, iso = _isolate_debug_paths(tmp_path)  # log file not created
+    with iso:
         result = runner.invoke(debug_app, [])
     assert result.exit_code == 0
     assert "No debug.log" in result.output
 
 
-def test_debug_default_with_log():
-    fake_dir = MagicMock(spec=Path)
-    fake_log = MagicMock(spec=Path)
-    fake_log.exists.return_value = True
-    fake_log.stat.return_value.st_size = 1024
-    fake_log.__str__ = lambda self: "/home/user/.navig/debug.log"
-
-    log_dir = MagicMock(spec=Path)
-    log_dir.exists.return_value = False
-
-    def truediv(self, other):
-        if other == "debug.log":
-            return fake_log
-        if other == "logs":
-            return log_dir
-        return MagicMock(spec=Path)
-
-    fake_dir.__truediv__ = truediv
-
-    with patch("navig.commands.debug_cmd.config_dir", return_value=fake_dir):
+def test_debug_default_with_log(tmp_path):
+    log, iso = _isolate_debug_paths(tmp_path)
+    log.write_text("hello", encoding="utf-8")
+    with iso:
         result = runner.invoke(debug_app, [])
     assert result.exit_code == 0
     assert "debug.log" in result.output
+    assert "5 bytes" in result.output  # size of "hello"
 
 
-def test_debug_tail_no_log():
-    fake_path = MagicMock(spec=Path)
-    fake_path.exists.return_value = False
-    fake_path.__truediv__ = lambda self, other: fake_path
-
-    with patch("navig.commands.debug_cmd.config_dir", return_value=fake_path):
+def test_debug_tail_no_log(tmp_path):
+    _log, iso = _isolate_debug_paths(tmp_path)
+    with iso:
         result = runner.invoke(debug_app, ["tail"])
     assert result.exit_code == 0
     assert "No debug.log" in result.output
 
 
-def test_debug_tail_with_content():
-    fake_dir = MagicMock(spec=Path)
-    fake_log = MagicMock(spec=Path)
-    fake_log.exists.return_value = True
-    fake_log.read_text.return_value = "\n".join(f"line {i}" for i in range(100))
-    fake_log.__str__ = lambda self: "/tmp/debug.log"
-
-    def truediv(self, other):
-        if other == "debug.log":
-            return fake_log
-        return MagicMock(spec=Path)
-
-    fake_dir.__truediv__ = truediv
-
-    with patch("navig.commands.debug_cmd.config_dir", return_value=fake_dir):
+def test_debug_tail_with_content(tmp_path):
+    log, iso = _isolate_debug_paths(tmp_path)
+    log.write_text("\n".join(f"line {i}" for i in range(100)), encoding="utf-8")
+    with iso:
         result = runner.invoke(debug_app, ["tail"])
     assert result.exit_code == 0
     assert "line 99" in result.output
 
 
-def test_debug_tail_custom_lines():
-    fake_dir = MagicMock(spec=Path)
-    fake_log = MagicMock(spec=Path)
-    fake_log.exists.return_value = True
-    fake_log.read_text.return_value = "\n".join(f"entry {i}" for i in range(200))
-
-    def truediv(self, other):
-        if other == "debug.log":
-            return fake_log
-        return MagicMock(spec=Path)
-
-    fake_dir.__truediv__ = truediv
-
-    with patch("navig.commands.debug_cmd.config_dir", return_value=fake_dir):
+def test_debug_tail_custom_lines(tmp_path):
+    log, iso = _isolate_debug_paths(tmp_path)
+    log.write_text("\n".join(f"entry {i}" for i in range(200)), encoding="utf-8")
+    with iso:
         result = runner.invoke(debug_app, ["tail", "--lines", "5"])
     assert result.exit_code == 0
+    # --lines 5 shows the last 5 entries and not the 6th-from-last.
+    assert "entry 199" in result.output
+    assert "entry 195" in result.output
+    assert "entry 194" not in result.output
 
 
-def test_debug_clear_nothing():
-    fake_path = MagicMock(spec=Path)
-    fake_path.exists.return_value = False
-    fake_path.__truediv__ = lambda self, other: fake_path
-
-    with patch("navig.commands.debug_cmd.config_dir", return_value=fake_path):
+def test_debug_clear_nothing(tmp_path):
+    _log, iso = _isolate_debug_paths(tmp_path)  # log file not created
+    with iso:
         result = runner.invoke(debug_app, ["clear", "--yes"])
     assert result.exit_code == 0
     assert "Nothing to clear" in result.output
 
 
-def test_debug_clear_with_yes():
-    fake_dir = MagicMock(spec=Path)
-    fake_log = MagicMock(spec=Path)
-    fake_log.exists.return_value = True
-
-    def truediv(self, other):
-        if other == "debug.log":
-            return fake_log
-        return MagicMock(spec=Path)
-
-    fake_dir.__truediv__ = truediv
-
-    with patch("navig.commands.debug_cmd.config_dir", return_value=fake_dir):
+def test_debug_clear_with_yes(tmp_path):
+    log, iso = _isolate_debug_paths(tmp_path)
+    log.write_text("noise to be cleared", encoding="utf-8")
+    with iso:
         result = runner.invoke(debug_app, ["clear", "--yes"])
     assert result.exit_code == 0
-    assert fake_log.write_text.called
+    assert log.read_text(encoding="utf-8") == ""  # truncated, not deleted
 
 
-def test_debug_clear_writes_empty():
-    fake_dir = MagicMock(spec=Path)
-    fake_log = MagicMock(spec=Path)
-    fake_log.exists.return_value = True
-
-    def truediv(self, other):
-        if other == "debug.log":
-            return fake_log
-        return MagicMock(spec=Path)
-
-    fake_dir.__truediv__ = truediv
-
-    with patch("navig.commands.debug_cmd.config_dir", return_value=fake_dir):
+def test_debug_clear_writes_empty(tmp_path):
+    log, iso = _isolate_debug_paths(tmp_path)
+    log.write_text("stuff", encoding="utf-8")
+    with iso:
         runner.invoke(debug_app, ["clear", "--yes"])
-    fake_log.write_text.assert_called_once_with("", encoding="utf-8")
+    assert log.exists()
+    assert log.read_text(encoding="utf-8") == ""
 
 
 def test_debug_help():

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from navig.core.evolution.base import BaseEvolver, EvolutionResult
 
-
 # ---------------------------------------------------------------------------
 # EvolutionResult
 # ---------------------------------------------------------------------------

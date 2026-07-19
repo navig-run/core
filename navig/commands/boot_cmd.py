@@ -12,7 +12,7 @@ def boot_show():
     """Show the current boot configuration."""
     from navig import console_helper as ch
 
-    ch.warn("navig boot is not yet implemented in this build.")
+    ch.warning("navig boot is not yet implemented in this build.")
 
 
 @boot_app.command("run")
@@ -20,4 +20,4 @@ def boot_run(dry_run: bool = typer.Option(False, "--dry-run", help="Preview with
     """Execute the boot sequence hooks."""
     from navig import console_helper as ch
 
-    ch.warn("navig boot run is not yet implemented in this build.")
+    ch.warning("navig boot run is not yet implemented in this build.")

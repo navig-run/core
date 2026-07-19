@@ -35,34 +35,10 @@ logger = logging.getLogger(__name__)
 
 # Canonical focus modes. Map common aliases to a canonical id.
 # Keep this list in sync with the Deck Account → Focus Mode picker.
-_FOCUS_MODE_ALIASES: dict[str, str] = {
-    # canonical → itself
-    "navig": "navig",
-    "work": "work",
-    "deep-focus": "deep-focus",
-    "deepfocus": "deep-focus",
-    "deep": "deep-focus",
-    "planning": "planning",
-    "creative": "creative",
-    "relax": "relax",
-    "sleep": "sleep",
-    "balance": "balance",
-    "balanced": "balance",
-    "coder": "coder",
-    "auto": "auto",
-    # common phrasings
-    "deep work": "deep-focus",
-    "deep-work": "deep-focus",
-    "deep focus": "deep-focus",
-    "focus mode": "deep-focus",
-    "planning mode": "planning",
-    "creative mode": "creative",
-    "relax mode": "relax",
-    "sleep mode": "sleep",
-    "coding": "coder",
-    "code": "coder",
-    "automatic": "auto",
-}
+# Focus-mode phrase→canonical normalisation now lives in the single source of truth,
+# navig.gateway.channels.focus_modes (see `_normalize_focus` below). The former local
+# `_FOCUS_MODE_ALIASES` mapped phrases to `balance`/`navig`/`coder` — values that are not
+# valid `chat_mode`s, so `set_preference` rejected them.
 
 # Tier override aliases (the canonical values mirror _handle_tier_command).
 _TIER_ALIASES: dict[str, str] = {
@@ -126,11 +102,16 @@ _TIER_PATTERNS: list[re.Pattern[str]] = [
 
 
 def _normalize_focus(raw: str) -> str | None:
-    """Map a free-form focus phrase to a canonical mode id, or None."""
-    key = raw.strip().lower().rstrip(".,!?")
-    if not key:
-        return None
-    return _FOCUS_MODE_ALIASES.get(key)
+    """Map a free-form focus phrase to a canonical ``chat_mode`` id, or None.
+
+    Delegates to the single source of truth so this and ``/mode`` share one vocabulary.
+    The old local ``_FOCUS_MODE_ALIASES`` mapped some phrases to ``balance`` / ``navig`` /
+    ``coder`` — none of which are valid ``chat_mode`` values, so ``set_preference`` rejected
+    them and the change silently no-op'd.
+    """
+    from navig.gateway.channels.focus_modes import normalize
+
+    return normalize(raw)
 
 
 def _normalize_tier(raw: str) -> str | None:
@@ -182,15 +163,16 @@ async def _apply_focus_mode(
 ) -> None:
     """Persist the focus mode change in both session metadata and user state."""
     is_group = chat_id != user_id
-    # Session metadata
+    # Session metadata. `mode` is already a canonical id from `_normalize_focus`
+    # (which resolves "auto"/"reset" to the default), so store it as-is — the old
+    # `"balance" if mode == "auto"` special-case pointed at a value that is not a valid
+    # chat_mode and no longer occurs.
     try:
         from navig.gateway.channels.telegram_sessions import get_session_manager
 
         sm = get_session_manager()
-        # Special-case "auto" → balance, mirroring _handle_mode's behavior.
-        stored_value = "balance" if mode == "auto" else mode
         sm.set_session_metadata(
-            chat_id, user_id, "focus_mode", stored_value, is_group=is_group
+            chat_id, user_id, "focus_mode", mode, is_group=is_group
         )
     except Exception as exc:
         logger.debug("nl_settings: focus_mode session write failed: %s", exc)

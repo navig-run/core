@@ -143,11 +143,14 @@ def test_domain_launcher_non_tty_exits_cleanly_with_hint(tmp_path: Path, domain:
     assert f"navig {domain} --help" in combined.lower()
 
 
-def test_task_non_tty_lists_workflows_without_launcher_hint(tmp_path: Path):
+def test_task_non_tty_exits_cleanly_without_launcher_hint(tmp_path: Path):
     """`navig task` uses direct listing behavior in non-TTY mode.
 
-    This command currently does not route through the launcher fallback hint
-    path; it should still exit cleanly and render its workflow table.
+    The workflow engine has been RETIRED — Blocks replaced it — so `navig task`
+    no longer renders a workflow table; it points at `navig block list` instead.
+    What this regression still guards is unchanged: the command must exit cleanly
+    in a non-TTY and must NOT route through the interactive launcher fallback
+    (the "non-tty detected" hint), which would hang or confuse a scripted caller.
     """
     result = subprocess.run(
         [sys.executable, "-m", "navig", "task"],
@@ -162,7 +165,8 @@ def test_task_non_tty_lists_workflows_without_launcher_hint(tmp_path: Path):
     combined = result.stdout + result.stderr
 
     assert result.returncode == 0
-    assert "available workflows" in combined.lower()
+    # Points the user at the replacement rather than dead-ending.
+    assert "block" in combined.lower()
     assert "non-tty detected" not in combined.lower()
 
 

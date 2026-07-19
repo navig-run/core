@@ -13,7 +13,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/core/crash_handler.py
 # ---------------------------------------------------------------------------
@@ -68,7 +67,7 @@ class TestCrashHandlerLogToFile:
 
 class TestCrashHandlerCleanup:
     def test_removes_oldest_when_over_limit(self, tmp_path: Path) -> None:
-        from navig.core.crash_handler import CrashHandler, _MAX_CRASH_LOGS
+        from navig.core.crash_handler import _MAX_CRASH_LOGS, CrashHandler
         h = CrashHandler()
         # Create _MAX_CRASH_LOGS + 3 files
         logs = []
@@ -99,8 +98,9 @@ class TestCrashHandlerGetLatestReport:
         assert h.get_latest_crash_report() is None
 
     def test_returns_most_recent_log(self, tmp_path: Path) -> None:
-        from navig.core.crash_handler import CrashHandler
         import os
+
+        from navig.core.crash_handler import CrashHandler
         h = CrashHandler()
         h._log_dir = tmp_path
         older = tmp_path / "crash-00001.json"

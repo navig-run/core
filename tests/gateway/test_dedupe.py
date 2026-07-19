@@ -135,3 +135,33 @@ class TestClearMethod:
     def test_missing_store_path_no_error_on_clear(self, tmp_path):
         d = UpdateDedupe(store_path=tmp_path / "nonexistent.json")
         d.clear()  # should not raise
+
+
+class TestDefaultStorePathIsolation:
+    """REGRESSION (#179 pattern, found by tests/core/test_frozen_path_tripwire.py):
+    the default store path was a module-level ``os.path.expanduser("~")/.navig``
+    constant — frozen at import, blind to NAVIG_CONFIG_DIR. An isolated gateway
+    therefore shared the LIVE daemon's dedupe store and could mark the operator's
+    real Telegram updates as already-seen (silently discarding them).
+
+    Shape: import first (freeze would happen here pre-fix), isolate AFTER,
+    assert the isolated dir won.
+    """
+
+    def test_default_store_path_resolves_at_construction_time(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        d = UpdateDedupe()  # module already imported at the top of this file
+        assert d._store_path == tmp_path / "dedup_updates.json"
+
+    def test_two_config_dirs_get_two_stores(self, tmp_path, monkeypatch):
+        """Two brains (two config dirs) must never share one dedupe ledger."""
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "brain_a"))
+        a = UpdateDedupe()
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "brain_b"))
+        b = UpdateDedupe()
+        assert a._store_path != b._store_path
+
+    def test_explicit_store_path_still_wins(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "cfg"))
+        d = UpdateDedupe(store_path=tmp_path / "explicit.json")
+        assert d._store_path == tmp_path / "explicit.json"

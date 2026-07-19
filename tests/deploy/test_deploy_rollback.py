@@ -10,7 +10,6 @@ import pytest
 from navig.deploy.models import BackupConfig, SnapshotRecord
 from navig.deploy.rollback import RollbackManager
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

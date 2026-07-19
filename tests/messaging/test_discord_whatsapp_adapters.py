@@ -8,10 +8,9 @@ from navig.messaging.adapters.discord_adapter import (
     DiscordMessagingAdapter,
 )
 from navig.messaging.adapters.whatsapp_cloud import (
-    WhatsAppCloudAdapter,
     _GRAPH_API,
+    WhatsAppCloudAdapter,
 )
-
 
 # ---------------------------------------------------------------------------
 # Module-level constants

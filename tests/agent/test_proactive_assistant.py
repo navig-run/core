@@ -14,8 +14,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from navig.modules.error_resolution import Solution
 from navig.platform.paths import config_dir as get_navig_directory
+from navig.proactive.error_resolution import Solution
 from navig.proactive_assistant import ProactiveAssistant, ensure_navig_directory
 
 pytestmark = pytest.mark.integration

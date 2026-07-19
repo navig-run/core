@@ -20,13 +20,19 @@ _vault_mod = lazy_import("navig.vault")
 _validators_mod = lazy_import("navig.vault.validators")
 
 profile_app = typer.Typer(name="profile", help="Manage credential profiles")
+login_app = typer.Typer(
+    name="login",
+    help="Manage website logins for AI browser auto-login (add, list, get, remove)",
+    no_args_is_help=True,
+)
 vault_app = typer.Typer(
     name="vault",
-    help="Manage the NAVIG credentials vault (add, list, info, test, profile, set, get, validate)",
+    help="Manage the NAVIG credentials vault (add, list, info, test, profile, login, set, get, validate)",
     invoke_without_command=True,
     no_args_is_help=True,
 )
 vault_app.add_typer(profile_app, name="profile")
+vault_app.add_typer(login_app, name="login")
 
 # Backward-compat alias — ``navig cred`` still dispatches to vault_app but a
 # deprecation warning is emitted by main.py.  Do NOT register new commands here;
@@ -151,6 +157,147 @@ def _Table(*args, **kwargs):
 
     return Table(*args, **kwargs)
 
+
+# ============================================================================
+# WEBSITE LOGINS  —  `navig vault login ...`  (AI browser auto-login, Stage 1)
+# ============================================================================
+
+
+@login_app.command("add")
+def login_add(
+    domain: str = typer.Argument(
+        ..., help="Site host or URL, e.g. github.com or https://github.com/login"
+    ),
+    username: str = typer.Option(..., "--username", "-u", help="Account username / email"),
+    password: str | None = typer.Option(
+        None, "--password", "-p", help="Password (omit to be prompted securely)"
+    ),
+    url: str | None = typer.Option(None, "--url", help="Login page URL (defaults to the site)"),
+    totp: str | None = typer.Option(
+        None, "--totp", help="TOTP/2FA secret in base32 (stored with the login)"
+    ),
+    notes: str | None = typer.Option(None, "--notes", help="Free-text note"),
+):
+    """Store a website login for AI auto-login. The password is never echoed."""
+    from navig.vault import WebLogin, add_login  # noqa: PLC0415
+    from navig.vault.logins import normalize_host  # noqa: PLC0415
+
+    if password is None:
+        password = typer.prompt("Password", hide_input=True)
+
+    host = normalize_host(domain)
+    login = WebLogin(
+        domain=host,
+        username=username,
+        password=password,
+        url=url or (domain if "://" in domain else None),
+        totp_secret=totp,
+        notes=notes,
+    )
+    add_login(login)
+    _ch.success(f"Saved login for {username} @ {host}")
+    _ch.info(f"Auto-login can now sign into {host} · navig cdp login {host}")
+
+
+@login_app.command("list")
+def login_list(
+    json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
+):
+    """List stored website logins (no passwords are shown)."""
+    from navig.vault import list_logins  # noqa: PLC0415
+
+    infos = list_logins()
+
+    if json_output:
+        import dataclasses  # noqa: PLC0415
+
+        _rprint(json.dumps([dataclasses.asdict(i) for i in infos], default=str))
+        return
+
+    if not infos:
+        _ch.warning("No website logins stored.")
+        _ch.info("Add one with: navig vault login add <domain> -u <user>")
+        return
+
+    con = get_console()
+    table = _Table(box=None, show_header=True, padding=(0, 2))
+    table.add_column("Domain", style="green", no_wrap=True)
+    table.add_column("Username", style="cyan", no_wrap=True)
+    table.add_column("2FA", justify="center", no_wrap=True)
+    table.add_column("Last used", style="dim", no_wrap=True)
+    table.add_column("URL")  # free-text column stays wrappable
+    for i in sorted(infos, key=lambda x: (x.domain, x.username)):
+        table.add_row(
+            i.domain,
+            i.username,
+            "[green]●[/green]" if i.has_totp else "[dim]○[/dim]",
+            str(i.last_used_at.date()) if i.last_used_at else "[dim]—[/dim]",
+            i.url or "[dim]—[/dim]",
+        )
+    con.print(table)
+    _ch.info(f"{len(infos)} login(s) · sign in with navig cdp login <domain>")
+
+
+@login_app.command("get")
+def login_get(
+    domain: str = typer.Argument(..., help="Site host or URL"),
+    username: str | None = typer.Option(
+        None, "--username", "-u", help="Account (needed when a site has several)"
+    ),
+    reveal: bool = typer.Option(False, "--reveal", help="Show the password in clear text"),
+    json_output: bool = typer.Option(False, "--json", help="Output raw JSON (implies --reveal)"),
+):
+    """Show a stored login. The password is masked unless --reveal/--json is given."""
+    from navig.vault import resolve_login  # noqa: PLC0415
+
+    login, status = resolve_login(domain, username)
+    if status == "needs_disambiguation":
+        _ch.warning("Several accounts for this site — pass --username to pick one:")
+        from navig.vault import find_logins_for_domain  # noqa: PLC0415
+
+        for i in find_logins_for_domain(domain):
+            _rprint(f"  • {i.username}")
+        raise typer.Exit(1)
+    if login is None:
+        _ch.error(f"No stored login for {domain}" + (f" / {username}" if username else ""))
+        raise typer.Exit(1)
+
+    if json_output:
+        import dataclasses  # noqa: PLC0415
+
+        _rprint(json.dumps(dataclasses.asdict(login), default=str))
+        return
+
+    con = get_console()
+    t = _Table(box=None, show_header=False, padding=(0, 2))
+    t.add_column("k", style="dim", no_wrap=True)
+    t.add_column("v")
+    t.add_row("Domain", login.domain)
+    t.add_row("Username", login.username)
+    t.add_row("Password", login.password if reveal else "••••••••")
+    t.add_row("2FA", "configured" if login.totp_secret else "—")
+    if login.url:
+        t.add_row("URL", login.url)
+    if login.notes:
+        t.add_row("Notes", login.notes)
+    con.print(t)
+    if not reveal:
+        _ch.info("Pass --reveal to show the password.")
+
+
+@login_app.command("remove")
+def login_remove(
+    domain: str = typer.Argument(..., help="Site host or URL"),
+    username: str = typer.Option(..., "--username", "-u", help="Account to remove"),
+):
+    """Delete a stored website login."""
+    from navig.vault import remove_login  # noqa: PLC0415
+    from navig.vault.logins import normalize_host  # noqa: PLC0415
+
+    if remove_login(domain, username):
+        _ch.success(f"Removed login for {username} @ {normalize_host(domain)}")
+    else:
+        _ch.warning("No matching login found.")
 
 
 # ============================================================================
@@ -448,7 +595,8 @@ def add_credential(
 
 @vault_app.command("info")
 def info_credential(
-    credential_id: str = typer.Argument(..., help="Credential ID (or first 8 chars)"),
+    credential_id: str = typer.Argument(..., help="Credential ID (or first 8 chars), or a provider name with --profile"),
+    profile: str = typer.Option(None, "--profile", "-P", help="Profile, when looking up by provider name"),
     test: bool = typer.Option(False, "--test/--no-test", help="Run a live connection test"),
     reveal: bool = typer.Option(False, "--reveal", help="Reveal secret values (DANGER!)"),
 ):
@@ -475,25 +623,28 @@ def info_credential(
 
     vault = _vault_mod.get_vault()
 
-    # ── Resolve short-ID → full UUID ────────────────────────────────────────
+    # ── Resolve: short-ID prefix, full ID, or provider name (+ --profile) ───
     target_id = credential_id.strip()
     if len(target_id) <= 8:
-        all_items = vault.list()
-        matches = [i for i in all_items if i.id.startswith(target_id)]
-        if not matches:
-            _ch.error(f"No credential found with ID starting with '{target_id}'.")
-            raise typer.Exit(1)
+        matches = [i for i in vault.list() if i.id.startswith(target_id)]
         if len(matches) > 1:
             _ch.error(
                 f"Ambiguous short ID '{target_id}' matches {len(matches)} credentials — use more chars."
             )
             raise typer.Exit(1)
-        target_id = matches[0].id
+        if len(matches) == 1:
+            target_id = matches[0].id
 
     # ── Load data ────────────────────────────────────────────────────────────
     cred = vault.get_by_id(target_id)
     if cred is None:
-        _ch.error(f"Credential '{target_id}' not found.")
+        # Fall back to a provider-name lookup (honours --profile), so e.g.
+        # `navig vault info partner_center --profile connector` works.
+        cred = vault.get(credential_id.strip(), profile_id=profile, caller="vault.info")
+        if cred is not None:
+            target_id = cred.id
+    if cred is None:
+        _ch.error(f"Credential '{credential_id}' not found (by id or provider).")
         raise typer.Exit(1)
 
     raw = vault._store.get_by_id(target_id)  # VaultItem — full metadata, no decrypt
@@ -1151,7 +1302,11 @@ def vault_get(
     # For dot-notation or slash paths try a direct label lookup in the unified vault.
     if "." in path or (cred is None and "/" in path):
         try:
-            resolved_secret = (vault.get_secret(path) or "").strip()
+            from navig.vault.core import reveal_secret
+
+            # reveal_secret unwraps the SecretStr; the old bare .strip() raised and
+            # was swallowed, so `navig vault get a/b` never resolved slash-path labels.
+            resolved_secret = reveal_secret(vault, path)
             if resolved_secret:
                 if raw:
                     print(resolved_secret)  # noqa: T201 — clean machine-readable output
@@ -1174,9 +1329,14 @@ def vault_get(
         raise typer.Exit(1)
 
     secret = cred.data.get(data_key, "")
+    if not secret:
+        # A present provider but an absent/empty data_key is "not found" — exit
+        # non-zero in EVERY mode so existence probes are reliable. Previously masked
+        # and --reveal printed an empty value and exited 0; only --raw signalled.
+        if not raw:
+            _ch.error(f"No value for '{provider}/{data_key}' in profile '{profile}'.")
+        raise typer.Exit(1)
     if raw:
-        if not secret:
-            raise typer.Exit(1)
         print(secret)  # noqa: T201 — clean machine-readable output
     elif reveal:
         _ch.warning("Revealing secret!")

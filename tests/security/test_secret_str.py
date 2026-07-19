@@ -9,7 +9,6 @@ import pytest
 
 from navig.vault.secret_str import Secret, SecretStr, mask_secret
 
-
 # ──────────────────────────────────────────────────────────────
 # Construction
 # ──────────────────────────────────────────────────────────────

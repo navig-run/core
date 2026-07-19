@@ -8,7 +8,6 @@ import pytest
 
 from navig.mesh.dedup import DeduplicationFilter, HandoffQueue
 
-
 # ---------------------------------------------------------------------------
 # DeduplicationFilter
 # ---------------------------------------------------------------------------

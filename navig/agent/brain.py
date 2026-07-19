@@ -229,13 +229,11 @@ Guidelines:
             self.nervous_system.subscribe(EventType.ALERT_TRIGGERED, self._on_alert)
             self.nervous_system.subscribe(EventType.METRIC_COLLECTED, self._on_metrics)
 
-        # Initialize AI client if possible
-        try:
-            from navig.ai import get_ai_client
-
-            self._ai_client = get_ai_client()
-        except ImportError:
-            pass  # optional dependency not installed; feature disabled
+        # AI reasoning routes through the canonical core LLM dispatch
+        # (navig.llm.run_llm) — no separate client object. Set a truthy flag so
+        # the existing `if self._ai_client:` gates keep working; run_llm degrades
+        # on its own when no provider is configured.
+        self._ai_client = True
 
     async def _on_stop(self) -> None:
         """Cleanup brain resources."""
@@ -368,14 +366,18 @@ Guidelines:
         full_prompt = f"{context}\n\nUser: {prompt}"
 
         try:
-            response = await asyncio.to_thread(
-                self._ai_client.generate,
-                full_prompt,
-                system=system_prompt,
+            from navig.llm.generate import run_llm
+
+            result = await asyncio.to_thread(
+                run_llm,
+                [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": full_prompt},
+                ],
                 max_tokens=self.config.max_tokens,
                 temperature=self.config.temperature,
             )
-            return response
+            return (result.content or "").strip() or None
         except Exception as exc:  # noqa: BLE001
             logger.debug("brain: AI query failed: %s", exc)
             return None

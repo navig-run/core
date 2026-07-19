@@ -1,9 +1,10 @@
 ﻿"""Tests for navig/gateway/deck/routes/static_assets.py."""
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 class TestFindDeckStaticDir:
@@ -53,5 +54,6 @@ class TestHandleDeckIndex:
 
     def test_handle_is_coroutine(self):
         import inspect
+
         from navig.gateway.deck.routes.static_assets import handle_deck_index
         assert inspect.iscoroutinefunction(handle_deck_index)

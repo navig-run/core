@@ -72,7 +72,7 @@ def analyze_cmd(ctx_obj: dict[str, Any]):
         # Get active server
         server_name = config.get_active_server()
         if not server_name:
-            ch.error("No active server. Use 'navig server use <name>' first")
+            ch.error("No active server. Use 'navig host use <name>' first")
             return
 
         # Load server configuration

@@ -8,7 +8,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.identity.seed
 # ---------------------------------------------------------------------------
@@ -32,8 +31,9 @@ class TestGenerateSeed:
 
     def test_fallback_to_uuid_when_no_attributes(self):
         """When all attribute collection fails, still returns a 32-char hex string."""
-        from navig.identity.seed import generate_seed
         import uuid
+
+        from navig.identity.seed import generate_seed
         with (
             patch("navig.identity.seed.uuid.getnode", side_effect=Exception),
             patch("navig.identity.seed.platform.node", side_effect=Exception),
@@ -46,8 +46,9 @@ class TestGenerateSeed:
         assert len(seed) == 32  # uuid4().hex
 
     def test_sha256_used_for_normal_path(self):
-        from navig.identity.seed import generate_seed
         import hashlib
+
+        from navig.identity.seed import generate_seed
         with (
             patch("navig.identity.seed.uuid.getnode", return_value=123456),
             patch("navig.identity.seed.platform.node", return_value="myhost"),
@@ -55,7 +56,7 @@ class TestGenerateSeed:
             patch("navig.identity.seed.platform.system", return_value="Linux"),
         ):
             seed = generate_seed()
-        expected = hashlib.sha256("123456myhostaliceLinux".encode()).hexdigest()
+        expected = hashlib.sha256(b"123456myhostaliceLinux").hexdigest()
         assert seed == expected
 
 

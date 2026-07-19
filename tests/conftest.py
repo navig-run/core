@@ -96,6 +96,23 @@ def pytest_configure(config):  # noqa: ARG001
         pass  # best-effort; if the module can't be imported, skip silently
 
 
+def pytest_collection_modifyitems(config, items):  # noqa: ARG001
+    """Skip ``@pytest.mark.live`` tests unless explicitly opted in.
+
+    Live tests hit a running gateway on ``http://localhost:8789`` and can MUTATE
+    it (add/delete cron jobs, trigger heartbeats). They already skip when the
+    gateway is unreachable, but on a dev machine with a real daemon running an
+    unguarded ``pytest tests/`` would mutate live state. Require
+    ``NAVIG_TEST_LIVE=1`` to run them; CI (no daemon) never needs them.
+    """
+    if os.environ.get("NAVIG_TEST_LIVE") == "1":
+        return
+    skip_live = pytest.mark.skip(reason="live test — set NAVIG_TEST_LIVE=1 to run")
+    for item in items:
+        if "live" in item.keywords:
+            item.add_marker(skip_live)
+
+
 def _drain_orphan_subprocesses() -> None:
     """Best-effort cleanup of orphan child processes/subprocess handles."""
     try:
@@ -225,6 +242,30 @@ def _cleanup_orphan_asyncio_tasks():
 
 
 @pytest.fixture(autouse=True)
+def _clear_dispatch_credential_cache():
+    """Never leak a resolved dispatch credential from one test into another.
+
+    navig.providers.inference keeps a short-TTL cache of successful credential
+    resolutions (the parallel fan-out hardening). Tests that resolve through
+    patched seams would otherwise poison later tests within the TTL window.
+    Guarded by sys.modules so this never force-imports the providers package.
+    """
+    import sys as _sys
+
+    def _clear() -> None:
+        inf = _sys.modules.get("navig.providers.inference")
+        if inf is not None:
+            try:
+                inf.invalidate_credential_cache()
+            except Exception:  # noqa: BLE001 — cache hygiene must never fail a test
+                pass
+
+    _clear()
+    yield
+    _clear()
+
+
+@pytest.fixture(autouse=True)
 def _track_sqlite_connections(monkeypatch: pytest.MonkeyPatch):
     """Track sqlite connections created during a test and close them on teardown."""
     original_connect = sqlite3.connect
@@ -247,7 +288,19 @@ def _track_sqlite_connections(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture
 def temp_dir():
-    """Create a temporary directory for test files."""
+    """A temporary directory that is OUTSIDE the git checkout.
+
+    Prefer pytest's built-in ``tmp_path`` for ordinary scratch files. Reach for this one
+    whenever the test must stand **outside any git repository**.
+
+    Why the distinction is not academic: ``pytest.ini`` pins ``--basetemp=.pytest_tmp``,
+    which lives *inside* ``core/`` — so every ``tmp_path`` has a ``.git`` **ancestor**.
+    Anything that walks upward looking for a repo (git-root discovery, the agent-lock
+    hook classifier, "am I in a worktree" checks) therefore finds one, and a test written
+    with ``tmp_path`` silently exercises the opposite of what it meant to. That has
+    already broken two tests. This fixture uses the system temp dir, which has no ``.git``
+    ancestor — see ``test_tmp_path_is_inside_the_repo_but_temp_dir_is_not``.
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir)
 
@@ -655,7 +708,7 @@ def _reset_navig_singletons():
     except Exception:  # noqa: BLE001
         pass
     try:
-        from navig.routing.router import reset_router
+        from navig.llm.routing.router import reset_router
 
         reset_router()
     except Exception:  # noqa: BLE001
@@ -722,7 +775,7 @@ def _reset_navig_singletons():
     except Exception:  # noqa: BLE001
         pass
     try:
-        from navig.routing.router import reset_router
+        from navig.llm.routing.router import reset_router
 
         reset_router()
     except Exception:  # noqa: BLE001

@@ -1,8 +1,10 @@
 """Linear OAuth configuration."""
 from __future__ import annotations
+
 import os
-from navig.providers.oauth import OAuthProviderConfig
+
 from navig.connectors.oauth_redirect import connector_redirect_uri
+from navig.providers.oauth import OAuthProviderConfig
 
 LINEAR_SCOPES = ["read", "write", "issues:create"]
 

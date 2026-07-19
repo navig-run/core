@@ -6,11 +6,12 @@ Generates auth token, configures gateway, and outputs connection details.
 """
 
 import secrets
+from pathlib import Path
 
 import typer
 
 from navig._daemon_defaults import _DAEMON_PORT, _GATEWAY_PORT
-from navig.core.yaml_io import safe_load_yaml
+from navig.core.yaml_io import ConfigReadError, load_yaml_for_update, safe_load_yaml
 from navig.lazy_loader import lazy_import
 from navig.platform.paths import config_dir
 
@@ -21,6 +22,24 @@ bridge_app = typer.Typer(
     help="VS Code extension ↔ daemon connection management",
     no_args_is_help=True,
 )
+
+
+def _load_config_for_write(config_path: Path) -> dict:
+    """Load ~/.navig/config.yaml for a read-modify-WRITE, refusing to guess.
+
+    A missing file is a legitimate fresh start (``{}``); a file that exists with content
+    but is unreadable/unparseable is a refusal, not a blank slate — overwriting it would
+    persist a config holding ONLY the gateway keys, silently deleting ``deck.api_key``
+    and every other setting (the documented config-wipe class). The decision lives in the
+    one shared guard, :func:`navig.core.yaml_io.load_yaml_for_update`; here we just render
+    it as a clean CLI refusal.
+    """
+    try:
+        return load_yaml_for_update(config_path)
+    except ConfigReadError:
+        ch.error(f"Could not read {config_path} — refusing to overwrite it.")
+        ch.dim("Fix or move that file, then retry. Your existing config is untouched.")
+        raise typer.Exit(1) from None
 
 
 @bridge_app.command("connect")
@@ -53,12 +72,9 @@ def bridge_connect(
 
     config_path = config_dir() / "config.yaml"
 
-    # Load or create config
-    if config_path.exists():
-        cfg = safe_load_yaml(config_path) or {}
-    else:
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg = {}
+    # Load existing config (refusing to overwrite an unreadable one) or start fresh.
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg = _load_config_for_write(config_path)
 
     # Generate token
     token = ""
@@ -194,7 +210,7 @@ def bridge_rotate_token(
         ch.error("No NAVIG config found. Run 'navig bridge connect' first.")
         raise typer.Exit(1)
 
-    cfg = safe_load_yaml(config_path) or {}
+    cfg = _load_config_for_write(config_path)
 
     new_token = secrets.token_urlsafe(32)
     cfg.setdefault("gateway", {}).setdefault("auth", {})["token"] = new_token
@@ -212,5 +228,5 @@ def bridge_rotate_token(
         ch.info(f"  New token: {new_token}")
         ch.info("")
         ch.info("  Restart the daemon and reconnect VS Code:")
-        ch.info("    navig daemon restart")
+        ch.info("    navig service restart")
         ch.info("    In VS Code → NAVIG Bridge: Connect to Daemon")

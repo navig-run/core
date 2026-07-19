@@ -9,18 +9,18 @@ Covers:
 """
 
 import time
+
 import pytest
 
 from navig.agent.todo_tracker import (
+    _STATUS_EMOJI,
     MAX_ITEMS,
     MAX_TITLE_LENGTH,
     NUDGE_INTERVAL,
     TodoItem,
     TodoList,
     TodoStatus,
-    _STATUS_EMOJI,
 )
-
 
 # ─────────────────────────────────────────────────────────────
 # TodoStatus

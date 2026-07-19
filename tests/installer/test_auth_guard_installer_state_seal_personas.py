@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.gateway.auth_guard — AuthGuard
 # ---------------------------------------------------------------------------
@@ -88,6 +87,7 @@ class TestInstallerState:
 
     def test_save_records_profile_and_action_id(self, tmp_path):
         import json
+
         from navig.installer.state import save
         ctx = self._make_ctx(tmp_path, profile="operator")
         path = save([self._make_action("my.action")], [self._make_result("my.action")], ctx)
@@ -97,8 +97,9 @@ class TestInstallerState:
 
     def test_save_persists_state_value(self, tmp_path):
         import json
-        from navig.installer.state import save
+
         from navig.installer.contracts import ModuleState, Result
+        from navig.installer.state import save
         ctx = self._make_ctx(tmp_path)
         result = Result(action_id="a1", state=ModuleState.SKIPPED, message="skipped")
         path = save([self._make_action("a1")], [result], ctx)
@@ -111,7 +112,8 @@ class TestInstallerState:
 
     def test_load_last_returns_most_recent_manifest(self, tmp_path):
         import json
-        from navig.installer.state import save, load_last
+
+        from navig.installer.state import load_last, save
         ctx = self._make_ctx(tmp_path, profile="node")
         save([self._make_action()], [self._make_result()], ctx)
         records = load_last(tmp_path, profile="node")
@@ -120,7 +122,8 @@ class TestInstallerState:
 
     def test_load_last_profile_filter(self, tmp_path):
         import json
-        from navig.installer.state import save, load_last
+
+        from navig.installer.state import load_last, save
         ctx_node = self._make_ctx(tmp_path, profile="node")
         ctx_op = self._make_ctx(tmp_path, profile="operator")
         save([self._make_action()], [self._make_result()], ctx_node)

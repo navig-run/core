@@ -9,14 +9,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from navig.onboarding.telemetry import (
-    TELEMETRY_URL,
     _CONSENT_LINES,
     _OPT_OUT_VAR,
+    TELEMETRY_URL,
     _build_anon_id,
     _machine_id,
     ping_install_if_first_time,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -53,10 +52,15 @@ class TestMachineId:
         result = _machine_id()
         assert result is None or isinstance(result, str)
 
-    def test_returns_none_on_exception(self):
+    def test_subprocess_failure_never_raises(self):
+        # `_machine_id` documents "Raises: Never" and returns `str | None`.
+        # This used to assert `is None`. On Windows a PowerShell/CIM failure (wmic was
+        # REMOVED in Win11 24H2) now falls back to the registry MachineGuid, so a dead
+        # subprocess yields an id rather than None — demanding None here would demand
+        # that hardening be deleted. The real contract is: never raise, str | None.
         with patch("navig.onboarding.telemetry.subprocess.run", side_effect=OSError):
             result = _machine_id()
-        assert result is None
+        assert result is None or isinstance(result, str)
 
     def test_linux_reads_machine_id(self, tmp_path):
         fake_machine_id = tmp_path / "machine-id"
@@ -102,7 +106,7 @@ class TestBuildAnonId:
     def test_uses_sha256(self):
         with patch("navig.onboarding.telemetry._machine_id", return_value="fixed-machine-id"):
             result = _build_anon_id()
-        expected = hashlib.sha256("fixed-machine-id".encode()).hexdigest()[:16]
+        expected = hashlib.sha256(b"fixed-machine-id").hexdigest()[:16]
         assert result == expected
 
     def test_fallback_when_no_machine_id(self):
@@ -140,8 +144,7 @@ class TestPingInstallIfFirstTime:
         monkeypatch.delenv(_OPT_OUT_VAR, raising=False)
         marker = tmp_path / ".pinged"
         with patch("navig.onboarding.telemetry._PINGED_MARKER", marker), \
-             patch("navig.onboarding.telemetry.atomic_write_text") as mock_write, \
-             patch("navig.onboarding.telemetry._NAVIG_DIR", tmp_path):
+             patch("navig.onboarding.telemetry.atomic_write_text") as mock_write:
             try:
                 import requests as _req
                 with patch.object(_req, "post"):

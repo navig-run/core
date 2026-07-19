@@ -357,13 +357,13 @@ def _run_plan_wizard(goal: str, effort: str | None, skip_interview: bool) -> Non
 def _generate_clarifying_questions(goal: str, effort: str | None, max_q: int) -> list[str]:
     """Ask the LLM to generate up-to-N clarifying questions."""
     try:
-        from navig.llm_generate import generate_text_sync
+        from navig.llm.generate import llm_generate
         prompt = (
             f"The user wants to:\n\n  {goal}\n\n"
             f"Generate up to {max_q} short, numbered clarifying questions to help plan this precisely.\n"
             "Return only the questions as a numbered list, nothing else."
         )
-        resp = generate_text_sync(prompt, effort=effort or "low")
+        resp = llm_generate([{"role": "user", "content": prompt}], effort=effort or "low")
         lines = [ln.strip().lstrip("0123456789.) ") for ln in resp.splitlines() if ln.strip()]
         return [ln for ln in lines if ln][:max_q]
     except Exception:  # noqa: BLE001
@@ -393,10 +393,11 @@ def _explore_context(
 
     findings: list[str] = []
     try:
-        from navig.llm_generate import generate_text_sync
+        from navig.llm.generate import llm_generate
         for facet in facets:
-            resp = generate_text_sync(
-                f"{context_block}\n\nFocus area: {facet}\n\nAnswer concisely in 3-5 bullet points.",
+            resp = llm_generate(
+                [{"role": "user", "content":
+                  f"{context_block}\n\nFocus area: {facet}\n\nAnswer concisely in 3-5 bullet points."}],
                 effort=effort or "low",
             )
             findings.append(f"**{facet}**\n\n{resp.strip()}")
@@ -427,8 +428,8 @@ def _synthesise_plan(
     )
 
     try:
-        from navig.llm_generate import generate_text_sync
-        return generate_text_sync(prompt, effort=effort or "medium")
+        from navig.llm.generate import llm_generate
+        return llm_generate([{"role": "user", "content": prompt}], effort=effort or "medium")
     except Exception:  # noqa: BLE001
         # Fallback: minimal scaffold
         return textwrap.dedent(f"""\

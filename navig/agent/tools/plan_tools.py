@@ -224,17 +224,15 @@ class GetPlanContextTool(BaseTool):
 
             mcp_enabled = False
             try:
-                from navig.config import config
+                from navig.config import get as _cfg_get
 
-                agent_cfg = getattr(config, "agent", {})
-                mcp_cfg = agent_cfg.get("mcp", {}) if hasattr(agent_cfg, "get") else {}
-                mcp_enabled = bool(mcp_cfg.get("enabled", False))
+                mcp_enabled = bool(_cfg_get("agent.mcp.enabled", False))
             except Exception:
                 mcp_enabled = False
 
             space = args.get("space") or get_default_space()
             ctx = PlanContext(
-                space_root=str(paths.config_dir() / "spaces"),
+                space_root=str(paths.spaces_dir()),
                 mcp_enabled=mcp_enabled,
             )
             snapshot = ctx.gather(space)

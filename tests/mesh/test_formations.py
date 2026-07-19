@@ -484,7 +484,7 @@ class TestCouncil:
         mock_response = "This is a test response.\nCONFIDENCE: 0.85"
 
         # Patch at the import location inside _call_agent
-        with patch("navig.ai.ask_ai_with_context", return_value=mock_response, create=True):
+        with patch("navig.ai.ask_ai_with_context", return_value=mock_response):
             result = run_council(fm, "test question", rounds=1, timeout_per_agent=30)
 
         assert "question" in result

@@ -3,8 +3,6 @@
 Factory functions for creating OS-specific adapters.
 """
 
-import platform
-
 from navig.adapters.os.base import OSAdapter
 
 
@@ -12,20 +10,17 @@ def detect_os() -> str:
     """
     Detect the current operating system.
 
+    Delegates to :mod:`navig.platform.paths` (fast ``sys.platform`` detection — no
+    ``platform.system()`` WMI query that can hang on Windows) and collapses WSL to
+    ``'linux'`` so the result always maps to a concrete adapter below.
+
     Returns:
         OS name: 'windows', 'linux', or 'macos'
     """
-    system = platform.system().lower()
+    from navig.platform.paths import current_os  # noqa: PLC0415
 
-    if system == "windows":
-        return "windows"
-    elif system == "darwin":
-        return "macos"
-    elif system == "linux":
-        return "linux"
-    else:
-        # Fallback for other Unix-like systems
-        return "linux"
+    os_name = current_os()
+    return "linux" if os_name == "wsl" else os_name
 
 
 def detect_linux_distro() -> str | None:

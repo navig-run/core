@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # CapabilityTier enum
 # ---------------------------------------------------------------------------
@@ -88,7 +87,7 @@ class TestRegistryInvariants:
 
 class TestGetTier:
     def test_known_core_capability(self) -> None:
-        from navig.core.capability_registry import get_tier, CapabilityTier
+        from navig.core.capability_registry import CapabilityTier, get_tier
         # 'vault' or 'agent' should be CORE
         result = get_tier("vault") or get_tier("agent")
         assert result == CapabilityTier.CORE
@@ -109,22 +108,22 @@ class TestGetTier:
 
 class TestGetTierFilters:
     def test_get_core_all_have_core_tier(self) -> None:
-        from navig.core.capability_registry import get_core, CapabilityTier
+        from navig.core.capability_registry import CapabilityTier, get_core
         for name, entry in get_core().items():
             assert entry.tier == CapabilityTier.CORE
 
     def test_get_optional_all_have_optional_tier(self) -> None:
-        from navig.core.capability_registry import get_optional, CapabilityTier
+        from navig.core.capability_registry import CapabilityTier, get_optional
         for name, entry in get_optional().items():
             assert entry.tier == CapabilityTier.OPTIONAL
 
     def test_get_labs_all_have_labs_tier(self) -> None:
-        from navig.core.capability_registry import get_labs, CapabilityTier
+        from navig.core.capability_registry import CapabilityTier, get_labs
         for name, entry in get_labs().items():
             assert entry.tier == CapabilityTier.LABS
 
     def test_tiers_are_disjoint(self) -> None:
-        from navig.core.capability_registry import get_core, get_optional, get_labs
+        from navig.core.capability_registry import get_core, get_labs, get_optional
         core_keys = set(get_core())
         opt_keys = set(get_optional())
         labs_keys = set(get_labs())
@@ -133,7 +132,7 @@ class TestGetTierFilters:
         assert opt_keys.isdisjoint(labs_keys)
 
     def test_all_tiers_cover_full_registry(self) -> None:
-        from navig.core.capability_registry import REGISTRY, get_core, get_optional, get_labs
+        from navig.core.capability_registry import REGISTRY, get_core, get_labs, get_optional
         all_from_helpers = set(get_core()) | set(get_optional()) | set(get_labs())
         assert all_from_helpers == set(REGISTRY)
 
@@ -144,7 +143,7 @@ class TestGetTierFilters:
 
 class TestIsEnabled:
     def test_core_always_enabled_no_config(self) -> None:
-        from navig.core.capability_registry import is_enabled, get_core
+        from navig.core.capability_registry import get_core, is_enabled
         for name in get_core():
             assert is_enabled(name) is True, f"CORE capability {name!r} should always be enabled"
 
@@ -153,7 +152,7 @@ class TestIsEnabled:
         assert is_enabled("totally_unknown_xyz") is False
 
     def test_optional_without_config_returns_false(self) -> None:
-        from navig.core.capability_registry import is_enabled, get_optional
+        from navig.core.capability_registry import get_optional, is_enabled
         for name in list(get_optional())[:3]:  # test a few
             assert is_enabled(name, config=None) is False
 

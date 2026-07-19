@@ -36,6 +36,7 @@ def register_all_routes(app: web.Application, gateway: NavigGateway) -> None:
         router_status,
         runtime,
         tasks,
+        voice,
     )
     from navig.messaging import is_provider_enabled
 
@@ -60,6 +61,7 @@ def register_all_routes(app: web.Application, gateway: NavigGateway) -> None:
         install,
         audit,
         billing,
+        voice,
     ):
         mod.register(app, gateway)
 

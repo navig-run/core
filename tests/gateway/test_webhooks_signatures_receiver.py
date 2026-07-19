@@ -11,7 +11,6 @@ import time
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-
 # ---------------------------------------------------------------------------
 # SignatureConfig
 # ---------------------------------------------------------------------------
@@ -335,8 +334,9 @@ class TestWebhookReceiver:
         assert result is fn
 
     def test_env_var_secret_resolved(self):
-        from navig.webhooks.receiver import WebhookReceiver
         import os
+
+        from navig.webhooks.receiver import WebhookReceiver
         os.environ["TEST_WEBHOOK_SECRET"] = "mysecret123"
         try:
             r = WebhookReceiver({

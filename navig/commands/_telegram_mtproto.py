@@ -47,7 +47,8 @@ def register(telegram_app: "typer.Typer") -> None:
     @telegram_app.command("login")
     def tg_login(phone: str = typer.Argument(..., help="Your phone, e.g. +33123456789")) -> None:
         """Step 1 - send a login code to your Telegram app."""
-        from navig.telegram import auth, config as tgcfg
+        from navig.telegram import auth
+        from navig.telegram import config as tgcfg
         if not tgcfg.have_api_credentials():
             ch.error("No api_id/api_hash yet. Run: navig telegram setup")
             raise typer.Exit(1)
@@ -88,7 +89,8 @@ def register(telegram_app: "typer.Typer") -> None:
     @telegram_app.command("status")
     def tg_status() -> None:
         """Show MTProto login status."""
-        from navig.telegram import telethon_available, config as tgcfg, user_client
+        from navig.telegram import config as tgcfg
+        from navig.telegram import telethon_available, user_client
         ch.info(f"telethon installed : {telethon_available()}")
         ch.info(f"api credentials    : {'set' if tgcfg.have_api_credentials() else 'MISSING (run setup)'}")
         if not tgcfg.is_logged_in():
@@ -332,6 +334,30 @@ def register(telegram_app: "typer.Typer") -> None:
         else:
             ch.success(f"Deleted {res['deleted']} message(s)")
 
+    @telegram_app.command("download-media")
+    def tg_download_media(
+        chat: str = typer.Argument(..., help="channel/chat id or @username"),
+        out: str = typer.Option(..., "-o", "--out", help="staging folder (ChatExport-shaped)"),
+        from_sender: str = typer.Option(None, "--from", help="only this sender's media (id/@username)"),
+        ids: str = typer.Option(None, "--ids", help="only these message id(s), comma-separated"),
+        limit: int = typer.Option(None, "--limit", help="max messages to scan"),
+        since_id: int = typer.Option(0, "--since-id", help="skip messages with id <= this"),
+        json_out: bool = typer.Option(False, "--json"),
+    ) -> None:
+        """Download a channel's media BYTES into a ChatExport-shaped staging folder
+        (photos/ video_files/ files/ + _catalog/manifest.jsonl). Read-only on Telegram."""
+        from navig.telegram import media
+        res = _run(media.download_channel_media(
+            chat, dest=out, from_sender=from_sender,
+            ids=_ids(ids) if ids else None, limit=limit, since_id=since_id or None))
+        if json_out:
+            ch.raw_print(json.dumps(res, indent=2, default=str))
+            return
+        kinds = ", ".join(f"{k}:{v}" for k, v in res["by_kind"].items()) or "none"
+        ch.success(f"Downloaded {res['media']} media ({kinds}) -> {res['dest']}")
+        if res["skipped"]:
+            ch.dim(f"{len(res['skipped'])} skipped (failed download)")
+
     @telegram_app.command("links")
     def tg_links(
         chat: str = typer.Argument(...),
@@ -382,7 +408,8 @@ def register(telegram_app: "typer.Typer") -> None:
     @business_app.command("status")
     def tg_biz_status() -> None:
         """Show the business layer state + per-tool rights."""
-        from navig.telegram import permissions as perm, business as biz
+        from navig.telegram import business as biz
+        from navig.telegram import permissions as perm
         ch.info(f"business layer   : {'ON' if perm.business_enabled() else 'off'}")
         ch.info(f"deletion alert   : {'ON' if biz.deletion_alert_enabled() else 'off'}")
         blocked = perm.arming_blocked_reason()

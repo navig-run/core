@@ -24,7 +24,6 @@ We consider the entry valid if:
 from __future__ import annotations
 
 import json
-import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,7 +39,16 @@ BRIDGE_DEFAULT_PORT: int = 42070
 # Debounce: don't hammer the filesystem from hot paths
 _PROBE_INTERVAL: float = 5.0
 
-_bridge_grid_path: Path = config_dir() / "bridge-grid.json"
+# Test seam — when ``None`` (the normal state), ``_grid_path()`` resolves at
+# CALL time so NAVIG_CONFIG_DIR isolation set after import still applies
+# (see navig/vault/migrate.py:_legacy_db_path).
+_bridge_grid_path: Path | None = None
+
+
+def _grid_path() -> Path:
+    return _bridge_grid_path if _bridge_grid_path is not None else config_dir() / "bridge-grid.json"
+
+
 _last_read_ts: float = 0.0
 _cached_result: dict | None = None
 
@@ -65,7 +73,7 @@ def read_bridge_grid(*, force: bool = False) -> dict | None:
 
 def _read_and_validate() -> dict | None:
     try:
-        text = _bridge_grid_path.read_text(encoding="utf-8")
+        text = _grid_path().read_text(encoding="utf-8")
         data = json.loads(text)
     except Exception:
         return None
@@ -126,13 +134,13 @@ def invalidate_cache() -> None:
 
 
 def _is_pid_alive(pid: int) -> bool:
-    """Cross-platform best-effort PID liveness check."""
+    """Cross-platform best-effort PID liveness check.
+
+    Uses a psutil-based probe — NOT ``os.kill(pid, 0)``, which on Windows calls
+    ``TerminateProcess`` and would kill the very process it means to check.
+    """
     if pid <= 0:
         return False
-    try:
-        os.kill(pid, 0)  # Signal 0 = probe; raises OSError if dead/no perms
-        return True
-    except OSError:
-        return False
-    except Exception:
-        return True  # Unknown platform; assume alive
+    from navig.platform.windows_utils import check_pid_exists  # noqa: PLC0415
+
+    return check_pid_exists(pid)

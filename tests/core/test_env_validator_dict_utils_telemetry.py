@@ -137,8 +137,9 @@ def test_truncate_output_long_text_truncated():
 
 
 def test_utc_now_is_timezone_aware():
-    from navig.core.dict_utils import utc_now
     from datetime import timezone
+
+    from navig.core.dict_utils import utc_now
 
     dt = utc_now()
     assert dt.tzinfo is not None

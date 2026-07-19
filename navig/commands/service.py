@@ -47,9 +47,9 @@ def _spawn_stop_watchdog(duration: int = 30) -> None:
     import tempfile  # noqa: PLC0415
 
     navig_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from navig.daemon.service_manager import DAEMON_DIR  # noqa: PLC0415
+    from navig.daemon.service_manager import daemon_dir  # noqa: PLC0415
 
-    deadline_file_str = str(DAEMON_DIR / "stop_watchdog_deadline")
+    deadline_file_str = str(daemon_dir() / "stop_watchdog_deadline")
     script = textwrap.dedent(f"""\
         # navig stop-watchdog: kills orphan daemon processes until deadline.
         # Launched as:  pythonw.exe <this_file>  -- no 'navig.daemon' in cmdline.
@@ -83,12 +83,12 @@ def _spawn_stop_watchdog(duration: int = 30) -> None:
     """)
 
     try:
-        DAEMON_DIR.mkdir(parents=True, exist_ok=True)
+        daemon_dir().mkdir(parents=True, exist_ok=True)
         tmp = tempfile.NamedTemporaryFile(
             mode="w",
             suffix=".py",
             prefix="navig_wdog_",
-            dir=str(DAEMON_DIR),
+            dir=str(daemon_dir()),
             delete=False,
             encoding="utf-8",
         )
@@ -221,15 +221,19 @@ def _tail_service_logs() -> None:
     """Tail daemon.log and debug.log simultaneously until Ctrl+C."""
     import threading
     import time
-
     from pathlib import Path
 
-    log_dir = _log_dir()
-    home_navig = Path.home() / ".navig"
+    from navig.platform.paths import debug_log_path
 
+    log_dir = _log_dir()
+
+    # The gateway log is debug_log_path() — i.e. log_dir()/debug.log. This used to read
+    # `Path.home()/".navig"/"debug.log"`, which the logger never writes to; _follow() then
+    # touch()ed that path into existence, so the tail silently streamed an empty file
+    # forever while the real log grew elsewhere.
     files = {
         "daemon ": log_dir / "daemon.log",
-        "gateway": home_navig / "debug.log",
+        "gateway": debug_log_path(),
     }
 
     # Wait up to 5 s for at least one log file to appear
@@ -350,10 +354,10 @@ def service_start(
         # can take several seconds), it will match and kill the new process.
         # The watchdog self-deletes its script file on exit, so we poll for
         # those files to disappear — up to 12 s before giving up.
-        from navig.daemon.service_manager import DAEMON_DIR  # noqa: PLC0415
+        from navig.daemon.service_manager import daemon_dir  # noqa: PLC0415
 
         for _wdog_wait in range(60):  # 60 * 0.2 s = 12 s max
-            wdog_files = list(DAEMON_DIR.glob("navig_wdog_*.py"))
+            wdog_files = list(daemon_dir().glob("navig_wdog_*.py"))
             if not wdog_files:
                 break
             time.sleep(0.2)
@@ -525,10 +529,10 @@ def service_restart():
     # Guard against the stop-watchdog race: any watchdog spawned by service_stop
     # loops every 0.2 s calling _kill_orphan_daemons().  Poll until those files
     # are gone before spawning the new process — same logic as service_start.
-    from navig.daemon.service_manager import DAEMON_DIR  # noqa: PLC0415
+    from navig.daemon.service_manager import daemon_dir  # noqa: PLC0415
 
     for _wdog_wait in range(60):  # 60 * 0.2 s = 12 s max
-        wdog_files = list(DAEMON_DIR.glob("navig_wdog_*.py"))
+        wdog_files = list(daemon_dir().glob("navig_wdog_*.py"))
         if not wdog_files:
             break
         time.sleep(0.2)
@@ -589,9 +593,12 @@ def reachability_summary() -> dict[str, str]:
     reachable edge, else the local gateway).
     """
     try:
-        from navig.gateway_client import gateway_cli_defaults
+        # Live-first: follow the self-healed port from ~/.navig/gateway.json when
+        # the daemon is up; falls back to config instantly when it isn't (still
+        # safe to call from onboarding — no daemon import, just a loopback probe).
+        from navig.gateway_client import gateway_live_defaults
 
-        port = gateway_cli_defaults()[0]
+        port = gateway_live_defaults()[0]
     except Exception:  # noqa: BLE001
         port = 8789
     lighthouse = public = deck_public = ""
@@ -766,6 +773,7 @@ def service_logs(
                 print(line)
         except Exception as e:
             ch.error(f"Error reading log: {e}")
+            raise typer.Exit(1)
 
 
 # =========================================================================

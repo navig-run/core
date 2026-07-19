@@ -14,7 +14,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/core/evolution/base.py
 # ---------------------------------------------------------------------------
@@ -364,7 +363,7 @@ class TestBuildContinuationPrompt:
         assert "Continue autonomously" in result
 
     def test_includes_space_when_action_found(self) -> None:
-        from navig.spaces.next_action import build_continuation_prompt, SpaceNextAction
+        from navig.spaces.next_action import SpaceNextAction, build_continuation_prompt
         action = SpaceNextAction(
             space="career",
             scope="global",

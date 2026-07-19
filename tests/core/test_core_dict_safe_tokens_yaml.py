@@ -4,11 +4,10 @@ Batch 95 — tests for navig.core.dict_utils, safe_eval, tokens, and yaml_io
 
 from __future__ import annotations
 
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
-
 
 # =============================================================================
 # dict_utils
@@ -399,43 +398,41 @@ class TestAtomicWriteText:
 
 
 class TestLogShadowAnomaly:
-    def test_does_not_raise(self, tmp_path):
-        from navig.core import yaml_io
-        orig = yaml_io._PERF_DIR
-        yaml_io._PERF_DIR = tmp_path / "perf"
-        try:
-            yaml_io.log_shadow_anomaly("test-log", "test_event", {"key": "value"})
-        finally:
-            yaml_io._PERF_DIR = orig
+    """Patch `_perf_dir` — the LAZY FUNCTION — not a `_PERF_DIR` constant.
 
-    def test_creates_jsonl_file(self, tmp_path):
-        from navig.core import yaml_io
-        import json
-        perf_dir = tmp_path / "perf"
-        orig = yaml_io._PERF_DIR
-        yaml_io._PERF_DIR = perf_dir
-        try:
-            yaml_io.log_shadow_anomaly("mylog", "evt", {"x": 1})
-            log_file = perf_dir / "mylog.jsonl"
-            assert log_file.exists()
-            rows = [json.loads(l) for l in log_file.read_text().splitlines()]
-            assert rows[0]["event"] == "evt"
-            assert rows[0]["data"] == {"x": 1}
-        finally:
-            yaml_io._PERF_DIR = orig
+    yaml_io replaced the module-level `_PERF_DIR` constant with `_perf_dir()`
+    ("resolved lazily so env overrides apply"), so `orig = yaml_io._PERF_DIR` raised
+    AttributeError and every test here failed. Uses monkeypatch rather than manual
+    set/restore, so the patch is undone even if an assertion blows up.
+    """
 
-    def test_appends_multiple_entries(self, tmp_path):
+    def test_does_not_raise(self, tmp_path, monkeypatch):
         from navig.core import yaml_io
+        monkeypatch.setattr(yaml_io, "_perf_dir", lambda: tmp_path / "perf")
+        yaml_io.log_shadow_anomaly("test-log", "test_event", {"key": "value"})
+
+    def test_creates_jsonl_file(self, tmp_path, monkeypatch):
         import json
+
+        from navig.core import yaml_io
         perf_dir = tmp_path / "perf"
-        orig = yaml_io._PERF_DIR
-        yaml_io._PERF_DIR = perf_dir
-        try:
-            yaml_io.log_shadow_anomaly("log2", "e1", {})
-            yaml_io.log_shadow_anomaly("log2", "e2", {})
-            log_file = perf_dir / "log2.jsonl"
-            rows = [json.loads(l) for l in log_file.read_text().splitlines()]
-            assert len(rows) == 2
-            assert rows[1]["event"] == "e2"
-        finally:
-            yaml_io._PERF_DIR = orig
+        monkeypatch.setattr(yaml_io, "_perf_dir", lambda: perf_dir)
+        yaml_io.log_shadow_anomaly("mylog", "evt", {"x": 1})
+        log_file = perf_dir / "mylog.jsonl"
+        assert log_file.exists()
+        rows = [json.loads(line) for line in log_file.read_text().splitlines()]
+        assert rows[0]["event"] == "evt"
+        assert rows[0]["data"] == {"x": 1}
+
+    def test_appends_multiple_entries(self, tmp_path, monkeypatch):
+        import json
+
+        from navig.core import yaml_io
+        perf_dir = tmp_path / "perf"
+        monkeypatch.setattr(yaml_io, "_perf_dir", lambda: perf_dir)
+        yaml_io.log_shadow_anomaly("log2", "e1", {})
+        yaml_io.log_shadow_anomaly("log2", "e2", {})
+        log_file = perf_dir / "log2.jsonl"
+        rows = [json.loads(line) for line in log_file.read_text().splitlines()]
+        assert len(rows) == 2
+        assert rows[1]["event"] == "e2"

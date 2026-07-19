@@ -556,10 +556,15 @@ def remove_app(options: dict[str, Any]) -> None:
 
     # Delete app
     try:
+        # Capture BEFORE the delete: after delete_app_config, get_active_app() no longer resolves
+        # to a non-existent app (its cache read is guarded by app_exists when an active host is
+        # set), so checking afterwards would leave the stale active_app.txt pointer — then a
+        # re-added same-name app silently becomes active again. Mirrors remove_host/remove_server.
+        was_active = config_manager.get_active_app() == app_name
+
         config_manager.delete_app_config(host_name, app_name)
 
-        # If this was the active app, clear it
-        if config_manager.get_active_app() == app_name:
+        if was_active:
             config_manager.active_app_file.unlink(missing_ok=True)
 
         if not quiet:

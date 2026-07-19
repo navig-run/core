@@ -106,11 +106,19 @@ class TestOperationRecord:
         assert restored.tags == ["db", "query"]
 
     def test_from_dict_unknown_type_defaults_to_other(self):
-        from navig.operation_recorder import OperationRecord, OperationType
+        """An unknown operation_type (written by a newer navig) must degrade
+        to OTHER, not raise — one foreign line must never break every
+        history/undo iteration. (This test's name always documented the
+        intended contract; it used to pin the old raising behaviour.)"""
+        from navig.operation_recorder import OperationRecord, OperationStatus, OperationType
 
         data = {"id": "x", "operation_type": "nonexistent_type", "status": "success"}
-        with pytest.raises(ValueError):
-            OperationRecord.from_dict(data)
+        rec = OperationRecord.from_dict(data)
+        assert rec.operation_type == OperationType.OTHER
+        assert rec.status == OperationStatus.SUCCESS  # known values still parse
+
+        rec = OperationRecord.from_dict({"id": "y", "status": "warp_core_breach"})
+        assert rec.status == OperationStatus.PENDING
 
 
 # ---------------------------------------------------------------------------
@@ -558,7 +566,7 @@ class TestOperationRecorderGet:
 
 class TestOperationRecorderStartComplete:
     def test_start_operation_returns_pending_record(self, recorder):
-        from navig.operation_recorder import OperationType, OperationStatus
+        from navig.operation_recorder import OperationStatus, OperationType
         rec = recorder.start_operation("navig run ls", OperationType.REMOTE_COMMAND, host="dev")
         assert rec.status == OperationStatus.PENDING
         assert rec.host == "dev"

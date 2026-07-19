@@ -205,8 +205,6 @@ class LocalConnection(ConnectionAdapter):
             else:
                 self._os_type = "linux"
 
-        self._working_directory = working_directory
-
     def run(
         self, command: str, capture_output: bool = True, timeout: float | None = None
     ) -> CommandResult:
@@ -380,7 +378,8 @@ class SSHConnection(ConnectionAdapter):
             result = subprocess.run(
                 ssh_args,
                 capture_output=capture_output,
-                text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=cmd_timeout,
             )
 

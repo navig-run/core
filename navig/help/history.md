@@ -44,4 +44,8 @@ Automation:
 - Use `--plain` for one-line-per-operation format
 - Combine with `--yes` to skip confirmations
 
+Integrity:
+- Every entry carries hash-chain fields (`prev` + `hash`) — verify the whole
+  file with `navig ledger verify` (see `navig help ledger`)
+
 Storage: `~/.navig/history/operations.jsonl`

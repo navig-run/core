@@ -17,7 +17,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-
 # ===========================================================================
 # navig.core.scaffolder
 # ===========================================================================
@@ -282,7 +281,7 @@ class TestLoadConfigBasic:
 
 class TestCircularIncludeDetection:
     def test_circular_raises(self, tmp_path):
-        from navig.core.config_loader import _load_yaml_recursive, CircularDependencyError
+        from navig.core.config_loader import CircularDependencyError, _load_yaml_recursive
 
         a = tmp_path / "a.yaml"
         b = tmp_path / "b.yaml"

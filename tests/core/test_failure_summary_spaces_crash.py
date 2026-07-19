@@ -111,10 +111,19 @@ def test_normalize_dash_space_suffix():
     assert normalize_space_name("devops-space") == "devops"
 
 
-def test_normalize_unknown_returns_default():
+def test_normalize_freeform_name_keeps_its_own_slug():
+    """A free-form directory space must NOT collapse to "default".
+
+    This used to assert `== "default"`. That behaviour was a BUG and was deliberately
+    fixed (see the comment in navig/spaces/contracts.py): collapsing every unknown name
+    silently broke directory spaces — `homelab` and friends all resolved to the default
+    space. Only an EMPTY/None name falls back to "default".
+    """
     from navig.spaces.contracts import normalize_space_name
 
-    assert normalize_space_name("foobar-unknown") == "default"
+    assert normalize_space_name("foobar-unknown") == "foobar-unknown"
+    assert normalize_space_name("") == "default"
+    assert normalize_space_name(None) == "default"
 
 
 def test_validate_space_name_canonical_true():
@@ -149,8 +158,9 @@ def test_is_user_space_canonical_false():
 
 
 def test_space_config_frozen():
-    from navig.spaces.contracts import SpaceConfig
     from pathlib import Path
+
+    from navig.spaces.contracts import SpaceConfig
 
     sc = SpaceConfig(requested_name="ops", canonical_name="devops", path=Path("/tmp"), scope="global")
     with pytest.raises((AttributeError, TypeError)):
@@ -189,8 +199,9 @@ def test_crash_export_prints_json():
 
 
 def test_crash_export_to_file(tmp_path):
-    from navig.commands.crash import crash_app
     import json
+
+    from navig.commands.crash import crash_app
 
     report = {"error": "TestError", "traceback": "line 42"}
     handler = MagicMock()

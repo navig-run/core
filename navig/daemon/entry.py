@@ -20,8 +20,15 @@ from navig._daemon_defaults import _GATEWAY_PORT
 from navig.core.yaml_io import atomic_write_text
 from navig.platform import paths
 
-NAVIG_HOME = paths.config_dir()
-DAEMON_CONFIG = NAVIG_HOME / "daemon" / "config.json"
+# Test seam — when ``None`` (the normal state), ``_daemon_config_path()``
+# resolves at CALL time so NAVIG_CONFIG_DIR isolation set after import still
+# applies (see navig/vault/migrate.py:_legacy_db_path).
+DAEMON_CONFIG: Path | None = None
+
+
+def _daemon_config_path() -> Path:
+    """Resolve the daemon config path at CALL time (honours the test seam)."""
+    return DAEMON_CONFIG if DAEMON_CONFIG is not None else paths.config_dir() / "daemon" / "config.json"
 
 DEFAULT_DAEMON_CONFIG = {
     "telegram_bot": True,
@@ -40,19 +47,15 @@ logger: logging.Logger = logging.getLogger("navig.daemon.entry")
 
 
 def _as_bool(value: object, default: bool) -> bool:
-    """Coerce common JSON/env-style truthy/falsey values to bool."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"1", "true", "yes", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "off", ""}:
-            return False
-        return default
-    if isinstance(value, (int, float)):
-        return bool(value)
-    return default
+    """Coerce common JSON/env-style truthy/falsey values to bool.
+
+    Thin wrapper over the canonical :func:`navig.core.coerce.coerce_bool` so every
+    subsystem shares ONE truth table (true/false/1/0/yes/no/on/off/t/y/f/n,
+    unknown→default).
+    """
+    from navig.core.coerce import coerce_bool
+
+    return coerce_bool(value, default)
 
 
 def _as_int(value: object, default: int) -> int:
@@ -76,43 +79,43 @@ def _as_int(value: object, default: int) -> int:
 
 def _write_config_atomic(config: dict) -> None:
     """Persist daemon config using atomic replace to avoid partial writes."""
-    DAEMON_CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = DAEMON_CONFIG.with_suffix(DAEMON_CONFIG.suffix + ".tmp")
+    _daemon_config_path().parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = _daemon_config_path().with_suffix(_daemon_config_path().suffix + ".tmp")
     atomic_write_text(tmp_path, json.dumps(config, indent=2))
-    os.replace(tmp_path, DAEMON_CONFIG)
+    os.replace(tmp_path, _daemon_config_path())
 
 
 def _load_config() -> dict:
     """Load daemon config or return defaults."""
-    if DAEMON_CONFIG.exists():
+    if _daemon_config_path().exists():
         try:
-            payload = json.loads(DAEMON_CONFIG.read_text(encoding="utf-8"))
+            payload = json.loads(_daemon_config_path().read_text(encoding="utf-8"))
             if isinstance(payload, dict):
                 return payload
             logger.warning(
                 "Daemon config %s has invalid root type %s; using defaults",
-                DAEMON_CONFIG,
+                _daemon_config_path(),
                 type(payload).__name__,
             )
         except (json.JSONDecodeError, OSError) as exc:
-            logger.warning("Failed to read daemon config %s: %s", DAEMON_CONFIG, exc)
+            logger.warning("Failed to read daemon config %s: %s", _daemon_config_path(), exc)
     return DEFAULT_DAEMON_CONFIG.copy()
 
 
 def save_default_config() -> Path:
     """Ensure daemon config exists and is valid JSON object; repair if malformed."""
-    DAEMON_CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    should_repair = not DAEMON_CONFIG.exists()
+    _daemon_config_path().parent.mkdir(parents=True, exist_ok=True)
+    should_repair = not _daemon_config_path().exists()
     if not should_repair:
         try:
-            payload = json.loads(DAEMON_CONFIG.read_text(encoding="utf-8"))
+            payload = json.loads(_daemon_config_path().read_text(encoding="utf-8"))
             should_repair = not isinstance(payload, dict)
         except (json.JSONDecodeError, OSError):
             should_repair = True
 
     if should_repair:
         _write_config_atomic(DEFAULT_DAEMON_CONFIG.copy())
-    return DAEMON_CONFIG
+    return _daemon_config_path()
 
 
 def main() -> None:
@@ -149,7 +152,7 @@ def main() -> None:
         candidates = [
             Path.cwd() / ".env",
             project_root / ".env",
-            NAVIG_HOME / ".env",
+            paths.config_dir() / ".env",
         ]
         for candidate in candidates:
             if candidate.exists():

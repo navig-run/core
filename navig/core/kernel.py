@@ -206,7 +206,7 @@ class NavigKernel:
             return best_match
         return None
 
-    def execute_command(self, cmd_name: str, args: list[str] = None):
+    def execute_command(self, cmd_name: str, args: list[str] | None = None):
         cmd = self.commands.get(cmd_name)
         if not cmd:
             logger.warning("kernel: command '%s' not found", cmd_name)

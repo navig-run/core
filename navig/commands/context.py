@@ -48,7 +48,7 @@ def show_context(opts: dict[str, Any]) -> None:
     legacy_context = None
     if legacy_file.exists() and legacy_file.is_file():
         try:
-            legacy_context = legacy_file.read_text().strip()
+            legacy_context = legacy_file.read_text(encoding="utf-8").strip()
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
@@ -263,7 +263,7 @@ def init_context(opts: dict[str, Any] = None) -> None:
 
     if legacy_file.exists() and legacy_file.is_file():
         try:
-            content = legacy_file.read_text().strip()
+            content = legacy_file.read_text(encoding="utf-8").strip()
             if ":" in content:
                 legacy_host, legacy_app = content.split(":", 1)
             else:
@@ -319,7 +319,7 @@ def init_context(opts: dict[str, Any] = None) -> None:
     if (Path.cwd() / ".git").exists():
         should_add = True
         if gitignore.exists():
-            content = gitignore.read_text()
+            content = gitignore.read_text(encoding="utf-8")
             if ".navig" in content or ".navig/" in content:
                 should_add = False
 

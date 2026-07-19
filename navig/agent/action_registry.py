@@ -194,7 +194,21 @@ def _register_core_actions(reg: ActionRegistry) -> None:
         )
         cmd_str = params.get("cmd", "")
 
-        res = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, timeout=timeout)  # noqa: S602  # dynamic shell dispatch
+        from navig.agent.command_guard import guard_agent_command
+
+        guard_agent_command(cmd_str)  # kill-switch + catastrophic-command block
+
+        # OFF the loop: this is an agent action that shells out for up to
+        # `command_timeout_seconds` (60s by default). Inline, every second of
+        # that froze the whole daemon — the agent runs inside the gateway.
+        res = await asyncio.to_thread(  # noqa: S604  # dynamic shell dispatch
+            subprocess.run,
+            cmd_str,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
         if res.returncode != 0:
             raise RuntimeError(res.stderr or f"Exit code: {res.returncode}")
         return res.stdout

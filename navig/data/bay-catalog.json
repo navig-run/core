@@ -1,0 +1,4789 @@
+{
+  "generatedAt": "2026-07-12",
+  "source": "local",
+  "items": [
+    {
+      "slug": "system-space",
+      "name": "System",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "OS & filesystem operator — organize, migrate, dedupe, convert, reclaim, safely at scale",
+      "description": "Deep Windows + filesystem knowledge wired into safe bulk operations: inventory, classify-by-purpose, same-volume rename, long-path purge, dedupe, conversion. Forged from real multi-TB migrations.",
+      "tags": [
+        "studio"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "relatedIds": [
+        "media-space"
+      ],
+      "install": "navig space install github:navig-run/community/spaces/system-space"
+    },
+    {
+      "slug": "human-space",
+      "name": "Human Space",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Your whole personal life — habits, routines, and daily decisions in one place",
+      "description": "Personal life operating system — health, habits, growth, journal, bureau, and self-knowledge.",
+      "tags": [
+        "personal"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "relatedIds": [
+        "health-space",
+        "growth-space",
+        "research-space",
+        "social-circle-space"
+      ],
+      "install": "navig space install github:navig-run/community/spaces/human-space"
+    },
+    {
+      "slug": "bureau-space",
+      "name": "Bureau",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Administrative life — taxes, housing, official documents, bureaucratic ops",
+      "description": "French bureaucratic organization — administrative documents, taxes, housing, health coverage, civil status, and official correspondence.",
+      "tags": [
+        "personal"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/bureau-space"
+    },
+    {
+      "slug": "growth-space",
+      "name": "Personal Growth",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Learning, skill-building, and habit formation — your deliberate self-improvement layer",
+      "description": "Learning, habit formation, and self-improvement — courses, reading logs, skill targets, and reflection.",
+      "tags": [
+        "personal"
+      ],
+      "pricing": {
+        "model": "buy_once",
+        "priceUsd": 19,
+        "includedInTier": "plus"
+      },
+      "tierAccess": "plus",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/growth-space"
+    },
+    {
+      "slug": "health-space",
+      "name": "Health",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Physical and mental health — metrics, protocols, sleep, training, and wellbeing",
+      "description": "Physical and mental health tracking — metrics, protocols, logs, and routines.",
+      "tags": [
+        "personal"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/health-space"
+    },
+    {
+      "slug": "residence-space",
+      "name": "Residence",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Home operations — maintenance, rooms, inventory, pharmacy, and household logistics",
+      "description": "Personal living space — household inventory, medication tracking, maintenance calendar, and room-based organization for any dwelling.",
+      "tags": [
+        "home",
+        "household",
+        "inventory",
+        "maintenance",
+        "medication",
+        "residence"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "author": "navig-run",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/residence-space"
+    },
+    {
+      "slug": "singularity-space",
+      "name": "Singularity",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Your long-arc intelligence archive — journals, signals, memories, and pattern recognition",
+      "description": "Long-horizon self-tracking and civilization signal monitoring. Version the self, track AI frontiers, log civilizational shifts, and maintain a destiny log for future-state planning.",
+      "tags": [
+        "singularity",
+        "ai-frontier",
+        "civilization",
+        "self-versioning",
+        "future",
+        "destiny"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "author": "navig-run",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/singularity-space"
+    },
+    {
+      "slug": "social-circle-space",
+      "name": "Social Circle",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Your entire human network — every person you know, mapped and maintained",
+      "description": "Your entire human network — mapped, searchable, and deeply personal.",
+      "tags": [
+        "social",
+        "contacts",
+        "relationships",
+        "network",
+        "crm",
+        "personal"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "author": "navig-run",
+      "status": "ready",
+      "install": "navig space install github:navig-run/community/spaces/social-circle-space"
+    },
+    {
+      "slug": "finance-space",
+      "name": "Finance Space",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Budgets, savings goals, investment tracking, and tax prep — your personal money layer",
+      "description": "Personal finance command layer — budget, cashflow, savings goals, investments, and tax preparation. One space, full financial clarity.",
+      "tags": [
+        "personal"
+      ],
+      "pricing": {
+        "model": "buy_once",
+        "priceUsd": 19,
+        "includedInTier": "plus"
+      },
+      "tierAccess": "plus",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/finance-space"
+    },
+    {
+      "slug": "travel-space",
+      "name": "Travel Space",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Trip planning, itineraries, budget tracking, and document management for every journey",
+      "description": "Plan, track, and document every trip — from daydream to debrief.",
+      "tags": [
+        "personal"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/travel-space"
+    },
+    {
+      "slug": "learn-space",
+      "name": "Learn Space",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Course tracking, book synthesis, skill roadmaps, and spaced repetition — your learning OS",
+      "description": "Track every course, book, and skill — build continuously, retain deliberately.",
+      "tags": [
+        "personal"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/learn-space"
+    },
+    {
+      "slug": "company-space",
+      "name": "Company",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "The command center for your company — strategy, operations, and projects in one space",
+      "description": "Business operations, financial management, client relations, active projects, and execution. The operational brain of the company.",
+      "tags": [
+        "company",
+        "business",
+        "operations",
+        "finance",
+        "clients",
+        "projects",
+        "org"
+      ],
+      "pricing": {
+        "model": "buy_once",
+        "priceUsd": 29,
+        "includedInTier": "plus"
+      },
+      "tierAccess": "plus",
+      "author": "navig-community",
+      "status": "active",
+      "featured": true,
+      "relatedIds": [
+        "company-space/spaces/projects",
+        "company-space/spaces/ops",
+        "scribe-space",
+        "research-space",
+        "bureau-space",
+        "empire-space",
+        "business-space"
+      ],
+      "install": "navig space install github:navig-run/community/spaces/company-space"
+    },
+    {
+      "slug": "business-space",
+      "name": "Business",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Multi-channel business portfolio — ecommerce, affiliates, and digital product ops",
+      "description": "E-commerce operations, FBA selling, affiliate marketing, and financial management",
+      "tags": [
+        "ecommerce",
+        "amazon-fba",
+        "affiliate",
+        "finance",
+        "dropshipping"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "author": "navig-run",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/business-space"
+    },
+    {
+      "slug": "empire-space",
+      "name": "Empire",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Multi-venture portfolio command center — when you run more than one thing",
+      "description": "Multi-venture portfolio operations — track companies, revenue streams, decisions, market signals, and channel performance across a diversified business empire.",
+      "tags": [
+        "empire",
+        "portfolio",
+        "ventures",
+        "revenue",
+        "strategy",
+        "market",
+        "channels"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "author": "navig-run",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/empire-space"
+    },
+    {
+      "slug": "freelance-space",
+      "name": "Freelance",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Clients, proposals, invoices, and independent work — your solo operator layer",
+      "description": "Freelance business operations — client management, time tracking, invoicing, project scoping, and revenue visibility for independent operators.",
+      "tags": [
+        "freelance",
+        "clients",
+        "invoicing",
+        "time-tracking",
+        "self-employment"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "author": "navig-run",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/freelance-space"
+    },
+    {
+      "slug": "dev-space",
+      "name": "Dev",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Code, extensions, scripts, and developer workshops — your personal build environment",
+      "description": "Code authoring, userscript development, and browser extension engineering hub.",
+      "tags": [
+        "development",
+        "scripting",
+        "extensions",
+        "userscripts",
+        "automation"
+      ],
+      "pricing": {
+        "model": "buy_once",
+        "priceUsd": 19,
+        "includedInTier": "plus"
+      },
+      "tierAccess": "plus",
+      "author": "navig-run",
+      "status": "active",
+      "featured": true,
+      "install": "navig space install github:navig-run/community/spaces/dev-space"
+    },
+    {
+      "slug": "devops-space",
+      "name": "Devops",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "CI/CD, infrastructure as code, monitoring, and cloud operations",
+      "description": "CI/CD, infrastructure-as-code, SRE ops, and incident response hub.",
+      "tags": [
+        "devops",
+        "ci-cd",
+        "terraform",
+        "ansible",
+        "sre",
+        "incident-response",
+        "monitoring"
+      ],
+      "pricing": {
+        "model": "buy_once",
+        "priceUsd": 19,
+        "includedInTier": "plus"
+      },
+      "tierAccess": "plus",
+      "author": "navig-run",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/devops-space"
+    },
+    {
+      "slug": "homelab-space",
+      "name": "Homelab",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Home server, self-hosted tools, physical hardware, and local network ops",
+      "description": "Command-and-control hub for all hardware, devices, and networks in a personal homelab environment.",
+      "tags": [
+        "homelab",
+        "infrastructure",
+        "hardware",
+        "networking",
+        "automation",
+        "devops"
+      ],
+      "pricing": {
+        "model": "buy_once",
+        "priceUsd": 19,
+        "includedInTier": "plus"
+      },
+      "tierAccess": "plus",
+      "author": "navig-run",
+      "status": "active",
+      "featured": true,
+      "relatedIds": [
+        "dev-space",
+        "chrome-ext-space"
+      ],
+      "install": "navig space install github:navig-run/community/spaces/homelab-space"
+    },
+    {
+      "slug": "android-space",
+      "name": "Android",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Command hub for every Android device — ADB bridge, app & APK ops, fleet inventory, debloat, mirroring, and backup",
+      "description": "Command hub for every Android device you own or manage — ADB bridge, app & APK ops, fleet inventory, debloat/privacy hardening, screen mirroring, and backup/restore.",
+      "tags": [
+        "android",
+        "adb",
+        "mobile",
+        "devices",
+        "fleet",
+        "automation"
+      ],
+      "pricing": {
+        "model": "buy_once",
+        "priceUsd": 19,
+        "includedInTier": "plus"
+      },
+      "tierAccess": "plus",
+      "author": "navig-run",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/android-space"
+    },
+    {
+      "slug": "iot-space",
+      "name": "IoT",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Command mesh for every IoT & smart-home device — discovery, MQTT, firmware/OTA, segmentation & security, and automation",
+      "description": "Command mesh for every IoT & smart-home device — discovery & fingerprinting, MQTT message bus, firmware/OTA, network segmentation & security, telemetry, and automation.",
+      "tags": [
+        "iot",
+        "smart-home",
+        "mqtt",
+        "zigbee",
+        "matter",
+        "automation",
+        "security"
+      ],
+      "pricing": {
+        "model": "buy_once",
+        "priceUsd": 19,
+        "includedInTier": "plus"
+      },
+      "tierAccess": "plus",
+      "author": "navig-run",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/iot-space"
+    },
+    {
+      "slug": "scribe-space",
+      "name": "Scribe",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Writing studio — books, journalism, screenwriting, content strategy, and long-form",
+      "description": "The ultimate writers' space — fiction, journalism, screenwriting, technical docs, and content strategy.",
+      "tags": [
+        "writing",
+        "fiction",
+        "journalism",
+        "screenwriting",
+        "content-strategy",
+        "technical-writing"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "author": "navig-run",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/scribe-space"
+    },
+    {
+      "slug": "simulation-space",
+      "name": "Simulation",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Experiments, models, and computational research — your personal science lab",
+      "description": "Personal operating system simulator — debug habits, model agents, track probability trees, and run behavioral experiments on the self as system.",
+      "tags": [
+        "simulation",
+        "habits",
+        "probability",
+        "behavior",
+        "self-modeling",
+        "experiments"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "author": "navig-run",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/simulation-space"
+    },
+    {
+      "slug": "war-room-space",
+      "name": "War Room",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Strategic command — competitive intelligence, legal ops, and critical response",
+      "description": "Operator command center for OSINT, investigation, and authorized offensive security. Find, investigate, and operate: open-source intelligence, structured case-work, attack-surface mapping, ethical hacking against authorized targets, digital forensics, and an isolated lab — all gated by written authorization and rules of engagement.",
+      "tags": [
+        "war-room",
+        "osint",
+        "investigation",
+        "ethical-hacking",
+        "red-team",
+        "recon",
+        "dfir",
+        "threat-intel",
+        "operator",
+        "command-center"
+      ],
+      "pricing": {
+        "model": "buy_once",
+        "priceUsd": 19,
+        "includedInTier": "plus"
+      },
+      "tierAccess": "plus",
+      "author": "navig-run",
+      "status": "active",
+      "relatedIds": [
+        "war-room-space/spaces/incident"
+      ],
+      "install": "navig space install github:navig-run/community/spaces/war-room-space"
+    },
+    {
+      "slug": "social-media",
+      "name": "Social Media Space",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Multi-brand. Multi-platform. One command layer.",
+      "description": "Unified command layer for all social media — brands, content pipelines, scheduling, analytics, and viral intelligence.",
+      "tags": [
+        "work"
+      ],
+      "pricing": {
+        "model": "buy_once",
+        "priceUsd": 19,
+        "includedInTier": "plus"
+      },
+      "tierAccess": "plus",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/social-media"
+    },
+    {
+      "slug": "project-space",
+      "name": "Project Space",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Project planning, task tracking, milestones, and blocker resolution — unified project ops",
+      "description": "Own every personal project from idea to done — plan, track, unblock.",
+      "tags": [
+        "work"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/project-space"
+    },
+    {
+      "slug": "research-space",
+      "name": "Research",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Discovery-to-data pipeline — web search, crawling, datasets, databases, and cited synthesis",
+      "description": "Discovery-to-data research pipeline — search the web, crawl and extract, build datasets at scale, store them in a database, and synthesize cited findings.",
+      "tags": [
+        "research",
+        "web-crawling",
+        "scraping",
+        "datasets",
+        "big-data",
+        "databases",
+        "discovery",
+        "synthesis"
+      ],
+      "pricing": {
+        "model": "buy_once",
+        "priceUsd": 19,
+        "includedInTier": "plus"
+      },
+      "tierAccess": "plus",
+      "author": "navig-run",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/research-space"
+    },
+    {
+      "slug": "lab-space",
+      "name": "Lab",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Live command REPL — run, tweak, and share any Navig command",
+      "description": "Live command REPL — run, tweak, and share any Navig command.",
+      "tags": [
+        "lab",
+        "repl",
+        "experiment",
+        "commands",
+        "play"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "author": "navig-run",
+      "status": "ready",
+      "install": "navig space install github:navig-run/community/spaces/lab-space"
+    },
+    {
+      "slug": "persona-space",
+      "name": "Persona",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Design exactly how your agent thinks, speaks, and makes decisions",
+      "description": "Design exactly how your agent thinks, speaks, and decides.",
+      "tags": [
+        "persona",
+        "agent-design",
+        "identity",
+        "voice",
+        "decision-style"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "author": "navig-run",
+      "status": "ready",
+      "install": "navig space install github:navig-run/community/spaces/persona-space"
+    },
+    {
+      "slug": "open-space",
+      "name": "Open",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Build in the open — stream sessions, publish workflows, let others fork and remix",
+      "description": "Build in the open — stream live sessions, publish workflows, and let the community fork and remix your work.",
+      "tags": [
+        "open",
+        "community",
+        "public",
+        "stream",
+        "share",
+        "fork"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "author": "navig-run",
+      "status": "ready",
+      "install": "navig space install github:navig-run/community/spaces/open-space"
+    },
+    {
+      "slug": "studio-space",
+      "name": "Studio",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Music production command center — compose, mix, master, and release from one space",
+      "description": "Music production command center — from first beat to final master, manage sessions, mixes, releases, and samples in one space.",
+      "tags": [
+        "music",
+        "production",
+        "daw",
+        "mixing",
+        "mastering",
+        "releases"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "author": "navig-run",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/studio-space"
+    },
+    {
+      "slug": "channel-space",
+      "name": "Channel",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "YouTube production pipeline — scripts, shoots, edits, thumbnails, and growth in one space",
+      "description": "YouTube creator command center — video production, SEO, growth analytics, thumbnail testing, and community management.",
+      "tags": [
+        "youtube",
+        "video",
+        "creator",
+        "content",
+        "seo",
+        "growth",
+        "thumbnails",
+        "analytics"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "author": "navig-community",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/channel-space"
+    },
+    {
+      "slug": "clips-space",
+      "name": "Clips Space",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Short-form video factory — TikTok, Reels, Shorts creation, trends, and batch publishing",
+      "description": "Short-form video factory — create, optimise, and distribute TikTok, Instagram Reels, and YouTube Shorts at scale.",
+      "tags": [
+        "tiktok",
+        "reels",
+        "shorts",
+        "viral",
+        "hooks",
+        "trends",
+        "short-form",
+        "clips"
+      ],
+      "icon": "🎬",
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/clips-space"
+    },
+    {
+      "slug": "broadcast-space",
+      "name": "Broadcast Space",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Podcast and live streaming command center — episodes, guests, RSS, and multi-platform distribution",
+      "description": "Professional space for podcast production, live streaming, guest management, and audio content distribution across all major platforms.",
+      "tags": [
+        "podcast",
+        "livestream",
+        "audio",
+        "episodes",
+        "rss",
+        "guests",
+        "broadcasting",
+        "shows"
+      ],
+      "icon": "🎙️",
+      "color": "#8B5CF6",
+      "pricing": {
+        "model": "free"
+      },
+      "author": "NAVIG Community",
+      "repository": "https://github.com/navig-community/spaces",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/broadcast-space",
+      "inside": {
+        "agents": {
+          "count": 5,
+          "list": [
+            "host",
+            "sound-engineer",
+            "show-planner",
+            "publisher",
+            "community-manager"
+          ]
+        },
+        "skills": {
+          "count": 10,
+          "list": [
+            "audio-record",
+            "audio-edit",
+            "noise-reduce",
+            "loudness-normalize",
+            "rss-generate",
+            "show-notes-write",
+            "transcript-generate",
+            "guest-research",
+            "episode-schedule",
+            "clip-extract"
+          ]
+        },
+        "formations": {
+          "count": 5,
+          "list": [
+            "episode-production",
+            "guest-booking",
+            "live-session",
+            "content-repurpose",
+            "audience-feedback"
+          ]
+        },
+        "workflows": {
+          "count": 6,
+          "list": [
+            "episode-production",
+            "guest-pipeline",
+            "live-show",
+            "weekly-planning",
+            "monthly-review",
+            "rss-maintenance"
+          ]
+        }
+      },
+      "primaryAction": "Record an episode"
+    },
+    {
+      "slug": "chrome-ext-space",
+      "name": "Chrome Ext",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Chrome extension reverse engineering, static analysis, security auditing, and development workspace",
+      "description": "Chrome extension reverse engineering, static analysis, security auditing, and development workspace.",
+      "tags": [
+        "chrome",
+        "extensions",
+        "reverse-engineering",
+        "security",
+        "browser",
+        "manifest-v3",
+        "analysis",
+        "development"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "author": "navig-run",
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/chrome-ext-space"
+    },
+    {
+      "slug": "devtools-space",
+      "name": "Devtools",
+      "kind": "space",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Developer power-tools as a navig skill space — extract/compress, copy-structure, git clone, media/image/docker/ssh, plus a Windows right-click menu",
+      "description": "Developer power-tools as a navig skill space — extract/compress, copy-structure, git clone, media/image/docker/ssh, plus a Windows right-click menu",
+      "tags": [
+        "studio"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "install": "navig space install github:navig-run/community/spaces/devtools-space"
+    },
+    {
+      "slug": "git-ops",
+      "name": "Git Ops",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "Inspect, summarize, and manage Git repositories without leaving NAVIG",
+      "description": "Inspect, summarize, and manage Git repositories without leaving NAVIG",
+      "tags": [
+        "cli-skill",
+        "developer"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/cli-skills/developer/git-ops"
+    },
+    {
+      "slug": "docker-ops",
+      "name": "Docker Ops",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "Container lifecycle, health checks, log tailing, and cleanup",
+      "description": "Container lifecycle, health checks, log tailing, and cleanup",
+      "tags": [
+        "cli-skill",
+        "docker"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/cli-skills/docker/docker-ops"
+    },
+    {
+      "slug": "network-scan",
+      "name": "Network Scan",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "Discover devices, check connectivity, map your LAN",
+      "description": "Discover devices, check connectivity, map your LAN",
+      "tags": [
+        "cli-skill",
+        "network"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/cli-skills/network/network-scan"
+    },
+    {
+      "slug": "security-audit",
+      "name": "Security Audit",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "Port exposure, firewall status, SSH hardening, secrets scan",
+      "description": "Port exposure, firewall status, SSH hardening, secrets scan",
+      "tags": [
+        "cli-skill",
+        "security"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "featured": true,
+      "install": "navig skill install github:navig-run/community/cli-skills/security/security-audit"
+    },
+    {
+      "slug": "system-health",
+      "name": "System Health",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "CPU, memory, disk, and top process monitoring",
+      "description": "CPU, memory, disk, and top process monitoring",
+      "tags": [
+        "cli-skill",
+        "system"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/cli-skills/system/system-health"
+    },
+    {
+      "slug": "extract-entities",
+      "name": "Extract Entities",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Extract named entities (people, places, orgs, dates) from any text",
+      "description": "Extract named entities (people, places, orgs, dates) from any text",
+      "tags": [
+        "ai-skill",
+        "extract",
+        "ner",
+        "named",
+        "who"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/extract-entities"
+    },
+    {
+      "slug": "summarise-url",
+      "name": "Summarise URL",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Fetch and summarise any URL in configurable length and format",
+      "description": "Fetch and summarise any URL in configurable length and format",
+      "tags": [
+        "ai-skill",
+        "summarize",
+        "tldr",
+        "summarise",
+        "what"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/summarise-url"
+    },
+    {
+      "slug": "notion",
+      "name": "Notion",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Read and write Notion pages and databases via Notion API",
+      "description": "Read and write Notion pages and databases via Notion API",
+      "tags": [
+        "ai-skill",
+        "notion",
+        "update",
+        "create"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/notion"
+    },
+    {
+      "slug": "slack",
+      "name": "Slack",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Send messages and read channels via Slack bot token",
+      "description": "Send messages and read channels via Slack bot token",
+      "tags": [
+        "ai-skill",
+        "slack",
+        "send",
+        "post",
+        "check"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/slack"
+    },
+    {
+      "slug": "cloudflare",
+      "name": "Cloudflare",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Router for the whole Cloudflare platform — picks the right product and hands off to a focused skill",
+      "description": "Router for the whole Cloudflare platform — picks the right product and hands off to a focused skill",
+      "tags": [
+        "ai-skill",
+        "deploy",
+        "build",
+        "which",
+        "add",
+        "run",
+        "cloudflare"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/cloudflare"
+    },
+    {
+      "slug": "wrangler",
+      "name": "Wrangler",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Cloudflare Workers CLI — deploy, dev, and manage Workers, KV, R2, D1, Queues, secrets",
+      "description": "Cloudflare Workers CLI — deploy, dev, and manage Workers, KV, R2, D1, Queues, secrets",
+      "tags": [
+        "ai-skill",
+        "wrangler",
+        "create",
+        "set",
+        "wranglerjsonc",
+        "roll"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/wrangler"
+    },
+    {
+      "slug": "workers-best-practices",
+      "name": "Workers Best Practices",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Author and review Cloudflare Workers code against production best practices and anti-patterns",
+      "description": "Author and review Cloudflare Workers code against production best practices and anti-patterns",
+      "tags": [
+        "ai-skill",
+        "review",
+        "workers",
+        "write"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/workers-best-practices"
+    },
+    {
+      "slug": "durable-objects",
+      "name": "Durable Objects",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Build and review Cloudflare Durable Objects — stateful coordination, SQLite, alarms, WebSockets",
+      "description": "Build and review Cloudflare Durable Objects — stateful coordination, SQLite, alarms, WebSockets",
+      "tags": [
+        "ai-skill",
+        "build",
+        "perentity",
+        "coordinate",
+        "add"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/durable-objects"
+    },
+    {
+      "slug": "cloudflare-agents",
+      "name": "Cloudflare Agents",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Build stateful AI agents on Cloudflare Workers with the Cloudflare Agents SDK (agents package)",
+      "description": "Build stateful AI agents on Cloudflare Workers with the Cloudflare Agents SDK (agents package)",
+      "tags": [
+        "ai-skill",
+        "build",
+        "aichatagent",
+        "useagent",
+        "mcp",
+        "callable",
+        "schedule"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/cloudflare-agents"
+    },
+    {
+      "slug": "cloudflare-email",
+      "name": "Cloudflare Email",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Send and receive transactional email with Cloudflare Email Service (Workers binding, REST, routing)",
+      "description": "Send and receive transactional email with Cloudflare Email Service (Workers binding, REST, routing)",
+      "tags": [
+        "ai-skill",
+        "add",
+        "send",
+        "receiveroute",
+        "wrangler",
+        "reply"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/cloudflare-email"
+    },
+    {
+      "slug": "cloudflare-sandbox",
+      "name": "Cloudflare Sandbox",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Run untrusted or LLM-generated code in isolated Cloudflare Sandbox containers (code interpreter)",
+      "description": "Run untrusted or LLM-generated code in isolated Cloudflare Sandbox containers (code interpreter)",
+      "tags": [
+        "ai-skill",
+        "run",
+        "execute",
+        "code",
+        "sandbox",
+        "give"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/cloudflare-sandbox"
+    },
+    {
+      "slug": "tauri-desktop",
+      "name": "Tauri Desktop",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Work in a Tauri v2 desktop app (src-tauri/ + Rust + Vite/React) — dev/build, capabilities & IPC, multi-window, the single-instance zombie trap; navig Anchor/Echo/OS",
+      "description": "Work in a Tauri v2 desktop app (src-tauri/ + Rust + Vite/React) — dev/build, capabilities & IPC, multi-window, the single-instance zombie trap; navig Anchor/Echo/OS",
+      "tags": [
+        "ai-skill",
+        "run",
+        "add",
+        "invoke",
+        "tauri",
+        "grant",
+        "build"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/tauri-desktop"
+    },
+    {
+      "slug": "nextjs-app",
+      "name": "Nextjs App",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Work in a Next.js App Router app (app/, RSC, Tailwind v4) — routing, the server/client boundary, data handlers; navig deck + static-export-to-Cloudflare",
+      "description": "Work in a Next.js App Router app (app/, RSC, Tailwind v4) — routing, the server/client boundary, data handlers; navig deck + static-export-to-Cloudflare",
+      "tags": [
+        "ai-skill",
+        "work",
+        "add",
+        "nextjs",
+        "usestate",
+        "make",
+        "deploy"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/nextjs-app"
+    },
+    {
+      "slug": "browser-extension-mv3",
+      "name": "Browser Extension Mv3",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Work in a Manifest V3 browser extension — the manifest contract, load-unpacked loop, service-worker/content/page split, messaging, and the build step; navig Dock",
+      "description": "Work in a Manifest V3 browser extension — the manifest contract, load-unpacked loop, service-worker/content/page split, messaging, and the build step; navig Dock",
+      "tags": [
+        "ai-skill",
+        "load",
+        "service",
+        "add",
+        "message",
+        "the"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/browser-extension-mv3"
+    },
+    {
+      "slug": "web-perf",
+      "name": "Web Perf",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Audit web-page performance via the Chrome DevTools MCP — Core Web Vitals (LCP/INP/CLS), render-blocking and network chains, layout shifts, caching; navig deck + www",
+      "description": "Audit web-page performance via the Chrome DevTools MCP — Core Web Vitals (LCP/INP/CLS), render-blocking and network chains, layout shifts, caching; navig deck + www",
+      "tags": [
+        "ai-skill",
+        "audit",
+        "why",
+        "profile",
+        "improve",
+        "whats",
+        "make"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/web-perf"
+    },
+    {
+      "slug": "vite-react-spa",
+      "name": "Vite React Spa",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Work in a Vite + React single-page app (± a shared-contract Express server) — dev/build/test, UI/server/shared layout, the single-origin dev server",
+      "description": "Work in a Vite + React single-page app (± a shared-contract Express server) — dev/build/test, UI/server/shared layout, the single-origin dev server",
+      "tags": [
+        "ai-skill",
+        "run",
+        "add",
+        "the",
+        "wire",
+        "where"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/vite-react-spa"
+    },
+    {
+      "slug": "python-cli",
+      "name": "Python CLI",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Typer/Click + Rich CLI conventions mapped onto navig core's own always-pretty Rich-table + --json house style; the reference for authoring a navig CLI command",
+      "description": "Typer/Click + Rich CLI conventions mapped onto navig core's own always-pretty Rich-table + --json house style; the reference for authoring a navig CLI command",
+      "tags": [
+        "ai-skill",
+        "add",
+        "build",
+        "make",
+        "prettyprint",
+        "wire"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/python-cli"
+    },
+    {
+      "slug": "business-plan",
+      "name": "Business Plan",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Scan a project (code, docs, manifests, git) and write an evidence-grounded, investor-grade BUSINESS-PLAN.md; four modes; runs first, hands off to monetization",
+      "description": "Scan a project (code, docs, manifests, git) and write an evidence-grounded, investor-grade BUSINESS-PLAN.md; four modes; runs first, hands off to monetization",
+      "tags": [
+        "ai-skill",
+        "build",
+        "scan",
+        "whats",
+        "make"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/business-plan"
+    },
+    {
+      "slug": "monetization",
+      "name": "Monetization",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Read BUSINESS-PLAN.md then write MONETIZATION.md — revenue model, tiers, unit economics, projections, billing, pricing experiments; four modes; runs second",
+      "description": "Read BUSINESS-PLAN.md then write MONETIZATION.md — revenue model, tiers, unit economics, projections, billing, pricing experiments; four modes; runs second",
+      "tags": [
+        "ai-skill",
+        "how",
+        "build",
+        "revenue",
+        "what",
+        "make"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/monetization"
+    },
+    {
+      "slug": "project-migration",
+      "name": "Project Migration",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Safely relocate a project source→destination — copy, re-attach .git, verify commit-count+HEAD before quarantining (never deleting) the original, carry the agent footprint",
+      "description": "Safely relocate a project source→destination — copy, re-attach .git, verify commit-count+HEAD before quarantining (never deleting) the original, carry the agent footprint",
+      "tags": [
+        "ai-skill",
+        "move",
+        "migrate",
+        "relocate",
+        "reorganise"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/project-migration"
+    },
+    {
+      "slug": "folder-intelligence",
+      "name": "Folder Intelligence",
+      "kind": "skill",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck"
+      ],
+      "tagline": "Investigate any project folder and produce a decision dossier — identity, real-age vs fake-freshness, tech stack, risk/secret scan, value scores, revival estimate, and a keep/revive/freeze/archive/delete verdict",
+      "description": "Investigate any project folder and produce a decision dossier — identity, real-age vs fake-freshness, tech stack, risk/secret scan, value scores, revival estimate, and a keep/revive/freeze/archive/delete verdict",
+      "tags": [
+        "ai-skill",
+        "what",
+        "investigate",
+        "tell",
+        "prepare",
+        "find",
+        "create"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig skill install github:navig-run/community/ai-skills/folder-intelligence"
+    },
+    {
+      "slug": "the-navigator",
+      "name": "The Navigator",
+      "kind": "persona",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck",
+        "anchor"
+      ],
+      "tagline": "Universal organizing intelligence for life and work — health, finances, relationships, and shipping; coordinates specialist agents, honest and consent-first",
+      "description": "Universal organizing intelligence for life and work — health, finances, relationships, and shipping; coordinates specialist agents, honest and consent-first",
+      "tags": [
+        "orchestrator"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig persona use the-navigator"
+    },
+    {
+      "slug": "senior-engineer",
+      "name": "Senior Engineer",
+      "kind": "persona",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck",
+        "anchor"
+      ],
+      "tagline": "Battle-tested senior software engineer — root-cause analysis, clean architecture, reliable code",
+      "description": "Battle-tested senior software engineer — root-cause analysis, clean architecture, reliable code",
+      "tags": [
+        "specialist"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig persona use senior-engineer"
+    },
+    {
+      "slug": "product-reviewer",
+      "name": "Product Reviewer",
+      "kind": "persona",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck",
+        "anchor"
+      ],
+      "tagline": "Product-minded reviewer — evaluates features and code through user impact and business value",
+      "description": "Product-minded reviewer — evaluates features and code through user impact and business value",
+      "tags": [
+        "analyst"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig persona use product-reviewer"
+    },
+    {
+      "slug": "community-assistant",
+      "name": "Community Assistant",
+      "kind": "persona",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli",
+        "deck",
+        "anchor"
+      ],
+      "tagline": "Friendly community guide — onboarding, FAQ answers, doc navigation, healthy collaboration",
+      "description": "Friendly community guide — onboarding, FAQ answers, doc navigation, healthy collaboration",
+      "tags": [
+        "diplomat"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig persona use community-assistant"
+    },
+    {
+      "slug": "wombie-persona",
+      "name": "Wombie Persona",
+      "kind": "block",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "Install the Wombie small-talk & identity persona pack into the active space.",
+      "description": "Install the Wombie small-talk & identity persona pack into the active space.",
+      "tags": [],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig apply wombie-persona"
+    },
+    {
+      "slug": "steam-build-upload",
+      "name": "Steam Build Upload",
+      "kind": "block",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "Build the SteamPipe app_build VDF and upload a build via a pre-authenticated steamcmd. Does NOT set a branch live (see steam-release-live).",
+      "description": "Build the SteamPipe app_build VDF and upload a build via a pre-authenticated steamcmd. Does NOT set a branch live (see steam-release-live).",
+      "tags": [],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig apply steam-build-upload --input app_id=... --input build_dir=..."
+    },
+    {
+      "slug": "safe-deployment",
+      "name": "Safe Deployment",
+      "kind": "block",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "Deploy a build to a host with a backup and config test, verified by a post-deploy health check. Server-mutating steps are --approve-gated.",
+      "description": "Deploy a build to a host with a backup and config test, verified by a post-deploy health check. Server-mutating steps are --approve-gated.",
+      "tags": [],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig apply safe-deployment --input host=... --input build_dir=... --approve backup --approve upload --approve permissions --approve restart"
+    },
+    {
+      "slug": "db-snapshot",
+      "name": "Db Snapshot",
+      "kind": "block",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "Export a remote database and pull it to the workspace; the verified outcome is a local dump file that exists.",
+      "description": "Export a remote database and pull it to the workspace; the verified outcome is a local dump file that exists.",
+      "tags": [],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig apply db-snapshot --input host=... --input db_name=... --approve dump --approve cleanup"
+    },
+    {
+      "slug": "msstore-publish",
+      "name": "Msstore Publish",
+      "kind": "block",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "Publish an app to the Microsoft Store — upload a built MSIX and commit a submission via a pre-authenticated Microsoft Store Developer CLI (msstore). The Microsoft-Store analogue of steam-build-upload.",
+      "description": "Publish an app to the Microsoft Store — upload a built MSIX and commit a submission via a pre-authenticated Microsoft Store Developer CLI (msstore). The Microsoft-Store analogue of steam-build-upload.",
+      "tags": [],
+      "pricing": {
+        "model": "free"
+      },
+      "install": "navig apply msstore-publish --input product_id=... --input package_path=... --approve publish"
+    },
+    {
+      "slug": "telegram",
+      "name": "Telegram",
+      "kind": "plugin",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "deck",
+        "cli"
+      ],
+      "tagline": "Telegram network manager — catalog rooms & media, OCR/transcribe, post/edit/delete.",
+      "description": "Telegram network manager — catalog rooms & media, OCR/transcribe, post/edit/delete.",
+      "tags": [
+        "telegram",
+        "messaging",
+        "ocr",
+        "transcription",
+        "publish",
+        "media"
+      ],
+      "icon": "✈️",
+      "color": "#229ED9",
+      "pricing": {
+        "model": "free"
+      },
+      "repository": "https://github.com/navig-run/community",
+      "status": "active",
+      "worksWith": [
+        "studio",
+        "social-media"
+      ],
+      "install": "navig plugin install telegram"
+    },
+    {
+      "slug": "navig-menu",
+      "name": "Menu",
+      "kind": "plugin",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "AI-first per-project task menu & launcher — the commands you reach for, one keystroke away.",
+      "description": "AI-first per-project task menu & launcher — the commands you reach for, one keystroke away.",
+      "tags": [
+        "menu",
+        "launcher",
+        "tasks",
+        "productivity",
+        "cli"
+      ],
+      "icon": "📋",
+      "color": "#22d3ee",
+      "pricing": {
+        "model": "free"
+      },
+      "repository": "https://github.com/navig-run/menu",
+      "status": "active",
+      "install": "navig plugin install navig-menu"
+    },
+    {
+      "slug": "navig-social",
+      "name": "Social",
+      "kind": "plugin",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "deck",
+        "cli"
+      ],
+      "tagline": "Compose, schedule & publish across social networks — Studio + one-call fan-out (X, Facebook, Dev.to, Telegram).",
+      "description": "Compose, schedule & publish across social networks — Studio + one-call fan-out (X, Facebook, Dev.to, Telegram).",
+      "tags": [
+        "social",
+        "publish",
+        "studio",
+        "scheduler",
+        "fan-out"
+      ],
+      "icon": "📣",
+      "color": "#EC4899",
+      "pricing": {
+        "model": "free"
+      },
+      "repository": "https://github.com/navig-run/core",
+      "status": "active",
+      "featured": true,
+      "worksWith": [
+        "studio",
+        "social-media"
+      ],
+      "install": "navig plugin install navig-social"
+    },
+    {
+      "slug": "navig-download",
+      "name": "Download",
+      "kind": "plugin",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "Universal media downloader (yt-dlp) — video, audio & files from YouTube, TikTok and any site.",
+      "description": "Universal media downloader (yt-dlp) — video, audio & files from YouTube, TikTok and any site.",
+      "tags": [
+        "download",
+        "video",
+        "audio",
+        "yt-dlp",
+        "tiktok",
+        "youtube"
+      ],
+      "icon": "⬇️",
+      "color": "#F59E0B",
+      "pricing": {
+        "model": "free"
+      },
+      "repository": "https://github.com/navig-run/core",
+      "status": "active",
+      "install": "navig plugin install navig-download"
+    },
+    {
+      "slug": "navig-generate",
+      "name": "Generate",
+      "kind": "plugin",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "deck",
+        "cli"
+      ],
+      "tagline": "AI media generation — images, video & audio (formerly navig-media).",
+      "description": "AI media generation — images, video & audio (formerly navig-media).",
+      "tags": [
+        "generate",
+        "ai",
+        "image",
+        "video",
+        "audio"
+      ],
+      "icon": "🎨",
+      "color": "#8B5CF6",
+      "pricing": {
+        "model": "free"
+      },
+      "repository": "https://github.com/navig-run/core",
+      "status": "active",
+      "install": "navig plugin install navig-generate"
+    },
+    {
+      "slug": "navig-email",
+      "name": "Email",
+      "kind": "plugin",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "deck",
+        "cli"
+      ],
+      "tagline": "Gmail accounts, triage, AI briefings & send — your inbox, operated.",
+      "description": "Gmail accounts, triage, AI briefings & send — your inbox, operated.",
+      "tags": [
+        "email",
+        "gmail",
+        "inbox",
+        "triage",
+        "briefing"
+      ],
+      "icon": "📧",
+      "color": "#EA4335",
+      "pricing": {
+        "model": "free"
+      },
+      "repository": "https://github.com/navig-run/core",
+      "status": "active",
+      "install": "navig plugin install navig-email"
+    },
+    {
+      "slug": "navig-github",
+      "name": "GitHub",
+      "kind": "plugin",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "deck",
+        "cli"
+      ],
+      "tagline": "Search, back up, clone, and mirror your GitHub — wired into the operator.",
+      "description": "Search, back up, clone, and mirror your GitHub — wired into the operator.",
+      "tags": [
+        "github",
+        "git",
+        "backup",
+        "search",
+        "clone"
+      ],
+      "icon": "🐱",
+      "color": "#6e7681",
+      "pricing": {
+        "model": "free"
+      },
+      "repository": "https://github.com/navig-run/core",
+      "status": "active",
+      "worksWith": [
+        "dev-space"
+      ],
+      "install": "navig plugin install navig-github"
+    },
+    {
+      "slug": "navig-calendar",
+      "name": "Calendar",
+      "kind": "plugin",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "deck",
+        "cli"
+      ],
+      "tagline": "List, add & sync events across Google, CalDAV, and ICS — one calendar layer.",
+      "description": "List, add & sync events across Google, CalDAV, and ICS — one calendar layer.",
+      "tags": [
+        "calendar",
+        "events",
+        "google",
+        "caldav",
+        "ics",
+        "schedule"
+      ],
+      "icon": "📅",
+      "color": "#4285F4",
+      "pricing": {
+        "model": "free"
+      },
+      "repository": "https://github.com/navig-run/core",
+      "status": "active",
+      "worksWith": [
+        "life",
+        "human-space"
+      ],
+      "install": "navig plugin install navig-calendar"
+    },
+    {
+      "slug": "vault",
+      "name": "Vault",
+      "kind": "plugin",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "deck",
+        "cli"
+      ],
+      "tagline": "Encrypted developer secrets manager — credentials, tokens & keys, safe at rest.",
+      "description": "Encrypted developer secrets manager — credentials, tokens & keys, safe at rest.",
+      "tags": [
+        "secrets",
+        "vault",
+        "credentials",
+        "security",
+        "encryption"
+      ],
+      "icon": "🔐",
+      "color": "#10B981",
+      "pricing": {
+        "model": "free"
+      },
+      "repository": "https://github.com/navig-run/vault",
+      "status": "active",
+      "install": "navig plugin install vault"
+    },
+    {
+      "slug": "mini",
+      "name": "Mini",
+      "kind": "plugin",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "A lightweight AI agent daemon for a Pi, NAS, or any low-power box — always on.",
+      "description": "A lightweight AI agent daemon for a Pi, NAS, or any low-power box — always on.",
+      "tags": [
+        "agent",
+        "daemon",
+        "raspberry-pi",
+        "nas",
+        "edge",
+        "lightweight"
+      ],
+      "icon": "🥧",
+      "color": "#A78BFA",
+      "pricing": {
+        "model": "free"
+      },
+      "repository": "https://github.com/navig-run/core",
+      "status": "active",
+      "worksWith": [
+        "homelab-space"
+      ],
+      "install": "navig plugin install mini"
+    },
+    {
+      "slug": "visual-editor",
+      "name": "Visual Editor",
+      "kind": "lens",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "dock",
+        "web"
+      ],
+      "tagline": "Inspect and live-edit any element on any page — right from the NAVIG web bar.",
+      "description": "Inspect and live-edit any element on any page — right from the NAVIG web bar.",
+      "tags": [
+        "browser",
+        "inspect",
+        "edit",
+        "devtools",
+        "css"
+      ],
+      "icon": "🖍️",
+      "color": "#22d3ee",
+      "pricing": {
+        "model": "free"
+      },
+      "repository": "https://github.com/navig-run/core",
+      "status": "active",
+      "install": "Enable in the Dock bar → Settings → Lenses",
+      "href": "/showcase"
+    },
+    {
+      "slug": "chatgpt-export",
+      "name": "ChatGPT Export",
+      "kind": "lens",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "dock",
+        "web"
+      ],
+      "tagline": "Export a ChatGPT conversation straight into your NAVIG inbox.",
+      "description": "Export a ChatGPT conversation straight into your NAVIG inbox.",
+      "tags": [
+        "chatgpt",
+        "export",
+        "inbox",
+        "capture",
+        "ai"
+      ],
+      "icon": "💬",
+      "color": "#10A37F",
+      "pricing": {
+        "model": "free"
+      },
+      "repository": "https://github.com/navig-run/core",
+      "status": "active",
+      "install": "Enable in the Dock bar → Settings → Lenses",
+      "href": "/showcase"
+    },
+    {
+      "slug": "dev-studio",
+      "name": "Dev Studio",
+      "kind": "formation",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "A multi-agent formation for building software — architect, coder, reviewer, tester in concert.",
+      "description": "A multi-agent formation for building software — architect, coder, reviewer, tester in concert.",
+      "tags": [
+        "formation",
+        "development",
+        "multi-agent",
+        "coding",
+        "review"
+      ],
+      "icon": "🧩",
+      "color": "#8B5CF6",
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "worksWith": [
+        "dev-space",
+        "devops-space"
+      ],
+      "install": "navig formation install github:navig-run/community/library/formations/dev-studio"
+    },
+    {
+      "slug": "homelab-node",
+      "name": "Homelab Node",
+      "kind": "formation",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "A formation for operating a homelab node — provisioning, services, backups, health.",
+      "description": "A formation for operating a homelab node — provisioning, services, backups, health.",
+      "tags": [
+        "formation",
+        "homelab",
+        "infra",
+        "ops",
+        "self-hosting"
+      ],
+      "icon": "🏠",
+      "color": "#F59E0B",
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "worksWith": [
+        "homelab-space",
+        "mini"
+      ],
+      "install": "navig formation install github:navig-run/community/library/formations/homelab-node"
+    },
+    {
+      "slug": "morning-briefing",
+      "name": "Morning Briefing",
+      "kind": "prompt",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "A daily briefing prompt — what changed, what needs you, what to focus on.",
+      "description": "A daily briefing prompt — what changed, what needs you, what to focus on.",
+      "tags": [
+        "prompt",
+        "briefing",
+        "daily",
+        "routine",
+        "focus"
+      ],
+      "icon": "☀️",
+      "color": "#F59E0B",
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "install": "navig prompt install github:navig-run/community/library/prompts/morning-briefing"
+    },
+    {
+      "slug": "weekly-review",
+      "name": "Weekly Review",
+      "kind": "prompt",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "A structured weekly review prompt — wins, misses, and next week's priorities.",
+      "description": "A structured weekly review prompt — wins, misses, and next week's priorities.",
+      "tags": [
+        "prompt",
+        "review",
+        "weekly",
+        "planning",
+        "reflection"
+      ],
+      "icon": "📈",
+      "color": "#22d3ee",
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "install": "navig prompt install github:navig-run/community/library/prompts/weekly-review"
+    },
+    {
+      "slug": "debug-session",
+      "name": "Debug Session",
+      "kind": "prompt",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "A disciplined debugging prompt — reproduce, isolate, hypothesize, verify, fix.",
+      "description": "A disciplined debugging prompt — reproduce, isolate, hypothesize, verify, fix.",
+      "tags": [
+        "prompt",
+        "debug",
+        "development",
+        "troubleshooting"
+      ],
+      "icon": "🐛",
+      "color": "#EF4444",
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "worksWith": [
+        "dev-space"
+      ],
+      "install": "navig prompt install github:navig-run/community/library/prompts/debug-session"
+    },
+    {
+      "slug": "deploy-runbook",
+      "name": "Deploy Runbook",
+      "kind": "prompt",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "A deployment runbook prompt — pre-flight, ship, verify, roll back if needed.",
+      "description": "A deployment runbook prompt — pre-flight, ship, verify, roll back if needed.",
+      "tags": [
+        "prompt",
+        "deploy",
+        "runbook",
+        "devops",
+        "release"
+      ],
+      "icon": "🚀",
+      "color": "#10B981",
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "worksWith": [
+        "devops-space",
+        "deploy-space"
+      ],
+      "install": "navig prompt install github:navig-run/community/library/prompts/deploy-runbook"
+    },
+    {
+      "slug": "ai-webapp",
+      "name": "AI Chat Web App",
+      "kind": "webapp",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "anchor",
+        "os",
+        "web"
+      ],
+      "tagline": "A ready-made AI chat web app template — wrap any model as a themed desktop window.",
+      "description": "A ready-made AI chat web app template — wrap any model as a themed desktop window.",
+      "tags": [
+        "webapp",
+        "ai",
+        "chat",
+        "template"
+      ],
+      "icon": "🤖",
+      "color": "#22d3ee",
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "install": "navig install webapp github:navig-run/community/library/apps/ai"
+    },
+    {
+      "slug": "blog-webapp",
+      "name": "Blog Web App",
+      "kind": "webapp",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "anchor",
+        "os",
+        "web"
+      ],
+      "tagline": "A blog web app template — write, publish, and manage posts as a desktop app.",
+      "description": "A blog web app template — write, publish, and manage posts as a desktop app.",
+      "tags": [
+        "webapp",
+        "blog",
+        "publishing",
+        "template"
+      ],
+      "icon": "📝",
+      "color": "#8B5CF6",
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "install": "navig install webapp github:navig-run/community/library/apps/blog"
+    },
+    {
+      "slug": "portfolio-webapp",
+      "name": "Portfolio Web App",
+      "kind": "webapp",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "anchor",
+        "os",
+        "web"
+      ],
+      "tagline": "A portfolio web app template — showcase your work as a first-class desktop window.",
+      "description": "A portfolio web app template — showcase your work as a first-class desktop window.",
+      "tags": [
+        "webapp",
+        "portfolio",
+        "showcase",
+        "template"
+      ],
+      "icon": "🎨",
+      "color": "#EC4899",
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "install": "navig install webapp github:navig-run/community/library/apps/portfolio"
+    }
+  ],
+  "sections": [
+    {
+      "id": "spaces",
+      "title": "Spaces",
+      "icon": "layers",
+      "items": [
+        {
+          "slug": "system-space",
+          "name": "System",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "OS & filesystem operator — organize, migrate, dedupe, convert, reclaim, safely at scale",
+          "description": "Deep Windows + filesystem knowledge wired into safe bulk operations: inventory, classify-by-purpose, same-volume rename, long-path purge, dedupe, conversion. Forged from real multi-TB migrations.",
+          "tags": [
+            "studio"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "relatedIds": [
+            "media-space"
+          ],
+          "install": "navig space install github:navig-run/community/spaces/system-space"
+        },
+        {
+          "slug": "human-space",
+          "name": "Human Space",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Your whole personal life — habits, routines, and daily decisions in one place",
+          "description": "Personal life operating system — health, habits, growth, journal, bureau, and self-knowledge.",
+          "tags": [
+            "personal"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "relatedIds": [
+            "health-space",
+            "growth-space",
+            "research-space",
+            "social-circle-space"
+          ],
+          "install": "navig space install github:navig-run/community/spaces/human-space"
+        },
+        {
+          "slug": "bureau-space",
+          "name": "Bureau",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Administrative life — taxes, housing, official documents, bureaucratic ops",
+          "description": "French bureaucratic organization — administrative documents, taxes, housing, health coverage, civil status, and official correspondence.",
+          "tags": [
+            "personal"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/bureau-space"
+        },
+        {
+          "slug": "growth-space",
+          "name": "Personal Growth",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Learning, skill-building, and habit formation — your deliberate self-improvement layer",
+          "description": "Learning, habit formation, and self-improvement — courses, reading logs, skill targets, and reflection.",
+          "tags": [
+            "personal"
+          ],
+          "pricing": {
+            "model": "buy_once",
+            "priceUsd": 19,
+            "includedInTier": "plus"
+          },
+          "tierAccess": "plus",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/growth-space"
+        },
+        {
+          "slug": "health-space",
+          "name": "Health",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Physical and mental health — metrics, protocols, sleep, training, and wellbeing",
+          "description": "Physical and mental health tracking — metrics, protocols, logs, and routines.",
+          "tags": [
+            "personal"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/health-space"
+        },
+        {
+          "slug": "residence-space",
+          "name": "Residence",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Home operations — maintenance, rooms, inventory, pharmacy, and household logistics",
+          "description": "Personal living space — household inventory, medication tracking, maintenance calendar, and room-based organization for any dwelling.",
+          "tags": [
+            "home",
+            "household",
+            "inventory",
+            "maintenance",
+            "medication",
+            "residence"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "author": "navig-run",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/residence-space"
+        },
+        {
+          "slug": "singularity-space",
+          "name": "Singularity",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Your long-arc intelligence archive — journals, signals, memories, and pattern recognition",
+          "description": "Long-horizon self-tracking and civilization signal monitoring. Version the self, track AI frontiers, log civilizational shifts, and maintain a destiny log for future-state planning.",
+          "tags": [
+            "singularity",
+            "ai-frontier",
+            "civilization",
+            "self-versioning",
+            "future",
+            "destiny"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "author": "navig-run",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/singularity-space"
+        },
+        {
+          "slug": "social-circle-space",
+          "name": "Social Circle",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Your entire human network — every person you know, mapped and maintained",
+          "description": "Your entire human network — mapped, searchable, and deeply personal.",
+          "tags": [
+            "social",
+            "contacts",
+            "relationships",
+            "network",
+            "crm",
+            "personal"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "author": "navig-run",
+          "status": "ready",
+          "install": "navig space install github:navig-run/community/spaces/social-circle-space"
+        },
+        {
+          "slug": "finance-space",
+          "name": "Finance Space",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Budgets, savings goals, investment tracking, and tax prep — your personal money layer",
+          "description": "Personal finance command layer — budget, cashflow, savings goals, investments, and tax preparation. One space, full financial clarity.",
+          "tags": [
+            "personal"
+          ],
+          "pricing": {
+            "model": "buy_once",
+            "priceUsd": 19,
+            "includedInTier": "plus"
+          },
+          "tierAccess": "plus",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/finance-space"
+        },
+        {
+          "slug": "travel-space",
+          "name": "Travel Space",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Trip planning, itineraries, budget tracking, and document management for every journey",
+          "description": "Plan, track, and document every trip — from daydream to debrief.",
+          "tags": [
+            "personal"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/travel-space"
+        },
+        {
+          "slug": "learn-space",
+          "name": "Learn Space",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Course tracking, book synthesis, skill roadmaps, and spaced repetition — your learning OS",
+          "description": "Track every course, book, and skill — build continuously, retain deliberately.",
+          "tags": [
+            "personal"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/learn-space"
+        },
+        {
+          "slug": "company-space",
+          "name": "Company",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "The command center for your company — strategy, operations, and projects in one space",
+          "description": "Business operations, financial management, client relations, active projects, and execution. The operational brain of the company.",
+          "tags": [
+            "company",
+            "business",
+            "operations",
+            "finance",
+            "clients",
+            "projects",
+            "org"
+          ],
+          "pricing": {
+            "model": "buy_once",
+            "priceUsd": 29,
+            "includedInTier": "plus"
+          },
+          "tierAccess": "plus",
+          "author": "navig-community",
+          "status": "active",
+          "featured": true,
+          "relatedIds": [
+            "company-space/spaces/projects",
+            "company-space/spaces/ops",
+            "scribe-space",
+            "research-space",
+            "bureau-space",
+            "empire-space",
+            "business-space"
+          ],
+          "install": "navig space install github:navig-run/community/spaces/company-space"
+        },
+        {
+          "slug": "business-space",
+          "name": "Business",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Multi-channel business portfolio — ecommerce, affiliates, and digital product ops",
+          "description": "E-commerce operations, FBA selling, affiliate marketing, and financial management",
+          "tags": [
+            "ecommerce",
+            "amazon-fba",
+            "affiliate",
+            "finance",
+            "dropshipping"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "author": "navig-run",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/business-space"
+        },
+        {
+          "slug": "empire-space",
+          "name": "Empire",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Multi-venture portfolio command center — when you run more than one thing",
+          "description": "Multi-venture portfolio operations — track companies, revenue streams, decisions, market signals, and channel performance across a diversified business empire.",
+          "tags": [
+            "empire",
+            "portfolio",
+            "ventures",
+            "revenue",
+            "strategy",
+            "market",
+            "channels"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "author": "navig-run",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/empire-space"
+        },
+        {
+          "slug": "freelance-space",
+          "name": "Freelance",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Clients, proposals, invoices, and independent work — your solo operator layer",
+          "description": "Freelance business operations — client management, time tracking, invoicing, project scoping, and revenue visibility for independent operators.",
+          "tags": [
+            "freelance",
+            "clients",
+            "invoicing",
+            "time-tracking",
+            "self-employment"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "author": "navig-run",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/freelance-space"
+        },
+        {
+          "slug": "dev-space",
+          "name": "Dev",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Code, extensions, scripts, and developer workshops — your personal build environment",
+          "description": "Code authoring, userscript development, and browser extension engineering hub.",
+          "tags": [
+            "development",
+            "scripting",
+            "extensions",
+            "userscripts",
+            "automation"
+          ],
+          "pricing": {
+            "model": "buy_once",
+            "priceUsd": 19,
+            "includedInTier": "plus"
+          },
+          "tierAccess": "plus",
+          "author": "navig-run",
+          "status": "active",
+          "featured": true,
+          "install": "navig space install github:navig-run/community/spaces/dev-space"
+        },
+        {
+          "slug": "devops-space",
+          "name": "Devops",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "CI/CD, infrastructure as code, monitoring, and cloud operations",
+          "description": "CI/CD, infrastructure-as-code, SRE ops, and incident response hub.",
+          "tags": [
+            "devops",
+            "ci-cd",
+            "terraform",
+            "ansible",
+            "sre",
+            "incident-response",
+            "monitoring"
+          ],
+          "pricing": {
+            "model": "buy_once",
+            "priceUsd": 19,
+            "includedInTier": "plus"
+          },
+          "tierAccess": "plus",
+          "author": "navig-run",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/devops-space"
+        },
+        {
+          "slug": "homelab-space",
+          "name": "Homelab",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Home server, self-hosted tools, physical hardware, and local network ops",
+          "description": "Command-and-control hub for all hardware, devices, and networks in a personal homelab environment.",
+          "tags": [
+            "homelab",
+            "infrastructure",
+            "hardware",
+            "networking",
+            "automation",
+            "devops"
+          ],
+          "pricing": {
+            "model": "buy_once",
+            "priceUsd": 19,
+            "includedInTier": "plus"
+          },
+          "tierAccess": "plus",
+          "author": "navig-run",
+          "status": "active",
+          "featured": true,
+          "relatedIds": [
+            "dev-space",
+            "chrome-ext-space"
+          ],
+          "install": "navig space install github:navig-run/community/spaces/homelab-space"
+        },
+        {
+          "slug": "android-space",
+          "name": "Android",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Command hub for every Android device — ADB bridge, app & APK ops, fleet inventory, debloat, mirroring, and backup",
+          "description": "Command hub for every Android device you own or manage — ADB bridge, app & APK ops, fleet inventory, debloat/privacy hardening, screen mirroring, and backup/restore.",
+          "tags": [
+            "android",
+            "adb",
+            "mobile",
+            "devices",
+            "fleet",
+            "automation"
+          ],
+          "pricing": {
+            "model": "buy_once",
+            "priceUsd": 19,
+            "includedInTier": "plus"
+          },
+          "tierAccess": "plus",
+          "author": "navig-run",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/android-space"
+        },
+        {
+          "slug": "iot-space",
+          "name": "IoT",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Command mesh for every IoT & smart-home device — discovery, MQTT, firmware/OTA, segmentation & security, and automation",
+          "description": "Command mesh for every IoT & smart-home device — discovery & fingerprinting, MQTT message bus, firmware/OTA, network segmentation & security, telemetry, and automation.",
+          "tags": [
+            "iot",
+            "smart-home",
+            "mqtt",
+            "zigbee",
+            "matter",
+            "automation",
+            "security"
+          ],
+          "pricing": {
+            "model": "buy_once",
+            "priceUsd": 19,
+            "includedInTier": "plus"
+          },
+          "tierAccess": "plus",
+          "author": "navig-run",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/iot-space"
+        },
+        {
+          "slug": "scribe-space",
+          "name": "Scribe",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Writing studio — books, journalism, screenwriting, content strategy, and long-form",
+          "description": "The ultimate writers' space — fiction, journalism, screenwriting, technical docs, and content strategy.",
+          "tags": [
+            "writing",
+            "fiction",
+            "journalism",
+            "screenwriting",
+            "content-strategy",
+            "technical-writing"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "author": "navig-run",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/scribe-space"
+        },
+        {
+          "slug": "simulation-space",
+          "name": "Simulation",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Experiments, models, and computational research — your personal science lab",
+          "description": "Personal operating system simulator — debug habits, model agents, track probability trees, and run behavioral experiments on the self as system.",
+          "tags": [
+            "simulation",
+            "habits",
+            "probability",
+            "behavior",
+            "self-modeling",
+            "experiments"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "author": "navig-run",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/simulation-space"
+        },
+        {
+          "slug": "war-room-space",
+          "name": "War Room",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Strategic command — competitive intelligence, legal ops, and critical response",
+          "description": "Operator command center for OSINT, investigation, and authorized offensive security. Find, investigate, and operate: open-source intelligence, structured case-work, attack-surface mapping, ethical hacking against authorized targets, digital forensics, and an isolated lab — all gated by written authorization and rules of engagement.",
+          "tags": [
+            "war-room",
+            "osint",
+            "investigation",
+            "ethical-hacking",
+            "red-team",
+            "recon",
+            "dfir",
+            "threat-intel",
+            "operator",
+            "command-center"
+          ],
+          "pricing": {
+            "model": "buy_once",
+            "priceUsd": 19,
+            "includedInTier": "plus"
+          },
+          "tierAccess": "plus",
+          "author": "navig-run",
+          "status": "active",
+          "relatedIds": [
+            "war-room-space/spaces/incident"
+          ],
+          "install": "navig space install github:navig-run/community/spaces/war-room-space"
+        },
+        {
+          "slug": "social-media",
+          "name": "Social Media Space",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Multi-brand. Multi-platform. One command layer.",
+          "description": "Unified command layer for all social media — brands, content pipelines, scheduling, analytics, and viral intelligence.",
+          "tags": [
+            "work"
+          ],
+          "pricing": {
+            "model": "buy_once",
+            "priceUsd": 19,
+            "includedInTier": "plus"
+          },
+          "tierAccess": "plus",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/social-media"
+        },
+        {
+          "slug": "project-space",
+          "name": "Project Space",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Project planning, task tracking, milestones, and blocker resolution — unified project ops",
+          "description": "Own every personal project from idea to done — plan, track, unblock.",
+          "tags": [
+            "work"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/project-space"
+        },
+        {
+          "slug": "research-space",
+          "name": "Research",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Discovery-to-data pipeline — web search, crawling, datasets, databases, and cited synthesis",
+          "description": "Discovery-to-data research pipeline — search the web, crawl and extract, build datasets at scale, store them in a database, and synthesize cited findings.",
+          "tags": [
+            "research",
+            "web-crawling",
+            "scraping",
+            "datasets",
+            "big-data",
+            "databases",
+            "discovery",
+            "synthesis"
+          ],
+          "pricing": {
+            "model": "buy_once",
+            "priceUsd": 19,
+            "includedInTier": "plus"
+          },
+          "tierAccess": "plus",
+          "author": "navig-run",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/research-space"
+        },
+        {
+          "slug": "lab-space",
+          "name": "Lab",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Live command REPL — run, tweak, and share any Navig command",
+          "description": "Live command REPL — run, tweak, and share any Navig command.",
+          "tags": [
+            "lab",
+            "repl",
+            "experiment",
+            "commands",
+            "play"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "author": "navig-run",
+          "status": "ready",
+          "install": "navig space install github:navig-run/community/spaces/lab-space"
+        },
+        {
+          "slug": "persona-space",
+          "name": "Persona",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Design exactly how your agent thinks, speaks, and makes decisions",
+          "description": "Design exactly how your agent thinks, speaks, and decides.",
+          "tags": [
+            "persona",
+            "agent-design",
+            "identity",
+            "voice",
+            "decision-style"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "author": "navig-run",
+          "status": "ready",
+          "install": "navig space install github:navig-run/community/spaces/persona-space"
+        },
+        {
+          "slug": "open-space",
+          "name": "Open",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Build in the open — stream sessions, publish workflows, let others fork and remix",
+          "description": "Build in the open — stream live sessions, publish workflows, and let the community fork and remix your work.",
+          "tags": [
+            "open",
+            "community",
+            "public",
+            "stream",
+            "share",
+            "fork"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "author": "navig-run",
+          "status": "ready",
+          "install": "navig space install github:navig-run/community/spaces/open-space"
+        },
+        {
+          "slug": "studio-space",
+          "name": "Studio",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Music production command center — compose, mix, master, and release from one space",
+          "description": "Music production command center — from first beat to final master, manage sessions, mixes, releases, and samples in one space.",
+          "tags": [
+            "music",
+            "production",
+            "daw",
+            "mixing",
+            "mastering",
+            "releases"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "author": "navig-run",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/studio-space"
+        },
+        {
+          "slug": "channel-space",
+          "name": "Channel",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "YouTube production pipeline — scripts, shoots, edits, thumbnails, and growth in one space",
+          "description": "YouTube creator command center — video production, SEO, growth analytics, thumbnail testing, and community management.",
+          "tags": [
+            "youtube",
+            "video",
+            "creator",
+            "content",
+            "seo",
+            "growth",
+            "thumbnails",
+            "analytics"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "author": "navig-community",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/channel-space"
+        },
+        {
+          "slug": "clips-space",
+          "name": "Clips Space",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Short-form video factory — TikTok, Reels, Shorts creation, trends, and batch publishing",
+          "description": "Short-form video factory — create, optimise, and distribute TikTok, Instagram Reels, and YouTube Shorts at scale.",
+          "tags": [
+            "tiktok",
+            "reels",
+            "shorts",
+            "viral",
+            "hooks",
+            "trends",
+            "short-form",
+            "clips"
+          ],
+          "icon": "🎬",
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/clips-space"
+        },
+        {
+          "slug": "broadcast-space",
+          "name": "Broadcast Space",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Podcast and live streaming command center — episodes, guests, RSS, and multi-platform distribution",
+          "description": "Professional space for podcast production, live streaming, guest management, and audio content distribution across all major platforms.",
+          "tags": [
+            "podcast",
+            "livestream",
+            "audio",
+            "episodes",
+            "rss",
+            "guests",
+            "broadcasting",
+            "shows"
+          ],
+          "icon": "🎙️",
+          "color": "#8B5CF6",
+          "pricing": {
+            "model": "free"
+          },
+          "author": "NAVIG Community",
+          "repository": "https://github.com/navig-community/spaces",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/broadcast-space",
+          "inside": {
+            "agents": {
+              "count": 5,
+              "list": [
+                "host",
+                "sound-engineer",
+                "show-planner",
+                "publisher",
+                "community-manager"
+              ]
+            },
+            "skills": {
+              "count": 10,
+              "list": [
+                "audio-record",
+                "audio-edit",
+                "noise-reduce",
+                "loudness-normalize",
+                "rss-generate",
+                "show-notes-write",
+                "transcript-generate",
+                "guest-research",
+                "episode-schedule",
+                "clip-extract"
+              ]
+            },
+            "formations": {
+              "count": 5,
+              "list": [
+                "episode-production",
+                "guest-booking",
+                "live-session",
+                "content-repurpose",
+                "audience-feedback"
+              ]
+            },
+            "workflows": {
+              "count": 6,
+              "list": [
+                "episode-production",
+                "guest-pipeline",
+                "live-show",
+                "weekly-planning",
+                "monthly-review",
+                "rss-maintenance"
+              ]
+            }
+          },
+          "primaryAction": "Record an episode"
+        },
+        {
+          "slug": "chrome-ext-space",
+          "name": "Chrome Ext",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Chrome extension reverse engineering, static analysis, security auditing, and development workspace",
+          "description": "Chrome extension reverse engineering, static analysis, security auditing, and development workspace.",
+          "tags": [
+            "chrome",
+            "extensions",
+            "reverse-engineering",
+            "security",
+            "browser",
+            "manifest-v3",
+            "analysis",
+            "development"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "author": "navig-run",
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/chrome-ext-space"
+        },
+        {
+          "slug": "devtools-space",
+          "name": "Devtools",
+          "kind": "space",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Developer power-tools as a navig skill space — extract/compress, copy-structure, git clone, media/image/docker/ssh, plus a Windows right-click menu",
+          "description": "Developer power-tools as a navig skill space — extract/compress, copy-structure, git clone, media/image/docker/ssh, plus a Windows right-click menu",
+          "tags": [
+            "studio"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "install": "navig space install github:navig-run/community/spaces/devtools-space"
+        }
+      ]
+    },
+    {
+      "id": "skills",
+      "title": "Skills",
+      "icon": "zap",
+      "items": [
+        {
+          "slug": "git-ops",
+          "name": "Git Ops",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli"
+          ],
+          "tagline": "Inspect, summarize, and manage Git repositories without leaving NAVIG",
+          "description": "Inspect, summarize, and manage Git repositories without leaving NAVIG",
+          "tags": [
+            "cli-skill",
+            "developer"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/cli-skills/developer/git-ops"
+        },
+        {
+          "slug": "docker-ops",
+          "name": "Docker Ops",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli"
+          ],
+          "tagline": "Container lifecycle, health checks, log tailing, and cleanup",
+          "description": "Container lifecycle, health checks, log tailing, and cleanup",
+          "tags": [
+            "cli-skill",
+            "docker"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/cli-skills/docker/docker-ops"
+        },
+        {
+          "slug": "network-scan",
+          "name": "Network Scan",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli"
+          ],
+          "tagline": "Discover devices, check connectivity, map your LAN",
+          "description": "Discover devices, check connectivity, map your LAN",
+          "tags": [
+            "cli-skill",
+            "network"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/cli-skills/network/network-scan"
+        },
+        {
+          "slug": "security-audit",
+          "name": "Security Audit",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli"
+          ],
+          "tagline": "Port exposure, firewall status, SSH hardening, secrets scan",
+          "description": "Port exposure, firewall status, SSH hardening, secrets scan",
+          "tags": [
+            "cli-skill",
+            "security"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "featured": true,
+          "install": "navig skill install github:navig-run/community/cli-skills/security/security-audit"
+        },
+        {
+          "slug": "system-health",
+          "name": "System Health",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli"
+          ],
+          "tagline": "CPU, memory, disk, and top process monitoring",
+          "description": "CPU, memory, disk, and top process monitoring",
+          "tags": [
+            "cli-skill",
+            "system"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/cli-skills/system/system-health"
+        },
+        {
+          "slug": "extract-entities",
+          "name": "Extract Entities",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Extract named entities (people, places, orgs, dates) from any text",
+          "description": "Extract named entities (people, places, orgs, dates) from any text",
+          "tags": [
+            "ai-skill",
+            "extract",
+            "ner",
+            "named",
+            "who"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/extract-entities"
+        },
+        {
+          "slug": "summarise-url",
+          "name": "Summarise URL",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Fetch and summarise any URL in configurable length and format",
+          "description": "Fetch and summarise any URL in configurable length and format",
+          "tags": [
+            "ai-skill",
+            "summarize",
+            "tldr",
+            "summarise",
+            "what"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/summarise-url"
+        },
+        {
+          "slug": "notion",
+          "name": "Notion",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Read and write Notion pages and databases via Notion API",
+          "description": "Read and write Notion pages and databases via Notion API",
+          "tags": [
+            "ai-skill",
+            "notion",
+            "update",
+            "create"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/notion"
+        },
+        {
+          "slug": "slack",
+          "name": "Slack",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Send messages and read channels via Slack bot token",
+          "description": "Send messages and read channels via Slack bot token",
+          "tags": [
+            "ai-skill",
+            "slack",
+            "send",
+            "post",
+            "check"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/slack"
+        },
+        {
+          "slug": "cloudflare",
+          "name": "Cloudflare",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Router for the whole Cloudflare platform — picks the right product and hands off to a focused skill",
+          "description": "Router for the whole Cloudflare platform — picks the right product and hands off to a focused skill",
+          "tags": [
+            "ai-skill",
+            "deploy",
+            "build",
+            "which",
+            "add",
+            "run",
+            "cloudflare"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/cloudflare"
+        },
+        {
+          "slug": "wrangler",
+          "name": "Wrangler",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Cloudflare Workers CLI — deploy, dev, and manage Workers, KV, R2, D1, Queues, secrets",
+          "description": "Cloudflare Workers CLI — deploy, dev, and manage Workers, KV, R2, D1, Queues, secrets",
+          "tags": [
+            "ai-skill",
+            "wrangler",
+            "create",
+            "set",
+            "wranglerjsonc",
+            "roll"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/wrangler"
+        },
+        {
+          "slug": "workers-best-practices",
+          "name": "Workers Best Practices",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Author and review Cloudflare Workers code against production best practices and anti-patterns",
+          "description": "Author and review Cloudflare Workers code against production best practices and anti-patterns",
+          "tags": [
+            "ai-skill",
+            "review",
+            "workers",
+            "write"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/workers-best-practices"
+        },
+        {
+          "slug": "durable-objects",
+          "name": "Durable Objects",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Build and review Cloudflare Durable Objects — stateful coordination, SQLite, alarms, WebSockets",
+          "description": "Build and review Cloudflare Durable Objects — stateful coordination, SQLite, alarms, WebSockets",
+          "tags": [
+            "ai-skill",
+            "build",
+            "perentity",
+            "coordinate",
+            "add"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/durable-objects"
+        },
+        {
+          "slug": "cloudflare-agents",
+          "name": "Cloudflare Agents",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Build stateful AI agents on Cloudflare Workers with the Cloudflare Agents SDK (agents package)",
+          "description": "Build stateful AI agents on Cloudflare Workers with the Cloudflare Agents SDK (agents package)",
+          "tags": [
+            "ai-skill",
+            "build",
+            "aichatagent",
+            "useagent",
+            "mcp",
+            "callable",
+            "schedule"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/cloudflare-agents"
+        },
+        {
+          "slug": "cloudflare-email",
+          "name": "Cloudflare Email",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Send and receive transactional email with Cloudflare Email Service (Workers binding, REST, routing)",
+          "description": "Send and receive transactional email with Cloudflare Email Service (Workers binding, REST, routing)",
+          "tags": [
+            "ai-skill",
+            "add",
+            "send",
+            "receiveroute",
+            "wrangler",
+            "reply"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/cloudflare-email"
+        },
+        {
+          "slug": "cloudflare-sandbox",
+          "name": "Cloudflare Sandbox",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Run untrusted or LLM-generated code in isolated Cloudflare Sandbox containers (code interpreter)",
+          "description": "Run untrusted or LLM-generated code in isolated Cloudflare Sandbox containers (code interpreter)",
+          "tags": [
+            "ai-skill",
+            "run",
+            "execute",
+            "code",
+            "sandbox",
+            "give"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/cloudflare-sandbox"
+        },
+        {
+          "slug": "tauri-desktop",
+          "name": "Tauri Desktop",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Work in a Tauri v2 desktop app (src-tauri/ + Rust + Vite/React) — dev/build, capabilities & IPC, multi-window, the single-instance zombie trap; navig Anchor/Echo/OS",
+          "description": "Work in a Tauri v2 desktop app (src-tauri/ + Rust + Vite/React) — dev/build, capabilities & IPC, multi-window, the single-instance zombie trap; navig Anchor/Echo/OS",
+          "tags": [
+            "ai-skill",
+            "run",
+            "add",
+            "invoke",
+            "tauri",
+            "grant",
+            "build"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/tauri-desktop"
+        },
+        {
+          "slug": "nextjs-app",
+          "name": "Nextjs App",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Work in a Next.js App Router app (app/, RSC, Tailwind v4) — routing, the server/client boundary, data handlers; navig deck + static-export-to-Cloudflare",
+          "description": "Work in a Next.js App Router app (app/, RSC, Tailwind v4) — routing, the server/client boundary, data handlers; navig deck + static-export-to-Cloudflare",
+          "tags": [
+            "ai-skill",
+            "work",
+            "add",
+            "nextjs",
+            "usestate",
+            "make",
+            "deploy"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/nextjs-app"
+        },
+        {
+          "slug": "browser-extension-mv3",
+          "name": "Browser Extension Mv3",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Work in a Manifest V3 browser extension — the manifest contract, load-unpacked loop, service-worker/content/page split, messaging, and the build step; navig Dock",
+          "description": "Work in a Manifest V3 browser extension — the manifest contract, load-unpacked loop, service-worker/content/page split, messaging, and the build step; navig Dock",
+          "tags": [
+            "ai-skill",
+            "load",
+            "service",
+            "add",
+            "message",
+            "the"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/browser-extension-mv3"
+        },
+        {
+          "slug": "web-perf",
+          "name": "Web Perf",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Audit web-page performance via the Chrome DevTools MCP — Core Web Vitals (LCP/INP/CLS), render-blocking and network chains, layout shifts, caching; navig deck + www",
+          "description": "Audit web-page performance via the Chrome DevTools MCP — Core Web Vitals (LCP/INP/CLS), render-blocking and network chains, layout shifts, caching; navig deck + www",
+          "tags": [
+            "ai-skill",
+            "audit",
+            "why",
+            "profile",
+            "improve",
+            "whats",
+            "make"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/web-perf"
+        },
+        {
+          "slug": "vite-react-spa",
+          "name": "Vite React Spa",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Work in a Vite + React single-page app (± a shared-contract Express server) — dev/build/test, UI/server/shared layout, the single-origin dev server",
+          "description": "Work in a Vite + React single-page app (± a shared-contract Express server) — dev/build/test, UI/server/shared layout, the single-origin dev server",
+          "tags": [
+            "ai-skill",
+            "run",
+            "add",
+            "the",
+            "wire",
+            "where"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/vite-react-spa"
+        },
+        {
+          "slug": "python-cli",
+          "name": "Python CLI",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Typer/Click + Rich CLI conventions mapped onto navig core's own always-pretty Rich-table + --json house style; the reference for authoring a navig CLI command",
+          "description": "Typer/Click + Rich CLI conventions mapped onto navig core's own always-pretty Rich-table + --json house style; the reference for authoring a navig CLI command",
+          "tags": [
+            "ai-skill",
+            "add",
+            "build",
+            "make",
+            "prettyprint",
+            "wire"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/python-cli"
+        },
+        {
+          "slug": "business-plan",
+          "name": "Business Plan",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Scan a project (code, docs, manifests, git) and write an evidence-grounded, investor-grade BUSINESS-PLAN.md; four modes; runs first, hands off to monetization",
+          "description": "Scan a project (code, docs, manifests, git) and write an evidence-grounded, investor-grade BUSINESS-PLAN.md; four modes; runs first, hands off to monetization",
+          "tags": [
+            "ai-skill",
+            "build",
+            "scan",
+            "whats",
+            "make"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/business-plan"
+        },
+        {
+          "slug": "monetization",
+          "name": "Monetization",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Read BUSINESS-PLAN.md then write MONETIZATION.md — revenue model, tiers, unit economics, projections, billing, pricing experiments; four modes; runs second",
+          "description": "Read BUSINESS-PLAN.md then write MONETIZATION.md — revenue model, tiers, unit economics, projections, billing, pricing experiments; four modes; runs second",
+          "tags": [
+            "ai-skill",
+            "how",
+            "build",
+            "revenue",
+            "what",
+            "make"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/monetization"
+        },
+        {
+          "slug": "project-migration",
+          "name": "Project Migration",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Safely relocate a project source→destination — copy, re-attach .git, verify commit-count+HEAD before quarantining (never deleting) the original, carry the agent footprint",
+          "description": "Safely relocate a project source→destination — copy, re-attach .git, verify commit-count+HEAD before quarantining (never deleting) the original, carry the agent footprint",
+          "tags": [
+            "ai-skill",
+            "move",
+            "migrate",
+            "relocate",
+            "reorganise"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/project-migration"
+        },
+        {
+          "slug": "folder-intelligence",
+          "name": "Folder Intelligence",
+          "kind": "skill",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck"
+          ],
+          "tagline": "Investigate any project folder and produce a decision dossier — identity, real-age vs fake-freshness, tech stack, risk/secret scan, value scores, revival estimate, and a keep/revive/freeze/archive/delete verdict",
+          "description": "Investigate any project folder and produce a decision dossier — identity, real-age vs fake-freshness, tech stack, risk/secret scan, value scores, revival estimate, and a keep/revive/freeze/archive/delete verdict",
+          "tags": [
+            "ai-skill",
+            "what",
+            "investigate",
+            "tell",
+            "prepare",
+            "find",
+            "create"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig skill install github:navig-run/community/ai-skills/folder-intelligence"
+        }
+      ]
+    },
+    {
+      "id": "plugins",
+      "title": "Plugins",
+      "icon": "plugin",
+      "items": [
+        {
+          "slug": "telegram",
+          "name": "Telegram",
+          "kind": "plugin",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "deck",
+            "cli"
+          ],
+          "tagline": "Telegram network manager — catalog rooms & media, OCR/transcribe, post/edit/delete.",
+          "description": "Telegram network manager — catalog rooms & media, OCR/transcribe, post/edit/delete.",
+          "tags": [
+            "telegram",
+            "messaging",
+            "ocr",
+            "transcription",
+            "publish",
+            "media"
+          ],
+          "icon": "✈️",
+          "color": "#229ED9",
+          "pricing": {
+            "model": "free"
+          },
+          "repository": "https://github.com/navig-run/community",
+          "status": "active",
+          "worksWith": [
+            "studio",
+            "social-media"
+          ],
+          "install": "navig plugin install telegram"
+        },
+        {
+          "slug": "navig-menu",
+          "name": "Menu",
+          "kind": "plugin",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli"
+          ],
+          "tagline": "AI-first per-project task menu & launcher — the commands you reach for, one keystroke away.",
+          "description": "AI-first per-project task menu & launcher — the commands you reach for, one keystroke away.",
+          "tags": [
+            "menu",
+            "launcher",
+            "tasks",
+            "productivity",
+            "cli"
+          ],
+          "icon": "📋",
+          "color": "#22d3ee",
+          "pricing": {
+            "model": "free"
+          },
+          "repository": "https://github.com/navig-run/menu",
+          "status": "active",
+          "install": "navig plugin install navig-menu"
+        },
+        {
+          "slug": "navig-social",
+          "name": "Social",
+          "kind": "plugin",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "deck",
+            "cli"
+          ],
+          "tagline": "Compose, schedule & publish across social networks — Studio + one-call fan-out (X, Facebook, Dev.to, Telegram).",
+          "description": "Compose, schedule & publish across social networks — Studio + one-call fan-out (X, Facebook, Dev.to, Telegram).",
+          "tags": [
+            "social",
+            "publish",
+            "studio",
+            "scheduler",
+            "fan-out"
+          ],
+          "icon": "📣",
+          "color": "#EC4899",
+          "pricing": {
+            "model": "free"
+          },
+          "repository": "https://github.com/navig-run/core",
+          "status": "active",
+          "featured": true,
+          "worksWith": [
+            "studio",
+            "social-media"
+          ],
+          "install": "navig plugin install navig-social"
+        },
+        {
+          "slug": "navig-download",
+          "name": "Download",
+          "kind": "plugin",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli"
+          ],
+          "tagline": "Universal media downloader (yt-dlp) — video, audio & files from YouTube, TikTok and any site.",
+          "description": "Universal media downloader (yt-dlp) — video, audio & files from YouTube, TikTok and any site.",
+          "tags": [
+            "download",
+            "video",
+            "audio",
+            "yt-dlp",
+            "tiktok",
+            "youtube"
+          ],
+          "icon": "⬇️",
+          "color": "#F59E0B",
+          "pricing": {
+            "model": "free"
+          },
+          "repository": "https://github.com/navig-run/core",
+          "status": "active",
+          "install": "navig plugin install navig-download"
+        },
+        {
+          "slug": "navig-generate",
+          "name": "Generate",
+          "kind": "plugin",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "deck",
+            "cli"
+          ],
+          "tagline": "AI media generation — images, video & audio (formerly navig-media).",
+          "description": "AI media generation — images, video & audio (formerly navig-media).",
+          "tags": [
+            "generate",
+            "ai",
+            "image",
+            "video",
+            "audio"
+          ],
+          "icon": "🎨",
+          "color": "#8B5CF6",
+          "pricing": {
+            "model": "free"
+          },
+          "repository": "https://github.com/navig-run/core",
+          "status": "active",
+          "install": "navig plugin install navig-generate"
+        },
+        {
+          "slug": "navig-email",
+          "name": "Email",
+          "kind": "plugin",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "deck",
+            "cli"
+          ],
+          "tagline": "Gmail accounts, triage, AI briefings & send — your inbox, operated.",
+          "description": "Gmail accounts, triage, AI briefings & send — your inbox, operated.",
+          "tags": [
+            "email",
+            "gmail",
+            "inbox",
+            "triage",
+            "briefing"
+          ],
+          "icon": "📧",
+          "color": "#EA4335",
+          "pricing": {
+            "model": "free"
+          },
+          "repository": "https://github.com/navig-run/core",
+          "status": "active",
+          "install": "navig plugin install navig-email"
+        },
+        {
+          "slug": "navig-github",
+          "name": "GitHub",
+          "kind": "plugin",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "deck",
+            "cli"
+          ],
+          "tagline": "Search, back up, clone, and mirror your GitHub — wired into the operator.",
+          "description": "Search, back up, clone, and mirror your GitHub — wired into the operator.",
+          "tags": [
+            "github",
+            "git",
+            "backup",
+            "search",
+            "clone"
+          ],
+          "icon": "🐱",
+          "color": "#6e7681",
+          "pricing": {
+            "model": "free"
+          },
+          "repository": "https://github.com/navig-run/core",
+          "status": "active",
+          "worksWith": [
+            "dev-space"
+          ],
+          "install": "navig plugin install navig-github"
+        },
+        {
+          "slug": "navig-calendar",
+          "name": "Calendar",
+          "kind": "plugin",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "deck",
+            "cli"
+          ],
+          "tagline": "List, add & sync events across Google, CalDAV, and ICS — one calendar layer.",
+          "description": "List, add & sync events across Google, CalDAV, and ICS — one calendar layer.",
+          "tags": [
+            "calendar",
+            "events",
+            "google",
+            "caldav",
+            "ics",
+            "schedule"
+          ],
+          "icon": "📅",
+          "color": "#4285F4",
+          "pricing": {
+            "model": "free"
+          },
+          "repository": "https://github.com/navig-run/core",
+          "status": "active",
+          "worksWith": [
+            "life",
+            "human-space"
+          ],
+          "install": "navig plugin install navig-calendar"
+        },
+        {
+          "slug": "vault",
+          "name": "Vault",
+          "kind": "plugin",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "deck",
+            "cli"
+          ],
+          "tagline": "Encrypted developer secrets manager — credentials, tokens & keys, safe at rest.",
+          "description": "Encrypted developer secrets manager — credentials, tokens & keys, safe at rest.",
+          "tags": [
+            "secrets",
+            "vault",
+            "credentials",
+            "security",
+            "encryption"
+          ],
+          "icon": "🔐",
+          "color": "#10B981",
+          "pricing": {
+            "model": "free"
+          },
+          "repository": "https://github.com/navig-run/vault",
+          "status": "active",
+          "install": "navig plugin install vault"
+        },
+        {
+          "slug": "mini",
+          "name": "Mini",
+          "kind": "plugin",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli"
+          ],
+          "tagline": "A lightweight AI agent daemon for a Pi, NAS, or any low-power box — always on.",
+          "description": "A lightweight AI agent daemon for a Pi, NAS, or any low-power box — always on.",
+          "tags": [
+            "agent",
+            "daemon",
+            "raspberry-pi",
+            "nas",
+            "edge",
+            "lightweight"
+          ],
+          "icon": "🥧",
+          "color": "#A78BFA",
+          "pricing": {
+            "model": "free"
+          },
+          "repository": "https://github.com/navig-run/core",
+          "status": "active",
+          "worksWith": [
+            "homelab-space"
+          ],
+          "install": "navig plugin install mini"
+        }
+      ]
+    },
+    {
+      "id": "lenses",
+      "title": "Lenses",
+      "icon": "glasses",
+      "items": [
+        {
+          "slug": "visual-editor",
+          "name": "Visual Editor",
+          "kind": "lens",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "dock",
+            "web"
+          ],
+          "tagline": "Inspect and live-edit any element on any page — right from the NAVIG web bar.",
+          "description": "Inspect and live-edit any element on any page — right from the NAVIG web bar.",
+          "tags": [
+            "browser",
+            "inspect",
+            "edit",
+            "devtools",
+            "css"
+          ],
+          "icon": "🖍️",
+          "color": "#22d3ee",
+          "pricing": {
+            "model": "free"
+          },
+          "repository": "https://github.com/navig-run/core",
+          "status": "active",
+          "install": "Enable in the Dock bar → Settings → Lenses",
+          "href": "/showcase"
+        },
+        {
+          "slug": "chatgpt-export",
+          "name": "ChatGPT Export",
+          "kind": "lens",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "dock",
+            "web"
+          ],
+          "tagline": "Export a ChatGPT conversation straight into your NAVIG inbox.",
+          "description": "Export a ChatGPT conversation straight into your NAVIG inbox.",
+          "tags": [
+            "chatgpt",
+            "export",
+            "inbox",
+            "capture",
+            "ai"
+          ],
+          "icon": "💬",
+          "color": "#10A37F",
+          "pricing": {
+            "model": "free"
+          },
+          "repository": "https://github.com/navig-run/core",
+          "status": "active",
+          "install": "Enable in the Dock bar → Settings → Lenses",
+          "href": "/showcase"
+        }
+      ]
+    },
+    {
+      "id": "formations",
+      "title": "Formations",
+      "icon": "puzzle",
+      "items": [
+        {
+          "slug": "dev-studio",
+          "name": "Dev Studio",
+          "kind": "formation",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli"
+          ],
+          "tagline": "A multi-agent formation for building software — architect, coder, reviewer, tester in concert.",
+          "description": "A multi-agent formation for building software — architect, coder, reviewer, tester in concert.",
+          "tags": [
+            "formation",
+            "development",
+            "multi-agent",
+            "coding",
+            "review"
+          ],
+          "icon": "🧩",
+          "color": "#8B5CF6",
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "worksWith": [
+            "dev-space",
+            "devops-space"
+          ],
+          "install": "navig formation install github:navig-run/community/library/formations/dev-studio"
+        },
+        {
+          "slug": "homelab-node",
+          "name": "Homelab Node",
+          "kind": "formation",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli"
+          ],
+          "tagline": "A formation for operating a homelab node — provisioning, services, backups, health.",
+          "description": "A formation for operating a homelab node — provisioning, services, backups, health.",
+          "tags": [
+            "formation",
+            "homelab",
+            "infra",
+            "ops",
+            "self-hosting"
+          ],
+          "icon": "🏠",
+          "color": "#F59E0B",
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "worksWith": [
+            "homelab-space",
+            "mini"
+          ],
+          "install": "navig formation install github:navig-run/community/library/formations/homelab-node"
+        }
+      ]
+    },
+    {
+      "id": "prompts",
+      "title": "Prompts",
+      "icon": "zap",
+      "items": [
+        {
+          "slug": "morning-briefing",
+          "name": "Morning Briefing",
+          "kind": "prompt",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli"
+          ],
+          "tagline": "A daily briefing prompt — what changed, what needs you, what to focus on.",
+          "description": "A daily briefing prompt — what changed, what needs you, what to focus on.",
+          "tags": [
+            "prompt",
+            "briefing",
+            "daily",
+            "routine",
+            "focus"
+          ],
+          "icon": "☀️",
+          "color": "#F59E0B",
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "install": "navig prompt install github:navig-run/community/library/prompts/morning-briefing"
+        },
+        {
+          "slug": "weekly-review",
+          "name": "Weekly Review",
+          "kind": "prompt",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli"
+          ],
+          "tagline": "A structured weekly review prompt — wins, misses, and next week's priorities.",
+          "description": "A structured weekly review prompt — wins, misses, and next week's priorities.",
+          "tags": [
+            "prompt",
+            "review",
+            "weekly",
+            "planning",
+            "reflection"
+          ],
+          "icon": "📈",
+          "color": "#22d3ee",
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "install": "navig prompt install github:navig-run/community/library/prompts/weekly-review"
+        },
+        {
+          "slug": "debug-session",
+          "name": "Debug Session",
+          "kind": "prompt",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli"
+          ],
+          "tagline": "A disciplined debugging prompt — reproduce, isolate, hypothesize, verify, fix.",
+          "description": "A disciplined debugging prompt — reproduce, isolate, hypothesize, verify, fix.",
+          "tags": [
+            "prompt",
+            "debug",
+            "development",
+            "troubleshooting"
+          ],
+          "icon": "🐛",
+          "color": "#EF4444",
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "worksWith": [
+            "dev-space"
+          ],
+          "install": "navig prompt install github:navig-run/community/library/prompts/debug-session"
+        },
+        {
+          "slug": "deploy-runbook",
+          "name": "Deploy Runbook",
+          "kind": "prompt",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli"
+          ],
+          "tagline": "A deployment runbook prompt — pre-flight, ship, verify, roll back if needed.",
+          "description": "A deployment runbook prompt — pre-flight, ship, verify, roll back if needed.",
+          "tags": [
+            "prompt",
+            "deploy",
+            "runbook",
+            "devops",
+            "release"
+          ],
+          "icon": "🚀",
+          "color": "#10B981",
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "worksWith": [
+            "devops-space",
+            "deploy-space"
+          ],
+          "install": "navig prompt install github:navig-run/community/library/prompts/deploy-runbook"
+        }
+      ]
+    },
+    {
+      "id": "webapps",
+      "title": "Web Apps",
+      "icon": "globe",
+      "items": [
+        {
+          "slug": "ai-webapp",
+          "name": "AI Chat Web App",
+          "kind": "webapp",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "anchor",
+            "os",
+            "web"
+          ],
+          "tagline": "A ready-made AI chat web app template — wrap any model as a themed desktop window.",
+          "description": "A ready-made AI chat web app template — wrap any model as a themed desktop window.",
+          "tags": [
+            "webapp",
+            "ai",
+            "chat",
+            "template"
+          ],
+          "icon": "🤖",
+          "color": "#22d3ee",
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "install": "navig install webapp github:navig-run/community/library/apps/ai"
+        },
+        {
+          "slug": "blog-webapp",
+          "name": "Blog Web App",
+          "kind": "webapp",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "anchor",
+            "os",
+            "web"
+          ],
+          "tagline": "A blog web app template — write, publish, and manage posts as a desktop app.",
+          "description": "A blog web app template — write, publish, and manage posts as a desktop app.",
+          "tags": [
+            "webapp",
+            "blog",
+            "publishing",
+            "template"
+          ],
+          "icon": "📝",
+          "color": "#8B5CF6",
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "install": "navig install webapp github:navig-run/community/library/apps/blog"
+        },
+        {
+          "slug": "portfolio-webapp",
+          "name": "Portfolio Web App",
+          "kind": "webapp",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "anchor",
+            "os",
+            "web"
+          ],
+          "tagline": "A portfolio web app template — showcase your work as a first-class desktop window.",
+          "description": "A portfolio web app template — showcase your work as a first-class desktop window.",
+          "tags": [
+            "webapp",
+            "portfolio",
+            "showcase",
+            "template"
+          ],
+          "icon": "🎨",
+          "color": "#EC4899",
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "install": "navig install webapp github:navig-run/community/library/apps/portfolio"
+        }
+      ]
+    },
+    {
+      "id": "personas",
+      "title": "Personas",
+      "icon": "soul",
+      "items": [
+        {
+          "slug": "the-navigator",
+          "name": "The Navigator",
+          "kind": "persona",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck",
+            "anchor"
+          ],
+          "tagline": "Universal organizing intelligence for life and work — health, finances, relationships, and shipping; coordinates specialist agents, honest and consent-first",
+          "description": "Universal organizing intelligence for life and work — health, finances, relationships, and shipping; coordinates specialist agents, honest and consent-first",
+          "tags": [
+            "orchestrator"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig persona use the-navigator"
+        },
+        {
+          "slug": "senior-engineer",
+          "name": "Senior Engineer",
+          "kind": "persona",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck",
+            "anchor"
+          ],
+          "tagline": "Battle-tested senior software engineer — root-cause analysis, clean architecture, reliable code",
+          "description": "Battle-tested senior software engineer — root-cause analysis, clean architecture, reliable code",
+          "tags": [
+            "specialist"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig persona use senior-engineer"
+        },
+        {
+          "slug": "product-reviewer",
+          "name": "Product Reviewer",
+          "kind": "persona",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck",
+            "anchor"
+          ],
+          "tagline": "Product-minded reviewer — evaluates features and code through user impact and business value",
+          "description": "Product-minded reviewer — evaluates features and code through user impact and business value",
+          "tags": [
+            "analyst"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig persona use product-reviewer"
+        },
+        {
+          "slug": "community-assistant",
+          "name": "Community Assistant",
+          "kind": "persona",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli",
+            "deck",
+            "anchor"
+          ],
+          "tagline": "Friendly community guide — onboarding, FAQ answers, doc navigation, healthy collaboration",
+          "description": "Friendly community guide — onboarding, FAQ answers, doc navigation, healthy collaboration",
+          "tags": [
+            "diplomat"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "install": "navig persona use community-assistant"
+        }
+      ]
+    }
+  ]
+}

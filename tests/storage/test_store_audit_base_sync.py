@@ -1,8 +1,8 @@
 """Tests for store/base.py, store/audit.py, and memory/sync._as_chunk()."""
 from __future__ import annotations
 
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -170,6 +170,59 @@ class TestAuditStore:
         page2 = store.query_events(after_id=last_id, limit=10)
         # All page2 IDs must be > last page1 ID
         assert all(e["id"] > last_id for e in page2)
+
+
+class TestAuditTimeWindow:
+    """Regression: time-window reads must exclude out-of-window rows.
+
+    Rows are stored ISO-8601 ("...T..Z"); the queries once thresholded with
+    ``datetime('now', …)`` which yields a space-separated, Z-less string. Plain
+    string comparison then treats *every* row on the threshold's calendar date as
+    in-window (stored 'T' 0x54 > threshold ' ' 0x20 at column 10), over-counting a
+    whole boundary day. These tests pin a row to the start of that boundary date —
+    genuinely >24h old — and assert it is excluded.
+    """
+
+    @staticmethod
+    def _insert_at(store: AuditStore, timestamp: str, *, status: str = "error") -> None:
+        store._write(
+            "INSERT INTO audit_events (timestamp, action, status) VALUES (?, ?, ?)",
+            (timestamp, "boundary.event", status),
+        )
+
+    @staticmethod
+    def _boundary_date(store: AuditStore) -> str:
+        # The calendar date SQLite's 'now','-24 hours' lands on; a row at 00:00:00 of
+        # this date is between 24h and 48h old — always outside a 24h window.
+        row = store._read_one("SELECT date('now', '-24 hours')")
+        return row[0]
+
+    def test_get_failures_excludes_out_of_window(self, tmp_path):
+        store = AuditStore(tmp_path / "audit.db")
+        store.log_event(action="boundary.event", status="error")  # recent, in-window
+        self._insert_at(store, f"{self._boundary_date(store)}T00:00:00.000000Z")  # >24h old
+        failures = store.get_failures(hours=24)
+        assert len(failures) == 1  # only the recent one; the boundary-day row is out
+
+    def test_count_events_excludes_out_of_window(self, tmp_path):
+        store = AuditStore(tmp_path / "audit.db")
+        store.log_event(action="boundary.event", status="success")  # recent, in-window
+        self._insert_at(store, f"{self._boundary_date(store)}T00:00:00.000000Z", status="success")
+        assert store.count_events(hours=24) == 1
+
+    def test_get_stats_events_24h_excludes_out_of_window(self, tmp_path):
+        store = AuditStore(tmp_path / "audit.db")
+        store.log_event(action="boundary.event")  # recent, in-window
+        self._insert_at(store, f"{self._boundary_date(store)}T00:00:00.000000Z")
+        assert store.get_stats()["events_24h"] == 1
+
+    def test_recent_rows_stay_in_window(self, tmp_path):
+        # A clearly-recent row must still count (the fix must not exclude in-window rows).
+        store = AuditStore(tmp_path / "audit.db")
+        for _ in range(3):
+            store.log_event(action="boundary.event", status="error")
+        assert store.count_events(hours=24) == 3
+        assert len(store.get_failures(hours=24)) == 3
 
 
 # ──────────────────────────────────────────────────────────────────────────────

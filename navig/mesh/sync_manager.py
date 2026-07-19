@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import Any
 
 from navig.debug_logger import get_debug_logger
+from navig.mesh.discovery import ELECT_SYNC
 
 logger = get_debug_logger()
 
@@ -161,12 +162,19 @@ class SyncManager:
         self._state = new_state
         self._state_hash = new_hash
 
-        # Broadcast via the existing send_election_packet mechanism
-        # Using ELECT_SYNC (sync_state) packet type defined in discovery.py
+        # Broadcast the snapshot hash. Two defects used to live in these five lines, and
+        # they hid each other:
+        #   * the import of ELECT_SYNC sat INSIDE this try, and the name did not exist in
+        #     discovery — so every tick raised ImportError straight into the `except`
+        #     below and logged it as a "broadcast error", 10 seconds apart, forever;
+        #   * `send_election_packet` is `async def` and was called without `await`, so
+        #     even with the constant it would only have built a coroutine and dropped it.
+        # The import now lives at module scope: a missing name is a programming error and
+        # must fail loudly at import time, not degrade into a log line at runtime. The
+        # try/except stays wrapped around the SEND alone — a datagram that cannot go out
+        # is a network condition, and must not kill the leader's tick loop.
         try:
-            from navig.mesh.discovery import ELECT_SYNC
-
-            self._discovery.send_election_packet(
+            await self._discovery.send_election_packet(
                 ELECT_SYNC,
                 {"sync_hash": self._state_hash, "epoch": self._get_epoch()},
             )

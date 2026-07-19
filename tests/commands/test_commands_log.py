@@ -56,42 +56,42 @@ class TestLogAppStructure:
 
 class TestLogShow:
     def test_show_service_logs_called(self):
-        with patch("navig.commands.monitoring.view_service_logs", create=True) as mock_view:
+        with patch("navig.commands.monitoring.view_service_logs") as mock_view:
             result = runner.invoke(log_app, ["show", "nginx"], obj={})
         mock_view.assert_called_once()
 
     def test_show_passes_service_name(self):
-        with patch("navig.commands.monitoring.view_service_logs", create=True) as mock_view:
+        with patch("navig.commands.monitoring.view_service_logs") as mock_view:
             runner.invoke(log_app, ["show", "mysql"], obj={})
         args = mock_view.call_args[0]
         assert args[0] == "mysql"
 
     def test_show_default_lines_is_50(self):
-        with patch("navig.commands.monitoring.view_service_logs", create=True) as mock_view:
+        with patch("navig.commands.monitoring.view_service_logs") as mock_view:
             runner.invoke(log_app, ["show", "nginx"], obj={})
         args = mock_view.call_args[0]
         assert args[2] == 50  # lines
 
     def test_show_custom_lines(self):
-        with patch("navig.commands.monitoring.view_service_logs", create=True) as mock_view:
+        with patch("navig.commands.monitoring.view_service_logs") as mock_view:
             runner.invoke(log_app, ["show", "nginx", "--lines", "100"], obj={})
         args = mock_view.call_args[0]
         assert args[2] == 100
 
     def test_show_tail_off_by_default(self):
-        with patch("navig.commands.monitoring.view_service_logs", create=True) as mock_view:
+        with patch("navig.commands.monitoring.view_service_logs") as mock_view:
             runner.invoke(log_app, ["show", "nginx"], obj={})
         args = mock_view.call_args[0]
         assert args[1] is False  # tail
 
     def test_show_tail_on_with_flag(self):
-        with patch("navig.commands.monitoring.view_service_logs", create=True) as mock_view:
+        with patch("navig.commands.monitoring.view_service_logs") as mock_view:
             runner.invoke(log_app, ["show", "nginx", "--tail"], obj={})
         args = mock_view.call_args[0]
         assert args[1] is True
 
     def test_show_short_n_flag(self):
-        with patch("navig.commands.monitoring.view_service_logs", create=True) as mock_view:
+        with patch("navig.commands.monitoring.view_service_logs") as mock_view:
             runner.invoke(log_app, ["show", "nginx", "-n", "200"], obj={})
         args = mock_view.call_args[0]
         assert args[2] == 200
@@ -109,7 +109,7 @@ class TestLogShowContainer:
 
     def test_show_with_container_not_calling_view_service_logs(self):
         with patch("navig.commands.docker.docker_logs") as mock_docker:
-            with patch("navig.commands.monitoring.view_service_logs", create=True) as mock_view:
+            with patch("navig.commands.monitoring.view_service_logs") as mock_view:
                 runner.invoke(log_app, ["show", "s", "--container", "c"], obj={})
         mock_view.assert_not_called()
         mock_docker.assert_called_once()

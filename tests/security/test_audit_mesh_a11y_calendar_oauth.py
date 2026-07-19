@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/gateway/routes/audit.py — pure logic (no HTTP server needed)
 # ---------------------------------------------------------------------------
@@ -38,8 +37,9 @@ class TestAuditTailLogic:
 
     @pytest.mark.asyncio
     async def test_returns_all_events_when_no_filters(self) -> None:
-        from navig.gateway.routes.audit import _tail
         import json
+
+        from navig.gateway.routes.audit import _tail
 
         entries = [{"action": "run", "actor": "agent", "status": "ok"}]
         gw = MagicMock()
@@ -174,6 +174,7 @@ class TestMeshApp:
 
     def test_status_no_peers(self) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.mesh import mesh_app
 
         mock_registry = MagicMock()
@@ -185,6 +186,7 @@ class TestMeshApp:
 
     def test_status_with_peers(self) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.mesh import mesh_app
 
         peer = MagicMock()
@@ -203,6 +205,7 @@ class TestMeshApp:
 
     def test_status_handles_import_error(self) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.mesh import mesh_app
 
         with patch("navig.mesh.registry.get_registry", side_effect=ImportError("no mesh")):
@@ -213,6 +216,7 @@ class TestMeshApp:
 
     def test_peers_delegates_to_status(self) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.mesh import mesh_app
 
         mock_registry = MagicMock()
@@ -353,7 +357,10 @@ class TestBuildCalendarOAuthConfig:
         assert result.name == "Google Calendar"
 
     def test_scopes_match_calendar_scopes(self) -> None:
-        from navig.connectors.google_calendar.oauth_config import build_calendar_oauth_config, CALENDAR_SCOPES
+        from navig.connectors.google_calendar.oauth_config import (
+            CALENDAR_SCOPES,
+            build_calendar_oauth_config,
+        )
         result = build_calendar_oauth_config("cid")
         assert result.scopes == CALENDAR_SCOPES
 

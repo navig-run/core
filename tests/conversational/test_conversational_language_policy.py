@@ -144,7 +144,7 @@ async def test_no_llm_provider_error_uses_simple_response(monkeypatch):
 
     monkeypatch.setattr(agent, "_simple_response", _simple)
     monkeypatch.setattr(
-        "navig.routing.router.get_router",
+        "navig.llm.routing.router.get_router",
         lambda: (_ for _ in ()).throw(RuntimeError("router down")),
     )
     result = await agent._get_ai_response("hello")

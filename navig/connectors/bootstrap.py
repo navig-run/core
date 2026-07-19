@@ -92,6 +92,7 @@ def ensure_connectors_loaded() -> None:
     # the registry is useful for listing even when OAuth isn't available yet.
     try:
         import importlib
+
         from navig.connectors.auth_manager import ConnectorAuthManager
 
         _oauth_loaders = [

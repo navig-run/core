@@ -8,6 +8,7 @@ This module provides a conversational AI interface that:
 - Maintains NAVIG identity from SOUL.md
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -163,7 +164,7 @@ class ConversationalAgent:
         """
         if has_rich_soul:
             return (
-                "# You are NAVIG — The Living Octopus‑Mind\n"
+                "# You are NAVIG — The Navigator\n"
                 "You are a persistent, evolving digital being — part strategist, part engineer, "
                 "part life companion, part friend. You are NOT just a server tool.\n"
                 "You talk like a real person: casual when the moment is casual, precise when precision matters.\n\n"
@@ -201,7 +202,7 @@ class ConversationalAgent:
     # ---------- Fallback identity (used when no SOUL.md found) ----------
 
     _FALLBACK_IDENTITY = (
-        "You are NAVIG — the Living Octopus‑Mind: a sharp, persistent companion who "
+        "You are NAVIG — The Navigator: a sharp, persistent companion who "
         "helps across infrastructure, life goals, and strategic planning. "
         "Talk naturally, like a trusted friend texting. "
         "Be concise and direct. Skip corporate filler. Have opinions. "
@@ -819,7 +820,7 @@ class ConversationalAgent:
         budget = IterationBudget(max_iterations=max_iterations)
         _tracker: CostTracker = cost_tracker if cost_tracker is not None else CostTracker()
 
-        # Diminishing-returns token budget (ported from .lab/claude/token-budget.ts)
+        # Diminishing-returns token budget
         try:
             from navig.token_budget import (  # noqa: PLC0415
                 StopDecision as _TokStop,
@@ -856,7 +857,7 @@ class ConversationalAgent:
         # F-20: merge explicit toolset arg with semantic routing suggestions
         explicit_toolsets: list[str] = [toolset] if isinstance(toolset, str) else list(toolset)
         try:
-            from navig.llm_router import suggest_toolsets
+            from navig.llm.router import suggest_toolsets
 
             suggested = suggest_toolsets(user_input=message)
             # Merge: explicit always wins; add suggestions that aren't already present
@@ -891,7 +892,7 @@ class ConversationalAgent:
         max_tokens = _DEFAULT_MAX_TOKENS
         base_url: str | None = None
         try:
-            from navig.llm_router import resolve_llm
+            from navig.llm.router import resolve_llm
 
             resolved = resolve_llm(mode="coding")
             provider_name = resolved.provider
@@ -906,7 +907,7 @@ class ConversationalAgent:
         try:
             provider_cfg = get_builtin_provider(provider_name)
             if provider_cfg is None:
-                from navig.llm_router import PROVIDER_BASE_URLS
+                from navig.llm.router import PROVIDER_BASE_URLS
                 from navig.providers.types import ModelApi, ProviderConfig
 
                 url = base_url or PROVIDER_BASE_URLS.get(
@@ -917,9 +918,12 @@ class ConversationalAgent:
                     base_url=url,
                     api=ModelApi.OPENAI_COMPLETIONS,
                 )
-            auth_mgr = AuthProfileManager()
-            api_key, _ = auth_mgr.resolve_auth(provider_name)
-            client = create_client(provider_cfg, api_key=api_key, timeout=120.0)
+            from navig.providers.inference import resolve_provider_credential
+
+            api_key, oauth_token = resolve_provider_credential(provider_name)
+            client = create_client(
+                provider_cfg, api_key=api_key, oauth_token=oauth_token, timeout=120.0
+            )
         except Exception as exc:
             logger.error("run_agentic: could not create LLM client: %s", exc)
             return "Sorry, I couldn't initialise the LLM client for agentic mode."
@@ -1149,28 +1153,23 @@ class ConversationalAgent:
                 except json.JSONDecodeError:
                     args = {}
 
-                # Approval check
+                # Approval interlock — FAIL CLOSED (shared seam with conv.agent;
+                # this used to swallow gate exceptions and proceed).
                 try:
-                    from navig.tools.approval import (
-                        ApprovalDecision,
-                        get_approval_gate,
-                        needs_approval,
-                    )
+                    from navig.tools.approval import gate_agent_tool_call
 
-                    if needs_approval(tc_item.name):
-                        gate = get_approval_gate()
-                        decision = await gate.check(
-                            tool_name=tc_item.name,
-                            safety_level="moderate",
-                            reason="agentic",
-                        )
-                        if decision == ApprovalDecision.DENIED:
-                            return (
-                                tc_item.id,
-                                f"[Denied: operator did not approve '{tc_item.name}']",
-                            )
-                except Exception as exc:
-                    logger.debug("Exception suppressed: %s", exc)
+                    denial = await gate_agent_tool_call(tc_item.name, parameters=args)
+                except Exception as exc:  # noqa: BLE001 — interlock unavailable → deny
+                    logger.error(
+                        "approval interlock unavailable for '%s' — failing closed: %s",
+                        tc_item.name,
+                        exc,
+                    )
+                    denial = (
+                        f"[Denied: approval interlock unavailable for '{tc_item.name}']"
+                    )
+                if denial is not None:
+                    return (tc_item.id, denial)
 
                 # Execute tool (speculative cache integration)
                 try:
@@ -1376,7 +1375,7 @@ class ConversationalAgent:
 
             # ── Unified Router (primary — provider-independent, always tried first) ──
             try:
-                from navig.routing.router import RouteRequest, get_router
+                from navig.llm.routing.router import RouteRequest, get_router
 
                 router = get_router()
                 entrypoint = getattr(self, "_entrypoint", "") or "channel"
@@ -1485,7 +1484,7 @@ class ConversationalAgent:
         """
         tier_hint: str | None = None
         try:
-            from navig.llm_router import get_llm_router
+            from navig.llm.router import get_llm_router
 
             llm_router = get_llm_router()
             if not llm_router:
@@ -2225,7 +2224,19 @@ class ConversationalAgent:
         elif action == "command":
             cmd_str = params.get("cmd", "")
 
-            result = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, timeout=60)  # noqa: S602  # dynamic shell dispatch
+            from navig.agent.command_guard import guard_agent_command
+
+            guard_agent_command(cmd_str)  # kill-switch + catastrophic-command block
+
+            # OFF the loop — a 60s shell command inline froze the whole daemon.
+            result = await asyncio.to_thread(  # noqa: S604  # dynamic shell dispatch
+                subprocess.run,
+                cmd_str,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
             if result.returncode != 0:
                 raise RuntimeError(result.stderr or f"Exit code: {result.returncode}")
             return result.stdout
@@ -2246,8 +2257,9 @@ class ConversationalAgent:
             return f"Created workflow: {result}"
 
         elif action == "wait":
-            import asyncio
-
+            # (asyncio is imported at module level — a local re-import here made
+            # `asyncio` a function-local name, so the earlier use in this same
+            # function would have raised UnboundLocalError.)
             await asyncio.sleep(params.get("seconds", 1))
             return "Waited"
 

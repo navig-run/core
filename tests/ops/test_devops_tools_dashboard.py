@@ -15,7 +15,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # devops_tools — _cp_to_str, _MAX_OUTPUT_CHARS
 # ---------------------------------------------------------------------------
-
 from navig.agent.tools.devops_tools import _MAX_OUTPUT_CHARS, _cp_to_str
 
 

@@ -96,7 +96,6 @@ def test_init_already_configured_also_shows_init_status(monkeypatch):
         patch(
             "navig.commands.init._maybe_send_first_run_ping",
             MagicMock(),
-            create=True,
         ),
         patch("navig.onboarding.runner.run_engine_onboarding", MagicMock(return_value=None)),
     ):
@@ -153,7 +152,6 @@ def test_init_json_when_already_configured_returns_machine_payload(monkeypatch):
         patch(
             "navig.commands.init._maybe_send_first_run_ping",
             MagicMock(),
-            create=True,
         ),
         patch("navig.onboarding.runner.run_engine_onboarding", MagicMock(return_value=None)),
     ):

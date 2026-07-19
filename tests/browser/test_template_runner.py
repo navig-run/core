@@ -9,7 +9,6 @@ import pytest
 
 from navig.browser.template_runner import TemplateRunner
 
-
 # ---------------------------------------------------------------------------
 # _substitute (static method)
 # ---------------------------------------------------------------------------

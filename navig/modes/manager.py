@@ -137,20 +137,16 @@ def set_active_mode(name: str) -> None:
     cfg = _config_path()
 
     try:
-        import yaml  # type: ignore[import-untyped]
+        from navig.core.yaml_io import atomic_write_yaml, load_yaml_for_update
     except ImportError:
-        # Minimal write without yaml: just append/replace the key
+        # PyYAML absent → minimal line-based write, no round-trip.
         _write_mode_key_fallback(cfg, name)
         return
 
-    data: dict[str, Any] = {}
-    if cfg.exists():
-        with open(cfg, encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-
+    # Read-modify-write through the shared guard: rides out a transient lock, and
+    # REFUSES an unreadable-but-populated config rather than wiping it (config-wipe class).
+    data = load_yaml_for_update(cfg)
     data["active_mode"] = name
-
-    from navig.core.yaml_io import atomic_write_yaml
 
     atomic_write_yaml(data, cfg, allow_unicode=True)
 
@@ -229,7 +225,7 @@ def prompt_pin(purpose: str = "switching to a privileged mode") -> bool:
     """Interactively prompt for the PIN. Returns True on success, False on cancel/failure."""
     if not has_pin():
         ch.warning(
-            "\n⚠  No PIN set. Run  navig mode pin-set  to protect privileged modes.\n"
+            "\n⚠  No PIN set. Run  navig profile pin-set  to protect privileged modes.\n"
             "   Proceeding without PIN for this session.\n"
         )
         return True  # First-time: allow but nudge

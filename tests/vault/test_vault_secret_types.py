@@ -23,15 +23,14 @@ import pytest
 
 from navig.vault.secret_str import SecretStr, mask_secret
 from navig.vault.types import (
+    PROVIDER_PRESETS,
     Credential,
     CredentialInfo,
     CredentialType,
-    PROVIDER_PRESETS,
     TestResult,
     VaultItem,
     VaultItemKind,
 )
-
 
 # ---------------------------------------------------------------------------
 # SecretStr

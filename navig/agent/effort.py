@@ -3,7 +3,8 @@
 Provides five effort tiers (LOW → ULTRATHINK) that translate into
 provider-specific thinking / reasoning parameters:
 
-* **Anthropic** → ``thinking.budget_tokens``
+* **Anthropic** → ``output_config.effort`` on Opus 4.8/4.7 & Sonnet 4.6 (budget_tokens
+  400s there); HIGH/MAX add adaptive ``thinking``. Older models: ``thinking.budget_tokens``.
 * **OpenAI**    → ``reasoning_effort`` (``"low"`` / ``"medium"`` / ``"high"``)
 * **Google**    → ``thinking_config.budget`` (token count)
 * **DeepSeek**  → token budget (same shape as Anthropic)
@@ -21,7 +22,7 @@ Usage::
     level = resolve_effort("ultra")          # → EffortLevel.ULTRATHINK
     level = auto_detect_effort("fix typo")   # → EffortLevel.LOW
     params = get_thinking_params(level, provider="anthropic")
-    # → {"thinking": {"type": "enabled", "budget_tokens": 131072}}
+    # → {"thinking": {"type": "adaptive"}, "output_config": {"effort": "max"}}
 """
 
 from __future__ import annotations

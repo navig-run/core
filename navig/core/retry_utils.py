@@ -58,15 +58,28 @@ def jittered_backoff(
 ) -> float:
     """Return a jittered exponential back-off delay (in seconds).
 
-    The delay grows as ``base_delay * 2^(attempt-1)``, capped at *max_delay*,
-    with a random jitter up to ``jitter_ratio * delay`` added.  The pseudo-random
-    seed is derived from a monotonic counter XOR'd with the current nanosecond
-    timestamp so even threads that call simultaneously receive different delays.
+    The delay grows as ``base_delay * 2^max(0, attempt-1)``, capped at
+    *max_delay*, with a random jitter up to ``jitter_ratio * delay`` added.
+    The pseudo-random seed is derived from a monotonic counter XOR'd with the
+    current nanosecond timestamp so even threads that call simultaneously
+    receive different delays.
+
+    **Growth curve** (attempt is the 0-based loop index):
+
+    - attempt=0 → ``base_delay``                 (first try, no back-off)
+    - attempt=1 → ``base_delay``                 (second try, same as first)
+    - attempt=2 → ``base_delay * 2``             (third try)
+    - attempt=3 → ``base_delay * 4``             (fourth try)
+    - …
+
+    The flat first step (attempt 0 and 1 both use ``base_delay``) is
+    intentional: the first retry fires quickly, while subsequent ones
+    increase exponentially.
 
     Parameters
     ----------
     attempt:
-        0-based attempt index.  attempt=0 → ``base_delay``; attempt=1 →
+        0-based attempt index.  attempt=0 → ``base_delay``; attempt=2 →
         ``base_delay * 2``; …
     base_delay:
         Starting delay in seconds before jitter (default: 5 s).
@@ -82,8 +95,8 @@ def jittered_backoff(
 
     Examples::
 
-        delays = [jittered_backoff(i) for i in range(5)]
-        # e.g. [5.7, 9.3, 18.2, 36.1, 75.0]
+        delays = [jittered_backoff(i, jitter_ratio=0.0) for i in range(5)]
+        # e.g. [5.0, 5.0, 10.0, 20.0, 40.0]
     """
     global _jitter_counter
 
@@ -91,6 +104,7 @@ def jittered_backoff(
         _jitter_counter += 1
         tick = _jitter_counter
 
+    # attempt=0 and attempt=1 both use base_delay (flat first retry step).
     exponent = max(0, attempt - 1)
     delay = min(base_delay * (2 ** exponent), max_delay)
 
@@ -213,6 +227,7 @@ def retry_sync(
     fn: Callable,
     *args,
     config: RetryConfig | None = None,
+    on_retry: Callable[[int, BaseException, float], None] | None = None,
     **kwargs,
 ):
     """Call *fn* with *args*/*kwargs*, retrying according to *config*.
@@ -220,6 +235,17 @@ def retry_sync(
     Simpler alternative to the decorator for one-off call sites::
 
         result = retry_sync(requests.get, url, timeout=5)
+
+    Parameters
+    ----------
+    fn:
+        Callable to invoke.
+    config:
+        :class:`RetryConfig` instance.  Defaults to ``RetryConfig()`` (3 attempts).
+    on_retry:
+        Optional callback invoked before each sleep with
+        ``(attempt_number, exception, sleep_seconds)``.  Useful for logging.
+        Mirrors the *on_retry* parameter of :func:`async_retry`.
     """
     cfg = config or RetryConfig()
     last_exc: BaseException | None = None
@@ -238,13 +264,19 @@ def retry_sync(
                 max_delay=cfg.max_delay,
                 jitter_ratio=cfg.jitter_ratio,
             )
-            logger.debug(
-                "retry_utils.retry_sync: attempt %d/%d failed (%s), sleeping %.1fs",
-                attempt + 1,
-                cfg.max_attempts,
-                type(exc).__name__,
-                delay,
-            )
+            if on_retry is not None:
+                try:
+                    on_retry(attempt + 1, exc, delay)
+                except Exception:  # noqa: BLE001
+                    pass
+            else:
+                logger.debug(
+                    "retry_utils.retry_sync: attempt %d/%d failed (%s), sleeping %.1fs",
+                    attempt + 1,
+                    cfg.max_attempts,
+                    type(exc).__name__,
+                    delay,
+                )
             time.sleep(delay)
 
     if cfg.reraise_last and last_exc is not None:

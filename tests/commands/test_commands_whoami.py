@@ -1,10 +1,10 @@
 """Tests for navig/commands/whoami.py."""
 
+from unittest.mock import MagicMock, call, patch
+
 import pytest
-from unittest.mock import MagicMock, patch, call
 
 from navig.commands.whoami import run_whoami
-
 
 # ---------------------------------------------------------------------------
 # No entity path

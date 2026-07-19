@@ -88,6 +88,9 @@ TOOLSETS: dict[str, list[str] | None] = {
     "lsp": ["lsp_diagnostics", "lsp_definition", "lsp_references", "lsp_symbols"],
     # Sub-agent delegation (requires MVP2 delegate.py)
     "delegation": ["delegate_task"],
+    # Headless browser automation — one batchable CLI-like tool (navigate/snapshot/
+    # click @eN/fill/screenshot/…). Backed by Playwright; per-chat persistent session.
+    "browser": ["browser_tool"],
     # All registered tools (use sparingly — large schema)
     "full": None,
 }
@@ -161,6 +164,8 @@ NEVER_PARALLEL_TOOLS: frozenset[str] = frozenset(
         "delegate_task",
         "git_commit",
         "remote_multi_host",
+        # Stateful shared page — batched calls mutate one browser session.
+        "browser_tool",
     }
 )
 

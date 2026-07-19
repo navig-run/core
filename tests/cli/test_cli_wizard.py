@@ -161,7 +161,12 @@ def test_wizard_save_config(wizard, mock_print):
 def test_install_daemon_linux():
     with (
         patch("platform.system", return_value="Linux"),
-        patch("os.geteuid", create=True, return_value=1),
+        # `create=True` is CORRECT here and nowhere else in this suite: os.geteuid is
+        # POSIX-only and genuinely does not exist on the Windows dev machine, so the
+        # Linux branch can only be simulated by creating it. Allow-listed by
+        # tests/quality/test_no_phantom_mock_targets.py — see that module before adding
+        # another one.
+        patch("os.geteuid", return_value=1, create=True),
         patch("subprocess.run") as mock_run,
     ):
         assert install_daemon("auto") is True

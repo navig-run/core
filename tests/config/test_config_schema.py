@@ -16,7 +16,6 @@ from navig.core.config_schema import (
     LogLevel,
 )
 
-
 # ---------------------------------------------------------------------------
 # LogLevel enum
 # ---------------------------------------------------------------------------
@@ -120,15 +119,17 @@ class TestExecutionConfig:
         assert cfg.timeout_seconds == 120
 
     def test_timeout_min_boundary(self):
-        from navig.core.config_schema import ExecutionConfig
         from pydantic import ValidationError
+
+        from navig.core.config_schema import ExecutionConfig
 
         with pytest.raises(ValidationError):
             ExecutionConfig(timeout_seconds=0)  # ge=1 violated
 
     def test_timeout_max_boundary(self):
-        from navig.core.config_schema import ExecutionConfig
         from pydantic import ValidationError
+
+        from navig.core.config_schema import ExecutionConfig
 
         with pytest.raises(ValidationError):
             ExecutionConfig(timeout_seconds=9999)  # le=3600 violated
@@ -181,8 +182,9 @@ class TestLoggedConfig:
         assert cfg.max_file_size_mb > 0
 
     def test_file_size_min_boundary(self):
-        from navig.core.config_schema import LoggingConfig
         from pydantic import ValidationError
+
+        from navig.core.config_schema import LoggingConfig
 
         with pytest.raises(ValidationError):
             LoggingConfig(max_file_size_mb=0)
@@ -198,8 +200,9 @@ class TestTunnelConfig:
         assert 1024 <= start < end <= 65535
 
     def test_invalid_port_range_raises(self):
-        from navig.core.config_schema import TunnelConfig
         from pydantic import ValidationError
+
+        from navig.core.config_schema import TunnelConfig
 
         with pytest.raises(ValidationError):
             TunnelConfig(port_range=(100, 200))  # below 1024 boundary
@@ -219,8 +222,9 @@ class TestToolsConfig:
         assert cfg.safety_mode == "strict"
 
     def test_safety_mode_invalid_raises(self):
-        from navig.core.config_schema import ToolsConfig
         from pydantic import ValidationError
+
+        from navig.core.config_schema import ToolsConfig
 
         with pytest.raises(ValidationError):
             ToolsConfig(safety_mode="insane")

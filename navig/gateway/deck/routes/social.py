@@ -342,8 +342,18 @@ async def handle_deck_social_telegram_post(request: "web.Request") -> "web.Respo
             if bad:
                 errors.append(f"command_styles: invalid style values: {sorted(bad)}")
             value = cleaned
+        elif key in ("bot_token", "token", "api_key"):
+            # The bot token is a secret and does NOT belong in this config
+            # endpoint — return a clear error instead of a silent no-op so the
+            # caller isn't left thinking it worked. Store it in the vault.
+            errors.append(
+                "bot_token: set the Telegram token via the vault, not here — "
+                "POST /api/deck/vault {provider:'telegram', api_key:'<token>'} "
+                "(or `navig vault set telegram_bot_token <token>`)."
+            )
+            continue
         else:
-            # Skip unknown / sensitive keys silently
+            # Skip unknown keys silently
             continue
 
         if cfg:

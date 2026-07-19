@@ -32,6 +32,27 @@ def _get_tracker():
         return None
 
 
+def _event_processor_stats(gateway) -> dict | None:
+    """Additive ``events`` block for /api/deck/status — processor health.
+
+    Returns ``None`` (field omitted) when the gateway or its event queue is
+    unavailable, so consumers (``navig doctor``) can tell "not exposed" apart
+    from "not running". A stopped processor is otherwise invisible: emit()
+    keeps succeeding while the backlog grows undrained.
+    """
+    queue = getattr(gateway, "system_events", None) if gateway else None
+    if queue is None:
+        return None
+    try:
+        return {
+            "running": bool(queue.running),
+            "pending": int(queue.pending_count),
+            "history": int(queue.history_count),
+        }
+    except Exception:
+        return None
+
+
 async def handle_deck_status(request: "web.Request") -> "web.Response":
     tracker = _get_tracker()
     gateway = request.app.get("gateway") if hasattr(request, "app") else None
@@ -49,19 +70,22 @@ async def handle_deck_status(request: "web.Request") -> "web.Response":
         except Exception:
             task_status = "error"
 
+    events = _event_processor_stats(gateway)
+
     if not tracker:
-        return web.json_response(
-            {
-                "avatar_state": "calm",
-                "state_label": "systems nominal",
-                "tasks_done": tasks_done,
-                "tasks_pending": tasks_pending,
-                "errors": 0,
-                "current_mode": "work",
-                "uptime": _fmt_uptime(time.monotonic() - _START_TS),
-                "task_queue_status": task_status,
-            },
-        )
+        payload = {
+            "avatar_state": "calm",
+            "state_label": "systems nominal",
+            "tasks_done": tasks_done,
+            "tasks_pending": tasks_pending,
+            "errors": 0,
+            "current_mode": "work",
+            "uptime": _fmt_uptime(time.monotonic() - _START_TS),
+            "task_queue_status": task_status,
+        }
+        if events is not None:
+            payload["events"] = events
+        return web.json_response(payload)
 
     mode = tracker.get_preference("chat_mode", "work")
 
@@ -86,18 +110,19 @@ async def handle_deck_status(request: "web.Request") -> "web.Response":
 
     uptime = _fmt_uptime(time.monotonic() - _START_TS)
 
-    return web.json_response(
-        {
-            "avatar_state": avatar_state,
-            "state_label": state_labels.get(avatar_state, "nominal"),
-            "tasks_done": tasks_done,
-            "tasks_pending": tasks_pending,
-            "errors": 0,
-            "current_mode": mode,
-            "uptime": uptime,
-            "task_queue_status": task_status,
-        }
-    )
+    payload = {
+        "avatar_state": avatar_state,
+        "state_label": state_labels.get(avatar_state, "nominal"),
+        "tasks_done": tasks_done,
+        "tasks_pending": tasks_pending,
+        "errors": 0,
+        "current_mode": mode,
+        "uptime": uptime,
+        "task_queue_status": task_status,
+    }
+    if events is not None:
+        payload["events"] = events
+    return web.json_response(payload)
 
 
 async def handle_deck_settings_get(request: "web.Request") -> "web.Response":

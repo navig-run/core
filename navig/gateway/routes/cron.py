@@ -67,12 +67,42 @@ def _add(gw):
             return err
         try:
             data = await r.json()
+            name = str(data.get("name") or "").strip()
+            command = str(data.get("command") or "").strip()
+            schedule = str(data.get("schedule") or "").strip()
+            if not name or not schedule or not command:
+                return json_error_response(
+                    "'name', 'schedule' and 'command' are required",
+                    status=400,
+                    code="validation_error",
+                )
+
+            from navig.scheduler.cron_service import CronParser  # noqa: PLC0415
+
+            ok, reason = CronParser.validate(schedule)
+            if not ok:
+                return json_error_response(
+                    reason or "invalid schedule", status=400, code="validation_error"
+                )
+
+            timeout = data.get("timeout", 300)
+            try:
+                timeout = int(timeout)
+            except (TypeError, ValueError):
+                return json_error_response(
+                    "'timeout' must be a positive integer", status=400, code="validation_error"
+                )
+            if timeout <= 0:
+                return json_error_response(
+                    "'timeout' must be a positive integer", status=400, code="validation_error"
+                )
+
             job = cs.add_job(
-                name=data["name"],
-                schedule=data["schedule"],
-                command=data["command"],
-                enabled=data.get("enabled", True),
-                timeout_seconds=data.get("timeout", 300),
+                name=name,
+                schedule=schedule,
+                command=command,
+                enabled=bool(data.get("enabled", True)),
+                timeout_seconds=timeout,
             )
             return json_ok(job.to_dict())
         except KeyError as e:

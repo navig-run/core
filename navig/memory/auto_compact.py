@@ -218,7 +218,7 @@ def _sync_summarise(
     extra_instructions: str | None,
 ) -> str | None:
     try:
-        from navig.llm_generate import run_llm
+        from navig.llm.generate import run_llm
 
         system_prompt = (
             "You are a concise conversation summariser operating inside an automated "

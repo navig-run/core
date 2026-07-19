@@ -14,7 +14,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/tools/domains/code_pack.py
 # ---------------------------------------------------------------------------
@@ -203,11 +202,13 @@ class TestTelemetryApp:
 
     def test_is_typer(self) -> None:
         import typer
+
         from navig.commands.telemetry import telemetry_app
         assert isinstance(telemetry_app, typer.Typer)
 
     def test_default_shows_status(self) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.telemetry import telemetry_app
 
         mock_cfg = MagicMock()
@@ -220,6 +221,7 @@ class TestTelemetryApp:
 
     def test_enable_sets_config(self) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.telemetry import telemetry_app
 
         mock_cfg = MagicMock()
@@ -231,6 +233,7 @@ class TestTelemetryApp:
 
     def test_disable_sets_config(self) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.telemetry import telemetry_app
 
         mock_cfg = MagicMock()
@@ -242,6 +245,7 @@ class TestTelemetryApp:
 
     def test_enable_shows_enabled_message(self) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.telemetry import telemetry_app
 
         mock_cfg = MagicMock()
@@ -252,6 +256,7 @@ class TestTelemetryApp:
 
     def test_disable_shows_disabled_message(self) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.telemetry import telemetry_app
 
         mock_cfg = MagicMock()
@@ -262,6 +267,7 @@ class TestTelemetryApp:
 
     def test_enable_handles_exception(self) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.telemetry import telemetry_app
 
         with patch("navig.config.ConfigManager", side_effect=RuntimeError("oops")):
@@ -272,6 +278,7 @@ class TestTelemetryApp:
 
     def test_default_handles_exception(self) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.telemetry import telemetry_app
 
         with patch("navig.config.ConfigManager", side_effect=RuntimeError("oops")):

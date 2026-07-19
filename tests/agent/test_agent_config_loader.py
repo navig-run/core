@@ -16,7 +16,6 @@ from navig.agent_config_loader import (
     load_agent_json,
 )
 
-
 pytestmark = pytest.mark.skipif(not PYDANTIC_OK, reason="Pydantic not installed")
 
 
@@ -49,7 +48,7 @@ class TestAgentJsonConfig:
         assert cfg.llm_mode == "big_tasks"
 
     def test_valid_llm_mode_accepted(self):
-        from navig.llm_router import CANONICAL_MODES
+        from navig.llm.router import CANONICAL_MODES
 
         first_mode = list(CANONICAL_MODES)[0]
         cfg = AgentJsonConfig(llm_mode=first_mode)

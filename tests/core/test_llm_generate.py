@@ -1,4 +1,4 @@
-"""Unit tests for navig.llm_generate — pure helpers and integration seams."""
+"""Unit tests for navig.llm.generate — pure helpers and integration seams."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # ─── Imports ────────────────────────────────────────────────────────────────
-from navig.llm_generate import (
+from navig.llm.generate import (
     _enrich_messages_with_context,
     _extract_user_text,
     _parse_model_spec,
@@ -159,20 +159,21 @@ class TestEnrichMessagesWithContext:
 
 class TestHasLlmModesConfig:
     def test_returns_true_when_llm_modes_key_present(self):
-        from navig.llm_generate import _has_llm_modes_config
+        from navig.llm.generate import _has_llm_modes_config
 
         mock_cm = MagicMock()
         mock_cm.global_config = {"llm_modes": {"chat": {}}}
-        with patch("navig.llm_generate.get_config_manager", return_value=mock_cm, create=True):
-            # Import after patching inside the function scope
-            with patch("navig.config.get_config_manager", return_value=mock_cm):
-                result = _has_llm_modes_config()
-        # When config is properly mocked, should return True
-        # (result may vary depending on whether mock patches replace correctly)
-        assert isinstance(result, bool)
+        # `_has_llm_modes_config` imports get_config_manager from `navig.config` at call
+        # time, so THAT is the only patch that bites. The old test also patched a phantom
+        # `navig.llm.generate.get_config_manager` (create=True) and then, unsure which
+        # patch had worked, asserted only `isinstance(result, bool)` — a tautology that
+        # would have passed had the function been hardcoded to return False.
+        with patch("navig.config.get_config_manager", return_value=mock_cm):
+            result = _has_llm_modes_config()
+        assert result is True
 
     def test_returns_false_on_exception(self):
-        from navig.llm_generate import _has_llm_modes_config
+        from navig.llm.generate import _has_llm_modes_config
 
         with patch("navig.config.get_config_manager", side_effect=RuntimeError("no config")):
             result = _has_llm_modes_config()
@@ -185,9 +186,9 @@ class TestHasLlmModesConfig:
 class TestLlmGenerateModelOverride:
     def test_model_override_calls_call_provider(self):
         """When model_override is set, llm_generate must call _call_provider."""
-        from navig.llm_generate import llm_generate
+        from navig.llm.generate import llm_generate
 
-        with patch("navig.llm_generate._call_provider", return_value="mocked reply") as mock_cp:
+        with patch("navig.llm.generate._call_provider", return_value="mocked reply") as mock_cp:
             result = llm_generate(
                 messages=[{"role": "user", "content": "hello"}],
                 model_override="openai:gpt-4o-mini",
@@ -202,9 +203,9 @@ class TestLlmGenerateModelOverride:
         )
 
     def test_model_override_with_provider_override(self):
-        from navig.llm_generate import llm_generate
+        from navig.llm.generate import llm_generate
 
-        with patch("navig.llm_generate._call_provider", return_value="azure reply") as mock_cp:
+        with patch("navig.llm.generate._call_provider", return_value="azure reply") as mock_cp:
             result = llm_generate(
                 messages=[{"role": "user", "content": "test"}],
                 model_override="gpt-4o",
@@ -217,9 +218,9 @@ class TestLlmGenerateModelOverride:
         assert kwargs["model"] == "gpt-4o"
 
     def test_temperature_override_forwarded(self):
-        from navig.llm_generate import llm_generate
+        from navig.llm.generate import llm_generate
 
-        with patch("navig.llm_generate._call_provider", return_value="ok") as mock_cp:
+        with patch("navig.llm.generate._call_provider", return_value="ok") as mock_cp:
             llm_generate(
                 messages=[{"role": "user", "content": "x"}],
                 model_override="openai:gpt-4o",
@@ -230,9 +231,9 @@ class TestLlmGenerateModelOverride:
         assert kwargs["temperature"] == 0.1
 
     def test_max_tokens_override_forwarded(self):
-        from navig.llm_generate import llm_generate
+        from navig.llm.generate import llm_generate
 
-        with patch("navig.llm_generate._call_provider", return_value="ok") as mock_cp:
+        with patch("navig.llm.generate._call_provider", return_value="ok") as mock_cp:
             llm_generate(
                 messages=[{"role": "user", "content": "x"}],
                 model_override="openai:gpt-4o",
@@ -248,7 +249,7 @@ class TestLlmGenerateModelOverride:
 
 class TestRunLlmModelOverride:
     def _make_llm_result(self, content="result", provider="openai", model="gpt-4o-mini"):
-        from navig.llm_routing_types import LLMResult
+        from navig.llm.types import LLMResult
 
         return LLMResult(
             content=content,
@@ -258,10 +259,10 @@ class TestRunLlmModelOverride:
         )
 
     def test_run_llm_model_override_returns_llmresult(self):
-        from navig.llm_generate import run_llm
+        from navig.llm.generate import run_llm
 
         expected = self._make_llm_result("hello")
-        with patch("navig.llm_generate._call_and_wrap", return_value=expected):
+        with patch("navig.llm.generate._call_and_wrap", return_value=expected):
             result = run_llm(
                 messages=[{"role": "user", "content": "hi"}],
                 model_override="openai:gpt-4o-mini",
@@ -272,9 +273,9 @@ class TestRunLlmModelOverride:
 
     def test_run_llm_returns_empty_content_on_provider_failure(self):
         """run_llm catches internal errors only if fallback_models are defined."""
-        from navig.llm_generate import run_llm
+        from navig.llm.generate import run_llm
 
-        with patch("navig.llm_generate._call_and_wrap", side_effect=RuntimeError("provider down")):
+        with patch("navig.llm.generate._call_and_wrap", side_effect=RuntimeError("provider down")):
             with pytest.raises(RuntimeError, match="provider down"):
                 run_llm(
                     messages=[{"role": "user", "content": "x"}],
@@ -287,7 +288,7 @@ class TestRunLlmModelOverride:
 
 class TestPromptCacheEnabled:
     def test_returns_bool(self):
-        from navig.llm_generate import _prompt_cache_enabled
+        from navig.llm.generate import _prompt_cache_enabled
 
         result = _prompt_cache_enabled()
         assert isinstance(result, bool)
@@ -298,13 +299,13 @@ class TestPromptCacheEnabled:
 
 class TestLoadFallbackChain:
     def test_returns_list(self):
-        from navig.llm_generate import _load_fallback_chain
+        from navig.llm.generate import _load_fallback_chain
 
         result = _load_fallback_chain()
         assert isinstance(result, list)
 
     def test_all_items_are_strings(self):
-        from navig.llm_generate import _load_fallback_chain
+        from navig.llm.generate import _load_fallback_chain
 
         for item in _load_fallback_chain():
             assert isinstance(item, str)

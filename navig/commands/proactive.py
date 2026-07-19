@@ -74,7 +74,7 @@ def proactive_status():
         ch.console.print("  [dim]○ Email: not configured[/dim]")
 
     ch.console.print()
-    ch.info("Configure with: navig agent proactive setup")
+    ch.info("Configure with: navig proactive setup")
 
 
 @proactive_app.command("setup")
@@ -89,16 +89,14 @@ def proactive_setup(
     """
     Configure proactive assistance sources interactively.
     """
-    import yaml
-
     from navig.config import get_config_manager
-    from navig.core.yaml_io import atomic_write_yaml
+    from navig.core.yaml_io import atomic_write_yaml, load_yaml_for_update
 
     cm = get_config_manager()
     global_config_file = cm.global_config_dir / "config.yaml"
 
-    with open(global_config_file, encoding='utf-8') as f:
-        config = yaml.safe_load(f) or {}
+    # Read-modify-write through the shared guard — never wipe a locked/unreadable config.
+    config = load_yaml_for_update(global_config_file)
 
     if "proactive" not in config:
         config["proactive"] = {}
@@ -170,7 +168,7 @@ def proactive_setup(
     atomic_write_yaml(config, global_config_file)
 
     ch.success("Configuration saved!")
-    ch.info("Start with: navig agent proactive start")
+    ch.info("Start with: navig proactive start")
 
 
 @proactive_app.command("test")

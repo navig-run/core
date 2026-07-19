@@ -17,8 +17,13 @@ script_app = typer.Typer(
 
 
 def _get_scripts_dir() -> Path:
-    # Use the same directory as ScriptEvolver
-    return Path(__file__).parent.parent / "scripts"
+    # The canonical user-scripts dir (config_dir()/scripts) — the SAME dir ScriptEvolver,
+    # navig ahk, and navig mount use, so `navig script` (list/run/edit/new) can never diverge
+    # from them again (see #276/#285). Routed through the shared helper so the location has
+    # exactly one home.
+    from navig.platform.paths import scripts_dir  # noqa: PLC0415
+
+    return scripts_dir()
 
 
 @script_app.command("list")

@@ -70,7 +70,6 @@ Constraints:
         # 2. Run external check command if provided
         if self.check_command:
             import subprocess
-            import tempfile
 
             # Write to temp file
             suffix = self.target_file.suffix

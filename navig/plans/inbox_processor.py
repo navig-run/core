@@ -359,6 +359,45 @@ class InboxProcessor:
         self._lm = lm_client
         self._stale_days = stale_days
 
+    def analyse(
+        self,
+        item: InboxItem,
+        corpus: list[InboxItem] | None = None,
+    ) -> ReconciliationResult:
+        """Sandbox analysis of a single item — the full pipeline, zero side effects.
+
+        Runs every stage (normalise, staleness, duplicate, conflict, route) but
+        never appends to the staging queue and never touches any file. This is
+        the "analyse without routing" seam the review-queue surfaces use to show
+        a classification + proposed target before the human approves.
+
+        Parameters
+        ----------
+        item:
+            The inbox item to analyse.
+        corpus:
+            Items used for duplicate/conflict detection (typically the full
+            inbox scan). Defaults to ``[item]`` — self-matches are skipped.
+        """
+        pool = corpus if corpus is not None else [item]
+        try:
+            return self._process_single(
+                item,
+                normaliser=ContentNormaliser(),
+                staleness=StalenessDetector(stale_days=self._stale_days),
+                dup_scanner=DuplicateScanner(pool, lm_client=self._lm),
+                conflict_detector=ConflictDetector(pool, lm_client=self._lm),
+                router=Router(),
+            )
+        except Exception:
+            logger.exception("Sandbox analysis failed for %s", item.path.name)
+            return ReconciliationResult(
+                item_name=canonical_name(item.path.name),
+                decision="review",
+                target_dir="review",
+                reason="Pipeline exception — see logs",
+            )
+
     def process(self, items: list[InboxItem]) -> list[ReconciliationResult]:
         """Run the full pipeline on a batch of inbox items.
 

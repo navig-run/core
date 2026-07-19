@@ -8,7 +8,6 @@ import pytest
 
 from navig.debug_logger import DebugLogger, get_debug_logger
 
-
 # ──────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────

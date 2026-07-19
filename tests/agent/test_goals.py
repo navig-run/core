@@ -10,7 +10,6 @@ import pytest
 
 from navig.agent.goals import Goal, GoalPlanner, GoalState, Subtask, SubtaskState
 
-
 # ─── GoalState ────────────────────────────────────────────────────────────────
 
 

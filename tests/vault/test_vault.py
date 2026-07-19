@@ -1327,3 +1327,155 @@ class TestMigration:
             assert (vault_dir / "auth-profiles.json.migrated").exists()
 
             vault._store.close()  # release SQLite lock before temp dir cleanup
+
+
+class TestVaultStoreConcurrency:
+    """Regression for the council credential-resolution race (2026-07).
+
+    ``VaultStore`` shares ONE sqlite connection across every thread
+    (``check_same_thread=False``) and sqlite transaction state is
+    connection-global. Before the store lock, N parallel ``read_secret``
+    calls — each triggering the ``audit`` write inside ``Vault.get_bytes`` —
+    interleaved each other's BEGIN..COMMIT windows on that connection:
+    ``sqlite3.OperationalError: cannot start a transaction within a
+    transaction`` / SQLITE_MISUSE ("bad parameter or other API misuse").
+    The resolution layer swallowed those into ``(None, None)`` → the
+    intermittent "No credential configured for provider 'anthropic'" seen
+    when a council fan-out ran 5 agents at once.
+
+    The ``_SlowBegin`` proxy dilates the BEGIN..COMMIT window so an
+    unserialized sibling thread lands inside it deterministically — with the
+    store lock in place, every operation must still succeed.
+    """
+
+    @staticmethod
+    def _widen_tx_window(store, delay: float = 0.02) -> None:
+        """Wrap the store's REAL connection so BEGIN sleeps briefly — the
+        injected slowness that made the pre-fix race deterministic."""
+        import time as _time
+
+        real = store._connect()
+
+        class _SlowBegin:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def execute(self, sql, *args):
+                cur = self._inner.execute(sql, *args)
+                if sql == "BEGIN":
+                    _time.sleep(delay)
+                return cur
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+        store._conn = _SlowBegin(real)
+
+    def test_parallel_tx_and_reads_do_not_interleave(self, tmp_path):
+        """Concurrent audit writes (_tx) + reads on the shared connection must
+        serialize — pre-fix this raised 'cannot start a transaction within a
+        transaction' from the interleaved BEGIN..COMMIT windows."""
+        import threading
+
+        from navig.vault.store import VaultStore
+
+        store = VaultStore(tmp_path)
+        self._widen_tx_window(store)
+
+        errors: list[Exception] = []
+        barrier = threading.Barrier(6)
+
+        def hammer(i: int) -> None:
+            try:
+                barrier.wait(timeout=5)
+                for _ in range(4):
+                    store.audit(f"item-{i}", "accessed")  # _tx write + touch
+                    store.get(f"label-{i}")  # shared-conn read
+            except Exception as exc:  # noqa: BLE001 — collected for the assert
+                errors.append(exc)
+
+        threads = [threading.Thread(target=hammer, args=(i,)) for i in range(6)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+
+        assert errors == []
+        for i in range(6):  # every audit write landed — none lost to a rollback
+            assert len(store.get_audit(f"item-{i}")) == 4
+        store.close()
+
+    def test_parallel_get_bytes_never_drops_a_read(self, tmp_path):
+        """The exact production shape: N dispatch threads resolving ONE
+        connection secret_ref at once (Vault.get_bytes = read + audit write).
+        Every thread must receive the payload — no swallowed sqlite errors."""
+        import threading
+
+        from navig.vault.core import Vault
+
+        vault = Vault(tmp_path)
+        vault.put("connection/claude-max/testref", b"dummy-token-bundle")
+        self._widen_tx_window(vault._store)
+
+        results: list[bytes] = []
+        errors: list[Exception] = []
+        barrier = threading.Barrier(8)
+
+        def read() -> None:
+            try:
+                barrier.wait(timeout=5)
+                results.append(vault.get_bytes("connection/claude-max/testref"))
+            except Exception as exc:  # noqa: BLE001 — collected for the assert
+                errors.append(exc)
+
+        threads = [threading.Thread(target=read) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+
+        assert errors == []
+        assert results == [b"dummy-token-bundle"] * 8
+        vault._store.close()
+
+
+class TestGetVaultReentrancy:
+    """Regression: the singleton guard must survive the migration re-entry.
+
+    get_vault() -> _auto_migrate -> migrate_from_legacy calls get_vault()
+    AGAIN on the constructing thread (migrate.py needs the new vault). With a
+    non-reentrant Lock this self-deadlocked (proven via a faulthandler dump);
+    with assign-after-migrate it would recurse instead. The contract: the
+    re-entrant call completes and receives the SAME instance being built.
+    """
+
+    def test_reentrant_get_vault_during_migration_does_not_deadlock(
+        self, tmp_path, monkeypatch
+    ):
+        import threading
+
+        from navig.vault import core as vault_core
+
+        monkeypatch.setattr(vault_core, "_vault", None)
+        seen: dict[str, object] = {}
+
+        def reentrant_migrate(vault):
+            # The exact re-entry migrate_from_legacy performs.
+            seen["reentrant"] = vault_core.get_vault()
+
+        monkeypatch.setattr(vault_core, "_auto_migrate", reentrant_migrate)
+
+        result: dict[str, object] = {}
+
+        def build():
+            result["vault"] = vault_core.get_vault(tmp_path / "vault")
+
+        t = threading.Thread(target=build, daemon=True)
+        t.start()
+        t.join(timeout=20)
+
+        assert not t.is_alive(), "get_vault deadlocked on its own singleton lock"
+        assert seen["reentrant"] is result["vault"], (
+            "re-entrant get_vault must receive the instance being constructed"
+        )
+        result["vault"]._store.close()

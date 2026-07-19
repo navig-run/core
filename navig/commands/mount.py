@@ -32,7 +32,7 @@ from typing import Any
 
 import typer
 
-from navig.platform.paths import config_dir
+from navig.platform.paths import config_dir, scripts_dir
 
 mount_app = typer.Typer(
     name="mount",
@@ -59,21 +59,14 @@ def _mount_callback(ctx: typer.Context) -> None:
 
 
 def _registry_path() -> Path:
-    try:
-        from navig.platform.paths import navig_config_dir
-
-        return navig_config_dir() / "registry" / "drives.json"
-    except Exception:
-        return config_dir() / "registry" / "drives.json"
+    # `navig_config_dir` does not exist in navig.platform.paths (the function is
+    # `config_dir`), so the try always failed and only the fallback ever ran. Use
+    # `config_dir()` directly — it is the same thing the fallback used.
+    return config_dir() / "registry" / "drives.json"
 
 
 def _scripts_dir() -> Path:
-    try:
-        from navig.platform.paths import navig_config_dir
-
-        return navig_config_dir() / "scripts"
-    except Exception:
-        return config_dir() / "scripts"
+    return scripts_dir()
 
 
 # ── Registry I/O ─────────────────────────────────────────────

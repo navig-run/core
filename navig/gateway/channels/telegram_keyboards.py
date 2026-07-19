@@ -803,6 +803,110 @@ _FOLLOWUP_BTN_LABEL: str = "\u2197\ufe0f Ask this"  # ↗️ Ask this
 # Action prefix embedded in callback_data for follow-up buttons.
 _FOLLOWUP_CB_PREFIX: str = "ask_followup:"
 
+# ── Read-site button (web_fetch a result URL on demand) ──────────────────────
+# The conversational tier has no tools, so when the model offered "want me to dig
+# into <site>?" the follow-up "yes" landed tool-less and answered "can't access web
+# directly". Instead we attach a button that fetches the URL on tap and posts an
+# LLM summary — the capability the prose promised, delivered for real.
+_WEBFETCH_CB_PREFIX: str = "wf:"          # callback_data prefix (short; URL is stored)
+_WEBFETCH_STORE_PREFIX: str = "wf_url:"   # CallbackStore key prefix → {url, query}
+_WEBFETCH_SUMMARY_PREFIX: str = "wf_sum:"  # CallbackStore key prefix → cached {body}
+_WEBFETCH_SUMMARY_TTL: int = 900           # 15 min, matching web_fetch's own cache
+_WEBFETCH_SUMMARY_PROMPT: str = (
+    "You are reading a web page for a user.\n"
+    "URL: {url}\nTitle: {title}\n"
+    "{ask}"
+    "Page content (may be truncated):\n{content}\n\n"
+    "Respond concisely in the user's language, using short bullets. If the page does "
+    "not cover what they asked, say so and summarize what the page IS about instead. "
+    "If the content is thin or looks like an error/placeholder page, say so plainly "
+    "instead of inventing details. Do not include an EXPLORE_Q line."
+)
+# The {ask} slot: anchor the summary to the user's original question when we have it,
+# else fall back to a generic "what is this page" summary.
+_WEBFETCH_ASK_WITH_QUERY: str = (
+    'The user originally asked: "{query}". Answer THAT question using this page.\n\n'
+)
+_WEBFETCH_ASK_GENERIC: str = (
+    "Summarize what this site/page is, its key sections, and any notable specifics.\n\n"
+)
+
+
+def build_read_site_button(
+    url: str,
+    store: "CallbackStore | None" = None,
+    *,
+    compact: bool = False,
+    query: str = "",
+    siblings: "list[str] | None" = None,
+) -> dict | None:
+    """Build a '🔎 Read <domain>' inline button that web_fetches *url* on tap.
+
+    The URL, the user's original *query* (so the on-tap summary answers what they
+    actually asked), and the *siblings* (the other result URLs from the same search,
+    so the summary can offer to read the next source) are kept in the CallbackStore —
+    Telegram's 64-byte callback_data can't hold them — and referenced by a short hash.
+    ``compact`` drops the word "Read" so several buttons fit one row. Returns ``None``
+    for a non-http URL or if the callback key would exceed the limit."""
+    u = (url or "").strip()
+    if not u.startswith(("http://", "https://")):
+        return None
+    from urllib.parse import urlparse
+
+    domain = (urlparse(u).netloc or u).replace("www.", "")
+    key = _short_hash(u, 12)
+    cb = _WEBFETCH_CB_PREFIX + key
+    if len(cb.encode()) > MAX_CALLBACK_DATA:
+        return None
+    payload: dict = {"url": u, "query": (query or "").strip()}
+    sibs = [s for s in (siblings or []) if s]
+    if sibs:
+        payload["siblings"] = sibs
+    (store or get_callback_store()).put(_WEBFETCH_STORE_PREFIX + key, payload, ttl=3600)
+    label = f"🔎 {domain}" if compact else f"🔎 Read {domain}"
+    return {"text": label[:40], "callback_data": cb}
+
+
+def build_read_site_buttons(
+    urls: "list[str]",
+    max_n: int = 3,
+    store: "CallbackStore | None" = None,
+    query: str = "",
+) -> list[dict]:
+    """A row of read-site buttons for the top result URLs, deduped by domain.
+
+    The first (top) result keeps the fuller '🔎 Read <domain>' label; any further
+    results are compact ('🔎 <domain>') so 2-3 fit one row. Skips non-http URLs and
+    repeat domains, capped at *max_n*. *query* is the user's original message so each
+    on-tap summary answers what they actually asked."""
+    from urllib.parse import urlparse
+
+    store = store or get_callback_store()
+    # Dedupe by domain + cap FIRST — this picked set is the "siblings" each button
+    # carries, so the on-tap summary can offer to read the OTHER sources.
+    picked: list[str] = []
+    seen: set[str] = set()
+    for url in urls or []:
+        u = (url or "").strip()
+        if not u.startswith(("http://", "https://")):
+            continue
+        dom = (urlparse(u).netloc or u).replace("www.", "").lower()
+        if not dom or dom in seen:
+            continue
+        seen.add(dom)
+        picked.append(u)
+        if len(picked) >= max_n:
+            break
+
+    out: list[dict] = []
+    for u in picked:
+        btn = build_read_site_button(
+            u, store=store, compact=bool(out), query=query, siblings=picked
+        )
+        if btn:
+            out.append(btn)
+    return out
+
 # ── Explore questions (contextual follow-ups injected into REASON-mode responses)
 # The LLM appends a pipe-delimited list after a fixed marker line.
 # extract_explore_questions() strips it from display and returns the questions
@@ -904,14 +1008,14 @@ _settings_header_text = _audio_header_text
 def _settings_hub_text(session: Any) -> str:
     """Header text for the /settings hub panel."""
     try:
-        from navig.agent.soul import MOOD_REGISTRY
+        from navig.gateway.channels.focus_modes import DEFAULT_MODE, FOCUS_MODES
 
-        focus = getattr(session, "focus_mode", "balance")
-        mp = MOOD_REGISTRY.get(focus)
-        focus_label = f"{mp.emoji} {focus}" if mp else focus
+        focus = getattr(session, "focus_mode", DEFAULT_MODE)
+        fm = FOCUS_MODES.get(focus)
+        focus_label = f"{fm.emoji} {focus}" if fm else focus
     except Exception as exc:
-        logger.debug("MOOD_REGISTRY lookup failed: %s", exc)
-        focus_label = getattr(session, "focus_mode", "balance")
+        logger.debug("focus mode lookup failed: %s", exc)
+        focus_label = getattr(session, "focus_mode", "work")
 
     tts_p = getattr(session, "tts_provider", "auto")
     vr = "on" if getattr(session, "voice_replies", False) else "off"
@@ -1302,6 +1406,16 @@ class CallbackHandler:
                     chat_id=chat_id,
                     user_id=user_id,
                     followup_key=_FOLLOWUP_STORE_PREFIX + cb_data[len(_FOLLOWUP_CB_PREFIX):],
+                )
+                return
+
+            # ── Read-site (wf:<key>) — web_fetch a result URL and summarize it ──
+            if cb_data.startswith(_WEBFETCH_CB_PREFIX):
+                await self._handle_webfetch_callback(
+                    cb_id=cb_id,
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    url_key=_WEBFETCH_STORE_PREFIX + cb_data[len(_WEBFETCH_CB_PREFIX):],
                 )
                 return
 
@@ -3168,7 +3282,7 @@ class CallbackHandler:
             prompt += ". Tell the user what you know about this track or artist in 2-3 short sentences. If you don't recognise it, say so honestly."
 
             try:
-                from navig.llm_generate import llm_generate
+                from navig.llm.generate import llm_generate
 
                 reply = await _asyncio.to_thread(
                     llm_generate,
@@ -3213,7 +3327,7 @@ class CallbackHandler:
                 if transcript:
                     # Ask LLM what language the transcript is in
                     try:
-                        from navig.llm_generate import llm_generate
+                        from navig.llm.generate import llm_generate
 
                         prompt = f'What language is this text written in? Reply with only the language name.\n\n"{transcript[:500]}"'
                         lang_reply = await _asyncio.to_thread(
@@ -3608,6 +3722,115 @@ class CallbackHandler:
                 await typing_task
             except asyncio.CancelledError as exc:
                 logger.debug("Exception suppressed (typing task cancelled): %s", exc)
+
+    async def _handle_webfetch_callback(
+        self,
+        cb_id: str,
+        chat_id: int,
+        user_id: int,
+        url_key: str,
+    ) -> None:
+        """Fetch the stored URL, summarize it with the LLM, and post the result.
+
+        This is the real capability behind a "🔎 Read <site>" button — the tool the
+        conversational tier lacks, delivered on demand so the bot never has to say
+        "can't access web directly"."""
+        payload = self.store.get(url_key)
+        if not payload:
+            await self._answer(cb_id, "⏳ Link expired")
+            return
+
+        from urllib.parse import urlparse
+
+        # Payload is {"url", "query"}; tolerate the legacy plain-string form too.
+        if isinstance(payload, dict):
+            url = str(payload.get("url") or "")
+            query = str(payload.get("query") or "").strip()
+        else:
+            url, query = str(payload), ""
+        if not url:
+            await self._answer(cb_id, "⏳ Link expired")
+            return
+        domain = (urlparse(url).netloc or url).replace("www.", "")
+        await self._answer(cb_id, f"🔎 Reading {domain}…")
+
+        # Summary cache: a re-tap of the same (url, query) — common now that the
+        # summary offers sibling sources to hop between — returns the prior answer
+        # instantly, skipping the web fetch + LLM call. Keyed by (url, query) since
+        # the same page answered against a different question is a different summary.
+        sum_key = _WEBFETCH_SUMMARY_PREFIX + _short_hash(f"{url}\x00{query}", 16)
+        _cached = self.store.get(sum_key)
+        cached_body = _cached.get("body") if isinstance(_cached, dict) else None
+
+        # No typing indicator when we already have the answer (it's instant).
+        typing_task = (
+            None if cached_body else asyncio.create_task(self.channel._keep_typing(chat_id))
+        )
+        try:
+            if cached_body:
+                body = cached_body
+            else:
+                from navig.tools.web import web_fetch
+
+                result = await asyncio.to_thread(
+                    web_fetch, url, extract_mode="text", max_chars=6000
+                )
+                if not result.success or not (result.text or "").strip():
+                    await self.channel.send_message(
+                        chat_id,
+                        f"❌ Couldn't read <b>{domain}</b>: {result.error or 'no readable content'}",
+                        parse_mode="HTML",
+                    )
+                    return
+
+                title = (result.title or domain).strip()
+                ask = (
+                    _WEBFETCH_ASK_WITH_QUERY.format(query=query[:300])
+                    if query
+                    else _WEBFETCH_ASK_GENERIC
+                )
+                prompt = _WEBFETCH_SUMMARY_PROMPT.format(
+                    url=url, title=title, ask=ask, content=(result.text or "")[:6000]
+                )
+                summary = await self._get_ai_response(prompt, user_id)
+                body = (summary or "").strip() or (result.text or "")[:1500].strip()
+                if body:
+                    self.store.put(sum_key, {"body": body}, ttl=_WEBFETCH_SUMMARY_TTL)
+
+            # Link out to the real page (a URL button, not a callback).
+            open_row = [{"text": f"🔗 Open {domain}"[:40], "url": url}]
+            keyboard = [open_row]
+            # Offer the OTHER sources from the same search right here, so the user can
+            # read the next one without scrolling back to the original message. Each
+            # sibling button carries the same set, so the chain keeps working.
+            siblings = payload.get("siblings") if isinstance(payload, dict) else None
+            if siblings:
+                more: list[dict] = []
+                for s in siblings:
+                    if not s or s == url:
+                        continue
+                    b = build_read_site_button(
+                        s, store=self.store, compact=True, query=query, siblings=siblings
+                    )
+                    if b:
+                        more.append(b)
+                    if len(more) >= 2:  # keep the row tidy
+                        break
+                if more:
+                    keyboard.append(more)
+            await self.channel.send_message(chat_id, body, keyboard=keyboard)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("web_fetch callback failed: %s", exc)
+            await self.channel.send_message(
+                chat_id, f"❌ Couldn't read <b>{domain}</b>.", parse_mode="HTML"
+            )
+        finally:
+            if typing_task is not None:
+                typing_task.cancel()
+                try:
+                    await typing_task
+                except asyncio.CancelledError as exc:
+                    logger.debug("Exception suppressed (typing task cancelled): %s", exc)
 
     async def _get_ai_response(self, prompt: str, user_id: int) -> str | None:
         if self.channel.on_message:

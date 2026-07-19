@@ -33,54 +33,25 @@ def dispatch_send(
     from navig import console_helper as ch
 
     async def _send() -> None:
-        from navig.messaging.adapter import DeliveryReceipt
-        from navig.messaging.adapter_registry import get_adapter_registry
-        from navig.messaging.delivery import get_delivery_tracker
-        from navig.messaging.routing import NoRouteError, RoutingEngine
-        from navig.store.contacts import get_contact_store
-        from navig.store.threads import get_thread_store
+        from navig.messaging.routing import NoRouteError
+        from navig.messaging.send import AdapterUnavailableError, route_and_send
 
-        engine = RoutingEngine(get_contact_store(), get_thread_store(), get_adapter_registry())
         try:
-            decision = engine.resolve(target, network=network)
-        except NoRouteError as exc:
+            decision, receipt = await route_and_send(target, message, network=network)
+        except (NoRouteError, AdapterUnavailableError) as exc:
             ch.error(str(exc))
             raise typer.Exit(1) from exc
 
-        adapter = get_adapter_registry().get(decision.adapter_name)
-        if adapter is None:
-            ch.error(f"Adapter '{decision.adapter_name}' is not available.")
-            raise typer.Exit(1)
-
-        tracker = get_delivery_tracker()
-        delivery_id = tracker.record_send(
-            adapter=decision.adapter_name,
-            target=decision.resolved_target.address,
-            contact_alias=decision.resolved_target.display_hint or None,
-            compliance=decision.compliance_mode,
-        )
-
-        thread = await adapter.get_or_create_thread(
-            f"{decision.adapter_name}:{decision.resolved_target.address}"
-        )
-        receipt: DeliveryReceipt = await adapter.send_message(
-            thread.remote_conversation_id, message
-        )
-        tracker.apply_receipt(delivery_id, receipt)
-
         if json_output:
-            import json as _json
-
-            ch.print(
-                _json.dumps(
-                    {
-                        "ok": receipt.ok,
-                        "status": receipt.status.value if receipt.status else None,
-                        "message_id": receipt.message_id,
-                        "error": receipt.error,
-                        "adapter": decision.adapter_name,
-                    }
-                )
+            ch.emit_json(
+                {
+                    "ok": receipt.ok,
+                    "status": receipt.status.value if receipt.status else None,
+                    "message_id": receipt.message_id,
+                    "error": receipt.error,
+                    "adapter": decision.adapter_name,
+                },
+                indent=None,
             )
         elif receipt.ok:
             ch.success(f"Sent via {decision.adapter_name} — id={receipt.message_id}")
@@ -184,13 +155,13 @@ def contacts_list(
     contacts = store.list_contacts(limit=limit)
 
     if not contacts:
-        ch.warn("No contacts found.")
+        ch.warning("No contacts found.")
         return
 
     if plain:
         for c in contacts:
             nets = ",".join(r.network for r in c.routes)
-            ch.print(f"{c.alias}\t{c.display_name or ''}\t{nets}")
+            ch.console.print(f"{c.alias}\t{c.display_name or ''}\t{nets}")
         return
 
     table = Table(title="NAVIG Contacts")
@@ -280,13 +251,13 @@ def contacts_show(
         ch.error(f"Contact @{alias.lstrip('@')} not found.")
         raise typer.Exit(1)
 
-    ch.print(f"  Alias:   @{contact.alias}")
-    ch.print(f"  Name:    {contact.display_name or '(none)'}")
-    ch.print(f"  Default: {contact.default_network or '(auto)'}")
+    ch.console.print(f"  Alias:   @{contact.alias}")
+    ch.console.print(f"  Name:    {contact.display_name or '(none)'}")
+    ch.console.print(f"  Default: {contact.default_network or '(auto)'}")
     for r in contact.routes:
-        ch.print(f"  Route:   {r.network}:{r.address}  (priority={r.priority})")
+        ch.console.print(f"  Route:   {r.network}:{r.address}  (priority={r.priority})")
     if contact.fallbacks:
-        ch.print(f"  Fallbacks: {', '.join(contact.fallbacks)}")
+        ch.console.print(f"  Fallbacks: {', '.join(contact.fallbacks)}")
 
 
 # ── contacts remove ───────────────────────────────────────────
@@ -380,7 +351,7 @@ def contacts_import(
 
     imported = UniversalImporter().run_one("telegram", path=str(target))
     if not imported:
-        ch.warn("No Telegram contacts imported.")
+        ch.warning("No Telegram contacts imported.")
         return
 
     store = get_contact_store()

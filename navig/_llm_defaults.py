@@ -3,7 +3,7 @@
 These constants are the single source of truth for LLM generation defaults
 used across multiple modules (llm_router, llm_generate, providers, routing).
 
-Keeping them here avoids circular imports: navig.llm_router imports from
+Keeping them here avoids circular imports: navig.llm.router imports from
 navig.providers, so providers/types.py cannot import back from llm_router.
 Both sides import from this leaf module instead.
 """

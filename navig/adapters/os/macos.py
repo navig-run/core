@@ -68,9 +68,6 @@ class MacOSAdapter(OSAdapter):
     def get_home_directory(self) -> Path:
         return Path(os.environ.get("HOME", "/Users/Shared"))
 
-    def get_config_directory(self) -> Path:
-        return self.get_home_directory() / ".navig"
-
     # ==================== System Information ====================
 
     def get_system_info_command(self) -> str:

@@ -7,7 +7,6 @@ import pytest
 
 from navig.ui.models import DiffLine, DiffPreview, Event
 
-
 # ---------------------------------------------------------------------------
 # navig.ui.diff — diff_lines_from_text, render_diff_preview
 # ---------------------------------------------------------------------------

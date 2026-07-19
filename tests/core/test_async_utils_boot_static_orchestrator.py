@@ -59,8 +59,9 @@ class TestRunSync:
 # ---------------------------------------------------------------------------
 # navig.commands.boot_cmd — boot_show and boot_run
 # ---------------------------------------------------------------------------
-from navig.commands.boot_cmd import boot_app
 from typer.testing import CliRunner
+
+from navig.commands.boot_cmd import boot_app
 
 _runner = CliRunner()
 

@@ -93,7 +93,7 @@ Original Script:
             history.append(current_script)
 
             if dry_run:
-                console.print(
+                console.console.print(
                     Panel(
                         current_script,
                         title="Generated Script (Dry Run)",

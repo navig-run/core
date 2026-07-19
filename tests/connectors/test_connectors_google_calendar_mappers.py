@@ -12,7 +12,6 @@ from navig.connectors.google_calendar.mappers import (
 )
 from navig.connectors.types import ResourceType
 
-
 # ---------------------------------------------------------------------------
 # _parse_event_time
 # ---------------------------------------------------------------------------

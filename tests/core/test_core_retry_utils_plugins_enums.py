@@ -12,7 +12,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/core/retry_utils.py
 # ---------------------------------------------------------------------------
@@ -101,13 +100,13 @@ class TestRetrySyncWithoutSleep:
             )
 
     def test_returns_none_when_reraise_false(self) -> None:
-        from navig.core.retry_utils import retry_sync, RetryConfig
+        from navig.core.retry_utils import RetryConfig, retry_sync
         cfg = RetryConfig(max_attempts=2, base_delay=0.0, max_delay=0.0, jitter_ratio=0.0, reraise_last=False)
         result = retry_sync(lambda: (_ for _ in ()).throw(ValueError("boom")), config=cfg)
         assert result is None
 
     def test_on_retry_callback_invoked(self) -> None:
-        from navig.core.retry_utils import retry_sync, RetryConfig
+        from navig.core.retry_utils import RetryConfig, retry_sync
         cfg = RetryConfig(max_attempts=3, base_delay=0.0, max_delay=0.0, jitter_ratio=0.0, reraise_last=False)
         calls = [0]
 
@@ -142,7 +141,7 @@ class TestAsyncRetry:
         async def flaky():
             calls[0] += 1
             if calls[0] < 3:
-                raise IOError("not yet")
+                raise OSError("not yet")
             return "ok"
 
         result = await flaky()

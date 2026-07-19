@@ -27,6 +27,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+from navig.plugins.require import requires_plugin
+
 logger = logging.getLogger("navig.agent.voice_input")
 
 # Supported audio extensions (all formats accepted by STT providers)
@@ -366,7 +368,12 @@ class VoiceInputHandler:
         language: str | None,
     ) -> TranscriptionResult:
         """Route API-based backends through the existing STT class."""
-        from navig.voice.stt import STT, STTConfig, STTProvider
+        # The STT engines live in the navig-audio plugin (navig.voice.* is a thin
+        # forwarding shim). The user explicitly asked to transcribe, so silently
+        # skipping is wrong — name the plugin instead of surfacing a raw
+        # "No module named 'navig_audio'" into the crash handler.
+        with requires_plugin("navig-audio", "Speech-to-text"):
+            from navig.voice.stt import STT, STTConfig, STTProvider
 
         provider_map = {
             TranscriptionBackend.DEEPGRAM: STTProvider.DEEPGRAM,

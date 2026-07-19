@@ -86,7 +86,7 @@ def apply(
 
         ch.step(f"Generating locally at {target_path}...")
         try:
-            scaffolder.generate(template_data, target_path, variables)
+            scaffolder.generate(template_data, target_path, variables, template_dir=template_path.parent)
             ch.success(f"Scaffold complete: {target_path}")
         except Exception as e:
             ch.error(f"Generation failed: {e}")
@@ -106,7 +106,7 @@ def apply(
 
         # Generate to a local temp tarball
         try:
-            archive_path = scaffolder.generate_to_temp_archive(template_data, variables)
+            archive_path = scaffolder.generate_to_temp_archive(template_data, variables, template_dir=template_path.parent)
             ch.dim(f"Created temporary archive: {archive_path}")
         except Exception as e:
             ch.error(f"Failed to create archive: {e}")

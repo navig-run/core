@@ -1,7 +1,7 @@
 """Tests for navig.tools.pdf_tool.PdfTool."""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -26,6 +26,18 @@ class TestPdfToolMeta:
 
 
 class TestPdfToolRun:
+    @pytest.fixture(autouse=True)
+    def _stub_pdf_extraction(self):
+        # PdfTool.run delegates to navig.inbox.extract._extract_pdf, which needs
+        # the optional pypdf/PyMuPDF/Tesseract stack and a real PDF on disk. Stub
+        # it so these tests verify the tool's ToolResult wrapping deterministically
+        # (the extractor itself is covered by the inbox tests).
+        with patch(
+            "navig.inbox.extract._extract_pdf",
+            return_value=("Sample extracted text.", {"pages": 1, "ocr_fallback": False}),
+        ):
+            yield
+
     @pytest.fixture
     def tool(self) -> PdfTool:
         return PdfTool()

@@ -15,7 +15,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/commands/user.py
 # ---------------------------------------------------------------------------
@@ -27,6 +26,7 @@ class TestUserApp:
 
     def test_user_app_is_typer(self) -> None:
         import typer
+
         from navig.commands.user import user_app
         assert isinstance(user_app, typer.Typer)
 
@@ -42,6 +42,7 @@ class TestUserApp:
 
     def test_user_show_reads_config(self) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.user import user_app
 
         mock_cfg = MagicMock()
@@ -54,6 +55,7 @@ class TestUserApp:
 
     def test_user_set_calls_config(self) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.user import user_app
 
         mock_cfg = MagicMock()
@@ -65,6 +67,7 @@ class TestUserApp:
 
     def test_user_show_handles_exception(self) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.user import user_app
 
         runner = CliRunner()
@@ -168,6 +171,7 @@ class TestExecutionResult:
 
     def test_is_dataclass(self) -> None:
         import dataclasses
+
         from navig.adapters.automation.types import ExecutionResult
         assert dataclasses.is_dataclass(ExecutionResult)
 
@@ -238,6 +242,7 @@ class TestSkillDraft:
 
     def test_is_dataclass(self) -> None:
         import dataclasses
+
         from navig.agent.skill_drafter import SkillDraft
         assert dataclasses.is_dataclass(SkillDraft)
 

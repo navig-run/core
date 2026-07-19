@@ -168,7 +168,10 @@ def test_should_skip_plugin_loading_respects_builtin_after_global_flags():
     assert should_skip is True
 
 
-def test_should_skip_plugin_loading_keeps_plugin_command_after_global_flags():
+def test_should_skip_plugin_loading_for_plugin_command_after_global_flags():
+    """`plugin` management is a builtin external command now (commands/plugin.py
+    via _EXTERNAL_CMD_MAP + PluginHost) — it does NOT need legacy discovery, so
+    the fast path skips plugin loading for it."""
     import navig.main as main_mod
 
     should_skip = main_mod._should_skip_plugin_loading([
@@ -178,7 +181,7 @@ def test_should_skip_plugin_loading_keeps_plugin_command_after_global_flags():
         "plugin",
         "list",
     ])
-    assert should_skip is False
+    assert should_skip is True
 
 
 def test_should_skip_plugin_loading_for_help_with_topic():

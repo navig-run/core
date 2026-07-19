@@ -14,7 +14,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # agent/hands — CommandStatus
 # ---------------------------------------------------------------------------
-
 from navig.agent.hands import CommandResult, CommandStatus, PendingAction
 
 

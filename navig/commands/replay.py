@@ -12,7 +12,7 @@ def replay_list():
     """List recorded sessions available for replay."""
     from navig import console_helper as ch
 
-    ch.warn("navig replay is not yet implemented in this build.")
+    ch.warning("navig replay is not yet implemented in this build.")
 
 
 @app.command("run")
@@ -23,4 +23,4 @@ def replay_run(
     """Replay a recorded session."""
     from navig import console_helper as ch
 
-    ch.warn("navig replay run is not yet implemented in this build.")
+    ch.warning("navig replay run is not yet implemented in this build.")

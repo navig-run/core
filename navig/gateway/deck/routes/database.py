@@ -24,6 +24,8 @@ try:
 except ImportError:
     web = None
 
+from navig.gateway.deck.routes._utils import run_on_host
+
 logger = logging.getLogger(__name__)
 
 
@@ -80,16 +82,17 @@ def _build_tables_cmd(db_type: str, database: str, user: str, password: str | No
     return f"mysql -u {_quote(user)} {('-p' + _quote(pw)) if pw else ''} -e 'SHOW TABLES' {_quote(database)}"
 
 
-async def _run_remote(host: str, command: str) -> tuple[bool, str, str]:
-    """Run a shell command on `host` via the existing SSH executor."""
-    try:
-        from navig.discovery import ServerDiscovery  # type: ignore[import]
-        from navig.config import ConfigManager  # type: ignore[import]
-        cfg = ConfigManager()
-        disco = ServerDiscovery(cfg, host_name=host)
-        return disco._execute_ssh(command)
-    except Exception as exc:
-        return False, "", str(exc)
+async def _run_remote(host: str, command: str, timeout: float = 45.0) -> tuple[bool, str, str]:
+    """Run a shell command on a CONFIGURED `host` via the SSH executor, off the event loop.
+
+    Delegates to the shared ``run_on_host`` runner (``_utils``). This wrapper used to be a
+    byte-for-byte copy of ``remote._ssh`` — but with a copied bug: it once called
+    ``ServerDiscovery(cfg, host_name=host)`` (a ConfigManager + a kwarg the constructor rejects), so
+    every db list/tables/query raised and the console was dead while ``remote`` worked. One shared
+    runner means that class of drift can't recur (#426). The 45s default (vs remote's 30s) stays —
+    DB clients can be slow to connect.
+    """
+    return await run_on_host(host, command, timeout)
 
 
 # ─── Endpoints ──────────────────────────────────────────────────────────────

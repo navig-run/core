@@ -14,7 +14,6 @@ from navig.tools.domains.exec_pack import (
     register_tools,
 )
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -253,9 +252,9 @@ class TestRegisterTools:
     def test_registers_bash_exec(self):
         mock_registry = MagicMock()
         with patch(
-            "navig.tools.router.SafetyLevel", create=True
+            "navig.tools.router.SafetyLevel"
         ), patch(
-            "navig.tools.router.ToolDomain", create=True
+            "navig.tools.router.ToolDomain"
         ), patch(
             "navig.tools.router.ToolMeta", return_value=MagicMock()
         ):
@@ -265,9 +264,9 @@ class TestRegisterTools:
     def test_registers_with_async_handler(self):
         mock_registry = MagicMock()
         with patch(
-            "navig.tools.router.SafetyLevel", create=True
+            "navig.tools.router.SafetyLevel"
         ), patch(
-            "navig.tools.router.ToolDomain", create=True
+            "navig.tools.router.ToolDomain"
         ), patch(
             "navig.tools.router.ToolMeta", return_value=MagicMock()
         ):

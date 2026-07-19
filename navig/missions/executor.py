@@ -267,7 +267,7 @@ class MissionExecutor:
 
     async def _run_draft(self, mission: Mission) -> str:
         """DRAFT mode: propose, never execute. A single no-tools planning call."""
-        from navig.llm_generate import llm_generate
+        from navig.llm.generate import llm_generate
 
         sys = (
             "You are NAVIG. Produce a concise PROPOSAL of how you would accomplish "
@@ -361,17 +361,22 @@ class MissionExecutor:
             if not verifier.enabled:
                 return None
             verdict = await verifier.verify_mission(mission)
-            # No silent approvals — record the verdict to the audit log if available.
-            mgr = getattr(self.gateway, "approval_manager", None)
-            audit = getattr(mgr, "_audit_log", None) if mgr else None
+            # No silent approvals — record the verdict to the gateway audit log.
+            # (The old call passed a non-existent `detail=` kwarg and no `actor`,
+            # so it TypeError'd into the except on every run: verifier verdicts
+            # were never audited.)
+            audit = getattr(self.gateway, "audit_log", None)
             if audit is not None:
                 try:
                     audit.record(
-                        action="mission_verification",
-                        detail={"mission": mission.mission_id, **verdict.to_dict()},
+                        actor="mission:verifier",
+                        action="mission.verify",
+                        policy="allow",
+                        status="success" if verdict.safe else "denied",
+                        metadata={"mission": mission.mission_id, **verdict.to_dict()},
                     )
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception:  # noqa: BLE001 — audit is best-effort here
+                    logger.debug("mission verification audit failed", exc_info=True)
             if not verdict.safe:
                 logger.warning(
                     "Mission %s blocked by verifier: %s",

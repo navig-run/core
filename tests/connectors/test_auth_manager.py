@@ -11,7 +11,6 @@ from navig.connectors.auth_manager import ConnectorAuthManager
 from navig.connectors.errors import ConnectorAuthError, ConnectorNotFoundError
 from navig.providers.oauth import OAuthCredentials, OAuthProviderConfig
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

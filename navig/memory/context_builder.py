@@ -24,7 +24,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from navig.workspace_ownership import USER_WORKSPACE_DIR
+from navig.workspace_ownership import user_workspace_dir
 
 logger = logging.getLogger("navig.memory.context_builder")
 
@@ -406,7 +406,7 @@ def _collect_metadata(project_root: Path | None = None) -> dict[str, Any]:
         project_root = Path.cwd()
 
     user_md_candidates = [
-        USER_WORKSPACE_DIR / "USER.md",
+        user_workspace_dir() / "USER.md",
         project_root / ".navig" / "workspace" / "USER.md",
     ]
     for user_md in user_md_candidates:

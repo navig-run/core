@@ -60,8 +60,10 @@ class PluginManager:
         self.config = Config()
 
         # Plugin directories in order of priority (later overrides earlier)
+        _pkg = Path(__file__).parent  # navig/plugins/ — the host (legacy builtin loc)
         self.plugin_dirs = [
-            Path(__file__).parent,  # Built-in: navig/plugins/
+            _pkg,  # Legacy builtin location (navig/plugins/) — kept for back-compat
+            _pkg.parent / "builtins",  # Built-in plugins: navig/builtins/ (canonical)
             self.config.plugins_dir,  # User: ~/.navig/plugins/
             Path.cwd() / ".navig" / "plugins",  # Project: .navig/plugins/
         ]
@@ -111,7 +113,7 @@ class PluginManager:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-        sources = ["builtin", "user", "project"]
+        sources = ["builtin", "builtin", "user", "project"]
 
         for plugin_dir, source in zip(self.plugin_dirs, sources):
             if not plugin_dir.exists():
@@ -199,7 +201,7 @@ class PluginManager:
         requirements_file = plugin_path / "requirements.txt"
         if requirements_file.exists():
             try:
-                deps = requirements_file.read_text().strip().split("\n")
+                deps = requirements_file.read_text(encoding="utf-8").strip().split("\n")
                 info.dependencies = [d.strip() for d in deps if d.strip() and not d.startswith("#")]
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
@@ -269,7 +271,11 @@ class PluginManager:
             # Determine module path based on source
             package_name = info.path.name
             if info.source == "builtin":
-                module_name = f"navig.plugins.{package_name}.plugin"
+                # Builtins live under the navig package — navig/builtins/ (canonical)
+                # or navig/plugins/ (legacy). Derive the dotted path from the
+                # containing dir so either root imports correctly.
+                container = info.path.parent.name  # "builtins" or "plugins"
+                module_name = f"navig.{container}.{package_name}.plugin"
             else:
                 # For user/project plugins, we need to add to sys.path
                 plugin_parent = info.path.parent
@@ -342,11 +348,19 @@ class PluginManager:
             else:
                 failed.append({"name": info.name, "reason": error or "Unknown error"})
 
-        # Log failures
+        # Log failures.
+        #
+        # `console` is a RICH Console — its print() has no `file=` parameter, so
+        # `console.print(..., file=sys.stderr)` raised TypeError. That means the
+        # one message telling you a plugin failed to load ITSELF blew up, right
+        # when you needed it. Rich routes to stderr via a stderr-bound Console.
         if failed and not silent:
-            console.print("[yellow]⚠ Some plugins failed to load:[/yellow]", file=sys.stderr)
+            from rich.console import Console
+
+            err = Console(stderr=True)
+            err.print("[yellow]⚠ Some plugins failed to load:[/yellow]")
             for plugin in failed:
-                console.print(f"  • {plugin['name']}: {plugin['reason']}", file=sys.stderr)
+                err.print(f"  • {plugin['name']}: {plugin['reason']}")
 
         return (loaded, failed)
 

@@ -7,16 +7,15 @@ import pytest
 
 from navig.vault.types import Credential, TestResult
 from navig.vault.validators import (
+    _VALIDATOR_DEFAULT_TIMEOUT,
+    _VALIDATOR_EXTENDED_TIMEOUT,
     AnthropicValidator,
     GitHubValidator,
     GitLabValidator,
     GroqValidator,
     OpenAIValidator,
     OpenRouterValidator,
-    _VALIDATOR_DEFAULT_TIMEOUT,
-    _VALIDATOR_EXTENDED_TIMEOUT,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

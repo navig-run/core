@@ -168,10 +168,10 @@ class TestExecutionSettingsLocalConfigCache:
 # model_routing
 # ---------------------------------------------------------------------------
 from navig.core.model_routing import (
-    _coerce_bool,
-    _coerce_int,
     _DEFAULT_MAX_SIMPLE_CHARS,
     _DEFAULT_MAX_SIMPLE_WORDS,
+    _coerce_bool,
+    _coerce_int,
     choose_cheap_model_route,
     get_routing_config,
     is_simple_turn,

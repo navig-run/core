@@ -18,7 +18,7 @@ Public surface:
 """
 
 from navig.cloud.broker_client import BrokerClient, BrokerError
-from navig.cloud.installer import ensure_cloudflared, InstallerError
+from navig.cloud.installer import InstallerError, ensure_cloudflared
 from navig.cloud.manager import CloudManager, CloudStatus
 from navig.cloud.uplink import UplinkClient, api_key_hash
 

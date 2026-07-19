@@ -120,6 +120,9 @@ class TestConnectorRateLimitError:
 # providers/types.py — enums and dataclasses
 # ──────────────────────────────────────────────────────────────────────────────
 from navig.providers.types import (
+    _COMPACT_MAX_OUTPUT_TOKENS,
+    _LARGE_MAX_OUTPUT_TOKENS,
+    _STANDARD_MAX_OUTPUT_TOKENS,
     AuthMode,
     ModelApi,
     ModelCompatConfig,
@@ -127,9 +130,6 @@ from navig.providers.types import (
     ModelDefinition,
     ModelInput,
     ProviderConfig,
-    _COMPACT_MAX_OUTPUT_TOKENS,
-    _LARGE_MAX_OUTPUT_TOKENS,
-    _STANDARD_MAX_OUTPUT_TOKENS,
 )
 
 

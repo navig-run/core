@@ -46,10 +46,26 @@ class Notification:
     raw_message: bool = False
 
     def to_telegram_message(self) -> str:
-        """Format for Telegram."""
+        """Format for Telegram (parse_mode=HTML).
+
+        The title is HTML-escaped and bolded; the body is rendered through the
+        shared markdown→HTML converter so it is BOTH safe and rich:
+
+        * **Safe** — special characters like ``<``/``&`` (routine in tracebacks,
+          error dumps, and webhook payloads) can no longer trip Telegram's HTML
+          parser. Previously they did, and the transport silently retried with the
+          parse mode stripped, so the message arrived with the ``<b>`` tags showing
+          literally and every bit of formatting gone.
+        * **Rich** — markdown in the body (code blocks, links, expandable quotes,
+          bold) now renders, consistently with the main reply path.
+
+        ``raw_message=True`` bypasses this entirely — the caller owns the HTML.
+        """
         if self.raw_message:
-            # Message already carries its own header — emit as-is.
+            # Message already carries its own header/HTML — emit as-is.
             return self.message
+
+        from navig.gateway.channels.telegram_html import html_escape, md_to_html
 
         emoji_map = {
             "alert": "🚨",
@@ -69,7 +85,13 @@ class Notification:
         emoji = emoji_map.get(self.type, "📢")
         prefix = priority_prefix.get(self.priority, "")
 
-        return f"{prefix}{emoji} <b>{self.title}</b>\n\n{self.message}"
+        header = (
+            f"{prefix}{emoji} <b>{html_escape(self.title)}</b>"
+            if self.title
+            else f"{prefix}{emoji}".rstrip()
+        )
+        body = md_to_html(self.message) if self.message else ""
+        return f"{header}\n\n{body}" if body else header
 
 
 @dataclass
@@ -376,9 +398,13 @@ class TelegramNotifier(ChannelNotifier):
         if not notifications:
             return
 
+        from navig.gateway.channels.telegram_html import html_escape
+
         lines = ["📬 <b>Batched Updates</b>\n"]
         for n in notifications:
-            lines.append(f"• {n.title}")
+            # Escape titles — this message carries an HTML tag, so it is sent with
+            # parse_mode=HTML; a raw "<"/"&" in a title would break the whole batch.
+            lines.append(f"• {html_escape(n.title)}")
 
         message = "\n".join(lines)
         try:
@@ -465,9 +491,11 @@ class TelegramNotifier(ChannelNotifier):
         ]
 
         if anchor:
+            from navig.gateway.channels.telegram_html import html_escape
+
             lines += [
                 "📌 <b>Your anchor for today:</b>",
-                f"<i>{anchor}</i>",
+                f"<i>{html_escape(anchor)}</i>",  # user eve_log value → escape for HTML
                 "",
             ]
 
@@ -547,13 +575,16 @@ class TelegramNotifier(ChannelNotifier):
         except Exception:
             pass
 
+        from navig.gateway.channels.telegram_html import html_escape
+
         checklist_lines = ["<b>Close out the day:</b>"]
         if already_shipped:
-            checklist_lines.append(f"✅ <i>Shipped: {already_shipped}</i>")
+            # user eve_log values → escape for HTML (this message is sent HTML-parsed)
+            checklist_lines.append(f"✅ <i>Shipped: {html_escape(already_shipped)}</i>")
         else:
             checklist_lines.append("• Review what shipped")
         if already_priority:
-            checklist_lines.append(f"📌 <i>Anchor: {already_priority}</i>")
+            checklist_lines.append(f"📌 <i>Anchor: {html_escape(already_priority)}</i>")
         else:
             checklist_lines.append("• Lock in tomorrow's top priority")
         checklist_lines += [

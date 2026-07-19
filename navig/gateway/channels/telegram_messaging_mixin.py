@@ -165,7 +165,7 @@ class TelegramMessagingMixin:
         except Exception:
             contacts_blurb = "(unavailable)"
 
-        from navig.llm_generate import llm_generate
+        from navig.llm.generate import llm_generate
 
         sys = (
             "Convert the user's instruction into a messaging action. The user may "

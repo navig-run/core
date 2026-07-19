@@ -23,14 +23,14 @@ REPO_ROOT = Path(__file__).parents[2]
 
 
 def test_provider_resource_urls_importable():
-    from navig.llm_router import PROVIDER_RESOURCE_URLS
+    from navig.llm.router import PROVIDER_RESOURCE_URLS
 
     assert isinstance(PROVIDER_RESOURCE_URLS, dict)
     assert len(PROVIDER_RESOURCE_URLS) > 0
 
 
 def test_provider_resource_urls_expected_keys():
-    from navig.llm_router import PROVIDER_RESOURCE_URLS
+    from navig.llm.router import PROVIDER_RESOURCE_URLS
 
     expected = {
         "openai",
@@ -64,7 +64,7 @@ def test_provider_resource_urls_expected_keys():
     ],
 )
 def test_resource_url_contains_expected_fragment(provider, key, fragment):
-    from navig.llm_router import PROVIDER_RESOURCE_URLS
+    from navig.llm.router import PROVIDER_RESOURCE_URLS
 
     url = PROVIDER_RESOURCE_URLS[provider][key]
     assert fragment in url, (
@@ -74,7 +74,7 @@ def test_resource_url_contains_expected_fragment(provider, key, fragment):
 
 
 def test_all_resource_urls_are_https_or_http():
-    from navig.llm_router import PROVIDER_RESOURCE_URLS
+    from navig.llm.router import PROVIDER_RESOURCE_URLS
 
     for provider, sub in PROVIDER_RESOURCE_URLS.items():
         for key, url in sub.items():
@@ -88,19 +88,20 @@ def test_all_resource_urls_are_https_or_http():
 # Consumer modules import PROVIDER_RESOURCE_URLS (canonical source of truth)
 # ---------------------------------------------------------------------------
 
+# Consumers that live IN core and actually build provider request URLs. (The
+# voice tts.py/stt.py moved to the navig-audio plugin; the core files are now
+# 9-line re-export shims with no URLs, so they're not URL consumers here.)
 _CONSUMER_FILES = [
     REPO_ROOT / "navig/gateway/channels/media_engine/audio.py",
     REPO_ROOT / "navig/gateway/channels/media_engine/image.py",
-    REPO_ROOT / "navig/voice/tts.py",
-    REPO_ROOT / "navig/voice/stt.py",
 ]
 
-_IMPORT_SOURCE = "navig.llm_router"
+_IMPORT_SOURCE = "navig.llm.router"
 _IMPORT_NAME = "PROVIDER_RESOURCE_URLS"
 
 
 def _source_imports_prul(path: Path) -> bool:
-    """Return True if the file imports PROVIDER_RESOURCE_URLS from navig.llm_router."""
+    """Return True if the file imports PROVIDER_RESOURCE_URLS from navig.llm.router."""
     source = path.read_text(encoding="utf-8-sig")  # strips BOM if present
     tree = ast.parse(source)
     for node in ast.walk(tree):
@@ -115,10 +116,10 @@ def _source_imports_prul(path: Path) -> bool:
 
 @pytest.mark.parametrize("consumer", _CONSUMER_FILES, ids=[p.name for p in _CONSUMER_FILES])
 def test_consumer_imports_provider_resource_urls(consumer):
-    """Each consumer file must import PROVIDER_RESOURCE_URLS from navig.llm_router."""
+    """Each consumer file must import PROVIDER_RESOURCE_URLS from navig.llm.router."""
     if not consumer.exists():
         pytest.skip(f"{consumer} not found")
     assert _source_imports_prul(consumer), (
         f"{consumer.name} does not import PROVIDER_RESOURCE_URLS from {_IMPORT_SOURCE}. "
-        "Add: from navig.llm_router import PROVIDER_RESOURCE_URLS as _PRUL"
+        "Add: from navig.llm.router import PROVIDER_RESOURCE_URLS as _PRUL"
     )

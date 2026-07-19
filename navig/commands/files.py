@@ -1,10 +1,36 @@
 """File Operation Commands"""
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
+
+# A remote path is always POSIX. A drive letter (C:\… / C:/…) or backslashes mean
+# git-bash / MSYS rewrote a Unix argument like `/tmp/x` into a Windows path before
+# navig ever saw it — scp would then fail on the Linux host with a cryptic
+# "dest open ... No such file or directory". Catch it and show the real fix.
+_MANGLED_REMOTE_RE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def _looks_mangled(remote: str | None) -> bool:
+    return bool(remote) and (
+        _MANGLED_REMOTE_RE.match(remote) is not None or "\\" in remote
+    )
+
+
+def _reject_mangled_remote(remote: str) -> None:
+    ch.error(f"Remote path looks Windows-mangled: {remote}")
+    ch.info("")
+    ch.info(
+        "Remote paths are POSIX. git-bash/MSYS rewrites a Unix argument like"
+    )
+    ch.info("/tmp/x into a Windows path before navig receives it. Fixes:")
+    ch.info("  • set MSYS_NO_PATHCONV=1 (e.g. MSYS_NO_PATHCONV=1 navig file …)")
+    ch.info("  • double the leading slash: //tmp/x")
+    ch.info("  • run navig from PowerShell / cmd instead of git-bash")
+    raise typer.Exit(1)
 
 
 def upload_file_cmd(local: Path, remote: str | None, options: dict[str, Any]):
@@ -21,6 +47,10 @@ def upload_file_cmd(local: Path, remote: str | None, options: dict[str, Any]):
 
     if not local.exists():
         ch.error(f"Local file not found: {local}")
+        raise typer.Exit(2)
+
+    if _looks_mangled(remote):
+        _reject_mangled_remote(remote)
         return
 
     json_enabled = options.get("json", False)
@@ -84,6 +114,7 @@ def upload_file_cmd(local: Path, remote: str | None, options: dict[str, Any]):
         ch.info("     Fix: navig mkdir /remote/path --parents")
         ch.info("  3. Disk full: Check space with 'df -h'")
         ch.info("  4. SSH connection: Test with 'navig run \"echo test\"'")
+        raise typer.Exit(1)
 
 
 def download_file_cmd(remote: str, local: Path | None, options: dict[str, Any]):
@@ -97,6 +128,10 @@ def download_file_cmd(remote: str, local: Path | None, options: dict[str, Any]):
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
 
     server_name = require_active_server(options, config_manager)
+
+    if _looks_mangled(remote):
+        _reject_mangled_remote(remote)
+        return
 
     if local is None:
         local = Path.cwd() / Path(remote).name
@@ -120,7 +155,8 @@ def download_file_cmd(remote: str, local: Path | None, options: dict[str, Any]):
         ch.info("  2. Permission denied: Check file permissions")
         ch.info('     Fix: navig run "chmod 644 /remote/file"')
         ch.info("  3. Local disk full: Check space with 'df -h' (Unix) or 'dir' (Windows)")
-        ch.info("  4. Network timeout: Check connection with 'navig tunnel status'")
+        ch.info("  4. Network timeout: Check connection with 'navig tunnel show'")
+        raise typer.Exit(1)
 
 
 def list_remote_directory(remote_path: str, options: dict[str, Any]):
@@ -263,6 +299,7 @@ def file_edit(
         chown_cmd(remote, owner, ctx.obj)
     else:
         ch.error("Specify --content, --mode, or --owner")
+        raise typer.Exit(1)
 
 
 @file_app.command("get")

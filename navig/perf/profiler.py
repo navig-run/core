@@ -49,8 +49,19 @@ T = TypeVar("T")
 
 SAMPLE_EVERY: int = 100  # Profile 1 in every N calls
 TOP_FUNCTIONS: int = 20  # Number of hot functions to store per sample
-PERF_DIR: Path = paths.config_dir() / "perf"
 REGRESSION_THRESHOLD_PCT: float = 20.0  # Alert if cumtime grows by > this %
+
+
+def _perf_dir() -> Path:
+    """Resolve the perf-sample dir at CALL time — never import time.
+
+    ``config_dir()`` honours ``NAVIG_CONFIG_DIR``; a module-level constant
+    would freeze the real user home before test/daemon isolation applies
+    (same fix as ``yaml_io._perf_dir()``; see
+    ``navig/vault/migrate.py:_legacy_db_path``).
+    """
+    return paths.config_dir() / "perf"
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Invocation counter (per-process; reset on daemon restart)
@@ -139,8 +150,9 @@ def _extract_and_store(profiler: cProfile.Profile, elapsed_ms: float) -> None:
             "top_fns": hot_functions,
         }
 
-        log_file = PERF_DIR / f"{date.today().isoformat()}.jsonl"
-        PERF_DIR.mkdir(parents=True, exist_ok=True)
+        perf_dir = _perf_dir()
+        log_file = perf_dir / f"{date.today().isoformat()}.jsonl"
+        perf_dir.mkdir(parents=True, exist_ok=True)
         with open(log_file, "a", encoding="utf-8") as _f:
             _f.write(json.dumps(entry) + "\n")
 
@@ -188,7 +200,7 @@ def load_recent_samples(days: int = 7) -> list[dict[str, Any]]:
         from datetime import timedelta
 
         day = today - timedelta(days=i)
-        log_file = PERF_DIR / f"{day.isoformat()}.jsonl"
+        log_file = _perf_dir() / f"{day.isoformat()}.jsonl"
         if not log_file.exists():
             continue
         try:

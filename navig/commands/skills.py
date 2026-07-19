@@ -48,12 +48,18 @@ def _resolve_skills_dirs(explicit_dir: str | None) -> list[Path]:
             return [candidate]
         return []
 
+    # The canonical builtin skills live in the packaged content store. Resolve it via
+    # builtin_store_dir() — never by counting `.parent`s out of this file: that walked
+    # OUT of the navig package to <repo>/core/store/skills, which (a) never existed in
+    # an installed layout, so a pip-installed navig saw zero builtin skills, and (b)
+    # died outright when the content store moved inside the package.
+    from navig.platform.paths import builtin_store_dir
+
     base_dir = Path(__file__).resolve()
     candidates = [
-        base_dir.parent / "skills",
-        base_dir.parent.parent / "skills",
-        base_dir.parent.parent.parent / "store" / "skills",  # canonical store
-        base_dir.parent.parent.parent / "skills",  # legacy fallback
+        base_dir.parent / "skills",          # navig/commands/skills/  (co-located)
+        base_dir.parent.parent / "skills",   # navig/skills/           (package skills)
+        builtin_store_dir() / "skills",      # navig/builtin/skills/   (canonical store)
     ]
 
     unique: list[Path] = []
@@ -451,7 +457,7 @@ def run_skill_cmd(spec: str, extra_args: list[str], options: dict[str, Any]) -> 
         if target_cmd.risk in ("destructive", "moderate"):
             msg = target_cmd.confirmation_msg or f"Run {target_cmd.risk} command: {syntax}?"
             if not options.get("yes", False):
-                if not ch.confirm(msg):
+                if not ch.confirm_action(msg):
                     ch.dim("  Cancelled.")
                     return 0
 
@@ -595,21 +601,21 @@ def skills_install(
     spec: str = typer.Argument(
         ...,
         help=(
-            "Foreign: claude:<name> · openclaw:<name> · hermes:<name> · codex:<name> · "
+            "Foreign: claude:<name> · hermes:<name> · codex:<name> · "
             "a local path.  Community: github:navig-run/… · skill:owner/repo[@ref]"
         ),
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite if already installed."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
 ):
-    """Install a skill — from another agent (Claude/OpenClaw/Hermes/Codex/local) or the community registry.
+    """Install a skill — from another agent (Claude/Hermes/Codex/local) or the community registry.
 
     Foreign skills are normalized into a canonical NAVIG ``SKILL.md`` under
     ``~/.navig/store/skills/<id>/`` (origin recorded in ``.skill.meta.json``).
     """
     from navig.skills import federation
 
-    # 1) Foreign agent / local path / OpenClaw plugin bundle → normalize into the store.
+    # 1) Foreign agent / local path / plugin bundle → normalize into the store.
     try:
         targets = federation.install_all(spec, force=force, dry_run=dry_run)
     except (ValueError, FileExistsError) as exc:
@@ -639,7 +645,7 @@ def skills_install(
 @skills_app.command("export")
 def skills_export(
     skill_id: str = typer.Argument(..., help="Id of an installed/discovered skill."),
-    fmt: str = typer.Option("claude", "--format", "-f", help="claude · hermes · openclaw"),
+    fmt: str = typer.Option("claude", "--format", "-f", help="claude · hermes"),
     dest: Path = typer.Option(
         Path("."), "--dest", "-o", help="Output directory (a <id>/ folder is created inside)."
     ),
@@ -722,6 +728,620 @@ def skills_new(
     skill_file.write_text(content, encoding="utf-8")
     ch.success(f"Created skill '{slug}'.", details=str(skill_file))
     ch.info("Edit the description (auto-activation matches it), then: navig skills run " + slug)
+
+
+@skills_app.command("lint")
+@skills_app.command("validate")
+def skills_lint(
+    path: Path = typer.Argument(Path("."), help="Skill dir or SKILL.md (default: ./)."),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable results."),
+):
+    """Validate a SKILL.md against the NAVIG authoring standard (docs/authoring-guide.md).
+
+    Catches the common failure modes: `**key:** value` pseudo-keys with no real YAML
+    frontmatter (every field silently discarded), an invalid ``safety`` enum, and a
+    description too thin to route well.
+    """
+    import re
+
+    target = path.expanduser()
+    skill_file = target if target.name == "SKILL.md" else target / "SKILL.md"
+    if not skill_file.exists():
+        ch.error("No SKILL.md found.", details=str(skill_file))
+        raise typer.Exit(1)
+
+    raw = skill_file.read_text(encoding="utf-8")
+    fm = _load_frontmatter(skill_file)
+    valid_safety = {"safe", "elevated", "destructive"}
+    checks: list[tuple[str, str, str]] = []  # (level, check, detail); level: ok|warn|fail
+
+    has_fm = raw.startswith("---") and bool(fm)
+    if has_fm:
+        checks.append(("ok", "frontmatter", "real YAML frontmatter block"))
+    elif raw.startswith("---"):
+        # A `---` block is present but parsed to nothing → invalid or empty YAML. The
+        # loader discards every field here just like the pseudo-key case, so it must FAIL
+        # (not be mistaken for "no frontmatter").
+        checks.append(("fail", "frontmatter",
+                       "`---` block present but it parsed to no fields — invalid or empty YAML; "
+                       "every field is discarded (guide §1). Check the YAML is well-formed."))
+    elif re.search(r"^\*\*(id|name|safety|description|tools)\s*:\*\*", raw, re.MULTILINE | re.IGNORECASE):
+        checks.append(("fail", "frontmatter",
+                       "`**key:** value` pseudo-keys with no YAML block — every field is silently "
+                       "discarded (guide §1). Wrap them in a real `---` frontmatter."))
+    else:
+        checks.append(("warn", "frontmatter",
+                       "no frontmatter — parses as plain markdown; add `name` + `description` (guide §1)."))
+
+    name = str(fm.get("name") or "").strip()
+    checks.append(("ok", "name", name) if name
+                  else (("fail" if has_fm else "warn"), "name", "missing `name` (guide §1)"))
+
+    desc = str(fm.get("description") or "").strip()
+    if not desc:
+        checks.append((("fail" if has_fm else "warn"), "description",
+                       "missing `description` — this is the router (guide §2)"))
+    elif len(desc) < 40:
+        checks.append(("warn", "description",
+                       f"only {len(desc)} chars — too thin to route well; add trigger phrases (guide §2)"))
+    elif not (re.search(r"use when|when the user", desc, re.IGNORECASE) or '"' in desc or desc.count("'") >= 2):
+        checks.append(("warn", "description",
+                       'no verbatim trigger phrases — add `Use when the user says "…"` (guide §2)'))
+    else:
+        checks.append(("ok", "description", f"{len(desc)} chars, has trigger cues"))
+
+    if "safety" in fm:
+        sval = str(fm.get("safety")).strip().lower()
+        checks.append(("ok", "safety", sval) if sval in valid_safety
+                      else ("fail", "safety",
+                            f"'{fm.get('safety')}' is not valid — use safe | elevated | destructive (guide §1)"))
+    else:
+        checks.append(("ok", "safety", "unset → defaults to safe"))
+
+    fails = [c for c in checks if c[0] == "fail"]
+    warns = [c for c in checks if c[0] == "warn"]
+
+    if json_out:
+        ch.console.print_json(data={
+            "skill": str(skill_file),
+            "ok": not fails,
+            "fails": [{"check": c[1], "detail": c[2]} for c in fails],
+            "warns": [{"check": c[1], "detail": c[2]} for c in warns],
+        })
+        raise typer.Exit(1 if fails else 0)
+
+    from navig.console_helper import Table
+
+    glyph = {"ok": "[green]✔[/green]", "warn": "[yellow]![/yellow]", "fail": "[red]✗[/red]"}
+    table = Table(box=None, show_header=True, padding=(0, 2))
+    table.add_column("", no_wrap=True)
+    table.add_column("Check", no_wrap=True)
+    table.add_column("Detail")
+    for level, label, detail in checks:
+        table.add_row(glyph[level], label, detail)
+    ch.console.print(table)
+
+    if fails:
+        ch.error(f"{len(fails)} error(s), {len(warns)} warning(s) — see docs/authoring-guide.md")
+        raise typer.Exit(1)
+    if warns:
+        ch.warning(f"{len(warns)} warning(s) — usable, but below the house standard.")
+        raise typer.Exit(0)
+    ch.success("SKILL.md meets the NAVIG authoring standard.")
+
+
+# --------------------------------------------------------------------------- #
+# navig skill distill — draft a SKILL.md from the operations ledger (T-069)     #
+# --------------------------------------------------------------------------- #
+
+
+def _distill_fail(message: str, json_out: bool, hint: str = "") -> None:
+    """Refusal path for both output modes; always exits 1."""
+    if json_out:
+        from navig.console_helper import emit_json
+
+        payload: dict[str, Any] = {"error": message}
+        if hint:
+            payload["hint"] = hint
+        emit_json(payload)
+    else:
+        ch.error(message)
+        if hint:
+            ch.dim(hint)
+    raise typer.Exit(1)
+
+
+@skills_app.command("distill")
+def skills_distill(
+    ctx: typer.Context,
+    last: str = typer.Option(
+        "2h", "--last", help="Slice window over the operations ledger (e.g. 30m, 2h, 1d)"
+    ),
+    ops: str | None = typer.Option(
+        None, "--ops", help="Explicit operation ids (comma-separated) — overrides --last"
+    ),
+    name: str | None = typer.Option(
+        None, "--name", "-n", help="Skill name (kebab-case; default: derived from the commands)"
+    ),
+    out: Path | None = typer.Option(
+        None,
+        "--out",
+        "-o",
+        help="Output directory (a <name>/ folder is created inside; default: the user skill store)",
+    ),
+    ai: bool = typer.Option(
+        False, "--ai", help="Rewrite the draft's prose with AI (needs a provider; commands stay verbatim)"
+    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite an existing SKILL.md"),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output"),
+):
+    """
+    Distill a slice of the operations ledger into a draft SKILL.md.
+
+    Reads what you actually ran (the tamper-evident operations history),
+    keeps the SUCCESSFUL path as ordered steps, turns failed attempts into
+    pitfall warnings, annotates dangerous steps with their reversibility
+    label, and replaces secrets/instance values with placeholders. The draft
+    is a starting point — review it, then `navig skill lint` it.
+
+    Examples:
+        navig skill distill --last 2h
+        navig skill distill --last 30m --name deploy-hotfix
+        navig skill distill --ops op-...-a1,op-...-b2 --out ./skills
+        navig skill distill --last 1d --json
+    """
+    import hashlib
+    import time
+
+    from navig.console_helper import emit_json
+    from navig.operation_recorder import claim_cli_operation, get_operation_recorder
+    from navig.skill_distill import (
+        DistillError,
+        distill,
+        parse_duration,
+        render_skill_md,
+        slice_ledger,
+    )
+
+    want_json = json_out or bool(ctx.obj and ctx.obj.get("json"))
+
+    # ------------------------------------------------------------------
+    # Slice
+    # ------------------------------------------------------------------
+    op_ids = [t.strip() for t in ops.split(",") if t.strip()] if ops else None
+    window = None
+    if not op_ids:
+        try:
+            window = parse_duration(last)
+        except ValueError as exc:
+            _distill_fail(str(exc), want_json)
+
+    recorder = get_operation_recorder()
+    try:
+        records = slice_ledger(recorder, last=window, op_ids=op_ids)
+        if not records:
+            raise DistillError(
+                f"no operations recorded in the last {last} — nothing to distill"
+                if not op_ids
+                else "no operations matched — nothing to distill"
+            )
+        result = distill(
+            records,
+            name=name,
+            window_label="" if op_ids else f"last {last}",
+        )
+    except DistillError as exc:
+        _distill_fail(str(exc), want_json, hint="inspect the slice with: navig ledger show")
+
+    # ------------------------------------------------------------------
+    # Render (deterministic; --ai rewrites prose over the sanitized draft)
+    # ------------------------------------------------------------------
+    markdown = render_skill_md(result)
+    if ai:
+        from navig.agent.skill_distiller import SkillDraftUnavailableError, draft_distilled_skill
+
+        try:
+            markdown = draft_distilled_skill(markdown)
+        except SkillDraftUnavailableError as exc:
+            _distill_fail(str(exc), want_json)
+        except (RuntimeError, ValueError) as exc:
+            _distill_fail(
+                f"AI draft rejected: {exc}",
+                want_json,
+                hint="rerun without --ai for the deterministic draft",
+            )
+
+    # ------------------------------------------------------------------
+    # Write — never overwrite without --force
+    # ------------------------------------------------------------------
+    if out is not None:
+        target_dir = out.expanduser() / result.slug
+    else:
+        from navig.platform.paths import store_dir
+
+        target_dir = store_dir() / "skills" / result.slug
+    skill_file = target_dir / "SKILL.md"
+
+    existed = skill_file.exists()
+    if existed and not force:
+        _distill_fail(
+            f"'{result.slug}' already exists: {skill_file}",
+            want_json,
+            hint="pass --force to overwrite, or --name for a different id",
+        )
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    skill_file.write_text(markdown, encoding="utf-8")
+
+    # Enrich this invocation's own ledger record (T-068 pattern): a fresh
+    # draft is a green, undoable file_create; an overwrite is honest red.
+    record, start = claim_cli_operation(match=("skill distill", "skills distill"))
+    if record is not None:
+        from navig.operation_recorder import OperationType
+
+        if existed:
+            record.operation_type = OperationType.FILE_MODIFY
+            undo_data = None
+        else:
+            record.operation_type = OperationType.FILE_CREATE
+            undo_data = {
+                "file_path": str(skill_file),
+                "after_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
+            }
+        recorder.complete_operation(
+            record,
+            success=True,
+            output=f"distilled {len(result.steps)} step(s) → {skill_file}",
+            duration_ms=(time.time() - (start or time.time())) * 1000,
+            undo_data=undo_data,
+        )
+
+    # ------------------------------------------------------------------
+    # Report
+    # ------------------------------------------------------------------
+    if want_json:
+        payload = result.to_dict()
+        payload["path"] = str(skill_file)
+        payload["overwritten"] = existed
+        payload["ai"] = ai
+        emit_json(payload)
+        return
+
+    ch.success(
+        f"Distilled {len(result.steps)} step(s) "
+        f"({len(result.pitfalls)} pitfall(s), safety: {result.safety}) → '{result.slug}'",
+        details=str(skill_file),
+    )
+    if result.placeholders:
+        ch.dim(f"placeholders to review: {', '.join(sorted(result.placeholders))}")
+    ch.info(f"Review the draft, then lint it: navig skill lint {target_dir}")
+
+
+# --------------------------------------------------------------------------- #
+# navig skill eval — evals.json contract + with-vs-without-skill benchmark      #
+# --------------------------------------------------------------------------- #
+
+_EVALS_TEMPLATE = {
+    "cases": [
+        {
+            "id": "example",
+            "prompt": "TODO: a real task this skill should handle well",
+            "expect": {"contains": ["TODO-term-the-good-answer-needs"], "excludes": []},
+        }
+    ]
+}
+
+
+def _term_list(value: Any) -> list[str]:
+    """Normalize an evals `contains`/`excludes` value to a list of terms.
+
+    A bare string becomes a single term — NOT iterated per-character (which would
+    silently mis-grade `"contains": "refunds"` as 7 single-char terms). A list becomes
+    its stringified elements; anything else is empty.
+    """
+    if isinstance(value, str):
+        return [value] if value else []
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    return []
+
+
+def _grade_answer(answer: str, expect: dict[str, Any]) -> tuple[bool, list[str], list[str]]:
+    """Deterministic grade: (passed, missing_contains, leaked_excludes)."""
+    low = (answer or "").lower()
+    exp = expect if isinstance(expect, dict) else {}
+    missing = [t for t in _term_list(exp.get("contains")) if t.lower() not in low]
+    leaked = [t for t in _term_list(exp.get("excludes")) if t.lower() in low]
+    return (not missing and not leaked), missing, leaked
+
+
+def _run_behavioral(skill_body: str, cases: list[dict[str, Any]]) -> dict[str, Any]:
+    """Generate an answer to each case prompt with vs without the skill; grade deterministically."""
+    import asyncio
+
+    try:
+        from navig.agent.ai_client import close_default_ai_client, get_ai_client
+    except Exception as exc:  # noqa: BLE001
+        return {"available": False, "reason": f"AI client unavailable: {exc}"}
+
+    client = get_ai_client()
+    if not client.is_available():
+        return {"available": False, "reason": "no AI provider configured — connect one (navig connect …)."}
+
+    async def _all() -> tuple[list[dict[str, Any]], int, int]:
+        rows: list[dict[str, Any]] = []
+        with_pass = without_pass = 0
+        try:
+            for c in cases:
+                prompt = str(c.get("prompt", ""))
+                expect = c.get("expect") or {}
+                try:
+                    without = await client.complete(prompt)
+                    with_ = await client.complete(prompt, system_prompt=skill_body)
+                except Exception as exc:  # noqa: BLE001
+                    rows.append({"id": str(c.get("id", "?")), "without": False, "with": False, "error": str(exc)[:120]})
+                    continue
+                wo_ok, _, _ = _grade_answer(without, expect)
+                w_ok, _, _ = _grade_answer(with_, expect)
+                without_pass += int(wo_ok)
+                with_pass += int(w_ok)
+                rows.append({"id": str(c.get("id", "?")), "without": wo_ok, "with": w_ok})
+        finally:
+            try:
+                await close_default_ai_client()
+            except Exception:  # noqa: BLE001
+                pass
+        return rows, with_pass, without_pass
+
+    rows, with_pass, without_pass = asyncio.run(_all())
+    return {
+        "available": True,
+        "provider": getattr(client, "provider", "unknown"),
+        "rows": rows,
+        "with_pass": with_pass,
+        "without_pass": without_pass,
+        "errors": sum(1 for r in rows if r.get("error")),
+        "cases": len(cases),
+    }
+
+
+@skills_app.command("eval")
+def skills_eval(
+    path: Path = typer.Argument(Path("."), help="Skill dir or SKILL.md (default: ./)."),
+    run: bool = typer.Option(False, "--run", help="Behavioral eval: generate with vs without the skill and grade (needs an AI provider)."),
+    init: bool = typer.Option(False, "--init", help="Write a starter evals.json if none exists."),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable results."),
+):
+    """Evaluate a skill against its ``evals.json`` (the guide's 'planned standard').
+
+    Default = deterministic **coverage**: do the expected answer-terms for each case actually
+    appear in the SKILL.md body (does the skill teach what its evals require). ``--run`` adds the
+    **with-vs-without-skill** behavioral delta — the same prompt answered with the skill injected
+    as context vs without, graded on ``expect.contains``/``excludes`` — and writes a
+    ``benchmark.json`` receipt.
+    """
+    skill_dir = path.expanduser()
+    if skill_dir.name == "SKILL.md":
+        skill_dir = skill_dir.parent
+    skill_file = skill_dir / "SKILL.md"
+    if not skill_file.exists():
+        ch.error("No SKILL.md found.", details=str(skill_file))
+        raise typer.Exit(1)
+
+    evals_path = skill_dir / "evals.json"
+    if init:
+        if evals_path.exists():
+            ch.warning("evals.json already exists — not overwriting.", details=str(evals_path))
+        else:
+            evals_path.write_text(json.dumps(_EVALS_TEMPLATE, indent=2) + "\n", encoding="utf-8")
+            ch.success("Wrote starter evals.json.", details=str(evals_path))
+            ch.info(f"Fill in real cases, then:  navig skill eval {skill_dir.name} --run")
+        return
+
+    try:
+        evals = json.loads(evals_path.read_text(encoding="utf-8")) if evals_path.exists() else {}
+    except Exception as exc:  # noqa: BLE001
+        ch.error(f"evals.json is not valid JSON: {exc}", details=str(evals_path))
+        raise typer.Exit(1) from exc
+
+    cases = evals.get("cases") if isinstance(evals, dict) else None
+    if not isinstance(cases, list) or not cases:
+        ch.error('No eval cases. Expected {"cases": [{"id","prompt","expect":{"contains":[…]}}]}.',
+                 details=str(evals_path))
+        ch.info(f"Scaffold one with:  navig skill eval {skill_dir.name} --init")
+        raise typer.Exit(1)
+    if not all(isinstance(c, dict) for c in cases):
+        ch.error("Every eval case must be an object {id, prompt, expect}.", details=str(evals_path))
+        raise typer.Exit(1)
+
+    body_lower = skill_file.read_text(encoding="utf-8").lower()
+
+    # --- deterministic coverage (always) ---
+    cov_rows: list[tuple[str, str, int]] = []
+    covered = terms_total = 0
+    for c in cases:
+        expect = c.get("expect") if isinstance(c.get("expect"), dict) else {}
+        terms = _term_list(expect.get("contains"))
+        present = [t for t in terms if t.lower() in body_lower]
+        terms_total += len(terms)
+        covered += len(present)
+        pct = int(100 * len(present) / len(terms)) if terms else 100
+        cov_rows.append((str(c.get("id", "?")), f"{len(present)}/{len(terms)}", pct))
+    overall_cov = int(100 * covered / terms_total) if terms_total else 100
+
+    behavioral = _run_behavioral(skill_file.read_text(encoding="utf-8"), cases) if run else None
+    result: dict[str, Any] = {"skill": skill_dir.name, "cases": len(cases), "coverage_pct": overall_cov}
+    if behavioral is not None:
+        result["behavioral"] = behavioral
+
+    below = bool(behavioral and behavioral.get("available") and behavioral["with_pass"] < behavioral["without_pass"])
+    all_errored = bool(behavioral and behavioral.get("available") and behavioral.get("errors", 0) >= len(cases))
+
+    if json_out:
+        ch.console.print_json(data=result)
+        raise typer.Exit(1 if (below or all_errored) else 0)
+
+    from navig.console_helper import Table
+
+    t = Table(box=None, show_header=True, padding=(0, 2))
+    t.add_column("Case", no_wrap=True)
+    t.add_column("Covered", no_wrap=True)
+    t.add_column("SKILL.md coverage")
+    for cid, frac, pct in cov_rows:
+        colour = "green" if pct >= 80 else ("yellow" if pct >= 50 else "red")
+        t.add_row(cid, frac, f"[{colour}]{pct}%[/{colour}]")
+    ch.console.print(t)
+    ch.info(f"Coverage: {overall_cov}% of expected terms appear in SKILL.md across {len(cases)} case(s).")
+
+    if behavioral is None:
+        ch.info(f"Add the with-vs-without behavioral delta:  navig skill eval {skill_dir.name} --run")
+        return
+
+    if not behavioral.get("available"):
+        ch.warning("Behavioral --run skipped: " + str(behavioral.get("reason", "no AI provider.")))
+        return
+
+    bt = Table(box=None, show_header=True, padding=(0, 2))
+    bt.add_column("Case", no_wrap=True)
+    bt.add_column("without", no_wrap=True)
+    bt.add_column("with", no_wrap=True)
+    for row in behavioral["rows"]:
+        g = lambda ok: "[green]✔[/green]" if ok else "[red]✗[/red]"  # noqa: E731
+        bt.add_row(row["id"], g(row["without"]), g(row["with"]))
+    ch.console.print(bt)
+
+    wp, wo = behavioral["with_pass"], behavioral["without_pass"]
+    errors = behavioral.get("errors", 0)
+    (skill_dir / "benchmark.json").write_text(json.dumps(behavioral, indent=2) + "\n", encoding="utf-8")
+
+    if errors >= len(cases):
+        first = next((r.get("error") for r in behavioral["rows"] if r.get("error")), "unknown error")
+        ch.warning(f"Behavioral run could not execute — every case errored: {first}")
+        ch.info("Coverage above is still valid. Configure a provider (navig connect …) for the with/without delta. → benchmark.json")
+        raise typer.Exit(1)  # provider was available but 100% failed — an infra failure, not a pass
+
+    delta = wp - wo
+    note = f", {errors} errored" if errors else ""
+    ch.info(f"Behavioral ({behavioral.get('provider')}): with-skill {wp}/{len(cases)} vs without {wo}/{len(cases)}  "
+            f"(Δ {'+' if delta >= 0 else ''}{delta}{note}) → benchmark.json")
+    if below:
+        ch.error("With-skill scored LOWER than without — the skill is not helping these cases.")
+        raise typer.Exit(1)
+    ch.success("Skill helps (or matches) on every measured case.")
+
+
+@skills_app.command("benchmark")
+def skills_benchmark(
+    root: Path = typer.Argument(Path("."), help="A skill dir, or a parent dir of skill dirs (each with SKILL.md + evals.json)."),
+    runs: int = typer.Option(3, "--runs", "-n", help="Behavioral runs per skill; the gate uses the mean."),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable results."),
+):
+    """Run the behavioral eval N times across a skill library and gate on mean(with) ≥ mean(without).
+
+    The continuously-verified gate (wire into a nightly): a skill *regresses* if, averaged over
+    ``--runs``, injecting it does not beat the no-skill baseline. Averaging N runs absorbs LLM
+    non-determinism. Needs an AI provider. Exits non-zero on any regression, if the provider is
+    unavailable, or if every skill was unmeasurable.
+    """
+    root = root.expanduser()
+
+    def _is_skill(d: Path) -> bool:
+        return (d / "SKILL.md").exists() and (d / "evals.json").exists()
+
+    if _is_skill(root):
+        skill_dirs = [root]
+    elif root.is_dir():
+        skill_dirs = [d for d in sorted(root.iterdir()) if d.is_dir() and _is_skill(d)]
+    else:
+        skill_dirs = []
+    if not skill_dirs:
+        ch.error(f"No skills with both SKILL.md and evals.json under: {root}")
+        raise typer.Exit(1)
+
+    runs = max(1, runs)
+    rows: list[dict[str, Any]] = []
+    regressed = unmeasured = 0
+    provider_down = False
+
+    for sd in skill_dirs:
+        try:
+            cases = (json.loads((sd / "evals.json").read_text(encoding="utf-8")) or {}).get("cases") or []
+        except Exception:  # noqa: BLE001
+            cases = []
+        cases = [c for c in cases if isinstance(c, dict)]
+        if not cases:
+            rows.append({"skill": sd.name, "runs": 0, "mean_with": None, "mean_without": None, "verdict": "no-cases"})
+            unmeasured += 1
+            continue
+
+        skill_body = (sd / "SKILL.md").read_text(encoding="utf-8")
+        withs: list[int] = []
+        withouts: list[int] = []
+        for _ in range(runs):
+            b = _run_behavioral(skill_body, cases)
+            if not b.get("available"):
+                provider_down = True
+                break
+            if b.get("errors", 0) >= len(cases):
+                continue  # this run couldn't measure; try the remaining runs
+            withs.append(b["with_pass"])
+            withouts.append(b["without_pass"])
+        if provider_down:
+            break
+        if not withs:
+            rows.append({"skill": sd.name, "runs": 0, "mean_with": None, "mean_without": None, "verdict": "unmeasured"})
+            unmeasured += 1
+            continue
+        mw = round(sum(withs) / len(withs), 2)
+        mwo = round(sum(withouts) / len(withouts), 2)
+        ok = mw >= mwo
+        if not ok:
+            regressed += 1
+        rows.append({"skill": sd.name, "runs": len(withs), "cases": len(cases),
+                     "mean_with": mw, "mean_without": mwo, "verdict": "pass" if ok else "REGRESSED"})
+
+    if provider_down:
+        if json_out:
+            ch.console.print_json(data={"error": "no AI provider available", "measured": False})
+        else:
+            ch.error("No AI provider available — benchmark cannot run. Connect one (navig connect …).")
+        raise typer.Exit(1)
+
+    measured = len(rows) - unmeasured
+    if json_out:
+        ch.console.print_json(data={
+            "skills": len(rows), "measured": measured, "regressed": regressed,
+            "unmeasured": unmeasured, "runs": runs, "rows": rows,
+        })
+        raise typer.Exit(1 if (regressed or measured == 0) else 0)
+
+    from navig.console_helper import Table
+
+    t = Table(box=None, show_header=True, padding=(0, 2))
+    t.add_column("Skill", no_wrap=True)
+    t.add_column("Runs", no_wrap=True)
+    t.add_column("mean with", no_wrap=True)
+    t.add_column("mean without", no_wrap=True)
+    t.add_column("Verdict")
+    for r in rows:
+        if r["verdict"] == "pass":
+            v = "[green]✔ pass[/green]"
+        elif r["verdict"] == "REGRESSED":
+            v = "[red]✗ REGRESSED[/red]"
+        else:
+            v = f"[yellow]— {r['verdict']}[/yellow]"
+        mw = "—" if r["mean_with"] is None else str(r["mean_with"])
+        mwo = "—" if r["mean_without"] is None else str(r["mean_without"])
+        t.add_row(r["skill"], str(r.get("runs", 0)), mw, mwo, v)
+    ch.console.print(t)
+    ch.info(f"{measured}/{len(rows)} measured over {runs} run(s) · {regressed} regressed · {unmeasured} unmeasured")
+    if regressed:
+        ch.error(f"{regressed} skill(s) regressed (mean with-skill < without) — library not continuously verified.")
+        raise typer.Exit(1)
+    if measured == 0:
+        ch.error("No skill could be measured (all runs errored).")
+        raise typer.Exit(1)
+    ch.success(f"All {measured} measured skill(s) pass: mean with-skill ≥ without over {runs} run(s).")
 
 
 def _installed_skill_ids() -> set[str]:
@@ -850,6 +1470,93 @@ def skills_suggest(
                 install_asset(spec, force=False)
             except Exception as exc:  # noqa: BLE001
                 ch.warning(f"  failed: {sk.get('id')} ({exc})")
+
+
+@skills_app.command("auto")
+def skills_auto(
+    path: str = typer.Option(".", "--path", help="Project directory to scan."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Install all matched skills without prompting."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be installed; install nothing."),
+    force: bool = typer.Option(False, "--force", help="Reinstall even if already present."),
+    global_: bool = typer.Option(
+        False, "--global", "-g",
+        help="Install user-wide (~/.navig/store/skills, every project) instead of into THIS project.",
+    ),
+):
+    """Scan the project, detect its stack, and auto-install matching agent skills.
+
+    The skills auto-detect flow: banner → scan → detected-tech grid → skills
+    list (with `← source`) → agent detection → interactive checkbox select →
+    install with progress → timed summary. Deterministic — reads package.json /
+    pyproject / Cargo.toml / config files → a declarative technology map
+    (:mod:`navig.skills.autodetect`) → SKILL.md skills installed via
+    ``navig skill install``. Use ``navig skill suggest`` for the fuzzy matcher.
+
+    Installs **project-local** into ``<project>/.navig/skills/`` by default (scoped
+    to this project + committable for the team); pass ``--global`` for user-wide.
+    """
+    from pathlib import Path
+
+    from navig.skills import auto_ui as ui
+    from navig.skills.autodetect import detect_stack, resolve_skills
+
+    ui.print_banner()
+
+    # 1) Scan (TTY-aware spinner that clears itself)
+    with ui.console.status("[dim]Scanning project…[/]", spinner="dots"):
+        rules = detect_stack(path)
+    if not rules:
+        ui._c.print("  [yellow]⚠ No supported technologies detected here.[/]")
+        ui._c.print("  [dim]Run this in a project directory, or add a rule to navig.skills.autodetect.TECH_SKILLS.[/]\n")
+        return
+
+    # 2) Detected grid
+    ui.print_detected(rules)
+
+    # Install target: project-local .navig/skills by default, else the global store.
+    project = Path(path).resolve()
+    install_root = None if global_ else (project / ".navig" / "skills")
+    where = "[bold]globally[/] [dim](~/.navig/store/skills — every project)[/]" if global_ \
+        else f"[bold]this project[/] [dim]({install_root})[/]"
+
+    picks = resolve_skills(rules)
+    installed = ui.installed_ids(install_root)
+    agents = ui.detect_agents()
+
+    if not picks:
+        ui._c.print("  [yellow]No skills available for your stack yet.[/]\n")
+        return
+
+    # 3) Dry-run: show + stop
+    if dry_run:
+        ui.print_skills(picks, installed)
+        ui._c.print(f"  [dim]Agents: {', '.join(agents)}[/]")
+        ui._c.print(f"  [dim]Target: {where}[/]".replace("[bold]", "").replace("[/]", ""))
+        ui._c.print("  [dim]--dry-run: nothing was installed.[/]\n")
+        return
+
+    # 4) Select (checkbox unless --yes → all not-yet-installed)
+    if yes:
+        selected = [p for p in picks if force or ui._skill_id(p) not in installed]
+        ui.print_skills(selected or picks, installed)
+    else:
+        selected = ui.multiselect(picks, installed if not force else set())
+
+    selected = [p for p in selected if force or ui._skill_id(p) not in installed]
+    if not selected:
+        ui._c.print("\n  [dim]Nothing to install.[/]\n")
+        return
+
+    # 5) Install with progress (into the chosen target) + 6) lock + summary
+    ui._c.print(f"  [cyan]◆[/] [bold]Installing into[/] {where}")
+    ui._c.print()
+    t0 = ui.start_timer()
+    ok, failed = ui.install_with_progress(selected, force=force, agents=agents, install_root=install_root)
+    failed_refs = {r for r, _ in failed}
+    succeeded = [p for p in selected if p.ref not in failed_refs]
+    if not global_ and succeeded:
+        ui.write_skills_lock(project, succeeded)  # .navig/skills-lock.json (committable)
+    ui.print_summary(ok, failed, ui.start_timer() - t0)
 
 
 @skills_app.command("list")
@@ -993,23 +1700,20 @@ def skills_synthesize(
     """
     try:
         from navig.agent.pattern_analyzer import PatternAnalyzer  # type: ignore
-        from navig.agent.pattern_observer import (  # type: ignore
-            DEFAULT_DB_PATH,
-            PatternObserver,
-        )
+        from navig.agent.pattern_observer import PatternObserver  # type: ignore
         from navig.agent.skill_drafter import SkillDrafter  # type: ignore
     except ImportError as exc:
         ch.error(f"Synthesis pipeline not available: {exc}")
         raise typer.Exit(1) from exc
 
-    observer = PatternObserver(DEFAULT_DB_PATH)
+    observer = PatternObserver()
     records = observer.get_recent(limit=500)
 
     if not records:
-        ch.warn(
+        ch.warning(
             "No command patterns found in pattern log.\n"
             "  Run a few commands first to build the pattern database.\n"
-            f"  Log path: {DEFAULT_DB_PATH}"
+            f"  Log path: {observer.db_path}"
         )
         raise typer.Exit(0)
 
@@ -1017,7 +1721,7 @@ def skills_synthesize(
     scored = analyzer.score_by_frequency(records)
 
     if not scored:
-        ch.warn(
+        ch.warning(
             f"No patterns found with ≥{min_occurrences} occurrences.\n"
             "  Try lowering --min-occurrences."
         )
@@ -1064,7 +1768,7 @@ def skills_synthesize(
     for draft in drafts:
         if not draft.safe:
             if yes:
-                ch.warn(f"Skipping unsafe draft: {draft.name}")
+                ch.warning(f"Skipping unsafe draft: {draft.name}")
                 skipped += 1
                 continue
             choice = typer.confirm(
@@ -1078,4 +1782,4 @@ def skills_synthesize(
         ch.success(f"Saved: {path}")
         saved += 1
 
-    ch.print(f"\n[bold]{saved}[/bold] skill(s) saved, {skipped} skipped.")
+    ch.console.print(f"\n[bold]{saved}[/bold] skill(s) saved, {skipped} skipped.")

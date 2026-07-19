@@ -12,7 +12,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/permissions/rules.py
 # ---------------------------------------------------------------------------
@@ -169,7 +168,7 @@ class TestConfigPathsRollback:
 
     def test_rollback_skips_preexisting_dir(self, tmp_path: Path) -> None:
         import navig.installer.modules.config_paths as m
-        from navig.installer.contracts import InstallerContext, Action, Result, ModuleState
+        from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
         ctx = _ctx(tmp_path)
         # Simulate a dir that "existed" before install
         pre_dir = tmp_path / "existing"

@@ -3,8 +3,8 @@ Tests for navig.cli.template_domains — deprecated addon and server-template co
 """
 from unittest.mock import MagicMock, patch
 
-import typer
 import pytest
+import typer
 from typer.testing import CliRunner
 
 runner = CliRunner()

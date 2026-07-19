@@ -1,268 +1,152 @@
 #!/usr/bin/env python3
+"""Hierarchical configuration resolution: app-local `.navig/` overrides the global dir.
+
+Two things were wrong with the previous version of this test, both of the "verification
+that lies" class:
+
+1. It wrote to ``Path.home() / ".navig"`` — the operator's REAL config dir. On a live
+   machine that dir holds real hosts (cyberaigen-vps, kali-warroom, …); the test created
+   ``~/.navig/hosts/test-server.yaml`` in it and deleted files from it on every run,
+   risking a real host named "test-server" and instantiating a ConfigManager against the
+   real config (which can migrate/rewrite it). The session-scoped isolation fixture sets
+   NAVIG_CONFIG_DIR, but ``Path.home()`` bypasses it entirely.
+
+2. It never asserted anything. Every check was ``ch.success`` / ``ch.error`` (prints), so
+   the test passed unconditionally as long as it did not crash — green even when the wrong
+   config was loaded. Fake coverage.
+
+Now the "global" dir is ``config_dir()`` — which the conftest session fixture isolates to
+a temp dir — so nothing outside the sandbox is ever touched, and every phase is a real
+assertion that fails when the hierarchy resolves incorrectly.
 """
-Comprehensive test for hierarchical configuration system.
-"""
+
+from __future__ import annotations
 
 import os
-import sys
-
-# Set UTF-8 encoding for Windows
-if sys.platform == "win32":
-    import codecs
-
-    sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer, "strict")
-    sys.stderr = codecs.getwriter("utf-8")(sys.stderr.buffer, "strict")
-
 import shutil
 import tempfile
 from pathlib import Path
 
+import pytest
 import yaml
 
-# Add app to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-import pytest
-
-from navig import console_helper as ch
 from navig.commands.init import init_app
 from navig.config import ConfigManager
+from navig.platform.paths import config_dir
 
 pytestmark = pytest.mark.integration
 
 
-def test_hierarchical_config():
-    """Test complete hierarchical configuration system."""
+APP_HOST = {
+    "name": "test-server",
+    "host": "10.0.0.1",
+    "port": 2222,
+    "user": "app-user",
+    "ssh_key": "~/.ssh/app_key",
+    "database": {
+        "type": "postgres", "remote_port": 5432, "local_tunnel_port": 5433,
+        "name": "app_db", "user": "app_dbuser", "password": "app_pass",
+    },
+}
+GLOBAL_HOST = {
+    "name": "test-server",
+    "host": "10.0.0.10",   # deliberately different from APP_HOST
+    "port": 22,
+    "user": "global-user",
+    "ssh_key": "~/.ssh/global_key",
+    "database": {
+        "type": "mysql", "remote_port": 3306, "local_tunnel_port": 3307,
+        "name": "global_db", "user": "global_dbuser", "password": "global_pass",
+    },
+}
 
-    # Create temp directory for testing
+
+def _write_host(hosts_dir: Path, cfg: dict) -> None:
+    hosts_dir.mkdir(parents=True, exist_ok=True)
+    (hosts_dir / f"{cfg['name']}.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
+
+
+def test_hierarchical_config():
+    """App-local host config overrides the global one; the global is used outside an app."""
+    original_dir = Path.cwd()
     test_dir = Path(tempfile.mkdtemp(prefix="navig-hierarchy-test-"))
-    print(f"\n{'=' * 80}")
-    print(f"Test directory: {test_dir}")
-    print(f"{'=' * 80}\n")
+
+    # The "global" dir is the ISOLATED config_dir() (sandboxed by the session fixture),
+    # never the operator's real ~/.navig.
+    global_dir = config_dir()
 
     try:
-        original_dir = Path.cwd()
-
-        # ========================================================================
-        # TEST 1: Initialize app
-        # ========================================================================
-        print("TEST 1: Initialize App")
-        print("-" * 80)
+        # TEST 1 — initialize an app in a temp dir
         os.chdir(test_dir)
-        init_app({"copy_global": False, "quiet": False, "yes": True})
-
+        init_app({"copy_global": False, "quiet": True, "yes": True})
         navig_dir = test_dir / ".navig"
-        if navig_dir.exists():
-            ch.success("✓ App initialized successfully")
-        else:
-            ch.error("✗ App initialization failed", "")
-            return
+        assert navig_dir.exists(), "app initialization must create a .navig/ directory"
 
-        # ========================================================================
-        # TEST 2: Create app-specific host config
-        # ========================================================================
-        print("\nTEST 2: Create app-specific host config")
-        print("-" * 80)
+        # TEST 2 + 3 — an app-local host and a DIFFERENT global host of the same name
+        _write_host(navig_dir / "hosts", APP_HOST)
+        _write_host(global_dir / "hosts", GLOBAL_HOST)
 
-        app_host_config = {
-            "name": "test-server",
-            "host": "10.0.0.1",
-            "port": 2222,
-            "user": "app-user",
-            "ssh_key": "~/.ssh/app_key",
-            "database": {
-                "type": "mysql",
-                "remote_port": 3306,
-                "local_tunnel_port": 3307,
-                "name": "app_db",
-                "user": "app_dbuser",
-                "password": "app_pass",
-            },
-        }
-
-        app_host_file = navig_dir / "hosts" / "test-server.yaml"
-        with open(app_host_file, "w") as f:
-            yaml.dump(app_host_config, f)
-        ch.info(f"Created app host config: {app_host_file}")
-
-        # ========================================================================
-        # TEST 3: Create global host config with different values
-        # ========================================================================
-        print("\nTEST 3: Create global host config")
-        print("-" * 80)
-
-        global_config_dir = Path.home() / ".navig"
-        global_config_dir.mkdir(exist_ok=True)
-        global_hosts_dir = global_config_dir / "hosts"
-        global_hosts_dir.mkdir(exist_ok=True)
-
-        global_host_config = {
-            "name": "test-server",
-            "host": "10.0.0.10",  # Different IP
-            "port": 22,  # Different port
-            "user": "global-user",  # Different user
-            "ssh_key": "~/.ssh/global_key",
-            "database": {
-                "type": "mysql",
-                "remote_port": 3306,
-                "local_tunnel_port": 3307,
-                "name": "global_db",  # Different database
-                "user": "global_dbuser",
-                "password": "global_pass",
-            },
-        }
-
-        global_host_file = global_hosts_dir / "test-server.yaml"
-        with open(global_host_file, "w") as f:
-            yaml.dump(global_host_config, f)
-        ch.info(f"Created global host config: {global_host_file}")
-
-        # ========================================================================
-        # TEST 4: Load config from app directory (should use app config)
-        # ========================================================================
-        print("\nTEST 4: Load config from app directory")
-        print("-" * 80)
-
+        # TEST 4 — inside the app, the app-local config wins
         os.chdir(test_dir)
-        config_mgr = ConfigManager(verbose=True)
-        loaded_config = config_mgr.load_host_config("test-server")
+        loaded = ConfigManager(verbose=False).load_host_config("test-server")
+        assert loaded, "host config must load from inside the app"
+        assert loaded["host"] == "10.0.0.1", (
+            f"app config must take precedence, got {loaded['host']!r} (the global value)"
+        )
+        assert loaded["port"] == 2222
 
-        if loaded_config:
-            if loaded_config["host"] == "10.0.0.1":
-                ch.success("✓ App config takes precedence (correct)")
-                ch.info(f"  Host: {loaded_config['host']} (app)")
-                ch.info(f"  Port: {loaded_config['port']}")
-                ch.info(f"  User: {loaded_config['user']}")
-            else:
-                ch.error(
-                    "✗ Wrong config loaded",
-                    f"Expected app config (10.0.0.1), got {loaded_config['host']}",
-                )
-        else:
-            ch.error("✗ Failed to load host config", "")
-
-        # ========================================================================
-        # TEST 5: Load config from subdirectory (should still use app config)
-        # ========================================================================
-        print("\nTEST 5: Load config from subdirectory")
-        print("-" * 80)
-
+        # TEST 5 — app root is still detected from a nested subdirectory
         subdir = test_dir / "src" / "components"
         subdir.mkdir(parents=True, exist_ok=True)
         os.chdir(subdir)
+        loaded = ConfigManager(verbose=False).load_host_config("test-server")
+        assert loaded and loaded["host"] == "10.0.0.1", (
+            "the app root must be found by walking up from a subdirectory"
+        )
 
-        config_mgr = ConfigManager(verbose=True)
-        loaded_config = config_mgr.load_host_config("test-server")
-
-        if loaded_config:
-            if loaded_config["host"] == "10.0.0.1":
-                ch.success("✓ App root detected from subdirectory (correct)")
-                ch.info(f"  Current dir: {Path.cwd()}")
-                ch.info(f"  App root: {config_mgr.base_dir.parent}")
-                ch.info(f"  Host: {loaded_config['host']}")
-            else:
-                ch.error(
-                    "✗ Wrong config loaded from subdirectory",
-                    f"Expected app config, got {loaded_config['host']}",
-                )
-        else:
-            ch.error("✗ Failed to load host config from subdirectory", "")
-
-        # ========================================================================
-        # TEST 6: Load config from outside app (should use global config)
-        # ========================================================================
-        print("\nTEST 6: Load config from outside app directory")
-        print("-" * 80)
-
+        # TEST 6 — OUTSIDE any app, the global config is used
         temp_outside = Path(tempfile.mkdtemp(prefix="navig-outside-"))
         try:
             os.chdir(temp_outside)
-
-            # Force global config resolution in this phase so the test remains
-            # deterministic even if an unrelated ancestor directory contains
-            # its own .navig/ (common in shared temp roots on CI/dev machines).
-            config_mgr = ConfigManager(config_dir=Path.home() / ".navig", verbose=True)
-            loaded_config = config_mgr.load_host_config("test-server")
-
-            if loaded_config:
-                if loaded_config["host"] == "10.0.0.10":
-                    ch.success("✓ Global config used outside app (correct)")
-                    ch.info(f"  Host: {loaded_config['host']} (global)")
-                    ch.info(f"  User: {loaded_config['user']}")
-                else:
-                    ch.error(
-                        "✗ Wrong config loaded outside app",
-                        f"Expected global config (10.0.0.10), got {loaded_config['host']}",
-                    )
-            else:
-                ch.error("✗ Failed to load global host config", "")
+            # Pin the global dir so an unrelated ancestor .navig/ on a shared temp root
+            # can't make this non-deterministic.
+            loaded = ConfigManager(config_dir=global_dir, verbose=False).load_host_config(
+                "test-server"
+            )
+            assert loaded and loaded["host"] == "10.0.0.10", (
+                f"outside an app the GLOBAL config must be used, got "
+                f"{loaded and loaded['host']!r}"
+            )
+            assert loaded["user"] == "global-user"
         finally:
-            os.chdir(test_dir)  # Change back before cleanup
-            if temp_outside.exists():
-                shutil.rmtree(temp_outside, ignore_errors=True)
+            os.chdir(test_dir)
+            shutil.rmtree(temp_outside, ignore_errors=True)
 
-        # ========================================================================
-        # TEST 7: List hosts (should show merged list)
-        # ========================================================================
-        print("\nTEST 7: List hosts from app directory")
-        print("-" * 80)
-
+        # TEST 7 — the merged host list includes the host
         os.chdir(test_dir)
-        config_mgr = ConfigManager(verbose=True)
-        hosts = config_mgr.list_hosts()
+        assert "test-server" in ConfigManager(verbose=False).list_hosts()
 
-        if "test-server" in hosts:
-            ch.success("✓ Host 'test-server' found in list")
-            ch.info(f"  Total hosts: {len(hosts)}")
-        else:
-            ch.error("✗ Host 'test-server' not found in host list", "")
-
-        # ========================================================================
-        # TEST 8: Database path separation
-        # ========================================================================
-        print("\nTEST 8: Database path separation")
-        print("-" * 80)
-
+        # TEST 8 — app and global resolve to DIFFERENT database paths
         os.chdir(test_dir)
-        config_mgr_app = ConfigManager(verbose=False)
-        app_db_path = config_mgr_app.db_file
-
+        app_db = ConfigManager(verbose=False).db_file
         temp_db_test = Path(tempfile.mkdtemp(prefix="navig-db-test-"))
         try:
             os.chdir(temp_db_test)
-            config_mgr_global = ConfigManager(verbose=False)
-            global_db_path = config_mgr_global.db_file
-
-            if app_db_path != global_db_path:
-                ch.success("✓ Database paths are separated")
-                ch.info(f"  App DB: {app_db_path}")
-                ch.info(f"  Global DB:  {global_db_path}")
-            else:
-                ch.error("✗ Database paths are not separated", f"Both use: {app_db_path}")
+            global_db = ConfigManager(verbose=False).db_file
+            assert app_db != global_db, (
+                f"app and global must use separate databases; both were {app_db}"
+            )
         finally:
             os.chdir(test_dir)
-            if temp_db_test.exists():
-                shutil.rmtree(temp_db_test, ignore_errors=True)
-
-        # ========================================================================
-        # Summary
-        # ========================================================================
-        print("\n" + "=" * 80)
-        ch.success("All hierarchical configuration tests completed!")
-        print("=" * 80 + "\n")
+            shutil.rmtree(temp_db_test, ignore_errors=True)
 
     finally:
-        # Cleanup
         os.chdir(original_dir)
-        if test_dir.exists():
-            shutil.rmtree(test_dir)
-            ch.dim(f"Cleaned up test directory: {test_dir}")
-
-        # Cleanup global test config
-        global_test_file = Path.home() / ".navig" / "hosts" / "test-server.yaml"
-        if global_test_file.exists():
-            global_test_file.unlink()
-            ch.dim(f"Cleaned up global test config: {global_test_file}")
+        shutil.rmtree(test_dir, ignore_errors=True)
+        # Only ever remove the fixture we wrote, and only from the ISOLATED global dir.
+        gtf = global_dir / "hosts" / "test-server.yaml"
+        if gtf.exists():
+            gtf.unlink()
 
 
 if __name__ == "__main__":

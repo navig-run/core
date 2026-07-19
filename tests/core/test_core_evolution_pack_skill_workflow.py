@@ -8,11 +8,9 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-
 # ---------------------------------------------------------------------------
 # navig.core.evolution.pack
 # ---------------------------------------------------------------------------
-
 from navig.core.evolution.pack import PackEvolver
 
 

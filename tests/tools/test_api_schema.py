@@ -13,7 +13,6 @@ import pytest
 
 from navig.tools.api_schema import ApiSource, ApiToolResult, redact_sensitive
 
-
 # ─────────────────────────────────────────────────────────────
 # redact_sensitive
 # ─────────────────────────────────────────────────────────────

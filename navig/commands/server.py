@@ -1,7 +1,7 @@
 """
 Server Management Commands
 
-The Schema tracks all assets. Every server. Every operation.
+NAVIG tracks every asset. Every server. Every operation.
 """
 
 from typing import Any
@@ -23,7 +23,7 @@ def list_servers(options: dict[str, Any]):
     default_server = config_manager.global_config.get("default_server")
 
     if not servers:
-        ch.warning("No servers configured", "Use 'navig server add <name>' to add one.")
+        ch.warning("No servers configured", "Use 'navig host add <name>' to add one.")
         return
 
     if options.get("raw"):
@@ -87,7 +87,7 @@ def show_current_server(options: dict[str, Any]):
         return
 
     if not active:
-        ch.warning("No active server", "Use 'navig server use <name>' to activate one.")
+        ch.warning("No active server", "Use 'navig host use <name>' to activate one.")
         return
 
     try:
@@ -331,11 +331,17 @@ def remove_server(name: str, options: dict[str, Any]):
             ch.warning("Cancelled.")
             return
 
+    # Capture BEFORE the delete: get_active_server() filters out non-existent hosts, so checking
+    # after delete_server_config always returns False and the stale pointer would linger (then a
+    # re-added same-name server silently re-activates). server == host (get/set_active_server
+    # delegate to host), so the pointer lives in active_host_file — NOT the dead active_server.txt
+    # this used to unlink, which nothing ever wrote. Mirrors host.py remove_host.
+    was_active = config_manager.get_active_server() == name
+
     config_manager.delete_server_config(name)
 
-    # If this was the active server, clear it
-    if config_manager.get_active_server() == name:
-        config_manager.active_server_file.unlink(missing_ok=True)
+    if was_active:
+        config_manager.active_host_file.unlink(missing_ok=True)
 
     ch.success(f"Server '{name}' removed.")
 
@@ -346,7 +352,7 @@ def inspect_server(options: dict[str, Any]):
 
     active = config_manager.get_active_server()
     if not active:
-        ch.error("No active server. Use 'navig server use <name>' first.")
+        ch.error("No active server. Use 'navig host use <name>' first.")
         return
 
     ch.info(f"Inspecting server: {active}\n")

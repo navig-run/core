@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # connection_pool — SSHConnection (no real SSH needed)
 # ---------------------------------------------------------------------------
@@ -70,7 +69,7 @@ class TestSSHConnectionProperties:
 
 class TestSSHConnectionPooledAlias:
     def test_pooled_ssh_connection_is_alias(self):
-        from navig.connection_pool import SSHConnection, PooledSSHConnection
+        from navig.connection_pool import PooledSSHConnection, SSHConnection
         assert PooledSSHConnection is SSHConnection
 
 

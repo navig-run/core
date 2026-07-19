@@ -100,10 +100,12 @@ def _clean_registry(monkeypatch):
     registry = get_connector_registry()
     registry.reset()
 
-    # Patch _ensure_connectors_loaded so it doesn't import real Gmail/Calendar
-    import navig.commands.connector_cmd as cmd_mod
+    # Mark connectors already-loaded so _ensure_connectors_loaded() is a no-op and
+    # doesn't import the real Gmail/Calendar connectors. The guard flag now lives
+    # in the bootstrap module (single source of truth for CLI + MCP).
+    import navig.connectors.bootstrap as bootstrap_mod
 
-    monkeypatch.setattr(cmd_mod, "_CONNECTORS_LOADED", True)
+    monkeypatch.setattr(bootstrap_mod, "_CONNECTORS_LOADED", True)
 
     # Register fakes
     registry.register(_FakeGmail)
@@ -146,10 +148,11 @@ class TestConnectorAutoLoader:
     def test_ensure_connectors_loaded_registers_extended_connectors(self, monkeypatch):
         """Regression: new built-in connectors must be auto-registered by CLI loader."""
         import navig.commands.connector_cmd as cmd_mod
+        import navig.connectors.bootstrap as bootstrap_mod
 
         registry = get_connector_registry()
         registry.reset()
-        monkeypatch.setattr(cmd_mod, "_CONNECTORS_LOADED", False)
+        monkeypatch.setattr(bootstrap_mod, "_CONNECTORS_LOADED", False)
 
         cmd_mod._ensure_connectors_loaded()
 
@@ -165,15 +168,16 @@ class TestConnectorAutoLoader:
     def test_ensure_connectors_loaded_is_idempotent(self, monkeypatch):
         """Calling loader repeatedly should not error and should preserve registrations."""
         import navig.commands.connector_cmd as cmd_mod
+        import navig.connectors.bootstrap as bootstrap_mod
 
         registry = get_connector_registry()
         registry.reset()
-        monkeypatch.setattr(cmd_mod, "_CONNECTORS_LOADED", False)
+        monkeypatch.setattr(bootstrap_mod, "_CONNECTORS_LOADED", False)
 
         cmd_mod._ensure_connectors_loaded()
         first = set(registry.all_classes().keys())
 
-        # Second call should be a no-op due to _CONNECTORS_LOADED guard.
+        # Second call should be a no-op due to the bootstrap _CONNECTORS_LOADED guard.
         cmd_mod._ensure_connectors_loaded()
         second = set(registry.all_classes().keys())
 

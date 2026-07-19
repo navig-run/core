@@ -20,7 +20,7 @@ from navig.commands._async_utils import run_sync as _run
 
 connector_app = typer.Typer(
     name="connector",
-    help="Manage service connectors (Gmail, Calendar, …).",
+    help="Manage service connectors (Gmail, Calendar, …). AI providers → `navig connect`.",
     no_args_is_help=True,
 )
 
@@ -52,9 +52,7 @@ def connector_list(
         connectors = registry.list_all()
 
     if json_output:
-        import json
-
-        ch.console.print(json.dumps(connectors, indent=2))
+        ch.emit_json(connectors)
         return
 
     if not connectors:
@@ -119,8 +117,6 @@ def connector_status(
     results = _run(_check_all())
 
     if json_output:
-        import json
-
         data = []
         for c, h in results:
             data.append(
@@ -131,7 +127,7 @@ def connector_status(
                     "message": h.message,
                 }
             )
-        ch.console.print(json.dumps(data, indent=2))
+        ch.emit_json(data)
         return
 
     from rich.table import Table
@@ -266,9 +262,7 @@ def connector_search(
     results = _run(_search())
 
     if json_output:
-        import json
-
-        ch.console.print(json.dumps([r.to_dict() for r in results], indent=2))
+        ch.emit_json([r.to_dict() for r in results])
         return
 
     if not results:
@@ -330,9 +324,7 @@ def connector_fetch(
         raise typer.Exit(1)
 
     if json_output:
-        import json
-
-        ch.console.print(json.dumps(result.to_dict(), indent=2))
+        ch.emit_json(result.to_dict())
         return
 
     ch.console.print(f"\n[bold]{result.title}[/bold]")

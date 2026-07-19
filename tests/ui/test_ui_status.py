@@ -8,7 +8,6 @@ import pytest
 
 from navig.ui.models import Event, StatusChip
 
-
 # ---------------------------------------------------------------------------
 # navig.ui.status — render_status_header
 # ---------------------------------------------------------------------------

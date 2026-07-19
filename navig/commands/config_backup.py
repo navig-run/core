@@ -656,6 +656,26 @@ def list_exports(options: dict[str, Any]):
 # ============================================================================
 
 
+def _safe_archive_yaml(path: Path) -> dict[str, Any]:
+    """Load one host/app YAML from an extracted export archive, tolerating a
+    corrupt or non-mapping file.
+
+    ``navig config-backup inspect`` scans EVERY host/app in the archive; an
+    unguarded parse let a single damaged file abort the whole inspect (→
+    "Failed to inspect export", showing nothing) — exactly when you are inspecting
+    a backup to decide what is still recoverable. Returns a marker dict so the item
+    is still surfaced (flagged unreadable) rather than hiding every other host/app.
+    """
+    import yaml
+
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except (OSError, yaml.YAMLError):
+        return {"_unreadable": True}
+    return data if isinstance(data, dict) else {"_unreadable": True}
+
+
 def inspect_export(options: dict[str, Any]):
     """
     Inspect contents of a configuration export without importing.
@@ -664,8 +684,6 @@ def inspect_export(options: dict[str, Any]):
         file: Export file to inspect
         password: Decryption password if encrypted
     """
-    import yaml
-
     input_file = _require_input_file(options)
     if input_file is None:
         return
@@ -700,12 +718,16 @@ def inspect_export(options: dict[str, Any]):
 
                 extract_path = Path(tmpdir) / "navig-config"
 
-                # Read manifest
+                # Read manifest (a corrupt manifest must not abort the whole
+                # inspect — version/exported_at simply fall back to "unknown").
                 manifest_path = extract_path / "manifest.json"
                 manifest = {}
                 if manifest_path.exists():
-                    with open(manifest_path, encoding='utf-8') as f:
-                        manifest = json.load(f)
+                    try:
+                        with open(manifest_path, encoding='utf-8') as f:
+                            manifest = json.load(f)
+                    except (OSError, json.JSONDecodeError):
+                        manifest = {}
 
                 # Collect data from files
                 data = {
@@ -718,8 +740,7 @@ def inspect_export(options: dict[str, Any]):
                 hosts_dir = extract_path / "hosts"
                 if hosts_dir.exists():
                     for yaml_file in hosts_dir.glob("*.yaml"):
-                        with open(yaml_file, encoding='utf-8') as f:
-                            data["hosts"][yaml_file.stem] = yaml.safe_load(f)
+                        data["hosts"][yaml_file.stem] = _safe_archive_yaml(yaml_file)
 
                 apps_dir = extract_path / "apps"
                 if apps_dir.exists():
@@ -727,8 +748,9 @@ def inspect_export(options: dict[str, Any]):
                         if host_dir.is_dir():
                             data["apps"][host_dir.name] = {}
                             for yaml_file in host_dir.glob("*.yaml"):
-                                with open(yaml_file, encoding='utf-8') as f:
-                                    data["apps"][host_dir.name][yaml_file.stem] = yaml.safe_load(f)
+                                data["apps"][host_dir.name][yaml_file.stem] = _safe_archive_yaml(
+                                    yaml_file
+                                )
 
         if json_output:
             ch.raw_print(json.dumps(data, indent=2, default=str))
@@ -744,6 +766,9 @@ def inspect_export(options: dict[str, Any]):
         hosts = data.get("hosts", {})
         ch.subheader(f"Hosts ({len(hosts)})")
         for host_name, host_config in hosts.items():
+            if not isinstance(host_config, dict) or host_config.get("_unreadable"):
+                ch.warning(f"  {host_name}: unreadable (corrupt file in archive)")
+                continue
             host_addr = host_config.get("host", "N/A")
             user = host_config.get("user", "N/A")
             ch.info(f"  {host_name}: {user}@{host_addr}")

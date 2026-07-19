@@ -12,9 +12,14 @@ pytestmark = pytest.mark.integration
 
 
 def _set_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(sm, "NAVIG_HOME", tmp_path / "home")
-    monkeypatch.setattr(sm, "LOG_DIR", tmp_path / "home" / "logs")
-    monkeypatch.setattr(sm, "DAEMON_DIR", tmp_path / "home" / "daemon")
+    # service_manager resolves paths at CALL time (`_navig_home()`/`_log_dir()`/`daemon_dir()`)
+    # — the module-level NAVIG_HOME/LOG_DIR/DAEMON_DIR constants these tests used to patch were
+    # removed in that refactor, so the old `setattr(sm, "NAVIG_HOME", …)` raised AttributeError
+    # and silently red-lined every service-install test. Patch the resolvers instead.
+    home = tmp_path / "home"
+    monkeypatch.setattr(sm, "_navig_home", lambda: home)
+    monkeypatch.setattr(sm, "_log_dir", lambda: home / "logs")
+    monkeypatch.setattr(sm, "daemon_dir", lambda: home / "daemon")
 
 
 def test_pythonw_exe_prefers_pythonw_on_windows(
@@ -135,7 +140,7 @@ def test_task_scheduler_install_and_uninstall(
     ok, msg = sm.task_scheduler_install(start_now=True)
     assert ok is True
     assert "created and started" in msg
-    assert (sm.DAEMON_DIR / "navig-task.xml").exists()
+    assert (sm.daemon_dir() / "navig-task.xml").exists()
     assert calls[0][0] == "schtasks"
 
     ok, msg = sm.task_scheduler_uninstall()
@@ -159,8 +164,8 @@ def test_systemd_unit_path_and_content(monkeypatch: pytest.MonkeyPatch, tmp_path
     home.mkdir()
     monkeypatch.setattr(sm.Path, "home", staticmethod(lambda: home))
     monkeypatch.setattr(sm, "_python_exe", lambda: "python")
-    monkeypatch.setattr(sm, "NAVIG_HOME", home)
-    monkeypatch.setattr(sm, "LOG_DIR", home / "logs")
+    monkeypatch.setattr(sm, "_navig_home", lambda: home)
+    monkeypatch.setattr(sm, "_log_dir", lambda: home / "logs")
 
     user_unit = sm._systemd_unit_path(user=True)
     assert user_unit.parent.exists()
@@ -428,3 +433,38 @@ def test_status_normalizes_backend_detail_lines(monkeypatch: pytest.MonkeyPatch)
     assert "NSSM service: Inactive" in detail
     assert "  Detail: STATE : STOPPED" in detail
     assert "Task Scheduler: Inactive" in detail
+
+
+# ── the service must export the CANONICAL config-dir var, not just legacy NAVIG_HOME ──
+
+def test_systemd_unit_exports_navig_config_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """REGRESSION: the unit set only NAVIG_HOME (legacy, honoured by memory/theme), never
+    NAVIG_CONFIG_DIR (canonical — config_dir/vault/gateway.json/single-instance read it). A
+    daemon installed with a custom home ran its config against the DEFAULT ~/.navig while
+    memory followed the custom home: a split brain."""
+    custom = tmp_path / "custom-home"
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(custom))
+    content = sm._systemd_unit_content(user=True)
+    assert f"Environment=NAVIG_CONFIG_DIR={custom}" in content
+    # legacy var kept, at the SAME value → no divergence
+    assert f"Environment=NAVIG_HOME={custom}" in content
+
+
+def test_service_env_keeps_config_and_memory_on_one_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The property that matters: with the env the service writes applied, config_dir() and
+    memory.navig_home() resolve to the SAME home — no split brain."""
+    from navig.memory import paths as mem_paths
+    from navig.platform import paths as plat_paths
+
+    custom = str(tmp_path / "svc-home")
+
+    # what the service now writes (NAVIG_CONFIG_DIR + NAVIG_HOME, same value)
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", custom)
+    monkeypatch.setenv("NAVIG_HOME", custom)
+    assert plat_paths.config_dir() == mem_paths.navig_home()
+
+    # …and the OLD behaviour (NAVIG_HOME only, no NAVIG_CONFIG_DIR) WOULD split — proving the
+    # fix is load-bearing, not cosmetic.
+    monkeypatch.delenv("NAVIG_CONFIG_DIR", raising=False)
+    assert plat_paths.config_dir() != mem_paths.navig_home()
+    assert mem_paths.navig_home() == Path(custom)

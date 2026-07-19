@@ -11,6 +11,7 @@ Endpoints registered in `navig/gateway/deck/__init__.py`:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from datetime import datetime, timezone
@@ -61,13 +62,29 @@ def _classify_source(path: str) -> str:
     return "other"
 
 
+# Build / VCS / cache dirs excluded from a space's file count: they're not the
+# operator's content, and (node_modules especially) they're the reason the walk
+# would hit the cap and burn time. `.navig` is deliberately NOT here — it holds
+# the plans/wiki/memory that make a folder a space.
+_SKIP_DIRS = frozenset({
+    ".git", "node_modules", ".venv", "venv", "__pycache__", ".dev", "dist",
+    "build", ".next", "target", ".mypy_cache", ".pytest_cache", ".cache",
+})
+
+
 def _file_count_in(path: Path, max_walk: int = 5000) -> int:
-    """Cheap recursive file count for a space directory (capped)."""
+    """Cheap recursive file count for a space directory (capped, blocking — call off-loop).
+
+    Prunes build/VCS/cache dirs (``_SKIP_DIRS``) both so the number reflects real space
+    content and so a stray ``node_modules`` can't blow past the cap. Runs synchronous
+    ``os.walk`` — callers MUST invoke it off the event loop (``asyncio.to_thread``).
+    """
     if not path.exists():
         return 0
     n = 0
     try:
-        for _root, _dirs, files in os.walk(path):
+        for _root, dirs, files in os.walk(path):
+            dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]  # prune in place → don't descend
             n += len(files)
             if n >= max_walk:
                 return max_walk
@@ -176,46 +193,56 @@ async def handle_deck_context_files(request: "web.Request") -> "web.Response":
 async def handle_deck_spaces(request: "web.Request") -> "web.Response":
     """List discovered spaces (global + project-local) with file counts."""
     try:
-        from navig.spaces.resolver import discover_space_paths, get_default_space  # type: ignore[import]
+        from navig.spaces.resolver import (  # type: ignore[import]
+            discover_space_paths,
+            get_default_space,
+        )
     except Exception as exc:
         logger.debug("spaces module unavailable: %s", exc)
         return _ok({"spaces": [], "active": "default"})
 
-    try:
+    def _collect() -> dict[str, Any]:
+        """All the blocking filesystem work — discovery, the active-space read, and the
+        per-space ``os.walk`` — in ONE off-loop thread so a large space tree can't stall
+        the gateway (the same reason plans reads/writes run in ``asyncio.to_thread``)."""
         discovered = discover_space_paths() or {}
         active_default = get_default_space()
+
+        # Resolve the active space through the ONE canonical reader (NAVIG_SPACE env → cache
+        # file, the source of truth navig space switch writes first → config-key mirror),
+        # falling back to the discovery default when nothing is set. An inline cache-file-only
+        # read would miss the env override and the config mirror and drift from the CLI.
+        active_name = active_default
+        try:
+            from navig.commands.space import resolve_active_space  # type: ignore[import]
+            resolved = resolve_active_space()
+            if resolved:
+                active_name = resolved
+        except Exception:
+            pass
+
+        spaces_out: list[dict[str, Any]] = []
+        for name, cfg in discovered.items():
+            try:
+                path = Path(str(getattr(cfg, "path", "")))
+                exists = path.exists()
+                spaces_out.append({
+                    "name": name,
+                    "canonical_name": getattr(cfg, "canonical_name", name),
+                    "scope": getattr(cfg, "scope", "global"),
+                    "path": str(path),
+                    "exists": exists,
+                    "file_count": _file_count_in(path) if exists else 0,
+                    "active": name == active_name,
+                })
+            except Exception as exc:
+                logger.debug("skip space %s: %s", name, exc)
+
+        spaces_out.sort(key=lambda s: (s["scope"] != "project", s["name"]))
+        return {"spaces": spaces_out, "active": active_name}
+
+    try:
+        return _ok(await asyncio.to_thread(_collect))
     except Exception as exc:
         logger.exception("spaces discovery failed")
         return _err(str(exc))
-
-    # Try to read the persisted active-space file (per the agent's research:
-    # ~/.navig/cache/active_space.txt). Best-effort.
-    active_name = active_default
-    try:
-        from navig.platform import paths as _paths  # type: ignore[import]
-        active_file = _paths.config_dir() / "cache" / "active_space.txt"
-        if active_file.exists():
-            stored = active_file.read_text(encoding="utf-8").strip()
-            if stored:
-                active_name = stored
-    except Exception:
-        pass
-
-    spaces_out: list[dict[str, Any]] = []
-    for name, cfg in discovered.items():
-        try:
-            path = Path(str(getattr(cfg, "path", "")))
-            spaces_out.append({
-                "name": name,
-                "canonical_name": getattr(cfg, "canonical_name", name),
-                "scope": getattr(cfg, "scope", "global"),
-                "path": str(path),
-                "exists": path.exists(),
-                "file_count": _file_count_in(path) if path.exists() else 0,
-                "active": name == active_name,
-            })
-        except Exception as exc:
-            logger.debug("skip space %s: %s", name, exc)
-
-    spaces_out.sort(key=lambda s: (s["scope"] != "project", s["name"]))
-    return _ok({"spaces": spaces_out, "active": active_name})

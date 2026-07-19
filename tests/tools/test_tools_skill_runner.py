@@ -9,7 +9,6 @@ import pytest
 
 from navig.tools.skill_runner import SkillRunTool, _find_navig_bin
 
-
 # ── helpers ──────────────────────────────────────────────────
 
 

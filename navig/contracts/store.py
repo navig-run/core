@@ -23,7 +23,15 @@ from navig.platform.paths import config_dir
 
 logger = get_debug_logger()
 
-_DEFAULT_STORE_DIR = config_dir() / "runtime"
+def _default_store_dir() -> Path:
+    """Resolve the runtime-store dir at CALL time — never import time.
+
+    ``config_dir()`` honours ``NAVIG_CONFIG_DIR``; a module-level constant
+    would freeze the real user home before test/daemon isolation applies,
+    pointing the node/mission/receipt registry at the operator's real state
+    (see ``navig/vault/migrate.py:_legacy_db_path``).
+    """
+    return config_dir() / "runtime"
 
 # Terminal MissionStatus → ReceiptOutcome, for receipts the executor records
 # directly on the timeout / cancel paths (succeed/fail go via complete_mission).
@@ -49,7 +57,7 @@ class RuntimeStore:
     """
 
     def __init__(self, store_dir: Path | None = None) -> None:
-        self._dir = Path(store_dir) if store_dir else _DEFAULT_STORE_DIR
+        self._dir = Path(store_dir) if store_dir else _default_store_dir()
         self._nodes: dict[str, Node] = {}
         self._missions: dict[str, Mission] = {}
         self._receipts: dict[str, ExecutionReceipt] = {}

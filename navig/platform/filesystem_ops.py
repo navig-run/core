@@ -1,7 +1,6 @@
 """
 Cross-platform filesystem helper functions for structured file operations.
 
-Ported and adapted from Windows-MCP ``filesystem/service.py`` (MIT).
 All functions are pure stdlib — no Windows-specific dependencies.
 
 Public API

@@ -154,23 +154,54 @@ class TestMachineId:
         result = t._machine_id()
         assert result is None or isinstance(result, str)
 
-    def test_machine_id_subprocess_failure_returns_none(self):
-        """If the subprocess command fails, should return None gracefully."""
+    # `_machine_id` documents "Raises: Never" and returns `str | None`. These two used
+    # to assert `is None` on subprocess failure. That is no longer the contract: on
+    # Windows a PowerShell/CIM failure (wmic was REMOVED in Win11 24H2) falls back to
+    # the registry MachineGuid, so a dead subprocess yields an id. Asserting None would
+    # demand that hardening be deleted. What must hold is: never raise, str | None —
+    # and, on Windows, that the registry fallback actually fires (pinned below).
+
+    def test_machine_id_subprocess_failure_never_raises(self):
         import navig.onboarding.telemetry as t
 
         with patch("subprocess.run", side_effect=FileNotFoundError("wmic not found")):
             result = t._machine_id()
-        assert result is None
+        assert result is None or isinstance(result, str)
 
-    def test_machine_id_timeout_returns_none(self):
-        """Subprocess timeout should be handled without raising."""
+    def test_machine_id_timeout_never_raises(self):
         import subprocess
 
         import navig.onboarding.telemetry as t
 
         with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("wmic", 5)):
             result = t._machine_id()
-        assert result is None
+        assert result is None or isinstance(result, str)
+
+    def test_windows_falls_back_to_registry_when_powershell_dies(self, monkeypatch):
+        """The Win11-24H2 hardening: no wmic/PowerShell => read MachineGuid instead.
+
+        Host-independent (a fake `winreg` is injected), so this pins the fallback on
+        Linux CI too — where the real `winreg` does not even import.
+        """
+        import contextlib
+        import sys
+        import types
+
+        import navig.onboarding.telemetry as t
+
+        def _boom(*_a, **_k):
+            raise OSError("powershell is gone")
+
+        fake_winreg = types.SimpleNamespace(
+            HKEY_LOCAL_MACHINE=object(),
+            OpenKey=lambda *_a, **_k: contextlib.nullcontext("key"),
+            QueryValueEx=lambda _key, _name: ("REG-MACHINE-GUID", 1),
+        )
+        monkeypatch.setitem(sys.modules, "winreg", fake_winreg)
+        monkeypatch.setattr("navig.onboarding.telemetry.platform.system", lambda: "Windows")
+        monkeypatch.setattr("navig.onboarding.telemetry.subprocess.run", _boom)
+
+        assert t._machine_id() == "REG-MACHINE-GUID"
 
 
 class TestNetworkFailure:

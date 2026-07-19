@@ -12,10 +12,18 @@ from navig.core.evolution.base import BaseEvolver
 class PackEvolver(BaseEvolver):
     """Evolves Packs (collections of skills/workflows)."""
 
-    def __init__(self):
+    def __init__(self, packs_dir: Path | str | None = None):
         super().__init__()
-        self._packs_dir = Path("packs")  # Assume relative to CWD for now
-        self._packs_dir.mkdir(exist_ok=True)
+        # Default to packages_dir() — config_dir()/packs, the SAME directory `navig install`
+        # writes packs to and the pack loader reads from — so an evolved pack is actually
+        # installable. This resolves the long-standing TODO: the default WAS `Path("packs")`,
+        # CWD-relative, so a generated pack landed in whatever dir the process happened to run
+        # in (`core/` under pytest, dirtying the tracked tree) and nothing ever loaded it. The
+        # eager `mkdir` was already removed (constructing an evolver must not touch the disk);
+        # `_save` mkdirs the target when it actually writes. An explicit `packs_dir` still wins.
+        from navig.platform.paths import packages_dir
+
+        self._packs_dir = Path(packs_dir) if packs_dir is not None else packages_dir()
         self._system_prompt = """
 You are a Navig Pack Designer.
 A 'Pack' is a collection of related skills and workflows.

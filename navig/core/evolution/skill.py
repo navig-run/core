@@ -12,9 +12,18 @@ from navig.core.evolution.base import BaseEvolver
 class SkillEvolver(BaseEvolver):
     """Evolves SKILL.md definitions."""
 
-    def __init__(self, skills_root: Path):
+    def __init__(self, skills_root: Path | str | None = None):
         super().__init__()
-        self._skills_root = skills_root
+        # Default to config_dir()/skills — the SAME directory the agent reads global skills
+        # from (agent/skills_context._global_skills_dir) and skill_drafter writes generated
+        # skills to — so an evolved skill is actually discoverable. The default WAS supplied by
+        # the caller as `Path("skills")` (CWD-relative), so a generated skill landed in whatever
+        # dir the process happened to run in and nothing loaded it (sibling of #271/#276).
+        # Resolved lazily so NAVIG_CONFIG_DIR isolation holds and construction touches no disk
+        # (`_save` mkdirs the target when it actually writes). An explicit `skills_root` wins.
+        from navig.platform.paths import skills_dir
+
+        self._skills_root = Path(skills_root) if skills_root is not None else skills_dir()
         self._system_prompt = """
 You are a Navig Skill Designer.
 Your task is to generate a VALID SKILL.md file for a new skill.

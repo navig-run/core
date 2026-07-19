@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import navig.llm_generate as L
 import pytest
 
+import navig.llm.generate as L
 from navig.agent.verifier import AdversarialVerifier, VerifierConfig, _parse_verdict
 
 

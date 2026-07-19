@@ -19,11 +19,13 @@ def test_load_env_prefers_cwd_dotenv(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     dotenv_mod = SimpleNamespace(load_dotenv=lambda path: loaded.append(Path(path)))
     monkeypatch.setitem(sys.modules, "dotenv", dotenv_mod)
     monkeypatch.setattr(tw.Path, "cwd", staticmethod(lambda: tmp_path))
-    monkeypatch.setattr(tw, "NAVIG_HOME", tmp_path / "navig-home")
+    # Isolate the config-dir candidate (the modern replacement for the removed NAVIG_HOME)
+    # at a path with no .env, so the operator's real ~/.navig/.env can't decide this test.
+    monkeypatch.setattr(tw._nav_paths, "config_dir", lambda: tmp_path / "navig-home")
 
     tw._load_env()
     assert loaded
-    assert loaded[0] == env_path
+    assert loaded[0] == env_path, "the cwd .env must be preferred over the config-dir one"
 
 
 def test_telegram_and_deck_config(monkeypatch: pytest.MonkeyPatch):

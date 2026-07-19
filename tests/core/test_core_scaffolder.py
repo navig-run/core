@@ -10,7 +10,6 @@ import yaml
 
 from navig.core.scaffolder import Scaffolder
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -349,10 +348,13 @@ class TestGenerateWithCondition:
 
 
 # ---------------------------------------------------------------------------
-# source raises NotImplementedError
+# source: missing template_dir raises ValueError
 # ---------------------------------------------------------------------------
 
-class TestSourceNotImplemented:
+class TestSourceMissingTemplateDir:
+    """When 'source' is used without providing template_dir, a clear ValueError
+    is raised rather than silently writing an empty file."""
+
     def test_source_raises(self, tmp_path):
         s = Scaffolder()
         target = tmp_path / "out"
@@ -362,7 +364,7 @@ class TestSourceNotImplemented:
                 {"type": "file", "path": "f.txt", "source": "some_file.txt"}
             ],
         }
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(ValueError, match="template_dir"):
             s.generate(data, target)
 
 

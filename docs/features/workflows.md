@@ -224,83 +224,22 @@ steps:
 2. Interactive prompts fill in remaining variables
 3. Default values from workflow file used as fallback
 
-## Built-in Workflows
+## Built-in ops workflows → migrated to Blocks
 
-NAVIG includes several example workflows:
+The bundled ops workflows are now **Blocks** — installable, verifiable outcomes you
+`navig apply` (see `docs/blocks-vs-workflows.md`). Blocks add typed inputs, a machine
+`verify`, per-step destructive-risk gating (`--approve <step>`), and a signed receipt.
+This engine still runs your **own** `~/.navig/workflows/*.yaml` (below); the built-in
+sequences moved to Blocks (installed from the community `registry/blocks/`).
 
-### `safe-deployment`
+| Was `navig workflow run …` | Now `navig apply …` | Verify |
+|---|---|---|
+| `safe-deployment` | `navig apply safe-deployment --approve backup --approve upload --approve permissions --approve restart` | post-deploy `navig health` |
+| `db-snapshot` | `navig apply db-snapshot --approve dump --approve cleanup` | downloaded dump `file_exists` |
+| `emergency-debug` | `navig apply emergency-debug` | diagnostic (none) |
+| `server-health` | `navig apply server-health` | diagnostic (none) |
 
-Safe application deployment with health checks and rollback safety.
-
-```bash
-navig workflow run safe-deployment --var host=production --var app_path=/var/www/app
-```
-
-**Steps:**
-1. Set active host
-2. Check current status
-3. Backup current state
-4. Upload build artifacts
-5. Set permissions
-6. Validate configuration
-7. Restart service (with prompt)
-8. Verify deployment
-
-### `db-snapshot`
-
-Export production database for local development or backup.
-
-```bash
-navig workflow run db-snapshot --var db_name=mydb
-```
-
-**Steps:**
-1. Set active host
-2. List databases
-3. Check database size
-4. Create database dump
-5. Download dump file
-6. Verify download
-7. Clean remote file (optional)
-
-### `emergency-debug`
-
-Rapid diagnostics for failing services and system issues.
-
-```bash
-navig workflow run emergency-debug --var service=nginx
-```
-
-**Steps:**
-1. System resources check
-2. System load view
-3. Service status
-4. Recent logs
-5. Listening ports
-6. Docker status
-7. Container inspection
-8. Container logs
-9. Recent system errors
-
-### `server-health`
-
-Comprehensive health check for remote servers.
-
-```bash
-navig workflow run server-health --var host=production
-```
-
-**Steps:**
-1. Connection test
-2. System information
-3. Uptime and load
-4. Memory usage
-5. Disk usage
-6. Running services
-7. Failed services
-8. Network connectivity
-9. Docker status
-10. Recent security events
+Inspect any of them with `navig block show <id>` and preview with `navig apply <id> --dry-run`.
 
 ## Best Practices
 

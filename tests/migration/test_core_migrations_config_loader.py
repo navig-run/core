@@ -15,7 +15,6 @@ from navig.core.migrations import (
     migrate_config,
 )
 
-
 # ---------------------------------------------------------------------------
 # Migration dataclass
 # ---------------------------------------------------------------------------
@@ -183,9 +182,9 @@ from navig.core.config_loader import (
     MAX_INCLUDE_DEPTH,
     CircularDependencyError,
     ConfigLoaderError,
-    load_config,
     _load_yaml_recursive,
     _process_includes,
+    load_config,
 )
 
 

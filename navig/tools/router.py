@@ -43,6 +43,8 @@ class ToolDomain(str, Enum):
 
     WEB = "web"
     IMAGE = "image"
+    VIDEO = "video"
+    AUDIO = "audio"
     CODE = "code"
     SYSTEM = "system"
     DATA = "data"
@@ -204,6 +206,8 @@ class ToolRegistry:
         pack_modules = [
             "navig.tools.domains.web_pack",
             "navig.tools.domains.image_pack",
+            "navig.tools.domains.video_pack",
+            "navig.tools.domains.audio_pack",
             "navig.tools.domains.code_pack",
             "navig.tools.domains.exec_pack",
             "navig.tools.domains.system_pack",

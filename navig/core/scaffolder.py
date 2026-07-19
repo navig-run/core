@@ -49,7 +49,8 @@ class Scaffolder:
         self,
         template_data: dict[str, Any],
         target_dir: Path,
-        variables: dict[str, Any] = None,
+        variables: dict[str, Any] | None = None,
+        template_dir: Path | None = None,
     ) -> None:
         """
         Generate the scaffold structure in the target directory.
@@ -58,6 +59,7 @@ class Scaffolder:
             template_data: Parsed template dictionary
             target_dir: Directory where structure will be created
             variables: Variables for Jinja2 substitution
+            template_dir: Directory where the template file resides (for resolving relative source paths)
         """
         variables = variables or {}
 
@@ -68,34 +70,37 @@ class Scaffolder:
 
         structure = template_data.get("structure", [])
 
-        self._process_structure(structure, target_dir, merged_vars)
+        self._process_structure(structure, target_dir, merged_vars, template_dir)
 
     def generate_to_temp_archive(
-        self, template_data: dict[str, Any], variables: dict[str, Any] = None
+        self, template_data: dict[str, Any], variables: dict[str, Any] | None = None, template_dir: Path | None = None
     ) -> Path:
         """
         Generate scaffold to a temporary directory and return path to a tar.gz archive.
         Useful for remote deployment.
         """
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            # Create the structure inside temp dir
-            self.generate(template_data, temp_path, variables)
+        archive_fd, archive_path_str = tempfile.mkstemp(suffix=".tar.gz")
+        archive_path = Path(archive_path_str)
+        os.close(archive_fd)
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir)
+                # Create the structure inside temp dir
+                self.generate(template_data, temp_path, variables, template_dir)
 
-            # Create archive
-            archive_fd, archive_path = tempfile.mkstemp(suffix=".tar.gz")
-            os.close(archive_fd)
+                with tarfile.open(archive_path, "w:gz") as tar:
+                    # Add everything in temp_dir to the root of the archive.
+                    # Iterate children so the temp root dir is not included as a parent.
+                    for item in temp_path.iterdir():
+                        tar.add(item, arcname=item.name)
+        except Exception:
+            archive_path.unlink(missing_ok=True)
+            raise
 
-            with tarfile.open(archive_path, "w:gz") as tar:
-                # Add everything in temp_dir to the root of the archive
-                # We iterate children so we don't include the temp root dir itself as a parent
-                for item in temp_path.iterdir():
-                    tar.add(item, arcname=item.name)
-
-        return Path(archive_path)
+        return archive_path
 
     def _process_structure(
-        self, items: list[dict[str, Any]], current_path: Path, variables: dict[str, Any]
+        self, items: list[dict[str, Any]], current_path: Path, variables: dict[str, Any], template_dir: Path | None = None
     ):
         """Recursively process structure items."""
         for item in items:
@@ -116,9 +121,9 @@ class Scaffolder:
             if item_type == "directory":
                 self._create_directory(item_path, mode)
                 if "children" in item:
-                    self._process_structure(item.get("children", []), item_path, variables)
+                    self._process_structure(item.get("children", []), item_path, variables, template_dir)
             else:
-                self._create_file(item, item_path, mode, variables)
+                self._create_file(item, item_path, mode, variables, template_dir)
 
     def _check_condition(self, item: dict[str, Any], variables: dict[str, Any]) -> bool:
         """Check 'condition' field using Jinja2 expression evaluation."""
@@ -168,6 +173,7 @@ class Scaffolder:
         path: Path,
         mode: str | None,
         variables: dict[str, Any],
+        template_dir: Path | None = None,
     ):
         """Create a file from content or source."""
         content = ""
@@ -178,12 +184,16 @@ class Scaffolder:
             content = content_tmpl.render(**variables)
         elif "source" in item:
             # External source files: copy from template directory
-            # Source paths are relative to the template file location
-            # For now, this is not fully implemented - use inline content instead
-            raise NotImplementedError(
-                "External source files are not yet supported. "
-                "Use inline 'content' in your template instead."
-            )
+            if not template_dir:
+                raise ValueError("template_dir must be provided to use 'source' files in templates.")
+            source_path = template_dir / item["source"]
+            if not source_path.is_file():
+                raise FileNotFoundError(f"Template source file not found: {source_path}")
+            
+            # Read and render the source file as Jinja template
+            source_content = source_path.read_text(encoding="utf-8")
+            content_tmpl = self.jinja_env.from_string(source_content)
+            content = content_tmpl.render(**variables)
 
         try:
             with open(path, "w", encoding="utf-8") as f:

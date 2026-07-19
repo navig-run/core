@@ -232,21 +232,6 @@ class RefinementEngine:
             logger.error("RefinementEngine: cannot get CallbackStore: %s", exc)
             raise
 
-    def _get_llm(self) -> Any:
-        """Return navig LLM router (lazy)."""
-        try:
-            from navig.agent.router import get_router
-
-            return get_router()
-        except Exception:
-            try:
-                from navig.agent import get_llm
-
-                return get_llm()
-            except Exception as exc:
-                logger.error("RefinementEngine: cannot get LLM: %s", exc)
-                raise
-
     # ── Public API ───────────────────────────────────────────────
 
     async def start(
@@ -357,8 +342,7 @@ class RefinementEngine:
         prompt = _REFINE_PROMPT.format(text=session.original_text, qa_block=qa_block)
 
         try:
-            llm = self._get_llm()
-            refined = await self._call_llm(llm, prompt)
+            refined = await self._call_llm(prompt)
         except Exception as exc:
             logger.error("RefinementEngine.refine LLM error: %s", exc)
             await self.channel.send_message(session.chat_id, "❌ LLM error during refinement.")
@@ -384,7 +368,7 @@ class RefinementEngine:
             diff_prompt = _DIFF_SUMMARY_PROMPT.format(
                 original=session.original_text, refined=refined
             )
-            summary = await self._call_llm(llm, diff_prompt)
+            summary = await self._call_llm(diff_prompt)
             await self.channel.send_message(
                 session.chat_id,
                 f"📋 <b>Changes made:</b>\n\n{_html.escape(summary)}",
@@ -398,8 +382,7 @@ class RefinementEngine:
     async def _generate_questions(self, text: str, topic: str) -> list[str]:
         prompt = _CLARIFY_PROMPT.format(text=text, topic=topic or "general")
         try:
-            llm = self._get_llm()
-            raw = await self._call_llm(llm, prompt)
+            raw = await self._call_llm(prompt)
             # Parse JSON array from response
             import re
 
@@ -418,27 +401,19 @@ class RefinementEngine:
             "What tone or style should the final output have?",
         ]
 
-    async def _call_llm(self, llm: Any, prompt: str) -> str:
-        """Thin wrapper — handles both sync and async LLM clients."""
-        try:
-            if hasattr(llm, "acomplete"):
-                result = await llm.acomplete(prompt)
-                return str(result)
-            if hasattr(llm, "complete"):
-                import asyncio
+    async def _call_llm(self, prompt: str) -> str:
+        """Route a single prompt through the canonical core LLM dispatch.
 
-                loop = asyncio.get_running_loop()
-                result = await loop.run_in_executor(None, llm.complete, prompt)
-                return str(result)
-            if hasattr(llm, "agenerate"):
-                result = await llm.agenerate(prompt)
-                return str(result)
-            if callable(llm):
-                return str(llm(prompt))
-        except Exception as exc:
-            logger.error("RefinementEngine._call_llm: %s", exc)
-            raise
-        return ""
+        `navig.llm.run_llm` is the same seam the deck ``/ask`` route and agents
+        use. It is synchronous, so it is dispatched off the event loop; callers
+        wrap this in try/except and handle failures.
+        """
+        import asyncio
+
+        from navig.llm.generate import run_llm
+
+        result = await asyncio.to_thread(run_llm, [{"role": "user", "content": prompt}])
+        return (result.content or "").strip()
 
     async def _ask_question(self, session: ClarifySession) -> None:
         """Send the current question to the user."""

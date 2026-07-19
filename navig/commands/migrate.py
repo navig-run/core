@@ -126,9 +126,13 @@ def _builtin_config_migration(dry_run: bool) -> None:
     """Lightweight built-in fallback if the scripts/ version is absent."""
     import shutil
 
-    from navig.platform.paths import config_dir, legacy_documents_config_dir
+    from navig.platform.paths import config_dir
 
-    source = legacy_documents_config_dir()
+    # `legacy_documents_config_dir` was imported from navig.platform.paths, where it does
+    # not exist — so this built-in fallback migration crashed with ImportError the moment it
+    # ran. The legacy pre-migration location is a frozen historical constant; this mirrors
+    # navig.commands.init._legacy_documents_config_dir (Documents/.navig).
+    source = Path.home() / "Documents" / ".navig"
     dest = config_dir()
 
     if not source.exists():

@@ -64,6 +64,10 @@ class MCPProtocolHandler:
         """Register NAVIG tools for MCP."""
         self.tools = {}
         self._tool_handlers = {}
+        # Per-tool safety classification consulted by the approval gate before a
+        # tool runs. Absent → "safe" (never gated). Bundles populate this in
+        # their register() (see navig.mcp.tools.cdp).
+        self._tool_safety: dict[str, str] = {}
         from navig.mcp.tools import register_all_tools
 
         register_all_tools(self)
@@ -268,9 +272,54 @@ class MCPProtocolHandler:
     def _execute_tool(self, tool_name: str, arguments: dict[str, Any]) -> Any:
         """Execute a tool and return result."""
         handler = getattr(self, "_tool_handlers", {}).get(tool_name)
-        if handler:
-            return handler(self, arguments)
-        raise ValueError(f"Unknown tool: {tool_name}")
+        if handler is None:
+            raise ValueError(f"Unknown tool: {tool_name}")
+        self._gate_tool(tool_name, arguments)
+        return handler(self, arguments)
+
+    def _gate_tool(self, tool_name: str, arguments: dict[str, Any]) -> None:
+        """Route powerful MCP tools through the approval gate before they run.
+
+        The stdio dispatcher is synchronous, so this uses the sync bridge
+        ``approval.check_sync``. Tools classified ``safe`` (the default) skip the
+        gate entirely — zero overhead. Dangerous tools (e.g. ``cdp_eval``, which
+        can read a password field off a logged-in page) are gated and audited;
+        the single-operator default backend approves-with-audit, but an operator
+        can install a blocking/interactive backend or a stricter policy.
+
+        Raises PermissionError when the gate denies — surfaced to the caller as a
+        tool error by ``_handle_tools_call``.
+        """
+        safety = getattr(self, "_tool_safety", {}).get(tool_name, "safe")
+        if safety == "safe":
+            return
+        try:
+            from navig.tools.approval import ApprovalDecision, check_sync
+        except Exception as exc:  # noqa: BLE001
+            # Fail CLOSED: if the approval gate can't load, a dangerous/moderate tool
+            # (e.g. cdp_eval, which can read a password field) must NOT run ungated.
+            raise PermissionError(
+                f"approval gate unavailable ({exc}); refusing '{tool_name}'"
+            ) from exc
+        # Audit the attempt by arg *keys* only — never log values (a secret could
+        # live in cdp_type `text` / cdp_eval `expression`).
+        logger.warning(
+            "[mcp.gate] %s tool '%s' (args: %s) surface=mcp",
+            safety,
+            tool_name,
+            ",".join(sorted(arguments or {})) or "-",
+        )
+        decision = check_sync(
+            tool_name,
+            safety,
+            parameters={"arg_keys": sorted(arguments or {})},
+            context={"surface": "mcp"},
+        )
+        if decision != ApprovalDecision.APPROVED:
+            raise PermissionError(
+                f"Tool '{tool_name}' was not approved by the approval gate "
+                f"({decision.value})."
+            )
 
     def _read_resource(self, uri: str) -> str:
         """Read resource content."""
@@ -922,15 +971,25 @@ def generate_perplexity_mcp_config(
 # Memory MCP Tool Handlers (module-level, importable for testing)
 # =============================================================================
 
-from navig.memory.paths import KEY_FACTS_DB_PATH as _KEY_FACTS_DB_PATH
 from navig.platform.paths import config_dir
 
 
 def _memory_store():
-    """Return a fresh KeyFactStore backed by the canonical DB path."""
-    from navig.memory.key_facts import KeyFactStore
+    """Return a fresh KeyFactStore backed by the canonical DB path.
 
-    return KeyFactStore(db_path=_KEY_FACTS_DB_PATH)
+    Resolves the path **per call**. It previously used the deprecated
+    ``KEY_FACTS_DB_PATH`` constant, which ``navig/memory/paths.py`` freezes at
+    IMPORT time — so every MCP memory tool bound whatever ``NAVIG_HOME`` /
+    ``NAVIG_CONFIG_DIR`` happened to be set when the module was first imported.
+    Imports run at module load while the env is configured at CLI/daemon startup,
+    so MCP could silently read and write a DIFFERENT key-facts database than the
+    rest of NAVIG. ``get_key_facts_db_path()`` is the lazy, override-respecting
+    resolver the module tells new code to use.
+    """
+    from navig.memory.key_facts import KeyFactStore
+    from navig.memory.paths import get_key_facts_db_path
+
+    return KeyFactStore(db_path=get_key_facts_db_path())
 
 
 async def memory_retrieve(query: str, limit: int = 10, token_budget: int = 2000) -> dict:

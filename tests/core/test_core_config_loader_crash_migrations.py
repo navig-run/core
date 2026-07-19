@@ -9,11 +9,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-
 # ---------------------------------------------------------------------------
 # navig.core.config_loader
 # ---------------------------------------------------------------------------
-
 from navig.core.config_loader import (
     MAX_INCLUDE_DEPTH,
     CircularDependencyError,
@@ -146,7 +144,7 @@ class TestProcessIncludes:
 # navig.core.crash_handler
 # ---------------------------------------------------------------------------
 
-from navig.core.crash_handler import CrashHandler, _MAX_CRASH_LOGS
+from navig.core.crash_handler import _MAX_CRASH_LOGS, CrashHandler
 
 
 class TestCrashHandler:

@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # navig/daemon/supervisor.py — constants and ChildProcess
@@ -34,16 +33,16 @@ class TestSupervisorConstants:
         assert HEALTH_CHECK_INTERVAL > 0
 
     def test_pid_file_is_path(self):
-        from navig.daemon.supervisor import PID_FILE
-        assert isinstance(PID_FILE, Path)
+        from navig.daemon.supervisor import _pid_file
+        assert isinstance(_pid_file(), Path)
 
     def test_state_file_is_path(self):
-        from navig.daemon.supervisor import STATE_FILE
-        assert isinstance(STATE_FILE, Path)
+        from navig.daemon.supervisor import _state_file
+        assert isinstance(_state_file(), Path)
 
     def test_daemon_dir_is_path(self):
-        from navig.daemon.supervisor import DAEMON_DIR
-        assert isinstance(DAEMON_DIR, Path)
+        from navig.daemon.supervisor import _daemon_dir
+        assert isinstance(_daemon_dir(), Path)
 
 
 class TestChildProcessInit:
@@ -161,7 +160,7 @@ class TestChildProcessPoll:
 
 class TestChildProcessBackoff:
     def _make(self):
-        from navig.daemon.supervisor import ChildProcess, INITIAL_RESTART_DELAY
+        from navig.daemon.supervisor import INITIAL_RESTART_DELAY, ChildProcess
         return ChildProcess(name="test", command=["echo"]), INITIAL_RESTART_DELAY
 
     def test_first_delay_is_initial(self):
@@ -175,7 +174,7 @@ class TestChildProcessBackoff:
         assert d2 == d1 * 2
 
     def test_delay_capped_at_max(self):
-        from navig.daemon.supervisor import ChildProcess, MAX_RESTART_DELAY
+        from navig.daemon.supervisor import MAX_RESTART_DELAY, ChildProcess
         cp = ChildProcess(name="test", command=["echo"])
         # Exhaust backoff until capped
         for _ in range(20):
@@ -183,7 +182,7 @@ class TestChildProcessBackoff:
         assert cp.next_restart_delay == MAX_RESTART_DELAY
 
     def test_reset_backoff_resets(self):
-        from navig.daemon.supervisor import ChildProcess, INITIAL_RESTART_DELAY
+        from navig.daemon.supervisor import INITIAL_RESTART_DELAY, ChildProcess
         cp = ChildProcess(name="test", command=["echo"])
         _ = cp.next_restart_delay
         _ = cp.next_restart_delay

@@ -142,9 +142,9 @@ class TestResolveOpenrouterApiKey:
 
 
 class TestAskAiWithContext:
-    # ask_ai_with_context does `from navig.llm_generate import llm_generate`
+    # ask_ai_with_context does `from navig.llm.generate import llm_generate`
     # inside the function body, so we must patch at the source module.
-    _PATCH = "navig.llm_generate.llm_generate"
+    _PATCH = "navig.llm.generate.llm_generate"
 
     def test_basic_prompt_becomes_user_message(self):
         with patch(self._PATCH, return_value="reply") as mock:
@@ -250,3 +250,129 @@ class TestAIAssistantGenerateContextSummary:
         assistant = AIAssistant(cfg)
         result = assistant.generate_context_summary({})
         assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# AIAssistant.ask — surfaces an account/model rotation via last_fallback
+# ---------------------------------------------------------------------------
+
+
+def _boom(*a, **k):
+    raise RuntimeError("no memory in test")
+
+
+class TestAskSurfacesFallback:
+    def test_last_fallback_set_when_connection_rotates(self, monkeypatch):
+        # Keep memory enrichment hermetic (all best-effort → "").
+        monkeypatch.setattr("navig.memory.manager.get_memory_manager", _boom, raising=False)
+        monkeypatch.setattr(
+            "navig.memory.knowledge_graph.get_knowledge_graph", _boom, raising=False
+        )
+        cfg = MagicMock()
+        cfg.get_ai_system_prompt.return_value = "SYS"
+        ai = AIAssistant(cfg)
+        monkeypatch.setattr(ai, "_get_conv_store", lambda: None)
+        monkeypatch.setattr(ai, "_build_context_string", lambda ctx: "CTX")
+        monkeypatch.setattr(
+            "navig.providers.inference.has_routable_connection", lambda *a, **k: True
+        )
+
+        def fake_complete(*, on_fallback=None, **kw):
+            if on_fallback:
+                on_fallback({"from": "Claude A", "to": "Claude B", "reason": "rate_limited"})
+            return "answer"
+
+        monkeypatch.setattr(
+            "navig.providers.inference.complete_via_connection", fake_complete
+        )
+
+        out = ai.ask("hi", {"server": {"name": "x"}})
+        assert out == "answer"
+        assert ai.last_fallback is not None
+        assert ai.last_fallback["to"] == "Claude B"
+        assert ai.last_fallback["reason"] == "rate_limited"
+
+    def test_last_fallback_none_when_no_rotation(self, monkeypatch):
+        monkeypatch.setattr("navig.memory.manager.get_memory_manager", _boom, raising=False)
+        monkeypatch.setattr(
+            "navig.memory.knowledge_graph.get_knowledge_graph", _boom, raising=False
+        )
+        cfg = MagicMock()
+        cfg.get_ai_system_prompt.return_value = "SYS"
+        ai = AIAssistant(cfg)
+        monkeypatch.setattr(ai, "_get_conv_store", lambda: None)
+        monkeypatch.setattr(ai, "_build_context_string", lambda ctx: "CTX")
+        monkeypatch.setattr(
+            "navig.providers.inference.has_routable_connection", lambda *a, **k: True
+        )
+        monkeypatch.setattr(
+            "navig.providers.inference.complete_via_connection",
+            lambda *, on_fallback=None, **kw: "answer",
+        )
+
+        out = ai.ask("hi", {"server": {"name": "x"}})
+        assert out == "answer"
+        assert ai.last_fallback is None  # no rotation → nothing to surface
+
+
+# ---------------------------------------------------------------------------
+# AIAssistant.ask — when EVERY account is exhausted, give an actionable message
+# classified by the canonical categorizer (not fragile string matching).
+# ---------------------------------------------------------------------------
+
+
+class TestAskExhaustionMessages:
+    def _assistant_that_raises(self, monkeypatch, exc: Exception) -> AIAssistant:
+        monkeypatch.setattr("navig.memory.manager.get_memory_manager", _boom, raising=False)
+        monkeypatch.setattr(
+            "navig.memory.knowledge_graph.get_knowledge_graph", _boom, raising=False
+        )
+        cfg = MagicMock()
+        cfg.get_ai_system_prompt.return_value = "SYS"
+        ai = AIAssistant(cfg)
+        monkeypatch.setattr(ai, "_get_conv_store", lambda: None)
+        monkeypatch.setattr(ai, "_build_context_string", lambda ctx: "CTX")
+        monkeypatch.setattr(
+            "navig.providers.inference.has_routable_connection", lambda *a, **k: True
+        )
+
+        def _raise(*, on_fallback=None, **kw):
+            raise exc
+
+        monkeypatch.setattr("navig.providers.inference.complete_via_connection", _raise)
+        return ai
+
+    def test_quota_wording_is_treated_as_rate_limit(self, monkeypatch):
+        # The OLD ad-hoc matching only looked for "rate_limit"/"429" and MISSED
+        # "quota exceeded" (a real Anthropic 429 phrasing) → generic error. The
+        # categorizer catches it, so the operator gets the actionable message.
+        ai = self._assistant_that_raises(
+            monkeypatch, RuntimeError("Anthropic API error: quota exceeded")
+        )
+        with pytest.raises(RuntimeError, match="rate-limited"):
+            ai.ask("hi", {"server": {"name": "x"}})
+
+    def test_auth_exhaustion_tells_you_to_reconnect(self, monkeypatch):
+        ai = self._assistant_that_raises(
+            monkeypatch, RuntimeError("401 Unauthorized: invalid api key")
+        )
+        with pytest.raises(RuntimeError) as ei:
+            ai.ask("hi", {"server": {"name": "x"}})
+        msg = str(ei.value)
+        assert "authenticate" in msg
+        assert "navig connect login" in msg
+        assert "--model" in msg  # the escape hatch is always offered
+
+    def test_payment_exhaustion_mentions_billing(self, monkeypatch):
+        ai = self._assistant_that_raises(
+            monkeypatch, RuntimeError("402 Payment Required: insufficient credit")
+        )
+        with pytest.raises(RuntimeError, match="billing"):
+            ai.ask("hi", {"server": {"name": "x"}})
+
+    def test_unclassified_error_keeps_generic_message(self, monkeypatch):
+        ai = self._assistant_that_raises(
+            monkeypatch, RuntimeError("connection reset by peer at socket layer")
+        )
+        with pytest.raises(RuntimeError, match="Selected AI connection failed"):
+            ai.ask("hi", {"server": {"name": "x"}})

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/core/models.py
 # ---------------------------------------------------------------------------
@@ -142,7 +141,7 @@ class TestConfigSchemaEnums:
 
 class TestValidateConfigDict:
     def test_empty_dict_is_valid(self) -> None:
-        from navig.core.config_schema import validate_config_dict, PYDANTIC_AVAILABLE
+        from navig.core.config_schema import PYDANTIC_AVAILABLE, validate_config_dict
         if not PYDANTIC_AVAILABLE:
             pytest.skip("pydantic not installed")
         is_valid, issues = validate_config_dict({})
@@ -150,7 +149,7 @@ class TestValidateConfigDict:
         assert issues == []
 
     def test_returns_false_for_invalid(self) -> None:
-        from navig.core.config_schema import validate_config_dict, PYDANTIC_AVAILABLE
+        from navig.core.config_schema import PYDANTIC_AVAILABLE, validate_config_dict
         if not PYDANTIC_AVAILABLE:
             pytest.skip("pydantic not installed")
         # Provide a value that would fail type check
@@ -167,7 +166,7 @@ class TestValidateConfigDict:
 
 class TestValidateGlobalConfig:
     def test_empty_dict_returns_model_or_none(self) -> None:
-        from navig.core.config_schema import validate_global_config, PYDANTIC_AVAILABLE
+        from navig.core.config_schema import PYDANTIC_AVAILABLE, validate_global_config
         result = validate_global_config({})
         if PYDANTIC_AVAILABLE:
             assert result is not None
@@ -175,7 +174,7 @@ class TestValidateGlobalConfig:
             assert result is None
 
     def test_with_log_level(self) -> None:
-        from navig.core.config_schema import validate_global_config, PYDANTIC_AVAILABLE
+        from navig.core.config_schema import PYDANTIC_AVAILABLE, validate_global_config
         if not PYDANTIC_AVAILABLE:
             pytest.skip("pydantic not installed")
         result = validate_global_config({"log_level": "DEBUG"})
@@ -185,7 +184,7 @@ class TestValidateGlobalConfig:
 
 class TestValidateHostConfig:
     def test_minimal_host_does_not_raise(self) -> None:
-        from navig.core.config_schema import validate_host_config, PYDANTIC_AVAILABLE
+        from navig.core.config_schema import PYDANTIC_AVAILABLE, validate_host_config
         if not PYDANTIC_AVAILABLE:
             pytest.skip("pydantic not installed")
         # Non-strict: should return a model or None, never raise
@@ -193,7 +192,7 @@ class TestValidateHostConfig:
         assert result is None or result is not None  # just no exception
 
     def test_returns_none_on_invalid(self) -> None:
-        from navig.core.config_schema import validate_host_config, PYDANTIC_AVAILABLE
+        from navig.core.config_schema import PYDANTIC_AVAILABLE, validate_host_config
         if not PYDANTIC_AVAILABLE:
             pytest.skip("pydantic not installed")
         # Missing required fields — may or may not fail depending on strictness
@@ -204,7 +203,7 @@ class TestValidateHostConfig:
 
 class TestGetConfigSchema:
     def test_global_schema_has_type(self) -> None:
-        from navig.core.config_schema import get_config_schema, PYDANTIC_AVAILABLE
+        from navig.core.config_schema import PYDANTIC_AVAILABLE, get_config_schema
         if not PYDANTIC_AVAILABLE:
             pytest.skip("pydantic not installed")
         schema = get_config_schema("global")
@@ -212,14 +211,14 @@ class TestGetConfigSchema:
         assert "type" in schema or "properties" in schema
 
     def test_host_schema(self) -> None:
-        from navig.core.config_schema import get_config_schema, PYDANTIC_AVAILABLE
+        from navig.core.config_schema import PYDANTIC_AVAILABLE, get_config_schema
         if not PYDANTIC_AVAILABLE:
             pytest.skip("pydantic not installed")
         schema = get_config_schema("host")
         assert schema is not None
 
     def test_unknown_type_raises(self) -> None:
-        from navig.core.config_schema import get_config_schema, PYDANTIC_AVAILABLE
+        from navig.core.config_schema import PYDANTIC_AVAILABLE, get_config_schema
         if not PYDANTIC_AVAILABLE:
             pytest.skip("pydantic not installed")
         with pytest.raises(ValueError):

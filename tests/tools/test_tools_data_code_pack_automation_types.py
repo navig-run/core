@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.tools.domains.data_pack — _json_parse, register_tools
 # ---------------------------------------------------------------------------

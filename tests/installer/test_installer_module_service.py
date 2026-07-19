@@ -15,6 +15,8 @@ from navig.installer.contracts import (
     Result,
 )
 
+from ._service_mock import fake_service_manager, no_service_manager
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -121,12 +123,18 @@ class TestApplySkipped:
         assert result.state == ModuleState.SKIPPED
 
     def test_skipped_when_service_manager_missing(self, tmp_path):
-        """Patch the import inside apply() via sys.modules."""
+        """`from navig.daemon import service_manager` must raise → SKIPPED.
+
+        Patching only ``sys.modules["navig.daemon.service_manager"]`` was ignored once the
+        real submodule had been attribute-bound by an earlier test in the worker, so this
+        failed in the full run. ``no_service_manager`` sets the package to None, which
+        halts the import before any attribute lookup.
+        """
         ctx = _ctx(tmp_path)
         action = _make_action()
         with (
             patch.object(svc, "_is_supported", return_value=True),
-            patch.dict("sys.modules", {"navig.daemon.service_manager": None}),
+            no_service_manager(),
         ):
             result = svc.apply(action, ctx)
         assert result.state == ModuleState.SKIPPED
@@ -143,11 +151,9 @@ class TestApplySuccess:
         action = _make_action()
         mock_sm = MagicMock()
         mock_sm.install.return_value = (True, "service installed")
-        mock_daemon = MagicMock()
-        mock_daemon.service_manager = mock_sm
         with (
             patch.object(svc, "_is_supported", return_value=True),
-            patch.dict("sys.modules", {"navig.daemon": mock_daemon, "navig.daemon.service_manager": mock_sm}),
+            fake_service_manager(mock_sm),
         ):
             result = svc.apply(action, ctx)
         assert result.state == ModuleState.APPLIED
@@ -158,11 +164,9 @@ class TestApplySuccess:
         action = _make_action()
         mock_sm = MagicMock()
         mock_sm.install.return_value = (False, "error: permission denied")
-        mock_daemon = MagicMock()
-        mock_daemon.service_manager = mock_sm
         with (
             patch.object(svc, "_is_supported", return_value=True),
-            patch.dict("sys.modules", {"navig.daemon": mock_daemon, "navig.daemon.service_manager": mock_sm}),
+            fake_service_manager(mock_sm),
         ):
             result = svc.apply(action, ctx)
         assert result.state == ModuleState.FAILED
@@ -172,11 +176,9 @@ class TestApplySuccess:
         action = _make_action()
         mock_sm = MagicMock()
         mock_sm.install.side_effect = RuntimeError("boom")
-        mock_daemon = MagicMock()
-        mock_daemon.service_manager = mock_sm
         with (
             patch.object(svc, "_is_supported", return_value=True),
-            patch.dict("sys.modules", {"navig.daemon": mock_daemon, "navig.daemon.service_manager": mock_sm}),
+            fake_service_manager(mock_sm),
         ):
             result = svc.apply(action, ctx)
         assert result.state == ModuleState.FAILED
@@ -194,9 +196,7 @@ class TestRollback:
         action = _make_action()
         result = Result(action_id="service.install", state=ModuleState.APPLIED)
         mock_sm = MagicMock()
-        mock_daemon = MagicMock()
-        mock_daemon.service_manager = mock_sm
-        with patch.dict("sys.modules", {"navig.daemon": mock_daemon, "navig.daemon.service_manager": mock_sm}):
+        with fake_service_manager(mock_sm):
             svc.rollback(action, result, ctx)
         mock_sm.uninstall.assert_called_once()
 
@@ -206,8 +206,6 @@ class TestRollback:
         result = Result(action_id="service.install", state=ModuleState.APPLIED)
         mock_sm = MagicMock()
         mock_sm.uninstall.side_effect = RuntimeError("nope")
-        mock_daemon = MagicMock()
-        mock_daemon.service_manager = mock_sm
-        with patch.dict("sys.modules", {"navig.daemon": mock_daemon, "navig.daemon.service_manager": mock_sm}):
+        with fake_service_manager(mock_sm):
             # Should not raise
             svc.rollback(action, result, ctx)

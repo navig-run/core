@@ -48,8 +48,10 @@ def test_plugin_info_accepts_canonical_command_name(tmp_path: Path) -> None:
     assert "Plugin: mini" in combined
 
 
-def test_plugin_info_accepts_legacy_package_name(tmp_path: Path) -> None:
-    result = _run_cli("plugin", "info", "navig_mini", home=tmp_path)
+def test_plugin_info_accepts_directory_alias(tmp_path: Path) -> None:
+    # The builtin plugin's on-disk dir is `mini_control`; `get()` resolves a
+    # plugin by its directory name as well as its canonical id (`mini`).
+    result = _run_cli("plugin", "info", "mini_control", home=tmp_path)
 
     assert result.returncode == 0, result.stderr
     combined = result.stdout + result.stderr

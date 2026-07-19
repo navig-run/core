@@ -10,11 +10,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from navig.core.file_permissions import set_owner_only_file_permissions
 from navig.core.capability_registry import (
     REGISTRY,
     CapabilityEntry,
@@ -25,7 +24,7 @@ from navig.core.capability_registry import (
     get_tier,
     is_enabled,
 )
-
+from navig.core.file_permissions import set_owner_only_file_permissions
 
 # ===========================================================================
 # file_permissions — Unix path

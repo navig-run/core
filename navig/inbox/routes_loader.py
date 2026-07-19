@@ -118,7 +118,7 @@ def load(space_root: Path) -> RoutesConfig | None:
         if not isinstance(ch, dict):
             continue
         cid = ch.get("id", "")
-        cname = ch.get("name", cid)
+        cname = ch.get("name") or cid
         if not cid:
             continue
         config.channels.append(

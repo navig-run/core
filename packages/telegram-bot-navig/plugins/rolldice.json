@@ -1,9 +1,0 @@
-﻿{
-  "id": "rolldice",
-  "version": "1.0.0",
-  "description": "Roll dice with standard notation (e.g. 2d6).",
-  "provides": [],
-  "depends": {
-    "pip": []
-  }
-}

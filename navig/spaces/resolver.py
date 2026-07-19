@@ -49,7 +49,7 @@ def resolve_space(name: str, cwd: Path | None = None) -> SpaceConfig:
                 scope="project",
             )
 
-    global_space = paths.config_dir() / "spaces" / canonical
+    global_space = paths.spaces_dir() / canonical
     return SpaceConfig(
         requested_name=name,
         canonical_name=canonical,
@@ -62,7 +62,7 @@ def spaces_roots() -> list[Path]:
     """Roots scanned for spaces: always ``~/.navig/spaces`` + any configured
     ``spaces.roots`` (e.g. ``D:\\spaces``). Read from the raw config dict so it
     works regardless of the typed schema (mirrors ``get_active_space``)."""
-    roots: list[Path] = [paths.config_dir() / "spaces"]
+    roots: list[Path] = [paths.spaces_dir()]
     try:
         from navig.config import get_config_manager  # noqa: PLC0415
 
@@ -159,6 +159,16 @@ def discover_space_paths(
     for root in spaces_roots():
         _scan_container(root, "global")
 
+    # Installed CC/NAVIG plugins that ship `spaces/` (each subdir is a space).
+    # The plugin host discovers packages under ~/.navig/plugins; best-effort.
+    try:
+        from navig.plugins.package import plugin_capability_dirs  # noqa: PLC0415
+
+        for container in plugin_capability_dirs("spaces"):
+            _scan_container(container, "plugin")
+    except Exception:  # noqa: BLE001
+        pass
+
     # Project: spaces under <project>/.navig/spaces + the opened folder itself.
     project_navig = _find_project_navig_root(current_dir)
     if project_navig is not None:
@@ -166,6 +176,20 @@ def discover_space_paths(
         parent = project_navig.parent
         if _project_has_content(parent):  # the opened folder is a workshop with content
             _record(parent, "project")
+
+    # Registry entries outside every scanned container — e.g. spaces registered
+    # via `POST /api/deck/spaces/register` or `navig space register` from an
+    # arbitrary folder ("external"). Without this, a registered space existed in
+    # spaces.json but was unresolvable by every per-space route. Container hits
+    # above win (dedup via `seen`); missing paths are skipped, enabled-filtering
+    # happens inside _record.
+    for entry in _registry.load_registry().get("spaces", []):
+        raw_path = entry.get("path") or ""
+        if not raw_path:
+            continue
+        p = Path(raw_path)
+        if p.is_dir():
+            _record(p, str(entry.get("source") or "external"))
 
     return discovered
 

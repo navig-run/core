@@ -16,7 +16,6 @@ from navig.platform.windows_utils import (
     run_with_graceful_timeout,
 )
 
-
 # ─── ps_quote ─────────────────────────────────────────────────────────────────
 
 
@@ -76,12 +75,17 @@ def test_remove_private_use_chars_empty():
 
 
 def test_check_pid_exists_true():
+    # check_pid_exists reads sys.modules["psutil"], so patch THERE (not the module
+    # attribute). Patching only the attribute let the real psutil probe a real PID
+    # 1234 — which exists on Linux but not Windows, so this passed on one OS and
+    # failed on the other.
     fake_proc = MagicMock()
     fake_proc.status.return_value = "running"
-    with patch("navig.platform.windows_utils.psutil") as m:
-        m.Process.return_value = fake_proc
-        m.STATUS_ZOMBIE = "zombie"
-        m.STATUS_DEAD = "dead"
+    m = MagicMock()
+    m.Process.return_value = fake_proc
+    m.STATUS_ZOMBIE = "zombie"
+    m.STATUS_DEAD = "dead"
+    with patch.dict("sys.modules", {"psutil": m}):
         assert check_pid_exists(1234) is True
 
 
@@ -96,9 +100,12 @@ def test_check_pid_exists_false():
 
 
 def test_check_pid_exists_no_psutil(monkeypatch):
-    monkeypatch.setattr("navig.platform.windows_utils.psutil", None)
-    result = check_pid_exists(1)
-    assert result is False
+    # check_pid_exists reads sys.modules["psutil"] — patch THERE so it truly sees
+    # psutil as absent regardless of OS. Patching only the module attribute left the
+    # real psutil probing PID 1, which exists on Linux (init) → passed on Windows,
+    # failed on Linux.
+    monkeypatch.setitem(sys.modules, "psutil", None)
+    assert check_pid_exists(1) is False
 
 
 # ─── run_with_graceful_timeout ────────────────────────────────────────────────

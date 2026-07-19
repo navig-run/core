@@ -249,7 +249,7 @@ async def _run_ffmpeg(cmd: list[str]) -> bool:
 
 async def _summarize(text: str) -> str | None:
     try:
-        from navig.llm_generate import llm_generate
+        from navig.llm.generate import llm_generate
 
         prompt = text[:6000]
         return await asyncio.to_thread(

@@ -199,7 +199,7 @@ async def build_plan(cwd=None) -> OperatorPlan:
 async def _plan_via_llm(ctx: dict) -> OperatorPlan | None:
     user = "Current situation signals (JSON):\n" + json.dumps(ctx, default=str, indent=2)
     try:
-        from navig.llm_generate import llm_generate
+        from navig.llm.generate import llm_generate
 
         raw = await asyncio.to_thread(
             llm_generate,

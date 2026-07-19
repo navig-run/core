@@ -20,14 +20,37 @@ from typing import Any
 from navig.core.yaml_io import atomic_write_text
 from navig.platform.paths import config_dir
 from navig.providers._local_defaults import _OLLAMA_USER_BASE_URL
-from navig.workspace_ownership import USER_WORKSPACE_DIR
+from navig.workspace_ownership import user_workspace_dir
+
 
 # ---------------------------------------------------------------------------
 # Default paths
 # ---------------------------------------------------------------------------
-DEFAULT_NAVIG_DIR: Path = config_dir()
-DEFAULT_WORKSPACE_DIR: Path = USER_WORKSPACE_DIR
-DEFAULT_CONFIG_FILE: Path = DEFAULT_NAVIG_DIR / "navig.json"
+# Resolved at CALL time so NAVIG_CONFIG_DIR isolation set after import still
+# applies (see navig/vault/migrate.py:_legacy_db_path).
+def _default_workspace_dir() -> Path:
+    return user_workspace_dir()
+
+
+def _default_config_file() -> Path:
+    return config_dir() / "navig.json"
+
+
+# `DEFAULT_CONFIG_FILE` / `DEFAULT_WORKSPACE_DIR` are imported by six TUI modules
+# (review.py, welcome.py, and the four settings screens) — but were NEVER defined here.
+# So `from navig.tui.config_model import DEFAULT_CONFIG_FILE` raised ImportError, and
+# because review.py did it at module top-level, importing `navig.tui` at all crashed
+# whenever textual (a core dependency) was installed: the entire TUI was dead on any real
+# install. Provided here via PEP 562 module ``__getattr__`` rather than a plain assignment
+# so they resolve at ACCESS time — honouring the same NAVIG_CONFIG_DIR isolation the two
+# functions above are call-time for (a bare ``DEFAULT_CONFIG_FILE = _default_config_file()``
+# would freeze the path at import, the #189 class of bug).
+def __getattr__(name: str) -> Any:
+    if name == "DEFAULT_CONFIG_FILE":
+        return _default_config_file()
+    if name == "DEFAULT_WORKSPACE_DIR":
+        return _default_workspace_dir()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +64,7 @@ class NavigConfig:
 
     # Step 1 — Identity
     profile_name: str = "operator"
-    workspace_root: str = str(DEFAULT_WORKSPACE_DIR)
+    workspace_root: str = field(default_factory=lambda: str(_default_workspace_dir()))
     theme: str = "dark"
 
     # Step 2 — Provider
@@ -113,8 +136,9 @@ def build_config_dict(cfg: NavigConfig) -> dict[str, Any]:
 def load_navig_json() -> dict[str, Any] | None:
     """Load ~/.navig/navig.json if it exists, else None."""
     try:
-        if DEFAULT_CONFIG_FILE.is_file():
-            return json.loads(DEFAULT_CONFIG_FILE.read_text(encoding="utf-8"))
+        cfg_file = _default_config_file()
+        if cfg_file.is_file():
+            return json.loads(cfg_file.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         pass
     return None

@@ -44,11 +44,11 @@ import uuid
 from pathlib import Path
 
 try:
+    from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
         Ed25519PrivateKey,
         Ed25519PublicKey,
     )
-    from cryptography.hazmat.primitives import serialization
 except ImportError:
     sys.exit("install: pip install cryptography")
 
@@ -94,7 +94,8 @@ def cmd_keygen(args: argparse.Namespace) -> None:
     priv_path.write_bytes(sk_bytes)
     pub_path.write_text(pk_bytes.hex())
     try:
-        import os, stat as _stat
+        import os
+        import stat as _stat
         os.chmod(priv_path, _stat.S_IRUSR | _stat.S_IWUSR)
     except OSError:
         pass

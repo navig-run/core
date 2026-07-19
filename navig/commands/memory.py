@@ -224,7 +224,7 @@ def memory_compact(
     from pathlib import Path
 
     try:
-        from navig.llm_generate import run_llm
+        from navig.llm.generate import run_llm
         from navig.memory import ConversationStore
 
         config = _get_config()
@@ -385,15 +385,25 @@ def memory_knowledge(
                 table.add_column("Content", max_width=50)
                 table.add_column("Tags")
 
-                for e in entries:
-                    import json
+                import json
 
-                    tags_list = json.loads(e.get("tags", "[]"))
+                for e in entries:
+                    # A single row's `tags` is a JSON string in the DB; a malformed
+                    # value must not blank the whole table — one bad row would abort
+                    # the entire `navig memory knowledge list`. Degrade that row's
+                    # tags to empty instead of crashing the list.
+                    try:
+                        tags_list = json.loads(e.get("tags") or "[]")
+                    except (ValueError, TypeError):
+                        tags_list = []
+                    if not isinstance(tags_list, list):
+                        tags_list = [tags_list]
+                    content = str(e.get("content") or "")
                     table.add_row(
-                        e["key"],
-                        e.get("source", ""),
-                        (e["content"][:50] + "..." if len(e["content"]) > 50 else e["content"]),
-                        ", ".join(tags_list),
+                        str(e.get("key", "")),
+                        str(e.get("source", "")),
+                        (content[:50] + "...") if len(content) > 50 else content,
+                        ", ".join(str(t) for t in tags_list),
                     )
 
                 ch.console.print(table)

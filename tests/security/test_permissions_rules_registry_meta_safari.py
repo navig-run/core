@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.permissions.rules — PermissionRule.matches, PermissionDecision
 # ---------------------------------------------------------------------------
@@ -95,14 +94,14 @@ class TestPermissionDecision:
 
 class TestCommandMeta:
     def test_decorator_attaches_meta(self):
-        from navig.registry.meta import command_meta, _META_ATTR
+        from navig.registry.meta import _META_ATTR, command_meta
         @command_meta(summary="test cmd", status="stable", since="1.0")
         def my_fn():
             pass
         assert hasattr(my_fn, _META_ATTR)
 
     def test_meta_summary_correct(self):
-        from navig.registry.meta import command_meta, _META_ATTR
+        from navig.registry.meta import _META_ATTR, command_meta
         @command_meta(summary="do something", status="beta", since="0.5")
         def my_fn2():
             pass
@@ -110,7 +109,7 @@ class TestCommandMeta:
         assert meta.summary == "do something"
 
     def test_meta_status_correct(self):
-        from navig.registry.meta import command_meta, _META_ATTR
+        from navig.registry.meta import _META_ATTR, command_meta
         @command_meta(summary="x", status="experimental", since="0.1")
         def my_fn3():
             pass
@@ -125,7 +124,7 @@ class TestCommandMeta:
         assert my_fn4() == 42
 
     def test_with_deprecated_info(self):
-        from navig.registry.meta import command_meta, _META_ATTR
+        from navig.registry.meta import _META_ATTR, command_meta
         @command_meta(
             summary="old cmd", status="deprecated", since="0.1",
             deprecated={"since": "0.9", "remove_after": "2.0", "replaced_by": "new-cmd"},
@@ -137,7 +136,7 @@ class TestCommandMeta:
         assert meta.deprecated.replaced_by == "new-cmd"
 
     def test_no_deprecated_is_none(self):
-        from navig.registry.meta import command_meta, _META_ATTR
+        from navig.registry.meta import _META_ATTR, command_meta
         @command_meta(summary="cmd", status="stable", since="1.0")
         def my_fn6():
             pass

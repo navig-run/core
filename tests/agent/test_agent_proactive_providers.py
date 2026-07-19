@@ -15,7 +15,6 @@ from navig.agent.proactive.providers import (
     MockCalendar,
 )
 
-
 NOW = datetime(2024, 6, 15, 10, 0, 0)
 LATER = datetime(2024, 6, 15, 11, 0, 0)
 

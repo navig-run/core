@@ -381,12 +381,13 @@ class TestConstants:
     def test_content_types(self):
         from navig.agents.inbox_router import CONTENT_TYPES
 
-        assert len(CONTENT_TYPES) == 5
-        assert "task_roadmap" in CONTENT_TYPES
-        assert "brief" in CONTENT_TYPES
-        assert "wiki_knowledge" in CONTENT_TYPES
-        assert "memory_log" in CONTENT_TYPES
-        assert "other" in CONTENT_TYPES
+        assert len(CONTENT_TYPES) == 8
+        # original four routing targets + "other"
+        for ct in ("task_roadmap", "brief", "wiki_knowledge", "memory_log", "other"):
+            assert ct in CONTENT_TYPES
+        # new routing targets (idea/prompt/code → ideas / brain-prompts / refs)
+        for ct in ("idea", "prompt", "code"):
+            assert ct in CONTENT_TYPES
 
     def test_target_folders(self):
         from navig.agents.inbox_router import CONTENT_TYPES, TARGET_FOLDERS

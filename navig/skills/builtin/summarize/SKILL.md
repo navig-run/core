@@ -1,16 +1,22 @@
-# Summarize Skill
-**id:** summarize
-**name:** Content Summarizer
-**version:** 1.0.0
-**category:** text
-**tags:** summary, text, nlp, extraction, digest
-**platforms:** linux, macos, windows
-**tools:** web_fetch, memory_store, memory_fetch
-**safety:** low
-**user_invocable:** true
-**description:** Fetch text from a URL or memory and produce a concise summary.
-
 ---
+id: summarize
+name: Content Summarizer
+version: 1.0.0
+category: text
+tags: [summary, text, nlp, extraction, digest]
+platforms: [linux, macos, windows]
+tools: [web_fetch, memory_store, memory_fetch]
+safety: safe
+user_invocable: true
+description: >
+  Fetch text from a URL or a memory key and produce a concise structured summary —
+  a one-line headline, 3–7 key bullets, an approximate word count, and the source —
+  then store it back in session memory. Use when the user says "summarize this",
+  "give me the key points", "tl;dr", "summarize <url>", or "summarize the text stored
+  as <key>". Read-only aside from writing the summary into memory.
+---
+
+# Summarize Skill
 
 ## Description
 

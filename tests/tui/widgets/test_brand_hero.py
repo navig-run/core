@@ -1,6 +1,8 @@
 ﻿"""Tests for navig/tui/widgets/brand_hero.py."""
 from __future__ import annotations
+
 import pytest
+
 
 class TestBrandHero:
     def _h(self):

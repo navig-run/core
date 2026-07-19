@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig.blackbox.timeline — format_event_summary, render_timeline
 # ---------------------------------------------------------------------------
@@ -222,7 +221,7 @@ class TestDeliveryPriority:
 
 class TestNotificationOptions:
     def test_defaults(self):
-        from navig.comms.types import NotificationOptions, DeliveryPriority
+        from navig.comms.types import DeliveryPriority, NotificationOptions
         o = NotificationOptions()
         assert o.priority == DeliveryPriority.NORMAL
         assert o.silent is False

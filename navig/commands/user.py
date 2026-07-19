@@ -21,7 +21,7 @@ def user_show():
         console.print(f"Name:   [cyan]{name}[/cyan]")
         console.print(f"Email:  [cyan]{email}[/cyan]")
     except Exception as exc:
-        ch.warn(f"Could not load user profile: {exc}")
+        ch.warning(f"Could not load user profile: {exc}")
 
 
 @user_app.command("set")

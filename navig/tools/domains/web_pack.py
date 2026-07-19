@@ -19,7 +19,7 @@ def register_tools(registry: ToolRegistry) -> None:
         ToolMeta(
             name="web_search",
             domain=ToolDomain.WEB,
-            description="Search the web using Brave or DuckDuckGo.",
+            description="Search the web (Firecrawl/Brave/Tavily if keyed, else keyless Mojeek/DuckDuckGo).",
             safety=SafetyLevel.SAFE,
             module_path="navig.tools.web",
             handler_name="web_search",
@@ -37,7 +37,7 @@ def register_tools(registry: ToolRegistry) -> None:
                 "provider": {
                     "type": "string",
                     "default": "auto",
-                    "description": "brave|duckduckgo|auto",
+                    "description": "auto|mojeek|duckduckgo|brave|tavily|serpapi|firecrawl",
                 },
             },
             tags=["search", "research", "web"],

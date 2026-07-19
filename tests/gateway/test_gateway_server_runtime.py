@@ -415,10 +415,17 @@ async def test_autonomous_init_and_comms(gateway, monkeypatch: pytest.MonkeyPatc
         def default():
             return "policy"
 
+        @staticmethod
+        def from_config(config):
+            # The real gateway builds the policy from the operator's config
+            # (`approval:` section) and falls back to defaults on empty input.
+            return "policy"
+
     class ApprovalManager:
-        def __init__(self, gateway, policy):
+        def __init__(self, gateway, policy, audit_log=None):
             self.gateway = gateway
             self.policy = policy
+            self.audit_log = audit_log
             self.handlers = {}
 
         def register_handler(self, name, handler):
@@ -584,7 +591,8 @@ async def test_feature_handlers_and_agent_interface(
 
     gw.approval_manager = SimpleNamespace(
         list_pending=lambda: [req],
-        request_approval=AsyncMock(return_value=req),
+        # The real request_approval(command=..., ...) returns a bool.
+        request_approval=AsyncMock(return_value=True),
         respond=AsyncMock(return_value=True),
     )
     assert (
@@ -596,8 +604,8 @@ async def test_feature_handlers_and_agent_interface(
             await gw._handle_approval_request(
                 DummyRequest(payload={"action": "deploy", "description": "d"})
             )
-        )["request_id"]
-        == "req1"
+        )["approved"]
+        is True
     )
     assert (
         response_json(

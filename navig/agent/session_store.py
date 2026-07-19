@@ -53,7 +53,15 @@ logger = logging.getLogger(__name__)
 # Default base directory
 # ─────────────────────────────────────────────────────────────
 
-_DEFAULT_BASE_DIR = config_dir() / "sessions"
+
+def _default_base_dir() -> Path:
+    """Resolve the sessions dir at CALL time — never import time.
+
+    ``config_dir()`` honours ``NAVIG_CONFIG_DIR``; a module-level constant
+    would freeze the real user home before test/daemon isolation applies
+    (see ``navig/vault/migrate.py:_legacy_db_path``).
+    """
+    return config_dir() / "sessions"
 
 # ─────────────────────────────────────────────────────────────
 # Data models
@@ -191,7 +199,7 @@ class SessionStore:
         base_dir: Path | None = None,
         workspace: str = "",
     ) -> None:
-        self._base_dir = base_dir or _DEFAULT_BASE_DIR
+        self._base_dir = base_dir or _default_base_dir()
         self.session_id = session_id or _generate_session_id()
         self.file = self._base_dir / f"{self.session_id}.jsonl"
         self.meta_file = self._base_dir / f"{self.session_id}.meta.json"
@@ -324,7 +332,7 @@ class SessionStore:
         Returns:
             A list of :class:`SessionMetadata` sorted newest-first.
         """
-        directory = base_dir or _DEFAULT_BASE_DIR
+        directory = base_dir or _default_base_dir()
         if not directory.exists():
             return []
 
@@ -437,7 +445,7 @@ def cleanup_old_sessions(
 
     Returns the number of sessions removed.
     """
-    directory = base_dir or _DEFAULT_BASE_DIR
+    directory = base_dir or _default_base_dir()
     if not directory.exists():
         return 0
 

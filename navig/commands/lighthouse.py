@@ -211,12 +211,15 @@ def _vault_put_cloudflare(data: dict) -> bool:
 
 
 def _ensure_api_key(cfg) -> str:
-    key = (cfg.get("deck.api_key") or "").strip()
-    if not key:
-        key = "navig_" + _secrets.token_urlsafe(32)
-        cfg.set("deck.api_key", key, scope="global")
-        cfg.save(scope="global")
-    return key
+    """The install's deck key — RESTORED from the vault mirror if config lost it.
+
+    Minting here on an empty config would mint a NEW tenant and then immediately bake it
+    into the webhook we are about to register — quietly abandoning the old tenant (and
+    everything still pointing at it) instead of recovering it.
+    """
+    from navig.cloud import deck_key
+
+    return deck_key.ensure_in_config(cfg)
 
 
 def configure_telegram_webhook(lighthouse_url: str) -> str | None:
@@ -226,8 +229,8 @@ def configure_telegram_webhook(lighthouse_url: str) -> str | None:
     Telegram channel validates uplink-delivered updates against the same secret.
     Returns the webhook URL, or ``None`` if no bot token is configured yet.
     """
-    from navig.cloud import api_key_hash
     from navig.messaging.secrets import resolve_telegram_bot_token
+    from navig.telegram.updates import ALLOWED_UPDATES, webhook_url_for
 
     bot_token = (resolve_telegram_bot_token() or "").strip()
     if not bot_token:
@@ -236,7 +239,7 @@ def configure_telegram_webhook(lighthouse_url: str) -> str | None:
     cfg = _config()
     api_key = _ensure_api_key(cfg)
     secret = (cfg.get("telegram.webhook_secret") or "").strip() or _secrets.token_hex(24)
-    hook_url = f"{lighthouse_url.rstrip('/')}/tg/{api_key_hash(api_key)}"
+    hook_url = webhook_url_for(lighthouse_url, api_key)
 
     cfg.set("telegram.webhook_url", hook_url, scope="global")
     cfg.set("telegram.webhook_secret", secret, scope="global")
@@ -248,7 +251,9 @@ def configure_telegram_webhook(lighthouse_url: str) -> str | None:
         json={
             "url": hook_url,
             "secret_token": secret,
-            "allowed_updates": ["message", "callback_query", "message_reaction", "inline_query"],
+            # The SHARED list — a deploy that declares a narrower set silently turns
+            # off whatever it omits (this is how Business updates went dark).
+            "allowed_updates": ALLOWED_UPDATES,
         },
         timeout=20,
     )
@@ -322,9 +327,9 @@ def lighthouse_login(
 ) -> None:
     """One-click: authorize via your browser (no API token to create), then deploy."""
     from navig import console_helper as ch
-    from navig.core import narrator
     from navig.cloud import cf_oauth
     from navig.cloud.lighthouse_deploy import DeployError
+    from navig.core import narrator
 
     narrator.blank()
     narrator.phase("Connecting your Cloudflare account", icon="brain")
@@ -377,8 +382,8 @@ def lighthouse_deploy_cmd(
 ) -> None:
     """Deploy Lighthouse to your own Cloudflare account — no Node, no tunnel, no domain."""
     from navig import console_helper as ch
-    from navig.core import narrator
     from navig.cloud.lighthouse_deploy import DeployError
+    from navig.core import narrator
 
     tok = resolve_cf_token(token)
     if not tok:
@@ -488,6 +493,59 @@ def lighthouse_url() -> None:
     ch.dim("`navig config set cloud.lighthouse_url https://<your-domain>` and `navig lighthouse redeploy`.")
 
 
+def _bundled_worker_version() -> str:
+    """The ``LIGHTHOUSE_VERSION`` baked into the worker.js shipped in THIS navig
+    install — i.e. the latest edge version you'd get by redeploying."""
+    try:
+        import os
+        import re
+
+        import navig  # noqa: PLC0415
+
+        wj = os.path.join(
+            os.path.dirname(navig.__file__), "cloud", "lighthouse_worker", "worker.js"
+        )
+        with open(wj, encoding="utf-8") as fh:
+            m = re.search(r'LIGHTHOUSE_VERSION\s*=\s*"([^"]+)"', fh.read())
+        return m.group(1) if m else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _deployed_worker_version(url: str) -> str:
+    """The version the live edge reports at ``GET /`` (ground truth), or ""."""
+    import json as _json
+    import urllib.request as _ur
+
+    try:
+        with _ur.urlopen(url.rstrip("/") + "/", timeout=5) as r:
+            return str((_json.loads(r.read().decode("utf-8")) or {}).get("version") or "").strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+@app.command("version")
+def lighthouse_version() -> None:
+    """Compare the deployed edge to the version bundled in this navig release."""
+    from navig import console_helper as ch
+
+    cfg = _config()
+    url = (cfg.get("cloud.lighthouse_url") or "").strip()
+    latest = _bundled_worker_version() or "?"
+    if not url:
+        ch.info(f"Lighthouse not deployed. Bundled edge version: v{latest}.")
+        return
+    deployed = _deployed_worker_version(url) or "?"
+    ch.info(f"Deployed edge: v{deployed}   ({url})")
+    ch.info(f"Bundled (this navig): v{latest}")
+    if deployed != "?" and latest != "?" and deployed != latest:
+        ch.warning("Update available — run `navig lighthouse redeploy`.")
+    elif deployed == latest and deployed != "?":
+        ch.success("Up to date.")
+    else:
+        ch.dim("Deployed before version tracking — `navig lighthouse redeploy` to refresh.")
+
+
 @app.command("status")
 def lighthouse_status() -> None:
     """Show Lighthouse config + live uplink state (if the daemon is running)."""
@@ -503,13 +561,23 @@ def lighthouse_status() -> None:
     if url:
         ch.info(f"Edge:       {url}")
         ch.info(f"Account:    {cfg.get('cloud.lighthouse_account_id') or '<unknown>'}")
+        _latest = _bundled_worker_version()
+        _deployed = _deployed_worker_version(url)
+        if _latest or _deployed:
+            ch.info(f"Version:    edge v{_deployed or '?'}  ·  bundled v{_latest or '?'}")
+            if _deployed and _latest and _deployed != _latest:
+                ch.warning("Edge update available — run `navig lighthouse redeploy`.")
 
-    from navig._daemon_defaults import _GATEWAY_PORT
+    # Resolve the LIVE gateway port. The daemon self-heals onto an ephemeral port
+    # (WinNAT reserves the default range on some hosts) and records it in
+    # ~/.navig/gateway.json; gateway_live_defaults() prefers that discovery file
+    # when the endpoint actually answers, else falls back to the configured/default
+    # port — the same resolution `navig miniapp` uses. (Previously this read the
+    # unresolved dotted key `cfg.get("gateway.port")`, so it always probed the
+    # default port and missed a relocated daemon.)
+    from navig.gateway_client import gateway_live_defaults
 
-    # NB: cfg.get("gateway.port") does not resolve the dotted/nested key, so this
-    # currently always uses the default. Tracked separately; for a custom port use
-    # gateway_cli_defaults() (see commands/cloud.py). Default centralized regardless.
-    port = int(cfg.get("gateway.port", _GATEWAY_PORT))
+    port = gateway_live_defaults()[0]
     api_key = cfg.get("deck.api_key", "") or ""
     req = urllib.request.Request(
         f"http://127.0.0.1:{port}/api/deck/cloud/status",
@@ -535,6 +603,24 @@ def lighthouse_status() -> None:
                 f"served={lh.get('requests_served', 0)})")
     if info.get("last_error"):
         ch.warning(f"Last err:   {info.get('last_error')}")
+
+    # "Uplink: online" is not enough to prove the bot can hear. If the webhook still
+    # addresses the tenant of a ROTATED deck.api_key, Telegram POSTs to a Durable
+    # Object the brain never attached to; the edge queues every update and acks 202,
+    # and the bot is 100% deaf while this command reports green. Say so, loudly.
+    try:
+        from navig.telegram.updates import corrected_webhook_url
+
+        cfg = _config()
+        if corrected_webhook_url(cfg.get("telegram.webhook_url"), cfg):
+            ch.error(
+                "Telegram:   webhook points at a STALE tenant (deck.api_key was rotated) "
+                "— inbound updates are queued at the edge and never delivered. The bot "
+                "cannot reply to anything."
+            )
+            ch.dim("            fix: restart the gateway (it self-heals), or `navig lighthouse redeploy`")
+    except Exception:  # noqa: BLE001 — status must never crash on a best-effort check
+        pass
 
 
 @app.command("disable")

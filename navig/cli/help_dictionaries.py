@@ -112,6 +112,27 @@ HELP_REGISTRY: dict[str, dict[str, Any]] = {
             "migrate": "migrate app to another host",
         },
     },
+    "deploy": {
+        "desc": "Deploy an app from .navig/deploy.yaml",
+        "commands": {
+            "init": "scaffold .navig/deploy.yaml interactively",
+            "check": "validate the config and test connectivity",
+            "run": "deploy the active (or specified) app",
+            "status": "show the status of the last deploy",
+            "history": "show recent deploy history",
+            "rollback": "restore the previous deploy snapshot",
+        },
+    },
+    "action": {
+        "desc": "Quick actions — saved commands you run by name",
+        "commands": {
+            "list": "list all quick actions",
+            "show": "show details of one action",
+            "add": "add a new quick action",
+            "run": "run a quick action by name",
+            "remove": "remove a quick action",
+        },
+    },
     "docker": {
         "desc": "Manage Docker containers on remote hosts",
         "commands": {
@@ -207,6 +228,7 @@ HELP_REGISTRY: dict[str, dict[str, Any]] = {
             "tree": "show skills by category",
             "show": "show skill details, commands, and examples",
             "run": "run a skill command (skill:command [args])",
+            "distill": "draft a SKILL.md from the operations ledger (--last 2h)",
         },
     },
     "scaffold": {
@@ -374,17 +396,26 @@ HELP_REGISTRY: dict[str, dict[str, Any]] = {
             "report": "generate full analytics report",
         },
     },
-    "pack": {
-        "desc": "Shareable operations bundles (runbooks, checklists, workflows)",
+    "ledger": {
+        "desc": "Operations-ledger integrity (tamper-evident hash chain)",
         "commands": {
-            "(default)": "list available packs",
-            "list": "list packs with filters",
-            "show": "show pack details",
-            "install": "install a pack",
-            "uninstall": "remove an installed pack",
-            "run": "execute a pack",
-            "create": "create a new pack",
-            "search": "search for packs",
+            "verify": "re-walk the chain; report intact or broken-at-line",
+            "show": "recent operations with chain state + reversibility labels",
+        },
+    },
+    "audit": {
+        "desc": "Privileged-action audit trail (gateway policy + approval decisions)",
+        "commands": {
+            "tail": "recent audit records; filter by --action/--actor/--status",
+        },
+    },
+    "undo": {
+        "desc": "Undo the last green (undoable) operation — confirm-gated",
+        "commands": {
+            "(default)": "undo the last green operation (asks first)",
+            "<op-id>": "undo a specific operation by id",
+            "--list": "preview undo candidates without undoing",
+            "--yes": "skip the confirmation prompt",
         },
     },
     "approve": {

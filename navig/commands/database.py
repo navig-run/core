@@ -92,7 +92,7 @@ def execute_sql_file(file: Path, options: dict[str, Any]):
         ch.error(f"File not found: {file}")
         return
 
-    query = file.read_text()
+    query = file.read_text(encoding="utf-8")
     execute_sql(query, options)
 
 

@@ -64,7 +64,7 @@ def _approach_variants_sync(title: str, rationale: str) -> list[dict]:
     fallback = [{"id": "approach-1", "title": "Proceed directly",
                  "summary": "Break it down and start now.", "effort": "medium", "impact": "medium"}]
     try:
-        from navig.llm_generate import llm_generate
+        from navig.llm.generate import llm_generate
 
         sys = (
             "You are NAVIG's operator. Given a goal, propose 2-3 DISTINCT, concrete "

@@ -35,7 +35,11 @@ def _media_descriptor(msg) -> dict | None:
                 "file_id": str(getattr(photo, "id", "")) or None, "mime": "image/jpeg",
                 "size": None, "filename": None}
     if doc is not None:
-        from telethon.tl.types import DocumentAttributeAudio, DocumentAttributeFilename, DocumentAttributeVideo
+        from telethon.tl.types import (
+            DocumentAttributeAudio,
+            DocumentAttributeFilename,
+            DocumentAttributeVideo,
+        )
         mime = str(getattr(doc, "mime_type", "") or "")
         kind = "document"
         filename = None

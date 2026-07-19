@@ -50,10 +50,9 @@ def _load_gateway_cli_defaults() -> tuple[int, str]:
     return gateway_cli_defaults()
 
 
-def _free_port(port: int) -> None:
-    """Kill any process currently listening on *port* so the gateway can bind to it."""
+def _port_holders(port: int) -> list[int]:
+    """PIDs listening on *port* (excluding us). Best-effort; empty on any failure."""
     import os
-    import signal
     import subprocess
     import sys
 
@@ -99,19 +98,137 @@ def _free_port(port: int) -> None:
         except Exception:
             pass
 
-    for pid in set(pids):
-        try:
-            if sys.platform == "win32":
-                subprocess.call(
-                    ["taskkill", "/F", "/PID", str(pid)],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                os.kill(pid, signal.SIGKILL)
-            _logger.debug("Freed port %d — killed PID %d", port, pid)
-        except Exception:
-            pass
+    return sorted(set(pids))
+
+
+def _free_port(
+    port: int,
+    *,
+    holders_reader=None,
+    config_dir_reader=None,
+    killer=None,
+) -> list[int]:
+    """Free *port* by killing ONLY our own stale gateway. Returns the PIDs killed.
+
+    This is the SECOND kill path in the start sequence, and #173 only scoped the first
+    one. It used to ``taskkill /F`` **whatever** was listening on the port, with no
+    identity check at all — so a gateway started from any other navig (a test, a smoke
+    run, a second venv) that happened to resolve to the same port force-killed the
+    operator's **live production daemon**, exactly the bug ``_supersede_other_gateways``
+    was scoped to prevent. It also meant an unrelated app holding port 8789 would simply
+    be executed.
+
+    The rule is the one ``config_dir_of`` already states: a process whose config dir we
+    cannot read is **not ours**, and you must never kill what you cannot identify. So:
+
+      * same config dir  → our own stale instance; kill it (this is the whole point).
+      * other config dir → a different brain. Leave it.
+      * unreadable       → unknown. Leave it.
+      * not a navig proc → someone else's port. Leave it.
+
+    Refusing to kill is safe: the server's bind self-heals onto a free port and writes
+    the real one to ``gateway.json``, which every client resolves through. A port we
+    could not free costs one ephemeral port; a port we freed by shooting the operator's
+    brain costs them their bot.
+    """
+    from navig.daemon.single_instance import config_dir_of
+    from navig.platform import paths
+
+    holders = (holders_reader or _port_holders)(port)
+    if not holders:
+        return []
+
+    read_dir = config_dir_reader or config_dir_of
+    kill = killer or _kill_pid
+    try:
+        ours = paths.config_dir().resolve()
+    except Exception:  # noqa: BLE001 — cannot identify ourselves → kill nothing
+        return []
+
+    killed: list[int] = []
+    for pid in holders:
+        theirs = read_dir(pid)
+        if theirs is None:
+            _logger.warning(
+                "Port %d is held by PID %d, which we cannot identify — NOT killing it. "
+                "The gateway will bind to a free port instead.",
+                port, pid,
+            )
+            continue
+        if theirs != ours:
+            _logger.info(
+                "Port %d is held by PID %d from a DIFFERENT config dir (%s) — that is "
+                "another brain, leaving it alone. Binding elsewhere.",
+                port, pid, theirs,
+            )
+            continue
+        kill(pid)
+        killed.append(pid)
+        _logger.info("Freed port %d — superseded our own stale gateway (PID %d)", port, pid)
+
+    return killed
+
+
+def _kill_pid(pid: int) -> None:
+    """Force-kill *pid* (best-effort, cross-platform)."""
+    import os
+    import signal
+    import subprocess
+    import sys
+
+    try:
+        if sys.platform == "win32":
+            subprocess.call(
+                ["taskkill", "/F", "/PID", str(pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            os.kill(pid, signal.SIGKILL)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _supersede_other_gateways() -> None:
+    """Guarantee this is the ONLY gateway **for this config dir**: kill every other
+    gateway process bound to the same brain (a stale instance keeps serving OLD cached
+    code even after a code change).
+
+    Scoped by config dir, and that scoping is load-bearing. Unscoped, this sweep matched
+    on cmdline alone and force-killed matching processes machine-wide — so a gateway
+    started from ANY other navig (a second venv, a CI job, a temp-config smoke test) took
+    down the operator's live production daemon. "Never boot a second gateway locally"
+    became a standing rule precisely because of this. A gateway on a *different* config
+    dir is a different brain; leave it alone.
+
+    Never touches the current process or its ancestors (the supervisor that spawned us,
+    NSSM, the launching shell), so it is safe even when the gateway runs as a supervised
+    child. Complements ``_free_port`` (which only catches an instance already bound to
+    the port — not one mid-startup or on another port).
+    """
+    try:
+        from navig.daemon.single_instance import GATEWAY_PATTERNS, kill_other_instances
+        from navig.platform import paths
+
+        killed = kill_other_instances(GATEWAY_PATTERNS, config_dir=paths.config_dir())
+        if killed:
+            _logger.info("Superseded %d stale gateway process(es): %s", len(killed), killed)
+    except Exception as exc:  # noqa: BLE001
+        _logger.debug("gateway supersede sweep skipped: %s", exc)
+
+
+def _write_gateway_pid() -> None:
+    """Record this gateway's PID so ``navig gateway stop`` can find it."""
+    try:
+        import os
+
+        from navig.platform import paths
+
+        pid_file = paths.config_dir() / "gateway.pid"
+        pid_file.parent.mkdir(parents=True, exist_ok=True)
+        pid_file.write_text(str(os.getpid()), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        _logger.debug("could not write gateway.pid: %s", exc)
 
 
 gateway_app = typer.Typer(
@@ -174,7 +291,11 @@ def gateway_start(
         host = default_host
 
     ch.info(f"Starting NAVIG Gateway on {host}:{port}...")
+    # Single-instance: free the port AND supersede any other gateway/bot process,
+    # so a fresh start always wins and never leaves a stale instance serving old code.
     _free_port(port)
+    _supersede_other_gateways()
+    _write_gateway_pid()
 
     # Boot presentation: formatted narrator story by default, raw logs on --debug.
     import logging as _logging
@@ -248,6 +369,18 @@ def gateway_start(
         ch.error(f"Gateway error: {e}")
 
 
+@gateway_app.command("restart")
+def gateway_restart():
+    """Restart the NAVIG daemon/gateway (alias for `navig service restart`).
+
+    Use this after upgrading or changing config so the running daemon picks up
+    the new code/config (the CLI already runs fresh code; the daemon does not).
+    """
+    from navig.commands.service import service_restart
+
+    service_restart()
+
+
 @gateway_app.command("stop")
 def gateway_stop():
     """
@@ -280,7 +413,7 @@ def gateway_stop():
         for pid_file in pid_candidates:
             try:
                 if pid_file.exists():
-                    pid = int(pid_file.read_text().strip())
+                    pid = int(pid_file.read_text(encoding="utf-8").strip())
                     if sys.platform == "win32":
                         import subprocess
 
@@ -451,9 +584,14 @@ def gateway_status(
     em_online = _port_alive(em_host, em_port) if em_host else False
 
     # ── Daemon/gateway API ────────────────────────────────────────────────────
-    gw_port = int(raw_cfg.get("gateway", {}).get("port") or _GATEWAY_PORT)
+    # Live-first: the self-healing bind may have landed the gateway off the
+    # configured port — probe where it actually listens (127.0.0.1, not
+    # `localhost`, to dodge the Windows IPv6-first resolution stall).
+    from navig.gateway_client import gateway_live_defaults
+
+    gw_port = gateway_live_defaults()[0]
     gw_live = _http_alive(
-        f"http://localhost:{gw_port}/health",
+        f"http://127.0.0.1:{gw_port}/health",
         headers=_gateway_request_headers(),
     )
 

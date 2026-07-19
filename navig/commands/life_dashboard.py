@@ -65,36 +65,37 @@ def _get_pending_reminders(user_id: int = 0) -> list[dict]:
 
 
 def _get_habit_jobs() -> list[dict]:
-    """Return raw habit job dicts from cron_jobs.json. Never raises."""
+    """Return raw habit job dicts from the LIVE scheduler store. Never raises."""
     try:
-        p = Path.home() / ".navig" / "daemon" / "cron_jobs.json"
-        if not p.exists():
-            return []
-        data = json.loads(p.read_text(encoding="utf-8"))
-        return [j for j in data.get("jobs", []) if j.get("name", "").startswith(_HABIT_NAME_PREFIX)]
+        from navig.scheduler import habit_store  # noqa: PLC0415 — lazy: not on the help path
+
+        return habit_store.list_habit_jobs()
     except Exception:
         return []
 
 
 def _get_all_cron_jobs() -> list[dict]:
-    """Return all cron jobs sorted by next_run. Never raises."""
+    """Return all enabled cron jobs sorted by next_run. Never raises."""
     try:
-        p = Path.home() / ".navig" / "daemon" / "cron_jobs.json"
-        if not p.exists():
-            return []
-        data = json.loads(p.read_text(encoding="utf-8"))
-        jobs = [j for j in data.get("jobs", []) if j.get("enabled", True)]
+        from navig.scheduler import habit_store  # noqa: PLC0415 — lazy: not on the help path
+
+        jobs = [j for j in habit_store.list_jobs() if j.get("enabled", True)]
         return sorted(jobs, key=lambda x: x.get("next_run") or "")
     except Exception:
         return []
 
 
 def _get_active_space() -> str:
-    """Return name of the active space. Never raises."""
+    """Return name of the active space, or "personal" when none is set. Never raises.
+
+    Was `cm.get("spaces.active", default="personal")` — the LEGACY key `navig space switch`
+    actively REMOVES, so this always returned "personal" once any space was selected. Now goes
+    through the canonical resolver (cache file + config keys the writer actually writes), so
+    `navig life show` reflects the real active space; "personal" is the truly-unset fallback.
+    """
     try:
-        from navig.config import get_config_manager
-        cm = get_config_manager()
-        return cm.get("spaces.active", default="personal")
+        from navig.commands.space import resolve_active_space
+        return resolve_active_space() or "personal"
     except Exception:
         return "personal"
 
@@ -300,9 +301,9 @@ def life_show(
         try:
             while True:
                 run_life_dashboard(user_id=user_id)
-                ch.print(f"[dim]Refreshing in {interval}s… Ctrl+C to exit[/dim]")
+                ch.console.print(f"[dim]Refreshing in {interval}s… Ctrl+C to exit[/dim]")
                 time.sleep(interval)
         except KeyboardInterrupt:
-            ch.print("\n[dim]Stopped.[/dim]")
+            ch.console.print("\n[dim]Stopped.[/dim]")
     else:
         run_life_dashboard(user_id=user_id)

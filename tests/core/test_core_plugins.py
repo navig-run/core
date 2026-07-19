@@ -4,13 +4,12 @@ Batch 94 — tests for navig.core.plugins
 
 from __future__ import annotations
 
+import sys
 from dataclasses import fields
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
-import sys
+from unittest.mock import MagicMock, call, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # PluginState / PluginType enums
@@ -281,8 +280,12 @@ class TestPluginRegistryLifecycle:
     def _make_registry_with_plugin(self):
         """Create a registry with a pre-loaded mock plugin."""
         from navig.core.plugins import (
-            PluginRegistry, PluginInfo, PluginMetadata, PluginState,
-            Plugin, plugin,
+            Plugin,
+            PluginInfo,
+            PluginMetadata,
+            PluginRegistry,
+            PluginState,
+            plugin,
         )
 
         @plugin(name="lifecycle-plugin", version="1.0")
@@ -305,6 +308,7 @@ class TestPluginRegistryLifecycle:
         module = MagicMock()
         module.__dict__["LifecyclePlugin"] = LifecyclePlugin
         import inspect as _inspect
+
         # We'll just manually plant the class in a fake module
         import types
         fake_mod = types.ModuleType(module_name)
@@ -382,7 +386,10 @@ class TestPluginRegistryLifecycle:
 
     def test_load_error_state(self):
         from navig.core.plugins import (
-            PluginRegistry, PluginInfo, PluginMetadata, PluginState,
+            PluginInfo,
+            PluginMetadata,
+            PluginRegistry,
+            PluginState,
         )
         r = PluginRegistry()
         info = PluginInfo(
@@ -404,7 +411,11 @@ class TestPluginRegistryLifecycle:
 class TestPluginRegistryQuery:
     def _registry_with_plugins(self):
         from navig.core.plugins import (
-            PluginRegistry, PluginInfo, PluginMetadata, PluginState, PluginType
+            PluginInfo,
+            PluginMetadata,
+            PluginRegistry,
+            PluginState,
+            PluginType,
         )
         r = PluginRegistry()
         meta_cmd = PluginMetadata(name="cmd-plugin", version="1", type=PluginType.COMMAND)

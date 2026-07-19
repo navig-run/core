@@ -10,12 +10,10 @@ An empty string means no settings panel is available (read-only info).
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from navig.core.yaml_io import safe_load_yaml
-from navig.platform.paths import config_dir
+from navig.platform.paths import builtin_store_dir, config_dir
 
 # ---------------------------------------------------------------------------
 # StatusBadge
@@ -95,10 +93,13 @@ def resolve_provider() -> StatusBadge:
 def resolve_telegram() -> StatusBadge:
     """Check Telegram bot configuration."""
     try:
-        from navig.config import get as _cfg
+        from navig.messaging.secrets import resolve_telegram_bot_token
 
-        token = _cfg("TELEGRAM_BOT_TOKEN", "") or _cfg("telegram_bot_token", "")
-        if token:
+        # The token lives in the vault (vault-first) or under telegram.bot_token in
+        # config — NOT a flat TELEGRAM_BOT_TOKEN config key. resolve_telegram_bot_token()
+        # is the one canonical resolver (vault → legacy → env → config); the old flat
+        # read always returned "" so the badge said "missing" even when the bot was set up.
+        if resolve_telegram_bot_token():
             return StatusBadge(
                 "Telegram",
                 "ok",
@@ -118,17 +119,20 @@ def resolve_telegram() -> StatusBadge:
 def resolve_ssh() -> StatusBadge:
     """Check whether any SSH hosts are configured."""
     try:
-        cfg_path = config_dir() / "config.yaml"
-        if cfg_path.is_file():
-            data = safe_load_yaml(cfg_path) or {}
-            hosts = data.get("hosts", {})
-            if hosts:
-                count = len(hosts)
-                return StatusBadge(
-                    "SSH Keys",
-                    "ok",
-                    f"{count} host{'s' if count != 1 else ''} active",
-                )
+        from navig.core import Config
+
+        # Hosts are per-host YAML files under config_dir()/hosts (+ legacy apps/),
+        # NOT a `hosts:` key in config.yaml. Config.list_hosts() is the same source
+        # `navig host list` uses; the old config.yaml read found nothing, so the
+        # badge always said "missing" even with hosts configured.
+        hosts = Config().list_hosts()
+        if hosts:
+            count = len(hosts)
+            return StatusBadge(
+                "SSH Keys",
+                "ok",
+                f"{count} host{'s' if count != 1 else ''} active",
+            )
     except Exception:  # noqa: BLE001
         pass
     return StatusBadge("SSH Keys", "missing", "navig host add")
@@ -139,9 +143,12 @@ def resolve_daemon() -> StatusBadge:
     try:
         pid_file = config_dir() / "daemon" / "supervisor.pid"
         if pid_file.is_file():
+            from navig.platform.windows_utils import check_pid_exists  # noqa: PLC0415
+
             pid = int(pid_file.read_text(encoding="utf-8").strip())
-            os.kill(pid, 0)
-            return StatusBadge("Daemon", "ok", f"pid {pid}")
+            # NB: os.kill(pid, 0) TERMINATES the process on Windows — use a probe.
+            if check_pid_exists(pid):
+                return StatusBadge("Daemon", "ok", f"pid {pid}")
     except (ValueError, OSError, ProcessLookupError, PermissionError):
         pass  # best-effort: skip on process/IO error
     return StatusBadge(
@@ -185,11 +192,15 @@ def resolve_agent() -> StatusBadge:
             mode = cfg.llm_mode or "auto"
             name = cfg.name or cfg.id or "navig"
             detail = f"{name} / {mode}"
-            # Check soul.json as secondary signal
-            soul_path = Path("store/agents/navig/soul.json")
-            soul_ok = (
-                soul_path.is_file() or (config_dir() / "agents/navig/soul.json").is_file()
-            )
+            # Check soul.json as a secondary signal. This used to also probe
+            # `Path("store/agents/navig/soul.json")` — a CWD-RELATIVE path, so the badge
+            # said different things depending on which directory you happened to run from,
+            # and it pointed at the pre-migration `<repo>/core/store/` layout that no longer
+            # exists (the builtin store now lives inside the package). Two real locations
+            # remain: the user's own agents dir, and the seed shipped in the wheel.
+            soul_ok = (config_dir() / "agents" / "navig" / "soul.json").is_file() or (
+                builtin_store_dir() / "agents" / "navig" / "soul.json"
+            ).is_file()
             soul_indicator = " soul.json ✓" if soul_ok else ""
             return StatusBadge(
                 "Agent",
@@ -213,16 +224,15 @@ def resolve_agent() -> StatusBadge:
 
 
 def resolve_gateway() -> StatusBadge:
-    """Check gateway channel health (reads channel manifest + blackbox errors)."""
+    """Check gateway channel health (configured channels + blackbox errors)."""
     try:
-        # Try to get active channels from gateway config
-        # Also check navig.json channels section
-        nj = _load_navig_json()
-        channels = {}
-        if nj:
-            channels = nj.get("channels", {})
+        from navig.messaging.channel_config import configured_channels
 
-        active = [name for name, cfg in channels.items() if cfg.get("enabled")]
+        # The old code read a `channels` map from navig.json — a field nothing
+        # populates, so the badge ALWAYS said "no channels configured". Real channel
+        # config lives in config.yaml sections (telegram/discord/…); configured_channels()
+        # is the shared source `navig gateway status` uses.
+        active = configured_channels()
 
         if not active:
             return StatusBadge(
@@ -264,21 +274,21 @@ def resolve_mesh() -> StatusBadge:
         from navig.mesh.registry import get_registry  # type: ignore[import]
 
         registry = get_registry()
-        nodes = registry.list_nodes() if hasattr(registry, "list_nodes") else []
-        node_count = len(nodes) if nodes else 0
+        # get_peers() = remote nodes only (excludes self). The old code called a
+        # non-existent registry.list_nodes(), guarded by hasattr, so it silently
+        # returned [] — node_count was ALWAYS 0 and the badge always read
+        # "single-node mode", even on a live multi-node mesh.
+        peers = registry.get_peers()
+        if not peers:
+            return StatusBadge("Mesh", "missing", "no peers — single-node mode")
 
-        if node_count == 0:
-            return StatusBadge("Mesh", "missing", "no nodes — single-node mode")
-
-        # Try to get elected leader
-        leader_name = "—"
-        try:
-            from navig.mesh.election import get_current_leader  # type: ignore[import]
-
-            leader = get_current_leader()
-            leader_name = str(leader) if leader else "—"
-        except Exception:  # noqa: BLE001
-            pass
+        node_count = len(registry.get_all())  # peers + self
+        # Read the elected leader from the registry — the same source of truth
+        # ElectionManager uses (registry.get_leader()); no live manager needed.
+        # (The old code imported a phantom navig.mesh.election.get_current_leader,
+        # so the leader was always "—".)
+        leader = registry.get_leader()
+        leader_name = (leader.hostname or leader.node_id) if leader else "—"
 
         return StatusBadge(
             "Mesh",
@@ -295,8 +305,12 @@ def resolve_scheduler() -> StatusBadge:
 
         from navig.scheduler.cron_service import CronService  # type: ignore[import]
 
-        svc = CronService(gateway=None, storage_path=config_dir())
-        jobs = svc.list_jobs() if hasattr(svc, "list_jobs") else []
+        # The daemon + CLI store cron jobs under config_dir()/scheduler (see
+        # deck/routes/schedule.py, gateway/server.py, scheduler/habit_store) — NOT
+        # config_dir() itself. Reading the parent found no cron_jobs.json, so the
+        # badge always read "no jobs configured" even with jobs scheduled.
+        svc = CronService(gateway=None, storage_path=config_dir() / "scheduler")
+        jobs = svc.list_jobs()
         count = len(jobs) if jobs else 0
 
         if count == 0:
@@ -307,19 +321,22 @@ def resolve_scheduler() -> StatusBadge:
                 deep_link="/settings/scheduler",
             )
 
-        # Find next fire time
+        # Find the soonest upcoming run. CronJob exposes `next_run` (a datetime),
+        # NOT `next_fire` (a unix ts) — the old code read a phantom attribute, so
+        # `upcoming` was always empty and the "next: …" hint never showed (and the
+        # `datetime - time.time()` math would have been a type error if reached).
         next_label = ""
         try:
+            from datetime import datetime
+
             upcoming = sorted(
-                [j for j in jobs if getattr(j, "next_fire", None)],
-                key=lambda j: j.next_fire,
+                (j for j in jobs if getattr(j, "next_run", None)),
+                key=lambda j: j.next_run,
             )
             if upcoming:
                 job = upcoming[0]
                 name = getattr(job, "name", "job")
-                import time
-
-                delta = int(job.next_fire - time.time())
+                delta = max(int((job.next_run - datetime.now()).total_seconds()), 0)
                 if delta < 60:
                     next_label = f" — next: {name} in {delta}s"
                 elif delta < 3600:
@@ -345,24 +362,23 @@ def resolve_scheduler() -> StatusBadge:
 
 
 def resolve_task_queue() -> StatusBadge:
-    """Check task queue depth and last completion."""
+    """Check task queue depth (reads the daemon's persisted queue)."""
     try:
         from navig.tasks.queue import TaskQueue  # type: ignore[import]
 
-        q = TaskQueue()
-        pending = q.pending_count() if hasattr(q, "pending_count") else 0
-        last_age = None
-        if hasattr(q, "last_completed_age"):
-            last_age = q.last_completed_age()
+        # Read the file the gateway persists to (storage_dir/task_queue.json;
+        # storage_dir defaults to config_dir()). A bare TaskQueue() is an empty
+        # throwaway that always reads 0 — and `size`/`total` are properties, so the
+        # old q.pending_count() never existed: the badge was permanently "0 pending".
+        q = TaskQueue(persist_path=str(config_dir() / "task_queue.json"))
+        pending = q.size
+        tracked = q.total
 
         detail = f"{pending} pending"
-        if last_age is not None:
-            detail += f" — last completed: {int(last_age)}s ago"
+        if tracked > pending:
+            detail += f" — {tracked} tracked"
 
         status = "warn" if pending > 10 else "ok"
-        if pending == 0:
-            status = "ok"
-
         return StatusBadge("Task Queue", status, detail)
     except Exception:  # noqa: BLE001
         return StatusBadge("Task Queue", "missing", "navig tasks list")
@@ -371,29 +387,22 @@ def resolve_task_queue() -> StatusBadge:
 def resolve_blackbox() -> StatusBadge:
     """Check recent blackbox operation timeline."""
     try:
-        from navig.blackbox.timeline import BlackboxTimeline  # type: ignore[import]
+        from datetime import datetime, timezone
 
-        tl = BlackboxTimeline()
-        ops = tl.recent(n=3) if hasattr(tl, "recent") else []
+        from navig.blackbox.recorder import get_recorder
+
+        ops = get_recorder().read_events(limit=100)  # newest first
 
         if not ops:
             return StatusBadge("Blackbox", "ok", "no ops recorded")
 
-        total = tl.total_count() if hasattr(tl, "total_count") else len(ops)
-        last_op = ops[-1] if ops else None
-        last_label = ""
-        if last_op:
-            import time
-
-            name = getattr(last_op, "name", getattr(last_op, "action", "op"))
-            ts = getattr(last_op, "timestamp", None)
-            if ts:
-                age = int(time.time() - ts)
-                last_label = f" — last: {name} {age}s ago"
-            else:
-                last_label = f" — last: {name}"
-
-        return StatusBadge("Blackbox", "ok", f"{total} ops{last_label}")
+        last_op = ops[0]  # read_events returns newest first
+        name = last_op.event_type.value
+        age = int((datetime.now(timezone.utc) - last_op.timestamp).total_seconds())
+        plural = "s" if len(ops) != 1 else ""
+        return StatusBadge(
+            "Blackbox", "ok", f"{len(ops)} recent op{plural} — last: {name} {age}s ago"
+        )
     except Exception:  # noqa: BLE001
         return StatusBadge("Blackbox", "missing", "no timeline")
 
@@ -404,21 +413,26 @@ def resolve_blackbox() -> StatusBadge:
 
 
 def _count_recent_errors(category: str, window_seconds: int = 3600) -> int:
-    """Count recent error entries from blackbox that match a category."""
+    """Count recent blackbox ERROR/CRASH events within the window.
+
+    When *category* is given it further restricts to events tagged with it (or
+    carrying it as ``payload['component']``); if nothing is tagged that way the
+    count is simply 0 — a best-effort badge signal, never a hard dependency.
+    """
     try:
-        import time
+        from datetime import datetime, timedelta, timezone
 
-        from navig.blackbox.timeline import BlackboxTimeline  # type: ignore[import]
+        from navig.blackbox.recorder import get_recorder
+        from navig.blackbox.types import EventType
 
-        tl = BlackboxTimeline()
-        cutoff = time.time() - window_seconds
-        recent = tl.recent(n=100) if hasattr(tl, "recent") else []
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+        recent = get_recorder().read_events(limit=200)
         return sum(
             1
-            for op in recent
-            if getattr(op, "status", "") in ("error", "failed")
-            and getattr(op, "category", "") == category
-            and getattr(op, "timestamp", 0) >= cutoff
+            for ev in recent
+            if ev.event_type in (EventType.ERROR, EventType.CRASH)
+            and ev.timestamp >= cutoff
+            and (not category or category in ev.tags or ev.payload.get("component") == category)
         )
     except Exception:  # noqa: BLE001
         return 0

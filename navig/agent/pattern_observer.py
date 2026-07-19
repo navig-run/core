@@ -6,7 +6,15 @@ from pathlib import Path
 
 from navig.platform.paths import config_dir
 
-DEFAULT_DB_PATH = config_dir() / "data" / "pattern_log.sqlite"
+
+def default_db_path() -> Path:
+    """Resolve the pattern-log DB path at CALL time — never import time.
+
+    ``config_dir()`` honours ``NAVIG_CONFIG_DIR``; a module-level constant
+    would freeze the real user home before test/daemon isolation applies
+    (see ``navig/vault/migrate.py:_legacy_db_path``).
+    """
+    return config_dir() / "data" / "pattern_log.sqlite"
 
 
 @dataclass
@@ -16,7 +24,7 @@ class PatternRecord:
 
 class PatternObserver:
     def __init__(self, db_path: Path | None = None):
-        self.db_path = Path(db_path or DEFAULT_DB_PATH)
+        self.db_path = Path(db_path or default_db_path())
 
     def get_recent(self, limit: int = 500) -> list[PatternRecord]:
         if not self.db_path.exists():

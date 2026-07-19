@@ -4,9 +4,9 @@ Covers:
   - navig.config.ConfigManager.global_config_dir
   - navig.cache_store.global_cache_dir()
   - navig.ai_context.AIContextManager.config_dir
-  - navig.daemon.supervisor.NAVIG_HOME  (module-level → importlib.reload required)
-  - navig.daemon.entry.NAVIG_HOME       (module-level → importlib.reload required)
-  - navig.daemon.service_manager.NAVIG_HOME (module-level → importlib.reload required)
+  - navig.daemon.supervisor path resolvers (call-time — no reload needed)
+  - navig.daemon.entry path resolvers      (call-time — no reload needed)
+  - navig.daemon.service_manager path resolvers (call-time — no reload needed)
 """
 
 from __future__ import annotations
@@ -113,63 +113,49 @@ def test_ai_context_manager_config_dir_explicit_arg(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# navig.daemon.supervisor.NAVIG_HOME  (module-level constant)
+# navig.daemon.supervisor path resolvers (call-time)
 # ---------------------------------------------------------------------------
 
 
 def test_daemon_supervisor_navig_home_respects_env(tmp_path, monkeypatch):
-    """supervisor.NAVIG_HOME uses NAVIG_CONFIG_DIR when set at import time."""
+    """supervisor path resolvers honour NAVIG_CONFIG_DIR set AFTER import."""
+    import navig.daemon.supervisor as sup_mod
+
     custom = tmp_path / "sup_cfg"
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(custom))
 
-    import navig.platform.paths as _paths_mod
-
-    importlib.reload(_paths_mod)
-
-    import navig.daemon.supervisor as sup_mod
-
-    importlib.reload(sup_mod)
-
-    assert sup_mod.NAVIG_HOME == custom
+    assert sup_mod._daemon_dir() == custom / "daemon"
+    assert sup_mod._pid_file() == custom / "daemon" / "supervisor.pid"
+    assert sup_mod._state_file() == custom / "daemon" / "state.json"
 
 
 # ---------------------------------------------------------------------------
-# navig.daemon.entry.NAVIG_HOME  (module-level constant)
+# navig.daemon.entry path resolvers (call-time)
 # ---------------------------------------------------------------------------
 
 
 def test_daemon_entry_navig_home_respects_env(tmp_path, monkeypatch):
-    """entry.NAVIG_HOME uses NAVIG_CONFIG_DIR when set at import time."""
+    """entry path resolvers honour NAVIG_CONFIG_DIR set AFTER import."""
+    import navig.daemon.entry as entry_mod
+
     custom = tmp_path / "entry_cfg"
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(custom))
 
-    import navig.platform.paths as _paths_mod
-
-    importlib.reload(_paths_mod)
-
-    import navig.daemon.entry as entry_mod
-
-    importlib.reload(entry_mod)
-
-    assert entry_mod.NAVIG_HOME == custom
+    assert entry_mod._daemon_config_path() == custom / "daemon" / "config.json"
 
 
 # ---------------------------------------------------------------------------
-# navig.daemon.service_manager.NAVIG_HOME  (module-level constant)
+# navig.daemon.service_manager path resolvers (call-time)
 # ---------------------------------------------------------------------------
 
 
 def test_daemon_service_manager_navig_home_respects_env(tmp_path, monkeypatch):
-    """service_manager.NAVIG_HOME uses NAVIG_CONFIG_DIR when set at import time."""
+    """service_manager path resolvers honour NAVIG_CONFIG_DIR set AFTER import."""
+    import navig.daemon.service_manager as sm_mod
+
     custom = tmp_path / "svc_cfg"
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(custom))
 
-    import navig.platform.paths as _paths_mod
-
-    importlib.reload(_paths_mod)
-
-    import navig.daemon.service_manager as sm_mod
-
-    importlib.reload(sm_mod)
-
-    assert sm_mod.NAVIG_HOME == custom
+    assert sm_mod._navig_home() == custom
+    assert sm_mod.daemon_dir() == custom / "daemon"
+    assert sm_mod._stop_flag_path() == custom / "daemon" / "stop_requested"

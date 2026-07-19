@@ -50,7 +50,7 @@ Do the thing.
 
 
 def test_minimal_claude_skill_name_description_only(tmp_path: Path) -> None:
-    # Mirrors openclaw/Anthropic skills that ship only name + description.
+    # Mirrors Claude-Code skills that ship only name + description.
     p = _write(
         tmp_path / "qr-code" / "SKILL.md",
         """---

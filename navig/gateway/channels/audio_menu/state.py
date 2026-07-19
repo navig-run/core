@@ -10,7 +10,15 @@ from pathlib import Path
 
 from navig.platform.paths import audio_configs_dir
 
-_STORE_DIR = audio_configs_dir()
+# Test seam — when ``None`` (the normal state), ``_store_dir()`` resolves at
+# CALL time so NAVIG_CONFIG_DIR isolation set after import still applies
+# (see navig/vault/migrate.py:_legacy_db_path).
+_STORE_DIR: Path | None = None
+
+
+def _store_dir() -> Path:
+    return _STORE_DIR if _STORE_DIR is not None else audio_configs_dir()
+
 
 # In-memory cache: user_id → AudioConfig
 _cache: dict[int, AudioConfig] = {}
@@ -31,8 +39,9 @@ class AudioConfig:
 
 
 def _store_path(user_id: int) -> Path:
-    _STORE_DIR.mkdir(parents=True, exist_ok=True)
-    return _STORE_DIR / f"{user_id}.json"
+    store_dir = _store_dir()
+    store_dir.mkdir(parents=True, exist_ok=True)
+    return store_dir / f"{user_id}.json"
 
 
 def load_config(user_id: int) -> AudioConfig:
@@ -43,7 +52,7 @@ def load_config(user_id: int) -> AudioConfig:
     p = _store_path(user_id)
     if p.exists():
         try:
-            data = json.loads(p.read_text())
+            data = json.loads(p.read_text(encoding="utf-8"))
             known = set(AudioConfig.__dataclass_fields__)
             cfg = AudioConfig(**{k: v for k, v in data.items() if k in known})
             _cache[user_id] = cfg

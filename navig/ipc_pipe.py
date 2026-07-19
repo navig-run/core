@@ -64,15 +64,30 @@ SHADOW_PROMOTE_AFTER: int = 100
 # Timeout for a single pipe call (ms → seconds)
 IPC_TIMEOUT_S: float = 2.0
 
-# File used to record that the pipe path has been validated and promoted
-_PROMOTED_FLAG: Path = paths.config_dir() / ".ipc_promoted"
+# File used to record that the pipe path has been validated and promoted.
+# Test seam — when ``None`` (the normal state), ``_promoted_flag()`` resolves
+# at CALL time (config_dir() honours NAVIG_CONFIG_DIR); a frozen module
+# constant would point at the real user home before test/daemon isolation
+# applies (see navig/vault/migrate.py:_legacy_db_path).
+_PROMOTED_FLAG: Path | None = None
+
+
+def _promoted_flag() -> Path:
+    return _PROMOTED_FLAG if _PROMOTED_FLAG is not None else paths.config_dir() / ".ipc_promoted"
+
 
 # In-memory shadow match counter (resets each process)
 _shadow_match_count: int = 0
 _shadow_lock = threading.Lock()
 
-# Log file for shadow IPC anomalies
-_SHADOW_LOG: Path = paths.config_dir() / "shadow_ipc_anomalies.log"
+# Log file for shadow IPC anomalies (same seam + call-time rationale)
+_SHADOW_LOG: Path | None = None
+
+
+def _shadow_log() -> Path:
+    return (
+        _SHADOW_LOG if _SHADOW_LOG is not None else paths.config_dir() / "shadow_ipc_anomalies.log"
+    )
 
 
 def log_shadow_anomaly(source: str, event_type: str, data: dict[str, Any]) -> None:
@@ -80,7 +95,7 @@ def log_shadow_anomaly(source: str, event_type: str, data: dict[str, Any]) -> No
     msg = f"shadow_anomaly source={source!r} event={event_type!r} data={data}"
     logger.debug(msg)
     try:
-        with _SHADOW_LOG.open("a", encoding="utf-8") as _f:
+        with _shadow_log().open("a", encoding="utf-8") as _f:
             import json as _json
 
             _f.write(_json.dumps({"source": source, "event": event_type, "data": data}) + "\n")
@@ -99,14 +114,15 @@ def _pipe_address() -> str:
 
 def _is_promoted() -> bool:
     """Return True if the pipe fast-path has been promoted to primary."""
-    return _PROMOTED_FLAG.exists()
+    return _promoted_flag().exists()
 
 
 def _promote_pipe() -> None:
     """Mark the pipe fast-path as validated and ready to be primary."""
     try:
-        _PROMOTED_FLAG.parent.mkdir(parents=True, exist_ok=True)
-        _PROMOTED_FLAG.touch()
+        flag = _promoted_flag()
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        flag.touch()
         logger.info(
             "IPC pipe fast-path promoted to primary after %d shadow matches",
             SHADOW_PROMOTE_AFTER,
@@ -439,5 +455,5 @@ def get_pipe_status() -> dict[str, Any]:
         "shadow_matches_this_session": _shadow_match_count,
         "promote_after": SHADOW_PROMOTE_AFTER,
         "platform": sys.platform,
-        "shadow_log": str(_SHADOW_LOG),
+        "shadow_log": str(_shadow_log()),
     }

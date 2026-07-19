@@ -449,7 +449,14 @@ def _prompt_local_discovery(navig_dir: Path) -> None:
 # Global directory migration helpers
 # =============================================================================
 
-_DEFAULT_NAVIG_DIR: Path = config_dir()
+# Test seam — when ``None`` (the normal state), the resolver below evaluates
+# at CALL time so NAVIG_CONFIG_DIR isolation set after import still applies
+# (see navig/vault/migrate.py:_legacy_db_path).
+_DEFAULT_NAVIG_DIR: Path | None = None
+
+
+def _default_navig_dir() -> Path:
+    return _DEFAULT_NAVIG_DIR if _DEFAULT_NAVIG_DIR is not None else config_dir()
 
 
 def _legacy_documents_config_dir() -> Path:
@@ -511,7 +518,7 @@ def _write_init_log(message: str) -> None:
 
 def _ensure_dirs() -> None:
     """Create all required NAVIG runtime directories."""
-    _DEFAULT_NAVIG_DIR.mkdir(parents=True, exist_ok=True)
+    _default_navig_dir().mkdir(parents=True, exist_ok=True)
     _local_log_dir().mkdir(parents=True, exist_ok=True)
 
 
@@ -659,7 +666,11 @@ def show_init_status(*, render: bool = True) -> dict[str, Any]:
 
     vault_status = "empty"
     try:
-        from navig.vault.core import CredentialsVault
+        # CredentialsVault is exported from the navig.vault package (an alias of Vault),
+        # NOT from navig.vault.core — so this import failed and the vault-status check
+        # always fell through to "empty". Vault's constructor accepts vault_path /
+        # auto_migrate and exposes list(), so the body is unchanged.
+        from navig.vault import CredentialsVault
 
         vault = CredentialsVault(
             vault_path=navig_dir / "credentials" / "vault.db",
@@ -691,22 +702,30 @@ def show_init_status(*, render: bool = True) -> dict[str, Any]:
         web_provider = "auto"
 
     def _web_key_from_vault(provider_name: str) -> str:
+        # Bare provider name first — that is where `navig vault add <provider>` keys
+        # live; the compound labels are legacy/alternate conventions.
         label_map = {
-            "brave": ("web/brave_api_key", "brave/api_key", "brave_api_key"),
-            "perplexity": ("web/perplexity_api_key", "perplexity/api_key", "pplx/api_key"),
-            "gemini": ("web/gemini_api_key", "google/api_key", "google_api_key"),
-            "grok": ("web/grok_api_key", "xai/api_key", "xai_api_key"),
-            "kimi": ("web/kimi_api_key", "moonshot/api_key", "moonshot_api_key"),
+            "brave": ("brave", "web/brave_api_key", "brave/api_key", "brave_api_key"),
+            "tavily": ("tavily", "web/tavily_api_key", "tavily/api_key", "tavily_api_key"),
+            "serpapi": ("serpapi", "serpapi/api_key", "serpapi_api_key"),
+            "perplexity": (
+                "perplexity",
+                "web/perplexity_api_key",
+                "perplexity/api_key",
+                "pplx/api_key",
+            ),
+            "gemini": ("gemini", "web/gemini_api_key", "google/api_key", "google_api_key"),
+            "grok": ("grok", "xai", "web/grok_api_key", "xai/api_key", "xai_api_key"),
+            "kimi": ("kimi", "web/kimi_api_key", "moonshot/api_key", "moonshot_api_key"),
         }
         try:
-            from navig.vault.core import get_vault
+            from navig.vault.core import get_vault, reveal_secret
 
             vault = get_vault()
             for label in label_map.get(provider_name, ()):
-                try:
-                    value = (vault.get_secret(label) or "").strip()
-                except Exception:
-                    continue
+                # reveal_secret unwraps the SecretStr get_secret() returns; the old
+                # bare .strip() raised and was swallowed, so keys were never found.
+                value = reveal_secret(vault, label)
                 if value:
                     return value
         except Exception:
@@ -1299,7 +1318,7 @@ def run_matrix_bridge_onboarding(
     ch.newline()
 
     try:
-        from navig.commands.matrix import get_bridge_statuses, deploy_bridge_stack
+        from navig.commands.matrix import deploy_bridge_stack, get_bridge_statuses
 
         statuses = get_bridge_statuses()
     except Exception as exc:
@@ -1363,7 +1382,7 @@ def run_init(dry_run: bool = False, no_genesis: bool = False, name: str = "") ->
     try:
         _ensure_dirs()
         # Seed the default space so `navig space list` always shows something
-        (_DEFAULT_NAVIG_DIR / "spaces" / "default").mkdir(parents=True, exist_ok=True)
+        (_default_navig_dir() / "spaces" / "default").mkdir(parents=True, exist_ok=True)
     except PermissionError as e:
         _write_init_log(f"init failed: {e}")
         raise click.exceptions.Exit(1) from e
@@ -1521,14 +1540,13 @@ def run_init_rollback(
     from navig.installer.runner import rollback as run_rollback
     from navig.installer.state import load_last
 
-    try:
-        from navig.platform.paths import navig_config_dir
+    # Was `from navig.platform.paths import navig_config_dir` (a name that does not exist —
+    # it is `config_dir`), and the `except` fell back to `pathlib.config_dir()` (also not a
+    # thing). So BOTH branches raised: `navig rollback` crashed with AttributeError every
+    # time. `config_dir()` is a pure resolver and cannot fail, so no fallback is needed.
+    from navig.platform.paths import config_dir as _config_dir
 
-        config_dir = navig_config_dir()
-    except Exception:
-        import pathlib
-
-        config_dir = pathlib.config_dir()
+    config_dir = _config_dir()
 
     records = load_last(config_dir=config_dir, profile=profile or None)
     if not records:

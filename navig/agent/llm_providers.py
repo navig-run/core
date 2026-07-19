@@ -18,6 +18,7 @@ No provider touches routing logic — that belongs to model_router.py.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -406,9 +407,15 @@ class McpBridgeProvider(LLMProvider):
         _parsed = _urlparse(self.base_url.replace("ws://", "http://").replace("wss://", "https://"))
         _bridge_host = _parsed.hostname or "127.0.0.1"
         _bridge_port = _parsed.port or BRIDGE_DEFAULT_PORT
-        try:
+
+        def _probe() -> None:
+            # Blocking connect — off the loop. Half a second is short, but it is
+            # still half a second of a frozen daemon on every failed attempt.
             _sock = _socket.create_connection((_bridge_host, _bridge_port), timeout=0.5)
             _sock.close()
+
+        try:
+            await asyncio.to_thread(_probe)
         except OSError:
             raise ConnectionError(
                 f"Bridge daemon not reachable at {_bridge_host}:{_bridge_port} "

@@ -37,13 +37,13 @@ def test_vault_bootstrap_plan_action_not_reversible(tmp_path):
 
 
 def test_vault_bootstrap_apply_success(tmp_path):
-    from navig.installer.modules.vault_bootstrap import apply
     from navig.installer.contracts import Action, ModuleState
+    from navig.installer.modules.vault_bootstrap import apply
 
     action = Action(id="vault_bootstrap.init", description="test", module="vault_bootstrap")
     ctx = _make_ctx(tmp_path)
 
-    with patch("navig.vault.core.get_vault", create=True):
+    with patch("navig.vault.core.get_vault"):
         result = apply(action, ctx)
 
     assert result.state == ModuleState.APPLIED
@@ -51,8 +51,8 @@ def test_vault_bootstrap_apply_success(tmp_path):
 
 
 def test_vault_bootstrap_apply_import_error_skipped(tmp_path):
-    from navig.installer.modules.vault_bootstrap import apply
     from navig.installer.contracts import Action, ModuleState
+    from navig.installer.modules.vault_bootstrap import apply
 
     action = Action(id="vault_bootstrap.init", description="test", module="vault_bootstrap")
     ctx = _make_ctx(tmp_path)
@@ -64,13 +64,13 @@ def test_vault_bootstrap_apply_import_error_skipped(tmp_path):
 
 
 def test_vault_bootstrap_apply_exception_skipped(tmp_path):
-    from navig.installer.modules.vault_bootstrap import apply
     from navig.installer.contracts import Action, ModuleState
+    from navig.installer.modules.vault_bootstrap import apply
 
     action = Action(id="vault_bootstrap.init", description="test", module="vault_bootstrap")
     ctx = _make_ctx(tmp_path)
 
-    with patch("navig.vault.core.get_vault", side_effect=RuntimeError("no key"), create=True):
+    with patch("navig.vault.core.get_vault", side_effect=RuntimeError("no key")):
         result = apply(action, ctx)
 
     assert result.state == ModuleState.SKIPPED
@@ -83,7 +83,7 @@ def test_vault_bootstrap_apply_exception_skipped(tmp_path):
 
 
 def test_config_paths_plan_all_missing(tmp_path):
-    from navig.installer.modules.config_paths import plan, _SUBDIRS
+    from navig.installer.modules.config_paths import _SUBDIRS, plan
 
     ctx = _make_ctx(tmp_path / "new_config")
     actions = plan(ctx)
@@ -91,7 +91,7 @@ def test_config_paths_plan_all_missing(tmp_path):
 
 
 def test_config_paths_plan_existing_dirs_skipped(tmp_path):
-    from navig.installer.modules.config_paths import plan, _SUBDIRS
+    from navig.installer.modules.config_paths import _SUBDIRS, plan
 
     # Pre-create all subdirs
     config_dir = tmp_path / "config"
@@ -105,8 +105,8 @@ def test_config_paths_plan_existing_dirs_skipped(tmp_path):
 
 
 def test_config_paths_apply_creates_dir(tmp_path):
-    from navig.installer.modules.config_paths import apply
     from navig.installer.contracts import Action, ModuleState
+    from navig.installer.modules.config_paths import apply
 
     new_dir = tmp_path / "workspace"
     action = Action(
@@ -122,8 +122,8 @@ def test_config_paths_apply_creates_dir(tmp_path):
 
 
 def test_config_paths_rollback_removes_empty_dir(tmp_path):
+    from navig.installer.contracts import Action, ModuleState, Result
     from navig.installer.modules.config_paths import rollback
-    from navig.installer.contracts import Action, Result, ModuleState
 
     new_dir = tmp_path / "todelete"
     new_dir.mkdir()
@@ -141,8 +141,8 @@ def test_config_paths_rollback_removes_empty_dir(tmp_path):
 
 
 def test_config_paths_rollback_skips_if_existed(tmp_path):
+    from navig.installer.contracts import Action, ModuleState, Result
     from navig.installer.modules.config_paths import rollback
-    from navig.installer.contracts import Action, Result, ModuleState
 
     existing = tmp_path / "existing"
     existing.mkdir()
@@ -162,8 +162,8 @@ def test_config_paths_rollback_skips_if_existed(tmp_path):
 
 
 def test_planner_raises_for_unknown_profile(tmp_path):
-    from navig.installer.planner import plan
     from navig.installer.contracts import InstallerContext
+    from navig.installer.planner import plan
 
     ctx = InstallerContext(profile="nonexistent_xyz", config_dir=tmp_path)
     with pytest.raises(ValueError, match="Unknown installer profile"):
@@ -171,8 +171,8 @@ def test_planner_raises_for_unknown_profile(tmp_path):
 
 
 def test_planner_returns_actions_for_node(tmp_path):
-    from navig.installer.planner import plan
     from navig.installer.contracts import InstallerContext
+    from navig.installer.planner import plan
 
     ctx = InstallerContext(profile="node", config_dir=tmp_path)
     actions = plan(ctx)
@@ -181,8 +181,8 @@ def test_planner_returns_actions_for_node(tmp_path):
 
 
 def test_planner_missing_module_produces_placeholder(tmp_path):
-    from navig.installer.planner import plan
     from navig.installer.contracts import InstallerContext
+    from navig.installer.planner import plan
     from navig.installer.profiles import PROFILE_MODULES
 
     # Use patch to inject an unknown module into the node profile
@@ -197,8 +197,8 @@ def test_planner_missing_module_produces_placeholder(tmp_path):
 
 
 def test_planner_placeholder_module_not_reversible(tmp_path):
-    from navig.installer.planner import plan
     from navig.installer.contracts import InstallerContext
+    from navig.installer.planner import plan
     from navig.installer.profiles import PROFILE_MODULES
 
     patched = ["nonexistent_module_xyz"]

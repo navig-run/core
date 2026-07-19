@@ -84,6 +84,25 @@ class NotificationRouter:
             return {"type": type_key, "skipped": "master_off", "channels": []}
 
         channels = prefs.enabled_channels(type_key)
+
+        # Fail loud + fail safe on an UNREGISTERED type. A type nobody registered in
+        # navig.notify.types has no matrix rows, so enabled_channels() returns [] and the
+        # notification is SILENTLY DROPPED — exactly how the config-incident push (#282)
+        # and the business-chat deletion alert both vanished. Deliver it to the always-on
+        # deck feed so it is never lost, and warn so the type gets registered.
+        #   • Only an UNKNOWN type falls back — a REGISTERED type the user muted everywhere
+        #     legitimately resolves to [] and must stay silent (that is their choice).
+        #   • Deck-only (never external channels) so a typo can't spam telegram; the WARN
+        #     is what makes it loud.
+        if not channels and not prefs._is_known_type(type_key):
+            logger.warning(
+                "notify: dispatched UNREGISTERED type %r — it resolves to no channels and "
+                "would be dropped. Falling back to the deck feed; register it in "
+                "navig.notify.types.NOTIFICATION_TYPES so it routes properly.",
+                type_key,
+            )
+            channels = ["deck"]
+
         if only_channels is not None:
             channels = [c for c in channels if c in only_channels]
 

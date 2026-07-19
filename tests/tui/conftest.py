@@ -169,8 +169,9 @@ def _install_textual_stub():  # noqa: C901
     ):
         _mod(name)
 
-    import navig as _navig_pkg
     import os as _os
+
+    import navig as _navig_pkg
 
     # Pre-stub navig.tui — prevents __init__.py execution; submodules loadable
     # via real __path__.

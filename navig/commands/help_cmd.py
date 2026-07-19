@@ -5,6 +5,31 @@ from typing import Any
 
 from navig.console_helper import get_console
 
+#: Top-level commands registered directly on the Typer app rather than through
+#: registration.py's _EXTERNAL_CMD_MAP (see registration._try_register_undo).
+#: They are invisible to both is_external_command() and a stale
+#: generated/commands.json, so the pointer-line gate needs them spelled out.
+_DIRECT_APP_COMMANDS: frozenset[str] = frozenset({"undo"})
+
+
+def _is_top_level_command(name: str, manifest_topics: list[str]) -> bool:
+    """Best-effort: is *name* a runnable top-level ``navig`` command?
+
+    Gates the "Full flag reference: navig <name> --help" pointer printed after
+    a markdown help page — pure topics (``ai-providers``) and pages for
+    removed commands must not advertise a ``--help`` that would error.
+    """
+    if name in manifest_topics or name in _DIRECT_APP_COMMANDS:
+        return True
+    try:
+        from navig.cli.registration import is_external_command
+
+        if is_external_command(name):
+            return True
+    except Exception:  # noqa: BLE001 — a pointer line is never worth a crash
+        pass
+    return False
+
 
 def run_help(
     ctx: Any,
@@ -121,6 +146,13 @@ def run_help(
             from rich.markdown import Markdown
 
             console.print(Markdown(content))
+            # Guides document intent; Typer owns the exhaustive flag list.
+            # Point there — but only when the topic really is a runnable
+            # top-level command (pure topics like `ai-providers` are not).
+            if _is_top_level_command(normalized, manifest_topics):
+                console.print(
+                    f"\n[dim]Full flag reference: [cyan]navig {normalized} --help[/cyan][/dim]"
+                )
         raise typer.Exit()
 
     # Fall back to generated registry topic index.

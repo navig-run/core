@@ -10,7 +10,6 @@ import pytest
 from navig.agent.tools.coordinator_tools import CoordinatorRunTool, CoordinatorStatusTool
 from navig.tools.registry import ToolResult
 
-
 # ── helpers ──────────────────────────────────────────────────
 
 

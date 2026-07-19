@@ -40,10 +40,13 @@ class AHKAdapter:
         self._detected = False
         self._detection_method: str | None = None
 
-        # Paths
-        # Use config or default locations
-        self._navig_root = Path(__file__).parent.parent.parent.parent
-        self._templates_dir = self._navig_root / "store" / "templates" / "ahk"
+        # Paths — resolve the AHK templates (primitives/, workflows/) from the packaged
+        # content store. Counting `.parent`s out to <repo>/core/store/templates walked
+        # OUT of the navig package: it never resolved in an installed layout, and broke
+        # entirely once the content store moved inside the package.
+        from navig.platform.paths import builtin_store_dir
+
+        self._templates_dir = builtin_store_dir() / "templates" / "ahk"
         self._scripts_dir = self._templates_dir
 
         # Primary primitives path

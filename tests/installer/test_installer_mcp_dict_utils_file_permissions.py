@@ -14,7 +14,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -192,6 +191,7 @@ class TestTruncateOutput:
 class TestUtcNow:
     def test_returns_aware_datetime(self) -> None:
         from datetime import timezone
+
         from navig.core.dict_utils import utc_now
         dt = utc_now()
         assert dt.tzinfo is not None

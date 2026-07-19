@@ -32,7 +32,7 @@ from navig.providers._local_defaults import _LLAMACPP_BASE_URL
 _log = logging.getLogger(__name__)
 
 from navig.core.file_permissions import set_owner_only_file_permissions
-from navig.core.yaml_io import atomic_write_text, safe_load_yaml
+from navig.core.yaml_io import atomic_write_text, load_yaml_for_update, safe_load_yaml
 
 from .engine import EngineConfig, OnboardingStep, StepResult
 from .genesis import GenesisData
@@ -286,13 +286,16 @@ def build_step_registry(
     genesis: GenesisData,
 ) -> list[OnboardingStep]:
     """
-    Ordered list of 10 onboarding steps for this run.
+    Ordered list of the onboarding steps for this run (22 incl. review).
 
     Phase 1 — bootstrap (always runs, non-interactive):
-      workspace-init · workspace-templates · config-file · configure-ssh · verify-network
+      workspace-init · terminal-setup · workspace-templates · config-file ·
+      configure-ssh · verify-network · sigil-genesis · core-navig
 
     Phase 2 — configuration (interactive, skipped when no TTY):
-      ai-provider · vault-init · first-host · telegram-bot · skills-activation
+      ai-provider · vault-init · web-search-provider · voice-provider · first-host ·
+      matrix · telegram-bot · lighthouse · deck-deploy · email · social-networks ·
+      runtime-secrets · skills-activation · review
     """
     navig_dir = config.navig_dir
     steps = [
@@ -491,8 +494,13 @@ def _step_terminal_setup(navig_dir: Path) -> OnboardingStep:
                 )
             # Auto-install unavailable (macOS/Linux or no pwsh)
             if sys.platform == "win32":
+                # Print the REAL path to the packaged script — telling an installed user to
+                # run `pwsh scripts/Install-NerdFont.ps1` pointed at a repo they don't have.
+                from navig.ui._capabilities import _find_install_script
+
+                script = _find_install_script()
                 ch.dim("  Automatic install failed. Run manually:")
-                ch.dim("    pwsh scripts/Install-NerdFont.ps1")
+                ch.dim(f"    pwsh {script}" if script else "    (install a Nerd Font manually)")
             elif sys.platform == "darwin":
                 ch.dim("  Run to install:")
                 ch.dim("    brew install --cask font-jetbrains-mono-nerd-font")
@@ -565,7 +573,10 @@ def _step_workspace_templates(navig_dir: Path) -> OnboardingStep:
 
     def run() -> StepResult:
         try:
-            from navig.workspace import create_workspace_templates
+            # `create_workspace_templates` moved out of navig.workspace into
+            # navig.commands.onboard — this import failed, so onboarding silently skipped
+            # scaffolding the workspace templates. Same (workspace_path, console=None) signature.
+            from navig.commands.onboard import create_workspace_templates
 
             create_workspace_templates(workspace)
             return StepResult(
@@ -607,7 +618,7 @@ def _step_config_file(
         f"  workspace: {navig_dir / 'workspace'}\n\n"
         f"# AI provider and routing are configured interactively during `navig init`.\n"
         f"# To change providers run `navig init --reconfigure` or edit this file.\n"
-        f"# Full reference: config/config.example.yaml (shipped with the package)\n"
+        f"# Full reference: https://github.com/navig-run/core/blob/main/config/config.example.yaml\n"
     )
 
     def run() -> StepResult:
@@ -676,9 +687,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             return False
         try:
             config_path = navig_dir / "config.yaml"
-            cfg: dict[str, Any] = {}
-            if config_path.exists():
-                cfg = safe_load_yaml(config_path) or {}
+            cfg = load_yaml_for_update(config_path)
             cfg.setdefault("llm_router", {}).setdefault("provider_base_urls", {})[provider_id] = (
                 base_url
             )
@@ -1010,9 +1019,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         if fallback_pid:
             try:
                 config_path = navig_dir / "config.yaml"
-                cfg: dict = {}
-                if config_path.exists():
-                    cfg = safe_load_yaml(config_path) or {}
+                cfg = load_yaml_for_update(config_path)
                 cfg.setdefault("routing", {})["enabled"] = True
                 modes = cfg["routing"].setdefault("llm_modes", {})
                 for tier in ("small_talk", "big_tasks", "coding", "summarize", "research"):
@@ -1504,9 +1511,7 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
     def _persist_provider(preferred_provider: str) -> bool:
         try:
             config_path = navig_dir / "config.yaml"
-            cfg: dict[str, Any] = {}
-            if config_path.exists():
-                cfg = safe_load_yaml(config_path) or {}
+            cfg = load_yaml_for_update(config_path)
             cfg.setdefault("web", {}).setdefault("search", {})["provider"] = preferred_provider
             from navig.core.yaml_io import atomic_write_yaml
 
@@ -1532,9 +1537,7 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
 
         try:
             config_path = navig_dir / "config.yaml"
-            cfg: dict[str, Any] = {}
-            if config_path.exists():
-                cfg = safe_load_yaml(config_path) or {}
+            cfg = load_yaml_for_update(config_path)
             search_cfg = cfg.setdefault("web", {}).setdefault("search", {})
             api_keys = search_cfg.setdefault("api_keys", {})
             api_keys[preferred_provider] = api_key
@@ -1948,9 +1951,7 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
                     pass  # malformed value; skip
 
         try:
-            cfg2: dict[str, Any] = {}
-            if config_path.exists():
-                cfg2 = safe_load_yaml(config_path) or {}
+            cfg2 = load_yaml_for_update(config_path)
             cfg2.setdefault("skills", {})["active_packs"] = chosen
             from navig.core.yaml_io import atomic_write_yaml
 
@@ -1987,15 +1988,24 @@ def _step_sigil_genesis(navig_dir: Path, genesis: GenesisData) -> OnboardingStep
     marker = navig_dir / "state" / ".sigil_initialized"
 
     def run() -> StepResult:
-        if marker.exists():
+        from navig.identity.sigil_store import ensure_sigil, entity_exists
+
+        if entity_exists():
             return StepResult(status="completed", output={"note": "already initialized"})
 
         try:
-            from navig.identity.sigil_store import ensure_sigil  # type: ignore[import]
+            ensure_sigil()
+        except Exception as exc:  # noqa: BLE001
+            return StepResult(status="failed", output={}, error=str(exc))
 
-            ensure_sigil(genesis)
-        except Exception:  # noqa: BLE001
-            pass
+        # Report success only if the identity actually landed — never a green
+        # light over a missing entity (which is what `navig whoami` reads back).
+        if not entity_exists():
+            return StepResult(
+                status="failed",
+                output={},
+                error="sigil identity was not created",
+            )
 
         marker.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_text(marker, getattr(genesis, "nodeId", ""))
@@ -2005,7 +2015,10 @@ def _step_sigil_genesis(navig_dir: Path, genesis: GenesisData) -> OnboardingStep
         )
 
     def verify() -> bool:
-        return marker.exists()
+        # Skip the step only when the identity truly exists (verify()==True → skip).
+        from navig.identity.sigil_store import entity_exists
+
+        return entity_exists()
 
     return OnboardingStep(
         id="sigil-genesis",
@@ -2130,9 +2143,7 @@ def _step_matrix(navig_dir: Path) -> OnboardingStep:
 
         # Persist config
         try:
-            cfg: dict[str, Any] = {}
-            if config_path.exists():
-                cfg = safe_load_yaml(config_path) or {}
+            cfg = load_yaml_for_update(config_path)
             cfg.setdefault("matrix", {})["homeserver_url"] = homeserver_url
             cfg["matrix"]["default_room_id"] = default_room_id
             from navig.core.yaml_io import atomic_write_yaml
@@ -2203,9 +2214,7 @@ def _step_email(navig_dir: Path) -> OnboardingStep:
             return StepResult(status="skipped", output={"reason": msgs})
 
         try:
-            cfg: dict[str, Any] = {}
-            if config_path.exists():
-                cfg = safe_load_yaml(config_path) or {}
+            cfg = load_yaml_for_update(config_path)
             cfg.setdefault("email", {})["smtp_host"] = smtp_host
             cfg["email"]["smtp_port"] = smtp_port
             from navig.core.yaml_io import atomic_write_yaml
@@ -2437,47 +2446,58 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
     )
 
 
+# Phase grouping for the review summary.
+#
+# MUST cover every id in build_step_registry() — the summary filters by id, so an
+# omitted id is invisible forever. `lighthouse` and `deck-deploy` used to be
+# missing here, which meant you could deploy your edge and your Mini App and the
+# summary would still act as if you had done neither.
+# Guarded by tests/onboarding/test_onboarding_operator_fixes.py.
+_PHASE_GROUPS: list[tuple[str, list[str]]] = [
+    (
+        "Bootstrap",
+        [
+            "workspace-init",
+            "terminal-setup",
+            "workspace-templates",
+            "config-file",
+            "configure-ssh",
+            "verify-network",
+            "sigil-genesis",
+            "core-navig",
+        ],
+    ),
+    (
+        "Configuration",
+        [
+            "ai-provider",
+            "vault-init",
+            "web-search-provider",
+            "voice-provider",
+            "first-host",
+        ],
+    ),
+    (
+        "Integrations & Optional",
+        [
+            "telegram-bot",
+            "lighthouse",
+            "deck-deploy",
+            "matrix",
+            "email",
+            "social-networks",
+            "runtime-secrets",
+            "skills-activation",
+            "review",
+        ],
+    ),
+]
+
+
 def _step_review(navig_dir: Path, step_titles: dict[str, str] | None = None) -> OnboardingStep:
     """Show onboarding summary and let the user revisit any step."""
     artifact = navig_dir / "onboarding.json"
     _step_titles: dict[str, str] = dict(step_titles or {})
-
-    # Phase grouping for summary display.
-    _PHASE_GROUPS: list[tuple[str, list[str]]] = [
-        (
-            "Bootstrap",
-            [
-                "workspace-init",
-                "workspace-templates",
-                "config-file",
-                "configure-ssh",
-                "verify-network",
-                "sigil-genesis",
-                "core-navig",
-            ],
-        ),
-        (
-            "Configuration",
-            [
-                "ai-provider",
-                "vault-init",
-                "web-search-provider",
-                "first-host",
-            ],
-        ),
-        (
-            "Integrations & Optional",
-            [
-                "telegram-bot",
-                "matrix",
-                "email",
-                "social-networks",
-                "runtime-secrets",
-                "skills-activation",
-                "review",
-            ],
-        ),
-    ]
 
     def run() -> StepResult:
         tty = _tty_check()

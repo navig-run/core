@@ -218,11 +218,19 @@ async def run_agent(config: AgentConfig | None = None) -> None:
 
     agent = Agent(config)
 
-    # PID file so 'navig agent stop' and 'navig agent status' can track this process
-    pid_dir = Path.home() / ".navig" / "agent"
+    # PID file so 'navig agent stop' and 'navig agent status' can track this process.
+    # It MUST be config_dir()/agent — that is where every reader looks
+    # (commands/agent.py `_get_agent_config_dir()`, mcp/tools/agent.py). This used to
+    # hardcode `Path.home() / ".navig"`, so with NAVIG_CONFIG_DIR set the agent wrote its
+    # pid where nothing reads it: `navig agent stop` and `navig agent status` could not
+    # see the running agent, and the MCP tool reported it dead. Identical to the old path
+    # for a default install (config_dir() IS ~/.navig), so nothing moves.
+    from navig.platform.paths import config_dir
+
+    pid_dir = config_dir() / "agent"
     pid_dir.mkdir(parents=True, exist_ok=True)
     pid_file = pid_dir / "agent.pid"
-    pid_file.write_text(str(os.getpid()))
+    pid_file.write_text(str(os.getpid()), encoding="utf-8")
 
     # Setup signal handlers (POSIX only; Windows uses KeyboardInterrupt)
     loop = asyncio.get_running_loop()

@@ -20,7 +20,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -139,7 +138,6 @@ class TestGetDefaultConfig:
         from navig.core.shared_config import ConfigSingleton
 
         obj = ConfigSingleton.__new__(ConfigSingleton)
-        obj.global_config_dir = Path("/fake")
         cfg = obj._get_default_config()
         assert isinstance(cfg, dict)
 
@@ -147,7 +145,6 @@ class TestGetDefaultConfig:
         from navig.core.shared_config import ConfigSingleton
 
         obj = ConfigSingleton.__new__(ConfigSingleton)
-        obj.global_config_dir = Path("/fake")
         cfg = obj._get_default_config()
         assert "active_host" in cfg
 
@@ -155,7 +152,6 @@ class TestGetDefaultConfig:
         from navig.core.shared_config import ConfigSingleton
 
         obj = ConfigSingleton.__new__(ConfigSingleton)
-        obj.global_config_dir = Path("/fake")
         cfg = obj._get_default_config()
         assert "execution" in cfg
         assert isinstance(cfg["execution"], dict)
@@ -164,7 +160,6 @@ class TestGetDefaultConfig:
         from navig.core.shared_config import ConfigSingleton
 
         obj = ConfigSingleton.__new__(ConfigSingleton)
-        obj.global_config_dir = Path("/fake")
         cfg = obj._get_default_config()
         assert "plugins" in cfg
         assert cfg["plugins"]["enabled"] is True
@@ -173,7 +168,6 @@ class TestGetDefaultConfig:
         from navig.core.shared_config import ConfigSingleton
 
         obj = ConfigSingleton.__new__(ConfigSingleton)
-        obj.global_config_dir = Path("/fake")
         cfg = obj._get_default_config()
         assert cfg["debug_log"] is False
 
@@ -311,6 +305,7 @@ class TestConfigProviderProtocol:
 
     def test_app_config_dir_in_protocol(self):
         import inspect
+
         from navig.core.protocols import ConfigProvider
 
         # Protocol members should include app_config_dir
@@ -319,6 +314,7 @@ class TestConfigProviderProtocol:
 
     def test_global_config_dir_in_protocol(self):
         import inspect
+
         from navig.core.protocols import ConfigProvider
 
         members = list(ConfigProvider.__protocol_attrs__)

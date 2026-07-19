@@ -92,9 +92,13 @@ class TestOsPredicates:
         _reset_os_cache()
 
     def test_exactly_one_os_predicate_true(self) -> None:
-        predicates = [is_windows(), is_linux(), is_macos(), is_wsl()]
-        # Exactly one must be True
-        assert predicates.count(True) == 1
+        # Exactly one BASE OS is true. is_wsl() is a modifier, not a 4th OS — on WSL
+        # both is_wsl() and is_linux() are (correctly) true, so counting is_wsl() as a
+        # separate predicate wrongly yields 2. WSL is a Linux variant.
+        base = [is_windows(), is_linux(), is_macos()]
+        assert base.count(True) == 1
+        if is_wsl():
+            assert is_linux()
 
     def test_is_unix_false_on_windows(self) -> None:
         _reset_os_cache()
@@ -295,3 +299,144 @@ class TestOsSpecificPaths:
         result = cache_dir()
         assert "Library" in str(result)
         assert "Caches" in str(result)
+
+
+class TestBuiltinStoreShips:
+    """The built-in content store must live INSIDE the navig package.
+
+    REGRESSION: it used to sit at ``<repo>/core/store`` and was listed only in
+    MANIFEST.in. MANIFEST.in reaches the *sdist*; setuptools' ``package-data`` cannot
+    reach a directory outside the package, so the content was dropped when the wheel
+    was built. Every published wheel (verified on PyPI navig 2.8.0) therefore shipped
+    with **zero** builtin skills / prompts / templates / formations / agents / tools —
+    while a dev checkout worked fine, which is why it went unnoticed.
+
+    If these fail, the wheel is silently shipping an empty product again.
+    """
+
+    def test_builtin_store_is_inside_the_navig_package(self) -> None:
+        import navig
+        from navig.platform.paths import builtin_store_dir
+
+        pkg_root = Path(navig.__file__).resolve().parent
+        store = builtin_store_dir().resolve()
+        assert store.is_relative_to(pkg_root), (
+            f"builtin store {store} is OUTSIDE the navig package ({pkg_root}) — "
+            "setuptools package-data cannot reach it, so it will NOT ship in the wheel"
+        )
+
+    def test_builtin_store_exists_and_has_content(self) -> None:
+        from navig.platform.paths import builtin_store_dir
+
+        store = builtin_store_dir()
+        assert store.is_dir(), f"builtin store missing at {store}"
+        # The content the loaders actually read. An empty dir here = an empty product.
+        for sub in ("skills", "prompts", "templates", "formations", "agents", "tools"):
+            d = store / sub
+            assert d.is_dir(), f"builtin store is missing {sub}/"
+            assert any(d.rglob("*.*")), f"builtin store {sub}/ is empty"
+
+    def test_builtin_store_is_not_the_user_store(self) -> None:
+        """Read-only builtin content vs. the writable user store are different dirs."""
+        from navig.platform.paths import builtin_store_dir, store_dir
+
+        assert builtin_store_dir().resolve() != store_dir().resolve()
+
+    def test_package_data_actually_covers_the_builtin_tree(self) -> None:
+        """The declaration that actually puts the content in the wheel. Without it, every
+        other test here still passes while the wheel ships empty.
+
+        This checks real glob COVERAGE, not the presence of a literal pattern string: the
+        original version asserted `"builtin/**/*" in pyproject`, and broke the moment the
+        globs were (correctly) generalised to `**/*`, which covers strictly more. Assert the
+        outcome, never the spelling.
+        """
+        import glob as globlib
+
+        import tomllib
+
+        import navig
+        from navig.platform.paths import builtin_store_dir
+
+        pkg = Path(navig.__file__).resolve().parent
+        cfg = tomllib.loads(
+            (Path(__file__).resolve().parents[2] / "pyproject.toml").read_text(encoding="utf-8"))
+        patterns = cfg["tool"]["setuptools"]["package-data"].get("navig", [])
+
+        shipped: set[str] = set()
+        for pat in patterns:
+            for m in globlib.glob(pat, root_dir=pkg, recursive=True, include_hidden=True):
+                if (pkg / m).is_file():
+                    shipped.add((pkg / m).relative_to(pkg).as_posix())
+
+        content = [
+            f.relative_to(pkg).as_posix()
+            for f in (builtin_store_dir()).rglob("*")
+            if f.is_file() and "__pycache__" not in f.parts
+        ]
+        assert content, "the builtin store has no content at all"
+        uncovered = [c for c in content if c not in shipped]
+        assert not uncovered, (
+            f"{len(uncovered)} builtin-store file(s) are NOT covered by "
+            f"[tool.setuptools.package-data] — the wheel would ship without them, e.g. "
+            f"{uncovered[:3]}"
+        )
+
+
+class TestRuntimeAssetsResolveInsidePackage:
+    """Every asset a command loads at runtime must resolve INSIDE the navig package.
+
+    An asset path built by counting `.parent`s out of a module (…/core/store/skills,
+    …/core/scripts/speedtest/worker.py) escapes the package. setuptools cannot ship it,
+    so it exists in a dev checkout and is simply absent from every wheel — and each of
+    these degraded silently rather than failing loudly:
+
+      * `commands/skills.py` walked out to <repo>/core/store/skills → a pip-installed
+        navig listed ZERO builtin skills;
+      * `adapters/automation/ahk.py` walked out to <repo>/core/store/templates/ahk →
+        no AHK primitives/workflows;
+      * `commands/net.py` importlib-loaded <repo>/core/scripts/speedtest/worker.py,
+        which was in neither the wheel nor the sdist → `navig net speedtest` raised.
+
+    These assert the resolved paths stay inside the package, so they ship.
+    """
+
+    def _pkg_root(self) -> Path:
+        import navig
+
+        return Path(navig.__file__).resolve().parent
+
+    def test_builtin_skills_are_found_via_the_packaged_store(self) -> None:
+        from navig.commands.skills import _resolve_skills_dirs
+        from navig.platform.paths import builtin_store_dir
+
+        dirs = [d.resolve() for d in _resolve_skills_dirs(None)]
+        assert (builtin_store_dir() / "skills").resolve() in dirs, (
+            "the canonical builtin skills store is not among the resolved skill dirs"
+        )
+        for d in dirs:
+            assert d.is_relative_to(self._pkg_root()), f"{d} escapes the navig package"
+
+    def test_ahk_templates_resolve_inside_the_package(self) -> None:
+        from navig.platform.paths import builtin_store_dir
+
+        templates = (builtin_store_dir() / "templates" / "ahk").resolve()
+        assert templates.is_relative_to(self._pkg_root())
+        assert templates.is_dir(), "AHK templates missing from the builtin store"
+        assert (templates / "primitives").is_dir()
+
+    def test_speedtest_worker_ships_and_actually_loads(self) -> None:
+        """Not just 'the path exists' — import it, which is what `navig net speedtest` does."""
+        from navig.commands.net import _backend
+        from navig.platform.paths import builtin_store_dir
+
+        worker = (builtin_store_dir() / "tools" / "speedtest" / "worker.py").resolve()
+        assert worker.is_relative_to(self._pkg_root())
+        mod = _backend()
+        assert hasattr(mod, "run_speedtest_cli"), "speedtest worker loaded but has no entrypoint"
+
+    def test_builtin_templates_resolve_inside_the_package(self) -> None:
+        from navig.template_manager import TemplateManager
+
+        tm = TemplateManager()
+        assert Path(tm.templates_dir).resolve().is_relative_to(self._pkg_root())

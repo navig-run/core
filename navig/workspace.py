@@ -16,19 +16,19 @@ from typing import Any
 
 from navig import console_helper as ch
 from navig.workspace_ownership import (
-    USER_NAVIG_DIR,
-    USER_WORKSPACE_DIR,
     detect_project_workspace_duplicates,
     is_project_workspace_path,
     resolve_personal_workspace_path,
+    user_navig_dir,
+    user_workspace_dir,
 )
 
 logger = logging.getLogger(__name__)
 
-# Default paths
-DEFAULT_NAVIG_DIR = USER_NAVIG_DIR
-DEFAULT_WORKSPACE_DIR = USER_WORKSPACE_DIR
-DEFAULT_CONFIG_FILE = DEFAULT_NAVIG_DIR / "navig.json"
+# Default paths — resolved at CALL time so NAVIG_CONFIG_DIR isolation set
+# after import still applies (see navig/vault/migrate.py:_legacy_db_path).
+def _default_config_file() -> Path:
+    return user_navig_dir() / "navig.json"
 
 
 class WorkspaceManager:
@@ -63,7 +63,7 @@ class WorkspaceManager:
             workspace_path: Custom workspace directory (default: ~/.navig/workspace)
             config_path: Custom config file path (default: ~/.navig/navig.json)
         """
-        self.config_path = config_path or DEFAULT_CONFIG_FILE
+        self.config_path = config_path or _default_config_file()
 
         # Load config to get workspace path
         self.config = self._load_config()
@@ -92,10 +92,10 @@ class WorkspaceManager:
                 requested_workspace = Path(
                     self.config.get("agents", {})
                     .get("defaults", {})
-                    .get("workspace", str(DEFAULT_WORKSPACE_DIR))
+                    .get("workspace", str(user_workspace_dir()))
                 )
             else:
-                requested_workspace = DEFAULT_WORKSPACE_DIR
+                requested_workspace = user_workspace_dir()
 
             # Personal/state files are now canonical at ~/.navig/workspace.
             self.workspace_path, self.legacy_workspace_path = resolve_personal_workspace_path(
@@ -141,12 +141,13 @@ class WorkspaceManager:
         if any(root == resolved or root in resolved.parents for root in allowed_roots):
             return resolved
 
+        fallback = user_workspace_dir()
         logger.warning(
             "Rejected workspace_path outside trusted roots: %s. Falling back to %s.",
             requested,
-            USER_WORKSPACE_DIR,
+            fallback,
         )
-        return USER_WORKSPACE_DIR
+        return fallback
 
     def _candidate_workspace_paths(self) -> list[Path]:
         """Return workspace paths in read-priority order."""

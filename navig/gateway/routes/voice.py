@@ -1,6 +1,8 @@
-"""Voice and Command API routes.
+"""Voice API routes — the desktop STT / TTS / wake surface.
 
-Routes: /api/voice/transcribe, /api/voice/synthesize, /api/voice/poll_wake, /api/command
+Routes: /api/voice/transcribe, /api/voice/synthesize, /api/voice/poll_wake, /api/voice/events
+(`/api/command` was removed — it was an unauthenticated agent endpoint; commands go through
+the authed /llm/chat now.)
 
 Design note:
     ``PENDING_WAKES`` lives at module level and has **no** aiohttp dependency so
@@ -8,22 +10,29 @@ Design note:
     without aiohttp being installed.  All aiohttp-requiring helpers are imported
     lazily inside each handler closure, and any ``RuntimeError`` for missing
     aiohttp is raised only when a handler is actually invoked.
+
+    The same rule applies to the **navig-audio plugin**: ``WakeWordDetection`` is
+    used here only to annotate ``PENDING_WAKES``, so it is imported under
+    ``TYPE_CHECKING`` (this module has postponed annotations — the annotation is
+    never evaluated at runtime). A module-level ``from navig.voice.wake_word import
+    …`` made this module — and therefore ``PENDING_WAKES`` — unimportable without
+    navig-audio, which also closed an import cycle: navig_audio.voice.wake_word →
+    navig.gateway.routes.voice → navig.voice.wake_word → navig_audio.voice.wake_word.
 """
 
 from __future__ import annotations
 
 import base64
 import tempfile
-import time
 from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from navig.gateway.server import NavigGateway  # noqa: F401
+    from navig.voice.wake_word import WakeWordDetection  # noqa: F401
 
 from navig.debug_logger import get_debug_logger
-from navig.voice.wake_word import WakeWordDetection
 
 logger = get_debug_logger()
 
@@ -55,9 +64,12 @@ def _route_helpers():
 
 
 def register(app, gateway):
+    # The desktop STT/TTS + wake surface for the voice bridge. `/api/command`
+    # (route a transcript through the agent) is deliberately NOT mounted: it was an
+    # UNAUTHENTICATED agent endpoint, and the deck / Anchor / Echo all route commands
+    # through the authed `/llm/chat` now — that is the one command path.
     app.router.add_post("/api/voice/transcribe", _transcribe(gateway))
     app.router.add_post("/api/voice/synthesize", _synthesize(gateway))
-    app.router.add_post("/api/command", _command(gateway))
     app.router.add_get("/api/voice/poll_wake", _poll_wake(gateway))
     app.router.add_get("/api/voice/events", _events(gateway))
 
@@ -114,6 +126,16 @@ def _transcribe(gw):
                     ),
                 }
             )
+        except ImportError:
+            # `navig.voice.stt` is a shim over the navig-audio plugin; without it the
+            # import raises. Degrade to an actionable 503, not a cryptic 500.
+            _, json_error_response, _ = _route_helpers()
+            return json_error_response(
+                "Speech-to-text needs the navig-audio plugin",
+                details={"install": "navig store install pip:navig-audio"},
+                status=503,
+                code="plugin_required",
+            )
         except Exception as e:
             logger.exception("Transcribe failed")
             _, json_error_response, _ = _route_helpers()
@@ -166,48 +188,20 @@ def _synthesize(gw):
                     ),
                 }
             )
+        except ImportError:
+            # `navig.voice.tts` is a shim over the navig-audio plugin (see _transcribe).
+            _, json_error_response, _ = _route_helpers()
+            return json_error_response(
+                "Text-to-speech needs the navig-audio plugin",
+                details={"install": "navig store install pip:navig-audio"},
+                status=503,
+                code="plugin_required",
+            )
         except Exception as e:
             logger.exception("Synthesize failed")
             _, json_error_response, _ = _route_helpers()
             return json_error_response(
                 "Synthesis failed", details={"error": str(e)}, status=500, code="tts_error"
-            )
-
-    return h
-
-
-def _command(gw):
-    async def h(r):  # type: aiohttp.web.Request
-        data = await r.json()
-        text = data.get("text")
-        if not text:
-            _, json_error_response, _ = _route_helpers()
-            return json_error_response("Missing 'text'", status=400, code="bad_request")
-
-        try:
-            json_ok, json_error_response, _ = _route_helpers()
-            start_ts = time.monotonic()
-            resp = await gw.router.route_message(
-                channel="desktop_voice",
-                user_id="local",
-                message=text,
-                metadata={"source": "voice_command"},
-            )
-            model = "unknown"
-            if isinstance(resp, dict) and "model" in resp:
-                model = resp["model"]
-            return json_ok(
-                {
-                    "response": str(resp),
-                    "model": model,
-                    "latency_ms": (time.monotonic() - start_ts) * 1000,
-                }
-            )
-        except Exception as e:
-            logger.exception("Command failed")
-            _, json_error_response, _ = _route_helpers()
-            return json_error_response(
-                "Command failed", details={"error": str(e)}, status=500, code="command_error"
             )
 
     return h

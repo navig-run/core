@@ -94,7 +94,7 @@ def _fake_pattern(cmd: str):
 
 
 def test_skill_drafter_draft_returns_skill_draft():
-    from navig.agent.skill_drafter import SkillDrafter, SkillDraft
+    from navig.agent.skill_drafter import SkillDraft, SkillDrafter
 
     sd = SkillDrafter(output_dir="/tmp/skills_test")
     draft = sd.draft(_fake_pattern("ls -la"))
@@ -154,7 +154,7 @@ def test_skill_drafter_draft_empty_sequence():
 
 
 def test_skill_drafter_apply_writes_file(tmp_path):
-    from navig.agent.skill_drafter import SkillDrafter, SkillDraft
+    from navig.agent.skill_drafter import SkillDraft, SkillDrafter
 
     sd = SkillDrafter(output_dir=tmp_path)
     draft = SkillDraft(name="my-skill", safe=True, yaml_text="name: my-skill\n")
@@ -230,8 +230,8 @@ def test_build_calendar_oauth_config_client_id():
 
 def test_build_calendar_oauth_config_scopes():
     from navig.connectors.google_calendar.oauth_config import (
-        build_calendar_oauth_config,
         CALENDAR_SCOPES,
+        build_calendar_oauth_config,
     )
 
     cfg = build_calendar_oauth_config(client_id="cid")

@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
-
 # ---------------------------------------------------------------------------
 # _daemon_defaults
 # ---------------------------------------------------------------------------
@@ -258,9 +257,9 @@ def test_app_config_provider_protocol_importable():
 
 
 def test_config_provider_is_protocol():
-    from typing import get_origin, get_args
+    from typing import Protocol, get_args, get_origin
+
     from navig.core.protocols import ConfigProvider
-    from typing import Protocol
 
     # Check it's defined as a Protocol class
     assert issubclass(ConfigProvider, Protocol)

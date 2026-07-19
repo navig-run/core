@@ -340,6 +340,7 @@ def test_all_desktop_tool_schemas_have_items_on_arrays() -> None:
     navig MCP server (desktop_multi_edit was missing items on its inner array).
     """
     from types import SimpleNamespace as NS
+
     import navig.mcp.tools.desktop as desktop_mod
 
     server = NS()
@@ -358,6 +359,7 @@ def test_all_desktop_tool_schemas_have_items_on_arrays() -> None:
 def test_desktop_multi_edit_fields_inner_array_has_items() -> None:
     """The inner 'items' of fields (the [x, y, text] triple) must declare its own items."""
     from types import SimpleNamespace as NS
+
     import navig.mcp.tools.desktop as desktop_mod
 
     server = NS()

@@ -171,26 +171,22 @@ class TestSSHHealerKeyscanAndTrust(unittest.IsolatedAsyncioTestCase):
             proc.communicate = AsyncMock(return_value=(fake_key.encode(), b""))
             proc.returncode = 0
 
+            # `_KNOWN_HOSTS_PATH` is a MODULE-level constant, read at call time — so one
+            # module patch is the whole job. (This used to stack three: a phantom class
+            # attribute, a `property` object bolted onto a module, and a hand-rolled
+            # try/finally. Only the last did anything; the first two were `create=True`
+            # inventions that silently patched nothing.)
             with (
                 patch("asyncio.create_subprocess_exec", return_value=proc),
-                patch.object(type(healer), "_KNOWN_HOSTS_PATH", kh, create=True),
-                patch(
-                    "navig.selfheal.ssh_healer._KNOWN_HOSTS_PATH",
-                    new_callable=lambda: property(lambda s: kh),
-                    create=True,
-                ),
+                patch("navig.selfheal.ssh_healer._KNOWN_HOSTS_PATH", kh),
             ):
-                # Patch the module-level constant directly
-                import navig.selfheal.ssh_healer as _m
-
-                orig = _m._KNOWN_HOSTS_PATH
-                _m._KNOWN_HOSTS_PATH = kh
-                try:
-                    result = await healer.keyscan_and_trust("prod")
-                finally:
-                    _m._KNOWN_HOSTS_PATH = orig
+                result = await healer.keyscan_and_trust("prod")
 
             assert result.status in ("resolved", "partial")
+            assert fake_key.strip() in kh.read_text(encoding="utf-8"), (
+                "the scanned host key must actually land in known_hosts — the point of "
+                "the command, and never asserted while the patches were phantoms"
+            )
 
     async def test_keyscan_subprocess_failure_returns_failed(self) -> None:
         healer = SSHHealer()

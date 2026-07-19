@@ -106,3 +106,22 @@ def get_seed_for_session(demo: bool = False) -> str:
     if demo:
         return os.environ.get("NAVIG_DEMO_SEED", "deadbeef" * 8)
     return generate_seed()
+
+
+def ensure_sigil(demo: bool = False) -> NaviEntity:
+    """Ensure the node's NaviEntity identity exists, creating it if missing.
+
+    Idempotent: if an identity file is already present it is loaded and
+    re-derived (never re-seeded); otherwise a fresh entity is derived from the
+    machine-fingerprint seed (:func:`get_seed_for_session`) and persisted so
+    later commands (``navig whoami`` etc.) can read it. Returns the NaviEntity.
+    """
+    from navig.identity.entity import derive_entity  # noqa: PLC0415
+
+    data = load_entity()
+    if data is not None:
+        return derive_entity(data["seed"])
+
+    entity = derive_entity(get_seed_for_session(demo=demo))
+    persist_entity(entity)
+    return entity

@@ -8,20 +8,19 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # agent_config_loader
 # ---------------------------------------------------------------------------
 
 class TestClearAgentCache:
     def test_clear_cache_is_idempotent(self):
-        from navig.agent_config_loader import clear_agent_cache, _agent_config_cache
+        from navig.agent_config_loader import _agent_config_cache, clear_agent_cache
         _agent_config_cache["some_agent"] = object()
         clear_agent_cache()
         assert len(_agent_config_cache) == 0
 
     def test_clear_empty_cache_no_error(self):
-        from navig.agent_config_loader import clear_agent_cache, _agent_config_cache
+        from navig.agent_config_loader import _agent_config_cache, clear_agent_cache
         _agent_config_cache.clear()
         clear_agent_cache()  # should not raise
 
@@ -45,7 +44,11 @@ class TestGetAgentLlmMode:
 
 class TestParseAgentJson:
     def test_parses_valid_agent_json(self, tmp_path):
-        from navig.agent_config_loader import _parse_agent_json, clear_agent_cache, _agent_config_cache
+        from navig.agent_config_loader import (
+            _agent_config_cache,
+            _parse_agent_json,
+            clear_agent_cache,
+        )
         clear_agent_cache()
         data = {"id": "test_agent", "llm_mode": "coding"}
         p = tmp_path / "agent.json"
@@ -222,19 +225,19 @@ class TestInitializeJsonFiles:
 
 class TestManualRender:
     def test_empty_skills_returns_header(self):
-        from navig.skills_renderer import _manual_render
+        from navig.ui.skills_renderer import _manual_render
         result = _manual_render([])
         assert "tools/skills" in result
 
     def test_renders_skill_id_and_name(self):
-        from navig.skills_renderer import _manual_render
+        from navig.ui.skills_renderer import _manual_render
         skills = [{"id": "git", "name": "Git Helper", "summary": "Git ops", "commands": []}]
         result = _manual_render(skills)
         assert "git" in result
         assert "Git Helper" in result
 
     def test_renders_command_details(self):
-        from navig.skills_renderer import _manual_render
+        from navig.ui.skills_renderer import _manual_render
         skills = [
             {
                 "id": "ahk",
@@ -249,7 +252,7 @@ class TestManualRender:
         assert "run_script" in result
 
     def test_multiple_skills_rendered(self):
-        from navig.skills_renderer import _manual_render
+        from navig.ui.skills_renderer import _manual_render
         skills = [
             {"id": "a", "name": "Alpha", "summary": "A stuff", "commands": []},
             {"id": "b", "name": "Beta", "summary": "B stuff", "commands": []},
@@ -259,7 +262,7 @@ class TestManualRender:
         assert "[b]" in result
 
     def test_missing_fields_dont_crash(self):
-        from navig.skills_renderer import _manual_render
+        from navig.ui.skills_renderer import _manual_render
         skills = [{}]  # completely empty dict
         result = _manual_render(skills)
         assert isinstance(result, str)
@@ -267,19 +270,19 @@ class TestManualRender:
 
 class TestRenderSkillsPrompt:
     def test_empty_skill_ids_returns_empty_string(self):
-        from navig.skills_renderer import render_skills_prompt
+        from navig.ui.skills_renderer import render_skills_prompt
         result = render_skills_prompt([])
         assert result == ""
 
     def test_unknown_skill_ids_return_empty(self, monkeypatch):
-        from navig import skills_renderer
+        from navig.ui import skills_renderer
         monkeypatch.setattr(skills_renderer, "_load_skill_json", lambda _: None)
         monkeypatch.setattr(skills_renderer, "_load_skill_md", lambda *a, **k: None)
         result = skills_renderer.render_skills_prompt(["no_such_skill"], mode="auto")
         assert result == ""
 
     def test_md_mode_uses_md_content(self, monkeypatch):
-        from navig import skills_renderer
+        from navig.ui import skills_renderer
         monkeypatch.setattr(
             skills_renderer,
             "_load_skill_md",
@@ -290,7 +293,7 @@ class TestRenderSkillsPrompt:
         assert "help content" in result
 
     def test_json_mode_uses_json_data(self, monkeypatch):
-        from navig import skills_renderer
+        from navig.ui import skills_renderer
         fake_data = {"id": "gitops", "name": "GitOps", "summary": "Git automation", "commands": []}
         monkeypatch.setattr(skills_renderer, "_load_skill_json", lambda _: fake_data)
         # Disable jinja2 to force _manual_render path
@@ -300,7 +303,7 @@ class TestRenderSkillsPrompt:
         assert len(result) > 0
 
     def test_auto_mode_prefers_json(self, monkeypatch):
-        from navig import skills_renderer
+        from navig.ui import skills_renderer
         fake_data = {"id": "autosk", "name": "AutoSkill", "summary": "auto", "commands": []}
         monkeypatch.setattr(skills_renderer, "_load_skill_json", lambda _: fake_data)
         monkeypatch.setattr(skills_renderer, "_load_skill_md", lambda *a, **k: "md fallback")
@@ -313,18 +316,18 @@ class TestRenderSkillsPrompt:
 
 class TestGetContextSkillsMode:
     def test_returns_string(self):
-        from navig.skills_renderer import _get_context_skills_mode
+        from navig.ui.skills_renderer import _get_context_skills_mode
         result = _get_context_skills_mode()
         assert isinstance(result, str)
 
     def test_returns_auto_on_config_failure(self, monkeypatch):
-        from navig import skills_renderer
+        from navig.ui import skills_renderer
         monkeypatch.setattr(
-            "navig.skills_renderer._get_context_skills_mode",
+            "navig.ui.skills_renderer._get_context_skills_mode",
             lambda: "auto",
         )
         # Direct test: patch config to raise
         with patch("navig.config.get_config_manager", side_effect=RuntimeError("no config")):
-            from navig.skills_renderer import _get_context_skills_mode
+            from navig.ui.skills_renderer import _get_context_skills_mode
             result = _get_context_skills_mode()
         assert result == "auto"

@@ -5,7 +5,6 @@ import pytest
 
 from navig.messaging.adapter import ComplianceMode, DeliveryReceipt, DeliveryStatus
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

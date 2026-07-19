@@ -11,10 +11,10 @@ import pytest
 # navig.tools.api_schema
 # ---------------------------------------------------------------------------
 from navig.tools.api_schema import (
-    ApiSource,
-    ApiToolResult,
     _REDACTED,
     _SENSITIVE_KEYS_RE,
+    ApiSource,
+    ApiToolResult,
     redact_sensitive,
     validate_api_result,
 )

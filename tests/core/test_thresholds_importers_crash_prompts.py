@@ -12,7 +12,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/core/thresholds.py
 # ---------------------------------------------------------------------------
@@ -32,6 +31,7 @@ class TestThreshold:
 
     def test_is_dataclass(self) -> None:
         import dataclasses
+
         from navig.core.thresholds import Threshold
         assert dataclasses.is_dataclass(Threshold)
 
@@ -220,6 +220,7 @@ class TestCrashApp:
 
     def test_is_typer(self) -> None:
         import typer
+
         from navig.commands.crash import crash_app
         assert isinstance(crash_app, typer.Typer)
 
@@ -229,6 +230,7 @@ class TestCrashApp:
 
     def test_export_no_crash_report(self) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.crash import crash_app
 
         mock_handler = MagicMock()
@@ -241,6 +243,7 @@ class TestCrashApp:
 
     def test_export_with_crash_report(self) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.crash import crash_app
 
         mock_handler = MagicMock()
@@ -254,6 +257,7 @@ class TestCrashApp:
 
     def test_export_to_file(self, tmp_path) -> None:
         from typer.testing import CliRunner
+
         from navig.commands.crash import crash_app
 
         out_file = tmp_path / "crash.json"

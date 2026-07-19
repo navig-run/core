@@ -14,4 +14,4 @@ def origin_default(ctx: typer.Context):
         return
     from navig import console_helper as ch
 
-    ch.warn("navig origin is not yet implemented in this build.")
+    ch.warning("navig origin is not yet implemented in this build.")

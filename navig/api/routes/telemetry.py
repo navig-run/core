@@ -45,7 +45,17 @@ router = APIRouter(prefix="/telemetry", tags=["telemetry"])
 # ── Database path resolution ───────────────────────────────────────────────
 
 _DEFAULT_DB = Path(__file__).resolve().parents[2] / "installs.db"
-_DB_PATH: Path = Path(os.environ.get("NAVIG_TELEMETRY_DB", str(_DEFAULT_DB)))
+
+
+def _db_path() -> Path:
+    """Resolve the installs DB path at CALL time — never import time.
+
+    A module-level constant freezes ``NAVIG_TELEMETRY_DB`` before a test or
+    a server finalizing its environment after imports can override it
+    (see ``navig/vault/migrate.py:_legacy_db_path``).
+    """
+    return Path(os.environ.get("NAVIG_TELEMETRY_DB", str(_DEFAULT_DB)))
+
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS installs (
@@ -63,7 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_installs_platform ON installs (platform);
 
 async def _get_db() -> aiosqlite.Connection:
     """Open (and lazily provision) the SQLite connection."""
-    db = await aiosqlite.connect(_DB_PATH)
+    db = await aiosqlite.connect(_db_path())
     db.row_factory = aiosqlite.Row
     await db.executescript(_SCHEMA_SQL)
     await db.commit()

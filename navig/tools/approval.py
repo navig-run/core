@@ -29,10 +29,29 @@ callable into ``get_approval_gate().backend``::
 
     async def my_telegram_prompt(req: ApprovalRequest) -> ApprovalDecision: ...
     get_approval_gate().backend = my_telegram_prompt
+
+Gateway wiring (fail closed)
+----------------------------
+Inside the gateway process the single-operator default (approve dangerous
+tools with a warning) is a fail-open seam: the operator already has real
+approval consumers (deck Inbox, Telegram, ``/approval`` routes) wired to
+``navig.approval.ApprovalManager``. The gateway therefore calls
+:func:`bind_approval_manager` at startup:
+
+- with a live manager → dangerous tools BLOCK on
+  ``approval_manager.request_approval`` (timeout follows the ``approval:``
+  config section's ``default_action``; every decision lands in the gateway
+  audit log as ``tool.execute.<tool_name>``);
+- with ``None`` (approval subsystem failed to load) → dangerous tools are
+  DENIED, audited, never silently approved.
+
+Non-gateway processes (headless CLI, MCP stdio server, tests) keep the
+single-operator default unchanged.
 """
 
 from __future__ import annotations
 
+import asyncio
 import enum
 import os
 import threading
@@ -49,8 +68,11 @@ __all__ = [
     "ApprovalGate",
     "get_approval_gate",
     "needs_approval",
+    "check_sync",
     "set_approval_policy",
     "get_approval_policy",
+    "bind_approval_manager",
+    "gate_agent_tool_call",
 ]
 
 
@@ -121,6 +143,15 @@ DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
         "navig_docker_exec",
         "navig_docker_restart",
         "navig_web_reload",
+        # CDP browser-control MCP tools (arbitrary JS / launch / kill a browser).
+        # cdp_eval in particular can exfiltrate credentials from a logged-in page
+        # (e.g. document.querySelector('#password').value), so it is gated even
+        # though the single-operator default backend auto-approves-with-audit.
+        "cdp_eval",
+        "cdp_launch",
+        "cdp_stop",
+        "cdp_login",
+        "cdp_inject",
     }
 )
 
@@ -347,3 +378,271 @@ def reset_approval_gate() -> None:
     global _gate_instance
     with _gate_lock:
         _gate_instance = None
+
+
+# =============================================================================
+# Synchronous bridge (for sync dispatch paths, e.g. the MCP stdio server)
+# =============================================================================
+
+
+def check_sync(
+    tool_name: str,
+    safety_level: str = "safe",
+    parameters: dict[str, Any] | None = None,
+    reason: str = "",
+    context: dict[str, Any] | None = None,
+    policy: ApprovalPolicy | None = None,
+) -> ApprovalDecision:
+    """Synchronous wrapper around :meth:`ApprovalGate.check`.
+
+    The MCP JSON-RPC server dispatches tools synchronously (no event loop on the
+    calling thread), so it cannot ``await`` the async gate. This helper runs the
+    gate to completion on a private loop and returns the decision.
+
+    Fast paths (no loop needed): the ``NAVIG_ALLOW_ALL_COMMANDS`` bypass and the
+    "policy does not require approval" case both short-circuit to APPROVED
+    without touching asyncio, so safe/moderate tools stay zero-overhead.
+
+    On any internal failure it returns :attr:`ApprovalDecision.DENIED` — fail
+    closed, never fail open.
+    """
+    if os.environ.get("NAVIG_ALLOW_ALL_COMMANDS", "").strip() == "1":
+        return ApprovalDecision.APPROVED
+
+    if not needs_approval(tool_name, safety_level, args=parameters, policy=policy):
+        return ApprovalDecision.APPROVED
+
+    gate = get_approval_gate()
+
+    def _run() -> ApprovalDecision:
+        return asyncio.run(
+            gate.check(tool_name, safety_level, parameters, reason, context, policy)
+        )
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop on this thread → safe to spin a private one.
+        try:
+            return _run()
+        except Exception as exc:  # noqa: BLE001
+            logger.error("approval.check_sync failed ({}): {} — denying", tool_name, exc)
+            return ApprovalDecision.DENIED
+
+    # A loop is already running on this thread (unexpected for the stdio server);
+    # offload to a worker thread so we never re-enter the running loop.
+    import concurrent.futures
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            return ex.submit(_run).result()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("approval.check_sync failed ({}): {} — denying", tool_name, exc)
+        return ApprovalDecision.DENIED
+
+
+# =============================================================================
+# ApprovalManager backend (gateway wiring — fail closed)
+# =============================================================================
+
+
+def _split_session_key(context: dict[str, Any]) -> tuple[str, str, str]:
+    """Derive ``(channel, user_id, actor)`` from a gate-check context.
+
+    The agent loop passes the chat-stable session key (e.g.
+    ``"telegram:user:12345"``); the first segment is the channel, the rest the
+    user. With no context the actor is the local single operator.
+    """
+    session_key = str(context.get("session_key") or "").strip()
+    if ":" in session_key:
+        channel, _, rest = session_key.partition(":")
+        return channel or "agent", rest or "local", session_key
+    if session_key:
+        return "agent", session_key, f"agent:{session_key}"
+    return "agent", "local", "agent:local"
+
+
+def _params_preview(parameters: dict[str, Any], limit: int = 200) -> str:
+    """Compact, secret-redacted parameter preview for the operator prompt."""
+    if not parameters:
+        return ""
+    import json as _json
+
+    try:
+        text = _json.dumps(parameters, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        text = str(parameters)
+    try:
+        from navig.core.security import redact_sensitive_text
+
+        text = redact_sensitive_text(text)
+    except Exception:  # noqa: BLE001 — display fallback only
+        pass
+    return text[:limit] + ("…" if len(text) > limit else "")
+
+
+def _audit_tool_decision(
+    audit_log: Any | None,
+    req: ApprovalRequest,
+    *,
+    actor: str,
+    status: str,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """Best-effort audit record for one agent tool-gate decision.
+
+    Action slug matches the gateway convention (``db.query``,
+    ``approval.respond``): ``tool.execute.<tool_name>``. Parameters are hashed
+    by AuditLog (``input_hash``), never stored verbatim.
+    """
+    if audit_log is None:
+        return
+    import json as _json
+
+    try:
+        raw_input = _json.dumps(
+            {"tool": req.tool_name, "parameters": req.parameters},
+            sort_keys=True,
+            default=str,
+        )
+        metadata: dict[str, Any] = {"safety_level": req.safety_level}
+        if req.reason:
+            metadata["reason"] = req.reason
+        metadata.update(extra or {})
+        audit_log.record(
+            actor=actor,
+            action=f"tool.execute.{req.tool_name}",
+            policy="require_approval",
+            status=status,
+            raw_input=raw_input,
+            metadata=metadata,
+        )
+    except Exception:  # noqa: BLE001 — a health trace is never worth an outage
+        logger.debug("approval: audit record failed for '{}'", req.tool_name)
+
+
+def bind_approval_manager(manager: Any | None, audit_log: Any | None = None) -> None:
+    """Route dangerous-tool approvals through a live ``ApprovalManager``.
+
+    Called by the gateway at startup (after ``approval_manager`` +
+    ``audit_log`` are initialised). Replaces the singleton gate's backend:
+
+    - ``manager`` live → gated tools block on ``manager.request_approval``
+      (deck Inbox / Telegram / ``/approval`` routes resolve it). Timeout and
+      classification follow the operator's ``approval:`` config section
+      (``ApprovalPolicy.from_config`` — the same policy #299 wired). The
+      request command is ``"tool <name>"``, so operators can pin specific
+      tools to safe/dangerous/never via ``approval.levels`` patterns.
+    - ``manager is None`` → FAIL CLOSED: gated tools are denied and audited.
+      Inside the gateway an unavailable approval subsystem must never
+      degrade to approve-with-warning.
+
+    Every decision is recorded on *audit_log* as ``tool.execute.<tool_name>``.
+    Non-gateway processes never call this and keep the single-operator default.
+    """
+    gate = get_approval_gate()
+
+    if manager is None:
+
+        async def _deny_no_manager(req: ApprovalRequest) -> ApprovalDecision:
+            _, _, actor = _split_session_key(req.context)
+            logger.error(
+                "approval: DENYING tool '{}' — no approval manager available "
+                "(gateway fail-closed)",
+                req.tool_name,
+            )
+            _audit_tool_decision(
+                audit_log,
+                req,
+                actor=actor,
+                status="denied",
+                extra={"reason": "approval_unavailable"},
+            )
+            return ApprovalDecision.DENIED
+
+        gate.backend = _deny_no_manager
+        return
+
+    async def _manager_backend(req: ApprovalRequest) -> ApprovalDecision:
+        channel, user_id, actor = _split_session_key(req.context)
+        _audit_tool_decision(audit_log, req, actor=actor, status="pending_approval")
+
+        description = f"Agent tool call: {req.tool_name} ({req.safety_level})"
+        if preview := _params_preview(req.parameters):
+            description += f" — {preview}"
+
+        try:
+            approved = bool(
+                await manager.request_approval(
+                    command=f"tool {req.tool_name}",
+                    session_key=str(req.context.get("session_key") or f"agent:{user_id}"),
+                    channel=channel,
+                    user_id=user_id,
+                    description=description,
+                )
+            )
+        except Exception:  # noqa: BLE001 — an approval-flow crash must fail closed
+            logger.exception(
+                "approval: manager flow failed for '{}' — denying", req.tool_name
+            )
+            approved = False
+
+        _audit_tool_decision(
+            audit_log,
+            req,
+            actor=actor,
+            status="approved" if approved else "denied",
+            extra={"via": "approval_manager"},
+        )
+        return ApprovalDecision.APPROVED if approved else ApprovalDecision.DENIED
+
+    gate.backend = _manager_backend
+
+
+# =============================================================================
+# Agent-loop interlock (the ToolRouter seam — shared by both agent editions)
+# =============================================================================
+
+
+async def gate_agent_tool_call(
+    tool_name: str,
+    *,
+    parameters: dict[str, Any] | None = None,
+    session_key: str | None = None,
+    reason: str = "agentic",
+) -> str | None:
+    """Approval interlock for one agent tool call.
+
+    Returns ``None`` when the call may proceed, or a human-readable denial
+    string the agent loop returns as the tool result (the LLM reads it and
+    adapts — never an exception crash).
+
+    FAIL CLOSED: if the gate itself breaks (import error inside the backend,
+    unexpected crash), a gated tool is denied rather than executed ungated —
+    the agent-loop twin of the #299 policy_check contract.
+    """
+    try:
+        if not needs_approval(tool_name):
+            return None
+        gate = get_approval_gate()
+        context: dict[str, Any] = {}
+        if session_key:
+            context["session_key"] = session_key
+        decision = await gate.check(
+            tool_name=tool_name,
+            safety_level="moderate",
+            parameters=parameters,
+            reason=reason,
+            context=context,
+        )
+    except Exception as exc:  # noqa: BLE001 — interlock broke → deny, never proceed
+        logger.error(
+            "approval: interlock failed for '{}' — denying (fail closed): {}",
+            tool_name,
+            exc,
+        )
+        return f"[Denied: approval gate error for '{tool_name}' — failing closed]"
+
+    if decision != ApprovalDecision.APPROVED:
+        return f"[Denied: operator did not approve '{tool_name}']"
+    return None

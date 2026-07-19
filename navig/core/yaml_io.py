@@ -76,20 +76,112 @@ def log_shadow_anomaly(log_name: str, event: str, data: dict[str, Any]) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def read_text_retrying(path: Path | str, *, encoding: str = "utf-8") -> str:
+    """Read *path* as text, retrying transient OS-level failures.
+
+    The WRITE side of this module already survives Windows' transient locks (an
+    antivirus or backup agent briefly holding the file) by retrying with back-off.
+    The READ side did not, and the asymmetry was expensive: every writer replaces
+    config.yaml via ``os.replace``, and a reader that opens the file during that
+    replace can get a ``PermissionError`` / sharing violation. One such blip made
+    :meth:`ConfigManager._load_global_config` return an EMPTY config — which the next
+    save then wrote back over every setting the user had.
+
+    So a transient OSError is retried here, exactly like the write. A failure that
+    SURVIVES the retries is raised, never silently swallowed: a caller must be able to
+    tell "this file is unreadable right now" from "this file is empty", because turning
+    the first into the second is how data gets destroyed.
+    """
+    fp = Path(path)
+    last_exc: OSError | None = None
+    for attempt in range(_ATOMIC_REPLACE_RETRIES):
+        try:
+            return fp.read_text(encoding=encoding)
+        except OSError as exc:  # PermissionError, sharing violation, transient I/O
+            last_exc = exc
+            if attempt < _ATOMIC_REPLACE_RETRIES - 1:
+                time.sleep(_ATOMIC_REPLACE_BACKOFF_BASE * (2 ** attempt))
+    logger.warning(
+        "could not read %s after %d attempts: %s",
+        fp, _ATOMIC_REPLACE_RETRIES, last_exc,
+    )
+    raise last_exc  # type: ignore[misc]
+
+
 def safe_load_yaml(filepath: str | Path) -> Any:
     """Read and parse a YAML file, returning ``None`` on any failure.
 
     Uses :func:`yaml.safe_load` exclusively (never ``yaml.load``).
     Returns ``None`` when the file does not exist, is empty, or is invalid YAML.
+
+    NOTE for read-modify-write callers: ``None`` is ambiguous — it means "no file",
+    "empty file" AND "unreadable file". Treating it as ``{}`` and writing the result
+    back DESTROYS the file's contents. Transient read failures are retried here so
+    that case is rare, but a caller that writes back must still check whether the file
+    exists with content before it trusts a ``None``.
     """
     fp = Path(filepath)
     if not fp.is_file():
         return None
     try:
-        return yaml.safe_load(fp.read_text(encoding="utf-8"))
+        return yaml.safe_load(read_text_retrying(fp))
     except Exception:  # noqa: BLE001
         logger.debug("Failed to parse YAML from %s", fp, exc_info=True)
         return None
+
+
+class ConfigReadError(RuntimeError):
+    """A YAML file exists WITH content but could not be read or parsed.
+
+    Raised by :func:`load_yaml_for_update` so a read-modify-write caller ABORTS
+    instead of overwriting real data with a default — the config-wipe class.
+    Subclasses :class:`RuntimeError`, so a best-effort ``except Exception`` (as the
+    onboarding steps use) catches it and simply skips the write.
+    """
+
+
+def load_yaml_for_update(
+    filepath: str | Path, *, default: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Load a YAML mapping for a read-MODIFY-WRITE, refusing to mask an unreadable file.
+
+    :func:`safe_load_yaml` collapses "missing", "empty" AND "unreadable" all into
+    ``None`` — so a caller doing ``safe_load_yaml(p) or {}`` then writing the result
+    back DESTROYS a file that was merely locked at read time (an antivirus/backup agent,
+    or a read landing mid-``os.replace``). That is how ``deck.api_key`` — the install's
+    identity — was erased twice in one night. This is the ONE helper every such caller
+    should use; it distinguishes the cases the raw parser cannot:
+
+    * file absent, OR present but genuinely empty / comments-only  -> returns ``default``
+      (a fresh ``{}``); overwriting a blank file loses nothing.
+    * file present WITH content but unreadable, invalid YAML, or not a mapping  -> raises
+      :class:`ConfigReadError`, so the caller aborts instead of overwriting real data.
+
+    Transient OS locks are already ridden out underneath (:func:`read_text_retrying`
+    retries with back-off); only a failure that SURVIVES the retries becomes a refusal.
+    Unlike a size>0 heuristic, a genuinely comments-only file is correctly treated as
+    blank rather than falsely refused.
+    """
+    fp = Path(filepath)
+    result: dict[str, Any] = {} if default is None else default
+    if not fp.is_file():
+        return result
+    try:
+        text = read_text_retrying(fp)
+    except OSError as exc:  # survived the retries — unreadable, not empty
+        raise ConfigReadError(f"{fp} exists but could not be read: {exc}") from exc
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:  # has content, but not parseable — never overwrite it
+        raise ConfigReadError(f"{fp} exists but is not valid YAML: {exc}") from exc
+    if data is None:
+        return result  # empty / comments-only — safe to treat as blank
+    if not isinstance(data, dict):
+        raise ConfigReadError(
+            f"{fp} did not parse to a mapping (got {type(data).__name__}) — "
+            "refusing to overwrite it."
+        )
+    return data
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -131,6 +223,11 @@ def atomic_write_yaml(
                 sort_keys=False,
                 allow_unicode=allow_unicode,
             )
+            # Flush to disk BEFORE the rename so a power-loss can't leave a
+            # zero-length / partially-written config.yaml (atomic_write_text does
+            # this too; the yaml path was missing it).
+            fh.flush()
+            os.fsync(fh.fileno())
         _atomic_replace(tmp_path, filepath)
         tmp_path = None  # ownership transferred
     finally:
@@ -172,10 +269,12 @@ def atomic_write_text(
             suffix=".navig~",
         )
         tmp_path: Path | None = Path(tmp_name)
-        fd_open = False
+        # os.fdopen() takes ownership of fd immediately — mark it open
+        # BEFORE entering the with-block so the except-Exception branch
+        # never attempts a double-close on an already-owned descriptor.
+        fd_open = True
         try:
             with os.fdopen(fd, "w", encoding=encoding) as fh:
-                fd_open = True  # fd is now owned by the context manager
                 fh.write(content)
                 fh.flush()
                 os.fsync(fh.fileno())
@@ -191,11 +290,8 @@ def atomic_write_text(
                 backoff = _ATOMIC_REPLACE_BACKOFF_BASE * (2 ** attempt)
                 time.sleep(backoff)
         except Exception:
-            if not fd_open:
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
+            # fd is already owned by os.fdopen; the with-block's __exit__
+            # closes it on exception — no manual os.close() needed here.
             if tmp_path is not None:
                 tmp_path.unlink(missing_ok=True)
             raise

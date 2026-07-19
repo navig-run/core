@@ -12,16 +12,15 @@ class ScriptEvolver(BaseEvolver):
 
     def __init__(self):
         super().__init__()
-        self._navig_root = Path(__file__).parent.parent.parent
-        self._scripts_dir = self._navig_root / "scripts"
-        self._scripts_dir.mkdir(exist_ok=True)
+        # Test/override seam; the default is resolved lazily below.
+        self._scripts_dir_override: Path | None = None
 
         self._system_prompt = """
 You are a Python Script Generator.
 Your task is to generate a standalone Python script for a specific task.
 
 Context:
-- Scripts are located in `navig/scripts/`.
+- Scripts are saved to your NAVIG scripts directory (`~/.navig/scripts`).
 - They can import from `navig` modules if needed.
 - Use standard libraries where possible.
 
@@ -46,6 +45,29 @@ Constraints:
 - Include error handling.
 - Use type hints.
 """
+
+    @property
+    def _scripts_dir(self) -> Path:
+        """Where a generated script is saved: ``config_dir()/scripts`` — the same directory
+        ``navig ahk`` (``commands/ahk.py``) reads user scripts from.
+
+        It used to be ``Path(__file__).parent.parent.parent / "scripts"`` — i.e.
+        ``navig/scripts``, **inside** the package (``site-packages/navig/scripts`` in a real
+        install) — and ``__init__`` ``.mkdir()``'d it, so merely CONSTRUCTING this evolver
+        wrote into the installed package (or raised ``PermissionError`` where site-packages is
+        read-only). The generated scripts also landed there, un-shipped and lost on the next
+        upgrade, while nothing per-brain read them. Same class as #189/#271; resolved lazily so
+        ``NAVIG_CONFIG_DIR`` isolation holds, created in ``_save``, never at construction.
+        """
+        if getattr(self, "_scripts_dir_override", None) is not None:
+            return self._scripts_dir_override
+        from navig.platform.paths import scripts_dir  # noqa: PLC0415
+
+        return scripts_dir()
+
+    @_scripts_dir.setter
+    def _scripts_dir(self, value: Path) -> None:
+        self._scripts_dir_override = value
 
     def _generate(self, goal: str, previous_artifact: Any, error_msg: str, context: Any) -> Any:
         prompt = f"Goal: Create a python script to {goal}\n\n"
@@ -108,14 +130,16 @@ if __name__ == "__main__":
             if not filename.endswith(".py"):
                 filename += ".py"
 
-            path = self._scripts_dir / filename
+            scripts_dir = self._scripts_dir
+            scripts_dir.mkdir(parents=True, exist_ok=True)  # config_dir()/scripts on first save
+            path = scripts_dir / filename
 
             # Ensure unique if not explicit
             if not name_match and path.exists():
                 counter = 1
                 stem = path.stem
                 while path.exists():
-                    path = self._scripts_dir / f"{stem}_{counter}.py"
+                    path = scripts_dir / f"{stem}_{counter}.py"
                     counter += 1
 
             with open(path, "w", encoding="utf-8") as f:

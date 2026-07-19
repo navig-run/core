@@ -1,8 +1,9 @@
 """Tests for navig/commands/webdash.py."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from typer.testing import CliRunner
-from unittest.mock import patch, MagicMock
 
 from navig.commands.webdash import app
 
@@ -28,7 +29,7 @@ def test_help_mentions_dashboard():
 # ---------------------------------------------------------------------------
 
 def test_default_shows_starting_message_before_import_attempt():
-    with patch("navig.api.server.run_api_server", create=True, side_effect=ImportError):
+    with patch("navig.api.server.run_api_server", side_effect=ImportError):
         result = runner.invoke(app, [])
     assert "dashboard" in result.output.lower() or "Starting" in result.output
 

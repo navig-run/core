@@ -18,7 +18,6 @@ from navig.cli._singletons import (
     set_no_cache,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixture: reset module-level cached class references between tests
 # ---------------------------------------------------------------------------
@@ -121,20 +120,20 @@ class TestGetConfigManager:
 class TestGetTunnelManager:
     def test_returns_a_class(self):
         fake_cls = type("FakeTunnel", (), {})
-        with patch("navig.tunnel.TunnelManager", fake_cls, create=True):
+        with patch("navig.tunnel.TunnelManager", fake_cls):
             result = _get_tunnel_manager()
         assert result is fake_cls
 
     def test_caches_on_second_call(self):
         fake_cls = type("FakeTunnel", (), {})
-        with patch("navig.tunnel.TunnelManager", fake_cls, create=True):
+        with patch("navig.tunnel.TunnelManager", fake_cls):
             r1 = _get_tunnel_manager()
             r2 = _get_tunnel_manager()
         assert r1 is r2
 
     def test_cached_value_stored_in_module(self):
         fake_cls = type("FakeTunnel", (), {})
-        with patch("navig.tunnel.TunnelManager", fake_cls, create=True):
+        with patch("navig.tunnel.TunnelManager", fake_cls):
             _get_tunnel_manager()
         assert singletons_mod._TunnelManager is fake_cls
 
@@ -153,13 +152,13 @@ class TestGetTunnelManager:
 class TestGetRemoteOperations:
     def test_returns_a_class(self):
         fake_cls = type("FakeRemote", (), {})
-        with patch("navig.remote.RemoteOperations", fake_cls, create=True):
+        with patch("navig.remote.RemoteOperations", fake_cls):
             result = _get_remote_operations()
         assert result is fake_cls
 
     def test_caches_on_second_call(self):
         fake_cls = type("FakeRemote", (), {})
-        with patch("navig.remote.RemoteOperations", fake_cls, create=True):
+        with patch("navig.remote.RemoteOperations", fake_cls):
             r1 = _get_remote_operations()
             r2 = _get_remote_operations()
         assert r1 is r2
@@ -178,13 +177,13 @@ class TestGetRemoteOperations:
 class TestGetAiAssistant:
     def test_returns_a_class(self):
         fake_cls = type("FakeAI", (), {})
-        with patch("navig.ai.AIAssistant", fake_cls, create=True):
+        with patch("navig.ai.AIAssistant", fake_cls):
             result = _get_ai_assistant()
         assert result is fake_cls
 
     def test_caches_on_second_call(self):
         fake_cls = type("FakeAI", (), {})
-        with patch("navig.ai.AIAssistant", fake_cls, create=True):
+        with patch("navig.ai.AIAssistant", fake_cls):
             r1 = _get_ai_assistant()
             r2 = _get_ai_assistant()
         assert r1 is r2

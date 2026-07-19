@@ -37,18 +37,34 @@ def _run_cli(args: list[str], *, tmp_path: Path) -> subprocess.CompletedProcess[
     )
 
 
-def test_menu_command_is_removed_from_cli_surface():
-    result = runner.invoke(app, ["menu"])
+def test_the_legacy_interactive_menu_stays_gone():
+    """The LEGACY interactive menu must not come back as a command.
 
-    assert result.exit_code != 0
-    assert "No such command" in result.output
+    This file used to assert that `navig menu` does not exist at all — and it has
+    been red ever since, because `navig menu` DOES exist now and is supposed to:
+    it is the launcher for the navig-menu project-menu engine
+    (navig/commands/menu.py), registered on purpose. Same word, different feature.
 
-
-def test_interactive_alias_is_removed_from_cli_surface():
+    What must stay retired is the old interactive shell — `navig interactive`,
+    and `navig menu` routing INTO it. So assert that, instead of a falsehood:
+    a stale test that can never pass just hides the real regressions around it.
+    """
     result = runner.invoke(app, ["interactive"])
-
     assert result.exit_code != 0
     assert "No such command" in result.output
+
+
+def test_menu_is_the_launcher_not_the_old_interactive_shell():
+    from navig.cli import registration as reg
+
+    target = reg._EXTERNAL_CMD_MAP.get("menu")
+    assert target is not None, "`navig menu` (the navig-menu launcher) should be registered"
+    module, _attr = target
+    assert module == "navig.commands.menu", (
+        f"`navig menu` must route to the menu-builder launcher, not {module} — "
+        "the legacy interactive shell is retired"
+    )
+    assert "interactive" not in reg._EXTERNAL_CMD_MAP
 
 
 def test_core_standalone_groups_remain_available(tmp_path: Path):

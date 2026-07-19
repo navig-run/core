@@ -13,7 +13,6 @@ import asyncio
 import warnings
 from datetime import datetime
 
-
 # =============================================================================
 # config_schema — Enums
 # =============================================================================
@@ -493,14 +492,17 @@ class TestHookRegistry:
         assert not reg.is_disabled("some:event")
 
     def test_priority_ordering(self):
+        from navig.core.hooks import HookEvent
+
         reg = self._make_registry()
         order = []
         reg.register("ev", lambda e: order.append("second"), priority=200)
         reg.register("ev", lambda e: order.append("first"), priority=50)
-        # trigger manually to check order
-        handlers = reg.get_handlers("ev")
-        for _, h in handlers:
-            from navig.core.hooks import HookEvent
+        # `get_handlers` returns the BARE handlers, already sorted by priority — it
+        # used to return (priority, handler) tuples, and unpacking those is what this
+        # test still did (`for _, h in handlers`), so it raised
+        # "TypeError: cannot unpack non-iterable function object".
+        for h in reg.get_handlers("ev"):
             h(HookEvent(type="ev", action=""))
         assert order == ["first", "second"]
 
@@ -555,10 +557,17 @@ class TestTriggerHook:
 
     async def test_trigger_no_handlers_returns_event(self):
         from navig.core import hooks as h_mod
+
         h_mod._registry.clear()
-        event = await h_mod.trigger_hook("test:no_handler_ev")
+        # `trigger_hook` takes type and action SEPARATELY; it does NOT split a
+        # "type:action" string. This test passed the joined form and expected a split,
+        # so event.type came back as "test:no_handler_ev". (Callers that hold a joined
+        # key — e.g. PluginManager._trigger_hook — do the split themselves before
+        # calling.) `event_key` is what recombines them.
+        event = await h_mod.trigger_hook("test", "no_handler_ev")
         assert event.type == "test"
         assert event.action == "no_handler_ev"
+        assert event.event_key == "test:no_handler_ev"
 
     async def test_trigger_disabled_event_skips_handlers(self):
         from navig.core import hooks as h_mod
@@ -660,7 +669,7 @@ class TestHookUtilities:
         assert "command" in result
 
     def test_list_hook_types_is_copy(self):
-        from navig.core.hooks import list_hook_types, HOOK_EVENT_TYPES
+        from navig.core.hooks import HOOK_EVENT_TYPES, list_hook_types
         result = list_hook_types()
         result["new_key"] = "modified"
         assert "new_key" not in HOOK_EVENT_TYPES

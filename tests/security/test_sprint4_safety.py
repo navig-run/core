@@ -181,11 +181,57 @@ class TestPolicyCheck:
         assert result is not None
         assert result.status == 403
 
-    async def test_require_approval_returns_none_when_cooldown_clear(self):
-        """REQUIRE_APPROVAL with no active cooldown → allowed (returns None)."""
+    async def test_require_approval_approved_returns_none(self):
+        """REQUIRE_APPROVAL + manager approves → allowed (returns None) + audited."""
+        from unittest.mock import AsyncMock
+
         gw = self._build_gw("require_approval")
+        gw.approval_manager = MagicMock()
+        gw.approval_manager.request_approval = AsyncMock(return_value=True)
+
         result = await gw.policy_check("test.action", "user1", "input")
         assert result is None
+        gw.approval_manager.request_approval.assert_awaited_once()
+        # Two audit records: pending_approval + approved
+        statuses = [c.kwargs.get("status") for c in gw.audit_log.record.call_args_list]
+        assert statuses == ["pending_approval", "approved"]
+
+    async def test_require_approval_denied_returns_403(self):
+        """REQUIRE_APPROVAL + manager denies (or times out) → 403 + audited."""
+        from unittest.mock import AsyncMock
+
+        gw = self._build_gw("require_approval")
+        gw.approval_manager = MagicMock()
+        gw.approval_manager.request_approval = AsyncMock(return_value=False)
+
+        result = await gw.policy_check("test.action", "user1", "input")
+        assert result is not None
+        assert result.status == 403
+        statuses = [c.kwargs.get("status") for c in gw.audit_log.record.call_args_list]
+        assert statuses == ["pending_approval", "denied"]
+
+    async def test_require_approval_without_manager_fails_closed(self):
+        """REQUIRE_APPROVAL with no approval_manager wired → 403, never open."""
+        gw = self._build_gw("require_approval")
+        gw.approval_manager = None
+
+        result = await gw.policy_check("test.action", "user1", "input")
+        assert result is not None
+        assert result.status == 403
+        statuses = [c.kwargs.get("status") for c in gw.audit_log.record.call_args_list]
+        assert statuses == ["pending_approval", "denied"]
+
+    async def test_require_approval_manager_crash_fails_closed(self):
+        """An approval-flow exception must deny, not fall through to allow."""
+        from unittest.mock import AsyncMock
+
+        gw = self._build_gw("require_approval")
+        gw.approval_manager = MagicMock()
+        gw.approval_manager.request_approval = AsyncMock(side_effect=RuntimeError("boom"))
+
+        result = await gw.policy_check("test.action", "user1", "input")
+        assert result is not None
+        assert result.status == 403
 
     async def test_require_approval_returns_429_when_in_cooldown(self):
         """REQUIRE_APPROVAL with cooldown active → returns 429."""

@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
-import pytest
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # installer/modules/core_cli
@@ -134,8 +134,9 @@ def test_navig_version_returns_string():
 
 
 def test_navig_version_handles_exception():
-    import navig.installer.modules.core_cli as m
     import importlib.metadata
+
+    import navig.installer.modules.core_cli as m
 
     with patch.object(importlib.metadata, "version", side_effect=Exception("not found")):
         ver = m._navig_version()
@@ -186,7 +187,7 @@ async def test_router_status_handler_error_path():
 
     mock_request = MagicMock()
 
-    with patch.dict("sys.modules", {"navig.routing.router": None}):
+    with patch.dict("sys.modules", {"navig.llm.routing.router": None}):
         response = await _router_status(mock_request)
     # Handler returns an aiohttp.web.Response — just check it's not None
     assert response is not None
@@ -199,7 +200,7 @@ async def test_router_traces_handler_error_path():
     mock_request = MagicMock()
     mock_request.query = {"limit": "10"}
 
-    with patch.dict("sys.modules", {"navig.routing.trace": None}):
+    with patch.dict("sys.modules", {"navig.llm.routing.trace": None}):
         response = await _router_traces(mock_request)
     assert response is not None
 

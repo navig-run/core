@@ -13,6 +13,23 @@ voice_app = typer.Typer(
 )
 
 
+@voice_app.callback()
+def _voice_root(ctx: typer.Context) -> None:
+    # The voice engines (TTS/STT) live in the navig-audio plugin; core keeps thin
+    # navig.voice.* shims. Fail fast HERE — before a subcommand does any work — and
+    # source the install line from navig.plugins.require so there is exactly one.
+    from navig.plugins.require import install_hint
+
+    try:
+        import navig_audio.voice  # noqa: F401
+    except ImportError:
+        ch.error(
+            "Voice needs the navig-audio plugin (TTS/STT engines).",
+            f"Install it:  {install_hint('navig-audio')}",
+        )
+        raise typer.Exit(2) from None
+
+
 @voice_app.command("speak")
 def speak_command(
     text: str = typer.Argument(..., help="Text to speak"),

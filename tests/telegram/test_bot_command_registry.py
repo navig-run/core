@@ -8,13 +8,12 @@ from unittest.mock import patch
 import pytest
 
 from navig.bot.command_registry import (
+    _MISSING_CMD,
     BotCommand,
     CommandRegistry,
-    _MISSING_CMD,
     _populate_from_command_tools,
     get_command_registry,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

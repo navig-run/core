@@ -16,6 +16,24 @@ from navig import console_helper as ch
 from navig.commands._db_utils import calculate_file_checksum, create_mysql_config_file
 
 
+def _read_backup_metadata(metadata_file: Path) -> dict[str, Any] | None:
+    """Read a backup's ``metadata.json``, tolerating a corrupt/unreadable file.
+
+    Metadata is written atomically, but a file can still be damaged out-of-band (disk
+    error, a manual edit, a partially-copied backup dir, or a legacy pre-atomic backup).
+    An unguarded ``json.load`` there would raise and crash ``navig backup list`` — hiding
+    EVERY backup exactly when the operator most needs to see them, and blocking a restore
+    that could otherwise still proceed (the metadata is only descriptive). Return ``None``
+    so callers degrade to the same "no metadata" path they already have.
+    """
+    try:
+        with open(metadata_file, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def _run_scp_command(
     ssh_key: str,
     user: str,
@@ -220,7 +238,7 @@ def backup_all_databases(name: str | None, compress: str, options: dict[str, Any
         ch.info("  3. Check disk usage: df -h")
         ch.info("  4. Remove temp files: rm -rf /tmp/*")
         ch.info("  5. Compress backups: Use --compress gzip flag")
-        return
+        raise typer.Exit(1)
 
     if options.get("verbose"):
         ch.dim(f"   {space_msg}")
@@ -260,10 +278,10 @@ def backup_all_databases(name: str | None, compress: str, options: dict[str, Any
             ]
         except FileNotFoundError:
             ch.error("mysql client not found. Please install MySQL client tools.")
-            return
+            raise typer.Exit(1)
         except subprocess.CalledProcessError as e:
             ch.error(f"Failed to list databases: {e.stderr}")
-            return
+            raise typer.Exit(1)
 
         if not databases:
             ch.warning("No databases found")
@@ -410,6 +428,10 @@ def backup_hestia(name: str | None, options: dict[str, Any]):
     result = remote_ops.execute_command(check_cmd)
 
     if _result_indicates_missing(result):
+        # An optional component that is simply not installed is a SKIP, not a
+        # failure — `backup_all` (navig backup run --all) calls this in sequence,
+        # and most servers do not run HestiaCP. Exiting non-zero here would abort
+        # a comprehensive backup on every non-Hestia box. Absence → exit 0.
         ch.error("HestiaCP not detected on this server")
         return
 
@@ -757,18 +779,32 @@ def backup_all(name: str | None, compress: str, options: dict[str, Any]):
     ch.info(f"📦 Creating comprehensive backup: {backup_name}")
     ch.info("")
 
-    # Run all backup types
-    backup_system_config(backup_name, options)
-    ch.info("")
+    # Run all backup types — BEST-EFFORT. Each substep now raises typer.Exit on a
+    # genuine failure (exit-honesty fix); calling them in a bare sequence would let
+    # one failed component abort the whole comprehensive backup and skip the rest.
+    # Instead, attempt every component, remember which genuinely failed, and exit
+    # non-zero at the end only if at least one did — so `--all` stays truthful
+    # (the ledger sees the real status) without a single failure hiding the others.
+    failed: list[str] = []
+    for label, step in (
+        ("system config", lambda: backup_system_config(backup_name, options)),
+        ("databases", lambda: backup_all_databases(backup_name, compress, options)),
+        ("HestiaCP", lambda: backup_hestia(backup_name, options)),
+        ("web config", lambda: backup_web_config(backup_name, options)),
+    ):
+        try:
+            step()
+        except typer.Exit as exc:
+            code = exc.exit_code if isinstance(exc.exit_code, int) else 1
+            if code != 0:
+                failed.append(label)
+        ch.info("")
 
-    backup_all_databases(backup_name, compress, options)
-    ch.info("")
-
-    backup_hestia(backup_name, options)
-    ch.info("")
-
-    backup_web_config(backup_name, options)
-    ch.info("")
+    if failed:
+        ch.error(
+            f"Comprehensive backup incomplete: {', '.join(failed)} did not complete."
+        )
+        raise typer.Exit(1)
 
     ch.success(f"✅ Comprehensive backup complete: {backup_name}")
     ch.info(f"   Location: {config_manager.backups_dir / backup_name}")
@@ -798,13 +834,11 @@ def list_backups_cmd(options: dict[str, Any]):
     if options.get("json"):
         backup_list = []
         for backup in backups:
-            metadata_file = backup / "metadata.json"
-            if metadata_file.exists():
-                with open(metadata_file, encoding='utf-8') as f:
-                    metadata = json.load(f)
-                    metadata["name"] = backup.name
-                    metadata["path"] = str(backup)
-                    backup_list.append(metadata)
+            # unreadable/missing metadata → surface the backup as "unknown", never hide it
+            metadata = _read_backup_metadata(backup / "metadata.json") or {"type": "unknown"}
+            metadata["name"] = backup.name
+            metadata["path"] = str(backup)
+            backup_list.append(metadata)
         ch.raw_print(json.dumps({"backups": backup_list}))
     else:
         table = Table(title="📦 Available Backups", show_header=True, header_style="bold cyan")
@@ -814,29 +848,20 @@ def list_backups_cmd(options: dict[str, Any]):
         table.add_column("Size", style="magenta", justify="right")
 
         for backup in backups:
-            metadata_file = backup / "metadata.json"
-
-            if metadata_file.exists():
-                with open(metadata_file, encoding='utf-8') as f:
-                    metadata = json.load(f)
-                    backup_type = metadata.get("type", "unknown")
-                    timestamp = metadata.get("timestamp", "unknown")
-
-                    # Calculate total size
-                    total_size = sum(f.stat().st_size for f in backup.rglob("*") if f.is_file()) / (
-                        1024 * 1024
-                    )
-
-                    table.add_row(backup.name, backup_type, timestamp, f"{total_size:.2f} MB")
+            metadata = _read_backup_metadata(backup / "metadata.json")
+            total_size = sum(f.stat().st_size for f in backup.rglob("*") if f.is_file()) / (
+                1024 * 1024
+            )
+            if metadata is not None:
+                backup_type = metadata.get("type", "unknown")
+                timestamp = metadata.get("timestamp", "unknown")
+                table.add_row(backup.name, backup_type, timestamp, f"{total_size:.2f} MB")
             else:
-                # No metadata, just show basic info
-                size = sum(f.stat().st_size for f in backup.rglob("*") if f.is_file()) / (
-                    1024 * 1024
-                )
+                # No or unreadable metadata — show basic info from the dir
                 mtime = datetime.fromtimestamp(backup.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-                table.add_row(backup.name, "unknown", mtime, f"{size:.2f} MB")
+                table.add_row(backup.name, "unknown", mtime, f"{total_size:.2f} MB")
 
-        ch.print(table)
+        ch.console.print(table)
         ch.info(f"\nBackups directory: {backups_dir}")
 
 
@@ -849,14 +874,10 @@ def restore_backup_cmd(backup_name: str, component: str | None, options: dict[st
 
     if not backup_dir.exists():
         ch.error(f"Backup not found: {backup_name}")
-        return
+        raise typer.Exit(2)
 
-    metadata_file = backup_dir / "metadata.json"
-    if metadata_file.exists():
-        with open(metadata_file, encoding='utf-8') as f:
-            metadata = json.load(f)
-    else:
-        metadata = {"type": "unknown"}
+    # A corrupt metadata.json must not block a restore that can still proceed.
+    metadata = _read_backup_metadata(backup_dir / "metadata.json") or {"type": "unknown"}
 
     if options.get("dry_run"):
         ch.info(f"[DRY RUN] Would restore from: {backup_name}")
@@ -869,7 +890,7 @@ def restore_backup_cmd(backup_name: str, component: str | None, options: dict[st
     if not options.get("force"):
         if options.get("json"):
             ch.error("Restore requires --force flag in JSON mode")
-            return
+            raise typer.Exit(1)
 
         ch.warning("⚠️  RESTORE OPERATION")
         ch.warning(f"   Backup: {backup_name}")

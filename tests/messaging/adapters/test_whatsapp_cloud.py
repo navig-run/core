@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 
@@ -64,6 +65,7 @@ class TestWhatsAppResolveTarget:
 class TestWhatsAppSendMessage:
     def test_send_message_is_coroutine(self):
         import inspect
+
         from navig.messaging.adapters.whatsapp_cloud import WhatsAppCloudAdapter
         with patch.object(WhatsAppCloudAdapter, "__init__", return_value=None):
             adapter = WhatsAppCloudAdapter.__new__(WhatsAppCloudAdapter)
@@ -71,6 +73,7 @@ class TestWhatsAppSendMessage:
 
     def test_send_message_accepts_thread_id_and_text(self):
         import inspect
+
         from navig.messaging.adapters.whatsapp_cloud import WhatsAppCloudAdapter
         sig = inspect.signature(WhatsAppCloudAdapter.send_message)
         assert "thread_id" in sig.parameters

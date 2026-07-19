@@ -17,7 +17,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/memory/paths.py
 # ---------------------------------------------------------------------------
@@ -115,6 +114,7 @@ class TestScoredPattern:
 
     def test_is_dataclass(self) -> None:
         import dataclasses
+
         from navig.agent.pattern_analyzer import ScoredPattern
         assert dataclasses.is_dataclass(ScoredPattern)
 

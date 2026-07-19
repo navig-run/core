@@ -25,7 +25,6 @@ from navig.agent.tool_caps import (
 )
 from navig.cost_tracker import ModelUsage, SessionCostTracker
 
-
 # ---------------------------------------------------------------------------
 # get_cap_for_tool
 # ---------------------------------------------------------------------------

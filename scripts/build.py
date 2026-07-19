@@ -198,7 +198,7 @@ def get_hidden_imports() -> List[str]:
         "navig.plugins.hello.plugin",
         # Modules
         "navig.modules",
-        "navig.modules.proactive_display",
+        "navig.proactive.proactive_display",
         "navig.core",
     ]
 

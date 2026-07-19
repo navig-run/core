@@ -2,13 +2,15 @@
 Textual stub is installed by conftest.py in this directory.
 """
 from __future__ import annotations
+
 from types import SimpleNamespace
+
 import pytest
 
 
 def _badge(**kw):
     d = dict(status="ok", label="Service", detail="running", deep_link=None,
-             color="green", symbol=u"\u2713")
+             color="green", symbol="\u2713")
     d.update(kw)
     return SimpleNamespace(**d)
 

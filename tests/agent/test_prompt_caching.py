@@ -14,16 +14,15 @@ Covers:
 import pytest
 
 from navig.agent.prompt_caching import (
+    _CACHEABLE_MODELS,
     EXTENDED_CACHE_BETA_HEADER,
     CacheBreakpointPlacer,
     CacheStats,
     ExtendedCacheConfig,
-    _CACHEABLE_MODELS,
     _make_cache_block,
     apply_anthropic_cache_control,
     supports_caching,
 )
-
 
 # ─────────────────────────────────────────────────────────────
 # _CACHEABLE_MODELS

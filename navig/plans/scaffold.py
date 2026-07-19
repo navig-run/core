@@ -87,6 +87,20 @@ def _current_phase_template() -> str:
     )
 
 
+def _dev_plan_template() -> str:
+    return (
+        "---\n"
+        "title: Development Plan\n"
+        f"created: {date.today().isoformat()}\n"
+        "---\n\n"
+        "# DEV Plan\n\n"
+        "## Active Sprint\n\n"
+        "- [ ] Define the first sprint task\n\n"
+        "## Backlog\n\n"
+        "## Done\n"
+    )
+
+
 def _milestone_template() -> str:
     return (
         "---\n"
@@ -108,6 +122,7 @@ _TEMPLATE_FILES: dict[str, tuple[str, str]] = {
     "plans/VISION.md": ("plans/VISION.md", "vision"),
     "plans/ROADMAP.md": ("plans/ROADMAP.md", "roadmap"),
     "plans/SPEC.md": ("plans/SPEC.md", "spec"),
+    "plans/DEV_PLAN.md": ("plans/DEV_PLAN.md", "dev_plan"),
     "plans/phases/CURRENT_PHASE.md": ("plans/phases/CURRENT_PHASE.md", "current_phase"),
     "plans/milestones/MVP1_initial_milestone.md": (
         "plans/milestones/MVP1_initial_milestone.md",
@@ -119,9 +134,33 @@ _TEMPLATE_GENERATORS = {
     "vision": _vision_template,
     "roadmap": _roadmap_template,
     "spec": _spec_template,
+    "dev_plan": _dev_plan_template,
     "current_phase": _current_phase_template,
     "milestone": _milestone_template,
 }
+
+
+def template_paths(root: Path) -> list[Path]:
+    """Absolute paths of the scaffold's template files under ``root/.navig``.
+
+    Lets callers report which templates already exist (and will therefore be
+    skipped) before invoking :func:`scaffold_plans_structure`.
+    """
+    navig_dir = root / ".navig"
+    return [navig_dir / rel for rel in _TEMPLATE_FILES]
+
+
+def suite_templates() -> dict[str, str]:
+    """The plan-doc suite as ``{rel_path: template_markdown}``.
+
+    Rel paths are relative to ``root/.navig`` (e.g. ``plans/ROADMAP.md``) —
+    the same keys :func:`template_paths` walks. This is the single source of
+    truth for "the standard plan suite": the AI generate mode mirrors this
+    list, so a new scaffold template automatically becomes an AI-drafted doc.
+    """
+    return {
+        rel: _TEMPLATE_GENERATORS[key]() for rel, (_, key) in _TEMPLATE_FILES.items()
+    }
 
 
 def scaffold_plans_structure(root: Path) -> list[Path]:

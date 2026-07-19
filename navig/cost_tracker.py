@@ -1,9 +1,8 @@
 """
 LLM Cost Tracker — per-session token and USD cost accumulation.
 
-Ported from .lab/claude/cost-tracker.ts (MIT, Anthropic).  Adapted to
-Python idioms; all pricing driven by ``config/defaults.yaml`` so no USD
-figure is hardcoded in this module.
+All pricing is driven by ``config/defaults.yaml`` so no USD figure is
+hardcoded in this module.
 
 Usage::
 
@@ -342,9 +341,9 @@ class SessionCostTracker:
     @staticmethod
     def _history_path_static() -> Path:
         try:
-            from navig.workspace_ownership import USER_WORKSPACE_DIR
+            from navig.workspace_ownership import user_workspace_dir
 
-            return USER_WORKSPACE_DIR / _HISTORY_FILE_NAME
+            return user_workspace_dir() / _HISTORY_FILE_NAME
         except ImportError:
             return config_dir() / _HISTORY_FILE_NAME
 

@@ -15,9 +15,8 @@ class WorkflowEvolver(BaseEvolver):
 
     def __init__(self):
         super().__init__()
-        # AUDIT self-check: Correct implementation? yes - restores valid prompt string syntax.
-        # AUDIT self-check: Break callers? no - keeps the same prompt contract and class API.
-        # AUDIT self-check: Simpler alternative? yes - single triple-quoted literal is simplest.
+        # Test/override seam for _workflows_dir (default is resolved lazily below).
+        self._workflows_dir_override: Path | None = None
         self._system_prompt = """You are a workflow automation expert.
 Your task is to generate a VALID YAML workflow file for the Navig Automation Engine.
 
@@ -65,7 +64,31 @@ Constraints:
 - Ensure unique workflow name based on goal.
 - Use 'capture' to store step output into variables.
 """
-        self._workflows_dir = Path(__file__).parent.parent.parent.parent / "workflows"
+
+    @property
+    def _workflows_dir(self) -> Path:
+        """Where a generated workflow is saved: ``config_dir()/workflows``.
+
+        This is the SAME directory ``AutomationEngine.load_workflow()`` reads from — so an
+        evolved workflow is actually runnable. It used to be
+        ``Path(__file__).parent.parent.parent.parent / "workflows"`` — the directory
+        *containing* the ``navig`` package (``core/`` in a checkout, **site-packages** in a
+        real install). That was wrong three ways: it escapes the wheel, it is machine-global
+        rather than per-brain, and the loader never read it — so a workflow the evolver
+        "saved" was unreachable even in a checkout, and on a real install ``_save`` wrote to
+        a nonexistent site-packages path and silently failed. Resolved lazily (never at
+        import/construction) so ``NAVIG_CONFIG_DIR`` isolation holds — the class of bug swept
+        in #189, here fixed in the sibling evolver. Assignable in tests via the setter.
+        """
+        if self._workflows_dir_override is not None:
+            return self._workflows_dir_override
+        from navig.platform.paths import workflows_dir  # noqa: PLC0415
+
+        return workflows_dir()
+
+    @_workflows_dir.setter
+    def _workflows_dir(self, value: Path) -> None:
+        self._workflows_dir_override = value
 
     def _generate(self, goal: str, previous_artifact: Any, error_msg: str, context: Any) -> Any:
 
@@ -180,7 +203,9 @@ steps:
             # Sanitize name
             name = "".join([c if c.isalnum() else "_" for c in name])
 
-            path = self._workflows_dir / f"{name}.yaml"
+            workflows_dir = self._workflows_dir
+            workflows_dir.mkdir(parents=True, exist_ok=True)  # config_dir()/workflows on first save
+            path = workflows_dir / f"{name}.yaml"
             with open(path, "w", encoding="utf-8") as f:
                 f.write(artifact)
 

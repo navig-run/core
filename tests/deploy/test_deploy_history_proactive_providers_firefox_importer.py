@@ -15,7 +15,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # navig/deploy/history.py
 # ---------------------------------------------------------------------------
@@ -144,14 +143,14 @@ class TestMockCalendar:
 
     @pytest.mark.asyncio
     async def test_list_events_has_calendar_event_type(self) -> None:
-        from navig.agent.proactive.providers import MockCalendar, CalendarEvent
+        from navig.agent.proactive.providers import CalendarEvent, MockCalendar
         now = datetime.now()
         events = await MockCalendar().list_events(now, now)
         assert isinstance(events[0], CalendarEvent)
 
     @pytest.mark.asyncio
     async def test_create_event_returns_id(self) -> None:
-        from navig.agent.proactive.providers import MockCalendar, CalendarEvent
+        from navig.agent.proactive.providers import CalendarEvent, MockCalendar
         now = datetime.now()
         ev = CalendarEvent(id="x", title="Test", start=now, end=now)
         result = await MockCalendar().create_event(ev)
@@ -161,7 +160,7 @@ class TestMockCalendar:
 class TestMockEmail:
     @pytest.mark.asyncio
     async def test_list_unread_returns_messages(self) -> None:
-        from navig.agent.proactive.providers import MockEmail, EmailMessage
+        from navig.agent.proactive.providers import EmailMessage, MockEmail
         msgs = await MockEmail().list_unread()
         assert isinstance(msgs, list)
         assert len(msgs) >= 1

@@ -10,7 +10,6 @@ import pytest
 
 from navig.adapters.os.linux import LinuxAdapter
 
-
 # ---------------------------------------------------------------------------
 # Properties
 # ---------------------------------------------------------------------------
@@ -225,18 +224,14 @@ def test_get_home_directory_from_env():
     assert result == Path("/home/navig")
 
 
-def test_get_config_directory_xdg():
-    with patch.dict("os.environ", {"XDG_CONFIG_HOME": "/custom/config", "HOME": "/home/x"}):
-        result = LinuxAdapter().get_config_directory()
-    assert result == Path("/custom/config/navig")
+def test_get_config_directory_delegates_to_ssot():
+    # Reconciled (2026-07): the OS adapters no longer guess an OS-idiomatic config
+    # dir (XDG/APPDATA); they delegate to navig.platform.paths.config_dir(), the
+    # single source of truth for where NAVIG actually stores config — so the
+    # `navig local` diagnostic stays honest across Windows/macOS/Linux.
+    from navig.platform.paths import config_dir
 
-
-def test_get_config_directory_fallback_to_home():
-    env = {k: v for k, v in os.environ.items() if k != "XDG_CONFIG_HOME"}
-    env["HOME"] = "/home/tester"
-    with patch.dict("os.environ", env, clear=True):
-        result = LinuxAdapter().get_config_directory()
-    assert result == Path("/home/tester/.navig")
+    assert LinuxAdapter().get_config_directory() == config_dir()
 
 
 # ---------------------------------------------------------------------------

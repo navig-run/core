@@ -28,6 +28,15 @@ from navig.gateway.routes.common import (
 
 logger = get_debug_logger()
 
+# Server-side WS heartbeat: aiohttp sends a protocol-level PING every N seconds
+# and closes the connection when the PONG doesn't come back (within N/2), so a
+# half-dead client (NAT/proxy idle drop, crashed process) is reaped instead of
+# lingering until the next send fails. Protocol pings are answered automatically
+# by every WS client stack (browsers, aiohttp, `ws`, tungstenite) — no app-level
+# pong is required, so existing clients need zero changes. 30 s matches the MCP
+# WS server (ping_interval=30) and the Lighthouse uplink (heartbeat=30).
+WS_HEARTBEAT_SECONDS = 30.0
+
 
 def register(app, gateway):
     app.router.add_get("/", _root_handler(gateway))
@@ -315,7 +324,7 @@ def _websocket(gw):
         if auth is not None:
             return auth
 
-        ws = web.WebSocketResponse()
+        ws = web.WebSocketResponse(heartbeat=WS_HEARTBEAT_SECONDS)
         await ws.prepare(r)
 
         cid = id(ws)

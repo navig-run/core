@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from aiohttp import web
+
     from navig.gateway.server import NavigGateway  # noqa: F401
 
 try:
@@ -62,9 +63,11 @@ def _signature_ok(request: "web.Request", form: dict) -> bool:
     """
     try:
         from navig.config import get_config_manager
+        from navig.core.coerce import coerce_bool
 
-        raw = get_config_manager().get("sms.verify_signature")
-        enabled = str(raw).strip().lower() in ("1", "true", "yes", "on")
+        # coerce_bool tolerates the string `navig config set sms.verify_signature true`
+        # stores; default off so intake never breaks before the operator opts in.
+        enabled = coerce_bool(get_config_manager().get("sms.verify_signature"), default=False)
     except Exception:  # noqa: BLE001
         enabled = False
     if not enabled:

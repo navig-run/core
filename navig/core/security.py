@@ -235,7 +235,12 @@ class MissingEnvVarError(Exception):
         )
 
 
-# Pattern for valid env-var names (must start with a letter or underscore).
+# Pattern for valid env-var names.
+# Only POSIX-style names are recognised: must start with a letter or underscore,
+# followed by uppercase letters, digits, and underscores.
+# References like ${home} or ${mixedCase} do NOT match and are passed through
+# as literal text (no substitution, no error — even with strict=True).
+# This is intentional: keep the substitution surface minimal and predictable.
 _ENV_VAR_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 

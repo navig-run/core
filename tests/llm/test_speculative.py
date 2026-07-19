@@ -70,6 +70,21 @@ class TestReadOnlyTools:
         for tool in ("lsp_diagnostics", "lsp_definition", "lsp_references", "lsp_symbols"):
             assert tool in READ_ONLY_TOOLS
 
+    def test_live_external_state_reads_excluded(self):
+        # These are read-only but their result changes EXTERNALLY (a task runs, logs
+        # stream, metrics move) with no local mutating tool to clear the cache — a
+        # stale 60s hit returns wrong state (e.g. "running" for a finished task), so
+        # they must NOT be speculated/cached.
+        for tool in (
+            "background_task_status",
+            "background_task_output",
+            "coordinator_status",
+            "navig_host_monitor",
+            "navig_docker_logs",
+            "navig_host_test",
+        ):
+            assert tool not in READ_ONLY_TOOLS, f"{tool} is live/external state — do not cache"
+
 
 # ─────────────────────────────────────────────────────────────
 # PredictionEngine
@@ -250,6 +265,13 @@ class TestSpeculativeCache:
         cache = SpeculativeCache()
         cache.put("read_file", {"path": "/a"}, "data", ttl=0.001)
         time.sleep(0.01)
+        assert cache.get("read_file", {"path": "/a"}) is None
+
+    def test_zero_ttl_is_honoured_not_swallowed_to_default(self):
+        # ttl=0 means "expire immediately", not "use the 60s default" — the old
+        # `ttl or DEFAULT_TTL` treated the falsy 0 as unset and cached for 60s.
+        cache = SpeculativeCache()
+        cache.put("read_file", {"path": "/a"}, "data", ttl=0)
         assert cache.get("read_file", {"path": "/a"}) is None
 
     def test_hit_miss_counters(self):

@@ -26,11 +26,23 @@ net_app = typer.Typer(
 
 
 def _backend():
-    """Lazy-import speedtest worker to keep CLI startup fast."""
-    import importlib.util
-    from pathlib import Path
+    """Lazy-import the speedtest worker from the packaged tool store (keeps CLI startup fast).
 
-    worker_path = Path(__file__).parents[2] / "scripts" / "speedtest" / "worker.py"
+    It must come from `builtin_store_dir()`. This used to load
+    `<repo>/core/scripts/speedtest/worker.py` — a path OUTSIDE the navig package, so it
+    shipped in neither the wheel nor the sdist: `navig net speedtest` raised on every
+    pip-installed navig. That copy had also silently drifted behind the packaged one.
+    """
+    import importlib.util
+
+    from navig.platform.paths import builtin_store_dir
+
+    worker_path = builtin_store_dir() / "tools" / "speedtest" / "worker.py"
+    if not worker_path.exists():
+        raise RuntimeError(
+            f"speedtest worker not found at {worker_path} — the builtin tool store is "
+            "missing from this install (reinstall navig)."
+        )
     spec = importlib.util.spec_from_file_location("navig_speedtest_worker", worker_path)
     mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
     spec.loader.exec_module(mod)  # type: ignore[union-attr]

@@ -1,6 +1,6 @@
 """
 Batch 105 — tests for:
-  - navig.prompt_loader    (load_prompt)
+  - navig.prompts.loader    (load_prompt)
   - navig.ssh_keys         (_looks_like_private_key, discover_local_ssh_keys)
   - navig.file_history     (FileVersion, FileHistoryStore, get_file_history_store)
 """
@@ -12,29 +12,28 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-
 # ============================================================================
-# navig.prompt_loader
+# navig.prompts.loader
 # ============================================================================
 
 
 class TestLoadPrompt:
     def test_missing_slug_returns_warning(self):
-        from navig.prompt_loader import load_prompt
+        from navig.prompts.loader import load_prompt
 
         # Cache may hold previous value — use a unique slug
         result = load_prompt("navig_test_batch105_nonexistent_9z9z")
         assert "Warning" in result or "not found" in result.lower()
 
     def test_returns_string(self):
-        from navig.prompt_loader import load_prompt
+        from navig.prompts.loader import load_prompt
 
         result = load_prompt("navig_test_batch105_nonexistent_2")
         assert isinstance(result, str)
 
     def test_existing_prompt_returns_content(self, tmp_path, monkeypatch):
         """If a prompt file exists, load_prompt should return its content."""
-        from navig import prompt_loader
+        from navig.prompts import loader as prompt_loader
 
         # Create a fake prompts directory
         prompts_dir = tmp_path / "prompts"
@@ -44,7 +43,7 @@ class TestLoadPrompt:
         )
 
         monkeypatch.setattr(
-            "navig.prompt_loader.builtin_store_dir", lambda: tmp_path
+            "navig.prompts.loader.builtin_store_dir", lambda: tmp_path
         )
         # Clear the lru_cache so monkeypatch applies
         prompt_loader.load_prompt.cache_clear()
@@ -52,7 +51,7 @@ class TestLoadPrompt:
         assert "Hello from test prompt" in result
 
     def test_frontmatter_stripped(self, tmp_path, monkeypatch):
-        from navig import prompt_loader
+        from navig.prompts import loader as prompt_loader
 
         prompts_dir = tmp_path / "prompts"
         prompts_dir.mkdir()
@@ -60,7 +59,7 @@ class TestLoadPrompt:
             "---\ntitle: Test\n---\nActual content here", encoding="utf-8"
         )
         monkeypatch.setattr(
-            "navig.prompt_loader.builtin_store_dir", lambda: tmp_path
+            "navig.prompts.loader.builtin_store_dir", lambda: tmp_path
         )
         prompt_loader.load_prompt.cache_clear()
         result = prompt_loader.load_prompt("fm_slug")
@@ -68,7 +67,7 @@ class TestLoadPrompt:
         assert "title: Test" not in result
 
     def test_no_frontmatter_returns_full_content(self, tmp_path, monkeypatch):
-        from navig import prompt_loader
+        from navig.prompts import loader as prompt_loader
 
         prompts_dir = tmp_path / "prompts"
         prompts_dir.mkdir()
@@ -76,7 +75,7 @@ class TestLoadPrompt:
             "Just plain content", encoding="utf-8"
         )
         monkeypatch.setattr(
-            "navig.prompt_loader.builtin_store_dir", lambda: tmp_path
+            "navig.prompts.loader.builtin_store_dir", lambda: tmp_path
         )
         prompt_loader.load_prompt.cache_clear()
         result = prompt_loader.load_prompt("plain")

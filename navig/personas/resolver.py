@@ -58,9 +58,9 @@ def _package_persona_dirs() -> list[Path]:
     """``<pkg>/personas`` dirs from installed navig packages (package == plugin)."""
     dirs: list[Path] = []
     try:
-        from navig.platform.paths import builtin_packages_dir, packages_dir
+        from navig.platform.paths import packages_dir
 
-        for base_fn in (builtin_packages_dir, packages_dir):
+        for base_fn in (packages_dir,):
             try:
                 base = base_fn()
             except Exception:  # noqa: BLE001
@@ -70,6 +70,13 @@ def _package_persona_dirs() -> list[Path]:
                     pdir = pkg / "personas"
                     if pdir.is_dir():
                         dirs.append(pdir)
+    except Exception:  # noqa: BLE001
+        pass
+    # Installed CC/NAVIG plugins that declare `personas/` (package == plugin).
+    try:
+        from navig.plugins.package import plugin_capability_dirs
+
+        dirs.extend(plugin_capability_dirs("personas"))
     except Exception:  # noqa: BLE001
         pass
     return dirs

@@ -57,11 +57,24 @@ def _utcnow() -> str:
 
 
 def _navig_dir() -> Path:
-    return Path.home() / ".navig"
+    """The NAVIG dir this install actually uses.
+
+    config_dir(), not Path.home(): this feeds tasks.json and the spaces list, and spaces
+    are WRITTEN to config_dir()/spaces (commands/install.py). Hardcoding the home meant the
+    deck listed a different set of spaces than the CLI installed. Identical for a default
+    install — config_dir() IS ~/.navig — so nothing moves.
+    """
+    from navig.platform.paths import config_dir
+
+    return config_dir()
 
 
 def _cron_jobs_path() -> Path:
-    return _navig_dir() / "daemon" / "cron_jobs.json"
+    # The LIVE scheduler store (the legacy daemon/ store was never executed —
+    # see navig.scheduler.habit_store).
+    from navig.scheduler import habit_store  # noqa: PLC0415 — lazy import
+
+    return habit_store.live_store_path()
 
 
 def _tasks_path() -> Path:
@@ -69,6 +82,13 @@ def _tasks_path() -> Path:
 
 
 def _load_cron_jobs() -> tuple[list[dict], int]:
+    # Prefer the in-process live scheduler (race-free, fresh next_run values).
+    from navig.scheduler.cron_service import get_live_service  # noqa: PLC0415
+
+    svc = get_live_service()
+    if svc is not None:
+        return [j.to_dict() for j in svc.jobs.values()], svc._job_counter
+
     p = _cron_jobs_path()
     if not p.exists():
         return [], 0
@@ -295,11 +315,38 @@ async def handle_deck_apps_habits_toggle(request: "web.Request") -> "web.Respons
 
     habit_id = str(body.get("id") or "")
 
+    # In-process live scheduler first — a raw file write would be clobbered by
+    # the running service's next save.
+    from navig.scheduler.cron_service import get_live_service  # noqa: PLC0415
+
+    svc = get_live_service()
+    if svc is not None:
+        import functools  # noqa: PLC0415
+
+        for job in svc.jobs.values():
+            if not job.name.startswith(_HABIT_NAME_PREFIX):
+                continue  # only habit jobs are togglable here — never a plain cron job
+            jname = job.name[len(_HABIT_NAME_PREFIX):]
+            if job.id == habit_id or jname == habit_id:
+                # CronJob.last_run is a datetime (to_dict isoformats it) — pass
+                # a real datetime, not the _utcnow() ISO string.
+                await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    functools.partial(
+                        svc.update_job, job.id, last_run=datetime.now(timezone.utc)
+                    ),
+                )
+                return _ok({"ok": True, "id": habit_id})
+        return _err("Habit not found", 404)
+
     jobs, counter = await _async_load_cron_jobs()
     matched = False
     for j in jobs:
+        name = j.get("name", "")
+        if not name.startswith(_HABIT_NAME_PREFIX):
+            continue  # only habit jobs are togglable — never touch a plain cron job's last_run
         jid = str(j.get("id", ""))
-        jname = j.get("name", "")[len(_HABIT_NAME_PREFIX):]
+        jname = name[len(_HABIT_NAME_PREFIX):]
         if jid == habit_id or jname == habit_id:
             j["last_run"] = _utcnow()
             matched = True
@@ -430,17 +477,36 @@ async def handle_deck_apps_reminders_delete(request: "web.Request") -> "web.Resp
 # ── Plans / Spaces ─────────────────────────────────────────────────────────────
 
 def _get_active_space_name() -> str | None:
-    """Read the active space name from config. Silent-fail."""
+    """Read the active space NAME (a string), or None when unset. Silent-fail.
+
+    Delegates to the canonical resolver (navig space's ``resolve_active_space``) so the deck
+    honours the SAME source of truth as the CLI — the ``NAVIG_SPACE`` env, then the cache file
+    (``~/.navig/cache/active_space.txt``), then the config-key mirror — and can never drift.
+    A config-only read (the old form) missed the cache file that ``_set_active_space`` writes
+    first; delegating closes that gap. Returns None when no space is set (callers supply the
+    fallback: the plans list marks nothing active; the space summary returns its empty shape).
+    """
     try:
-        from navig.config import get_config_manager  # type: ignore[import]
-        cfg = get_config_manager()
-        return cfg.get("spaces.active") or cfg.get("space") or None
+        from navig.commands.space import resolve_active_space  # type: ignore[import]
+        return resolve_active_space()
     except Exception:
         return None
 
 
 def _get_spaces_dir() -> Path:
     return _navig_dir() / "spaces"
+
+
+def _confined_space_dir(name: str | None) -> Path | None:
+    """A single space directory under the spaces dir, or None if *name* escapes it.
+
+    *name* is a CLIENT-SUPPLIED space / goal id (deck API, remotely reachable via Lighthouse),
+    so a value like ``../../etc`` must never resolve outside the spaces tree — goals_milestone
+    reads AND writes ``<dir>/ROADMAP.md``. Thin wrapper over the shared ``confine_under`` guard.
+    """
+    from navig.gateway.deck.routes._utils import confine_under  # noqa: PLC0415
+
+    return confine_under(_get_spaces_dir(), name)
 
 
 def _parse_roadmap_milestones(roadmap_path: Path) -> list[dict]:
@@ -614,7 +680,10 @@ async def handle_deck_apps_goals_milestone(request: "web.Request") -> "web.Respo
     if not goal_id or not milestone_id:
         return _err("goal_id and milestone_id are required")
 
-    roadmap_path = _get_spaces_dir() / goal_id / "ROADMAP.md"
+    space_dir = _confined_space_dir(goal_id)  # goal_id is client-supplied — never let it traverse
+    if space_dir is None:
+        return _err("invalid goal id", 400)
+    roadmap_path = space_dir / "ROADMAP.md"
     if not roadmap_path.exists():
         return _err("ROADMAP.md not found for this space", 404)
 
@@ -839,12 +908,24 @@ async def handle_deck_apps_life(request: "web.Request") -> "web.Response":
 # GET  /api/deck/apps/devops
 # ---------------------------------------------------------------------------
 
-_WIKI_ROOT = Path.home() / ".navig" / "wiki"
 _KNOWLEDGE_LOCK = threading.Lock()
 
 
+def _wiki_root() -> Path:
+    """Resolve the wiki root at CALL time — never import time.
+
+    Uses ``config_dir()`` (honours ``NAVIG_CONFIG_DIR``) instead of a
+    hardcoded ``Path.home() / ".navig"``, matching ``wiki_rag``; a frozen
+    module constant would read/write the operator's real wiki from
+    isolated tests/daemons (see ``navig/vault/migrate.py:_legacy_db_path``).
+    """
+    from navig.platform.paths import config_dir
+
+    return config_dir() / "wiki"
+
+
 def _build_knowledge_dir() -> Path:
-    d = _WIKI_ROOT / "knowledge"
+    d = _wiki_root() / "knowledge"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -919,8 +1000,10 @@ async def handle_deck_apps_passport(request: "web.Request") -> "web.Response":
     except Exception:
         pass
     try:
-        from navig.vault import VaultProvider  # type: ignore[import]
-        vault_count = len(VaultProvider().list_keys())
+        # `VaultProvider` does not exist in navig.vault; the credential store is `Vault`
+        # (via get_vault()), and its item count is `count()`.
+        from navig.vault import get_vault
+        vault_count = get_vault().count()
     except Exception:
         pass
 
@@ -945,8 +1028,12 @@ async def handle_deck_apps_wallet(request: "web.Request") -> "web.Response":
     """GET /api/deck/apps/wallet — TON wallet overview (stub / vault-backed)."""
     address = ""
     try:
-        from navig.vault import VaultProvider  # type: ignore[import]
-        address = VaultProvider().get("ton_wallet_address") or ""
+        # `VaultProvider().get(...)` never existed. reveal_secret returns a plaintext str
+        # ("" if absent) — the old code assigned the get() result straight into a string
+        # field, so a real Vault.get() (which returns a Credential object) would have put
+        # an object where an address string belongs.
+        from navig.vault import get_vault, reveal_secret
+        address = reveal_secret(get_vault(), "ton_wallet_address")
     except Exception:
         pass
 

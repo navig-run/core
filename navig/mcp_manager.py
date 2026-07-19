@@ -5,13 +5,22 @@ MCP servers provide context and tools to AI assistants.
 """
 
 import json
+import logging
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
 from navig.core.yaml_io import atomic_write_text
 from navig.platform import paths
+
+logger = logging.getLogger(__name__)
+
+# Package installs must be BOUNDED — they had no timeout, so a stalled registry
+# hung the CLI indefinitely with its output captured (i.e. silently).
+_INSTALL_TIMEOUT = 300.0
 
 
 class MCPServer:
@@ -95,14 +104,14 @@ class MCPServer:
             ch.info(f"Stopping MCP server: {self.name}")
             self.process.terminate()
             self.process.wait(timeout=5)
-            ch.success(f"✓ MCP server '{self.name}' stopped")
+            ch.success(f"MCP server '{self.name}' stopped")
             return True
 
         except subprocess.TimeoutExpired:
             ch.warning("Server did not stop gracefully, forcing...")
             self.process.kill()
             self.process.wait()
-            ch.success(f"✓ MCP server '{self.name}' forcefully stopped")
+            ch.success(f"MCP server '{self.name}' forcefully stopped")
             return True
 
         except Exception as e:
@@ -161,7 +170,9 @@ class MCPManager:
             for name, config in servers_config.items():
                 self.servers[name] = MCPServer(name, config)
 
-            ch.dim(f"Loaded {len(self.servers)} MCP server(s)")
+            # (this used to print "Loaded N MCP server(s)" on EVERY mcp command,
+            # before the command's own output — bookkeeping is not a result.)
+            logger.debug("Loaded %d MCP server(s)", len(self.servers))
 
         except Exception as e:
             ch.error(f"Failed to load MCP servers: {e}")
@@ -176,7 +187,7 @@ class MCPManager:
             atomic_write_text(tmp_path, json.dumps(servers_config, indent=2))
             tmp_path.replace(self.servers_file)
 
-            ch.dim(f"Saved {len(self.servers)} MCP server(s)")
+            logger.debug("Saved %d MCP server(s)", len(self.servers))
 
         except Exception as e:
             ch.error(f"Failed to save MCP servers: {e}")
@@ -297,30 +308,50 @@ class MCPManager:
 
         try:
             if server_type == "npm":
-                # Install via npm globally
-                ch.step("Installing npm package...")
+                # npm is npm.CMD on Windows, and a bare ["npm", ...] raises
+                # FileNotFoundError there — so this NEVER worked on Windows.
+                # Resolve the real executable, and bound the install: it used to
+                # have no timeout at all, so a stalled registry hung the CLI
+                # forever with no output (stdout is captured).
+                npm = shutil.which("npm")
+                if not npm:
+                    ch.error("npm not found on PATH — install Node.js to add npm-based MCP servers")
+                    return False
+                ch.step("Installing npm package…")
                 result = subprocess.run(
-                    ["npm", "install", "-g", package], capture_output=True, text=True
+                    [npm, "install", "-g", package],
+                    capture_output=True,
+                    text=True,
+                    timeout=_INSTALL_TIMEOUT,
                 )
 
                 if result.returncode != 0:
-                    ch.error(f"npm install failed: {result.stderr}")
+                    ch.error(f"npm install failed: {result.stderr.strip() or 'unknown error'}")
                     return False
 
                 # Configure server
-                command = "npx"
+                npx = shutil.which("npx") or "npx"
+                command = npx
                 args = [package]
 
             elif server_type == "python":
-                # Install via pip
-                ch.step("Installing Python package...")
-                result = subprocess.run(["pip", "install", package], capture_output=True, text=True)
+                # A bare "pip" resolves to whatever is first on PATH — on this
+                # machine that is a DIFFERENT interpreter than the one running
+                # navig, so the package landed where navig could never import it.
+                # Always install into the running interpreter.
+                ch.step("Installing Python package…")
+                result = subprocess.run(
+                    [sys.executable, "-m", "pip", "install", package],
+                    capture_output=True,
+                    text=True,
+                    timeout=_INSTALL_TIMEOUT,
+                )
 
                 if result.returncode != 0:
-                    ch.error(f"pip install failed: {result.stderr}")
+                    ch.error(f"pip install failed: {result.stderr.strip() or 'unknown error'}")
                     return False
 
-                command = "python"
+                command = sys.executable
                 args = ["-m", package]
 
             elif server_type == "standalone":
@@ -345,10 +376,18 @@ class MCPManager:
             self.servers[name] = MCPServer(name, config)
             self._save_servers()
 
-            ch.success(f"✓ MCP server '{name}' installed")
-            ch.info("Enable with: navig mcp enable {name}")
+            ch.success(f"MCP server '{name}' installed")
+            # (was a NON-f-string: it printed the literal "{name}" — and named a
+            # command that did not exist. `navig mcp enable` is wired now.)
+            ch.info(f"Enable with: navig mcp enable {name}")
             return True
 
+        except subprocess.TimeoutExpired:
+            ch.error(
+                f"Install timed out after {_INSTALL_TIMEOUT:.0f}s — the package registry "
+                "did not respond. Nothing was configured."
+            )
+            return False
         except Exception as e:
             ch.error(f"Failed to install MCP server: {e}")
             return False
@@ -376,7 +415,7 @@ class MCPManager:
         del self.servers[name]
         self._save_servers()
 
-        ch.success(f"✓ MCP server '{name}' uninstalled")
+        ch.success(f"MCP server '{name}' uninstalled")
         ch.warning("Package may still be installed globally - remove manually if needed")
         return True
 
@@ -388,7 +427,7 @@ class MCPManager:
 
         self.servers[name].config["enabled"] = True
         self._save_servers()
-        ch.success(f"✓ MCP server '{name}' enabled")
+        ch.success(f"MCP server '{name}' enabled")
         return True
 
     def disable_server(self, name: str) -> bool:
@@ -405,7 +444,7 @@ class MCPManager:
 
         server.config["enabled"] = False
         self._save_servers()
-        ch.success(f"✓ MCP server '{name}' disabled")
+        ch.success(f"MCP server '{name}' disabled")
         return True
 
     def start_server(self, name: str) -> bool:
@@ -477,7 +516,7 @@ class MCPManager:
             if server.start():
                 started += 1
 
-        ch.success(f"✓ Started {started}/{len(enabled_servers)} MCP server(s)")
+        ch.success(f"Started {started}/{len(enabled_servers)} MCP server(s)")
         return started
 
     def stop_all(self) -> int:
@@ -499,5 +538,5 @@ class MCPManager:
             if server.stop():
                 stopped += 1
 
-        ch.success(f"✓ Stopped {stopped}/{len(running_servers)} MCP server(s)")
+        ch.success(f"Stopped {stopped}/{len(running_servers)} MCP server(s)")
         return stopped

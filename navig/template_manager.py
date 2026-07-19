@@ -211,15 +211,14 @@ class TemplateManager:
     """
 
     def __init__(self, templates_dir: Path | None = None):
-        # Resolve built-in templates from the content store
+        # Resolve built-in templates from the packaged content store. (There used to be
+        # an `except` fallback that walked out to <repo>/core/store/templates — a path
+        # outside the navig package, so it never resolved in an installed layout and is
+        # now gone entirely. builtin_store_dir() is the single way to find this.)
         if templates_dir is None:
-            try:
-                from navig.platform.paths import builtin_store_dir
+            from navig.platform.paths import builtin_store_dir
 
-                templates_dir = builtin_store_dir() / "templates"
-            except Exception:
-                # Fallback: resolve relative to this file (navig/ → repo root → store/)
-                templates_dir = Path(__file__).resolve().parent.parent / "store" / "templates"
+            templates_dir = builtin_store_dir() / "templates"
 
         self.templates_dir = templates_dir
         self.templates: dict[str, Template] = {}

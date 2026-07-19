@@ -1,8 +1,6 @@
 """
 navig.agent.tool_permissions — Pre-execution tool allow/deny filter.
 
-Ported from .lab/claude_py/src/permissions.py (ToolPermissionContext).
-
 A :class:`ToolPermissionContext` is applied *before* the LLM ever sees the
 tool schema.  Blocked tools are silently removed from the ``tools=[]`` list
 sent to the API, and any attempt to dispatch a removed tool raises

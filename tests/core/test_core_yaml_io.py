@@ -20,7 +20,6 @@ from navig.core.yaml_io import (
     safe_load_yaml,
 )
 
-
 # ---------------------------------------------------------------------------
 # Module-level constants
 # ---------------------------------------------------------------------------
@@ -204,23 +203,25 @@ class TestAtomicWriteText:
 
 class TestLogShadowAnomaly:
     def test_never_raises(self, tmp_path, monkeypatch):
-        # Redirect _PERF_DIR to tmp so we don't pollute real navig config
+        # Redirect _perf_dir() to tmp so we don't pollute real navig config.
+        # The module uses _perf_dir() (a lazy function), not a _PERF_DIR variable.
         import navig.core.yaml_io as yio
-        monkeypatch.setattr(yio, "_PERF_DIR", tmp_path / "perf")
+        perf_dir = tmp_path / "perf"
+        monkeypatch.setattr(yio, "_perf_dir", lambda: perf_dir)
         # Should not raise
         log_shadow_anomaly("test_log", "test_event", {"key": "value"})
 
     def test_creates_jsonl_file(self, tmp_path, monkeypatch):
         import navig.core.yaml_io as yio
         perf_dir = tmp_path / "perf"
-        monkeypatch.setattr(yio, "_PERF_DIR", perf_dir)
+        monkeypatch.setattr(yio, "_perf_dir", lambda: perf_dir)
         log_shadow_anomaly("mylog", "my_event", {"x": 1})
         assert (perf_dir / "mylog.jsonl").exists()
 
     def test_jsonl_entry_is_valid_json(self, tmp_path, monkeypatch):
         import navig.core.yaml_io as yio
         perf_dir = tmp_path / "perf"
-        monkeypatch.setattr(yio, "_PERF_DIR", perf_dir)
+        monkeypatch.setattr(yio, "_perf_dir", lambda: perf_dir)
         log_shadow_anomaly("log", "ev", {"data": "value"})
         line = (perf_dir / "log.jsonl").read_text(encoding="utf-8").strip()
         parsed = json.loads(line)
@@ -229,7 +230,7 @@ class TestLogShadowAnomaly:
     def test_jsonl_entry_has_event_field(self, tmp_path, monkeypatch):
         import navig.core.yaml_io as yio
         perf_dir = tmp_path / "perf"
-        monkeypatch.setattr(yio, "_PERF_DIR", perf_dir)
+        monkeypatch.setattr(yio, "_perf_dir", lambda: perf_dir)
         log_shadow_anomaly("log", "my_event", {})
         line = (perf_dir / "log.jsonl").read_text(encoding="utf-8").strip()
         parsed = json.loads(line)
@@ -238,7 +239,7 @@ class TestLogShadowAnomaly:
     def test_jsonl_entry_has_ts_field(self, tmp_path, monkeypatch):
         import navig.core.yaml_io as yio
         perf_dir = tmp_path / "perf"
-        monkeypatch.setattr(yio, "_PERF_DIR", perf_dir)
+        monkeypatch.setattr(yio, "_perf_dir", lambda: perf_dir)
         log_shadow_anomaly("log", "ev", {})
         line = (perf_dir / "log.jsonl").read_text(encoding="utf-8").strip()
         parsed = json.loads(line)
@@ -248,7 +249,7 @@ class TestLogShadowAnomaly:
     def test_jsonl_entry_has_data_field(self, tmp_path, monkeypatch):
         import navig.core.yaml_io as yio
         perf_dir = tmp_path / "perf"
-        monkeypatch.setattr(yio, "_PERF_DIR", perf_dir)
+        monkeypatch.setattr(yio, "_perf_dir", lambda: perf_dir)
         log_shadow_anomaly("log", "ev", {"my_key": "my_value"})
         line = (perf_dir / "log.jsonl").read_text(encoding="utf-8").strip()
         parsed = json.loads(line)
@@ -257,7 +258,7 @@ class TestLogShadowAnomaly:
     def test_appends_multiple_entries(self, tmp_path, monkeypatch):
         import navig.core.yaml_io as yio
         perf_dir = tmp_path / "perf"
-        monkeypatch.setattr(yio, "_PERF_DIR", perf_dir)
+        monkeypatch.setattr(yio, "_perf_dir", lambda: perf_dir)
         log_shadow_anomaly("log", "ev1", {})
         log_shadow_anomaly("log", "ev2", {})
         lines = (perf_dir / "log.jsonl").read_text(encoding="utf-8").strip().splitlines()

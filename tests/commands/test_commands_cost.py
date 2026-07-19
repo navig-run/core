@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import typer
 from typer.testing import CliRunner
 
-from navig.commands.cost import cost_app, _show_current
+from navig.commands.cost import _show_current, cost_app
 
 runner = CliRunner()
 

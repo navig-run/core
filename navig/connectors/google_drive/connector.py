@@ -5,7 +5,12 @@ import logging
 
 from navig.connectors.base import BaseConnector, ConnectorManifest
 from navig.connectors.types import (
-    Action, ActionResult, ConnectorDomain, HealthStatus, Resource, ResourceType,
+    Action,
+    ActionResult,
+    ConnectorDomain,
+    HealthStatus,
+    Resource,
+    ResourceType,
 )
 
 try:

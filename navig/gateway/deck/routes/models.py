@@ -26,7 +26,7 @@ async def handle_deck_models(request: "web.Request") -> "web.Response":
     llm_mode_routing = False
     llm_mode_summary = {}
     try:
-        from navig.llm_router import get_llm_router
+        from navig.llm.router import get_llm_router
 
         llm_router = get_llm_router()
         if llm_router:

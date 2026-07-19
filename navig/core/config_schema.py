@@ -266,6 +266,16 @@ if PYDANTIC_AVAILABLE:
             default=False,
             description="Allow X-Telegram-User fallback header (DISABLE in production)",
         )
+        telegram_only: bool = Field(
+            default=False,
+            description=(
+                "Lock the Deck to the Telegram Mini App only. When true, the deck API "
+                "(/api/deck/*) and the SSE stream (/api/events) accept ONLY valid Telegram "
+                "WebApp initData — the api_key Bearer token, the dev_mode header, and the "
+                "loopback (localhost) auto-bypass are all disabled. Set automatically by "
+                "`navig miniapp deploy`; revert with `navig config set deck.telegram_only false`."
+            ),
+        )
 
     class TelegramConfig(BaseModel):
         """Telegram bot configuration."""

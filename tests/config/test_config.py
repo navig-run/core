@@ -264,6 +264,108 @@ class TestActiveContext:
         config_manager.set_active_host("myhost")
         assert config_manager.get_active_host() == "myhost"
 
+    def test_active_server_delegates_to_active_host(self, config_manager, sample_host_config):
+        """`server` is a deprecated alias for `host`: get/set_active_server delegate to the host
+        pointer, so both report the same active name (one pointer, active_host_file)."""
+        config_manager.save_host_config("myhost", sample_host_config)
+
+        config_manager.set_active_server("myhost")
+        assert config_manager.get_active_server() == "myhost"
+        assert config_manager.get_active_host() == "myhost"
+
+    def test_no_dead_active_server_file_attribute(self, config_manager):
+        """active_server.txt was never written by anything — the attribute is removed so it can't be
+        mistaken for the active-server pointer, which IS active_host_file (the footgun that made
+        remove_server unlink the wrong file)."""
+        assert not hasattr(config_manager, "active_server_file")
+        assert hasattr(config_manager, "active_host_file")  # the real pointer
+
+    def test_remove_active_host_clears_pointer_file(
+        self, config_manager, sample_host_config, monkeypatch
+    ):
+        """remove_host on the active host clears the pointer file. was_active is captured BEFORE the
+        delete, so the unlink actually runs — the old post-delete guard never fired (get_active_host
+        filters out the just-deleted host), leaving the stale pointer to re-activate a re-added name."""
+        import navig.commands.host as host_mod
+
+        monkeypatch.setattr(host_mod, "config_manager", config_manager)
+        config_manager.save_host_config("myhost", sample_host_config)
+        config_manager.set_active_host("myhost")
+        assert config_manager.active_host_file.exists()
+
+        host_mod.remove_host("myhost", {"yes": True})
+
+        assert config_manager.get_active_host() is None
+        assert not config_manager.active_host_file.exists()  # pointer file actually cleared
+
+    def test_remove_active_server_clears_the_host_pointer_file(
+        self, config_manager, sample_host_config, monkeypatch
+    ):
+        """remove_server on the active server clears active_host_file (the real pointer) — NOT the
+        dead active_server.txt it used to unlink. Same capture-before-delete fix as remove_host."""
+        import navig.commands.server as server_mod
+
+        monkeypatch.setattr(server_mod, "config_manager", config_manager)
+        config_manager.save_host_config("srv", sample_host_config)
+        config_manager.set_active_server("srv")
+        assert config_manager.active_host_file.exists()
+
+        server_mod.remove_server("srv", {"yes": True})
+
+        assert config_manager.get_active_server() is None
+        assert not config_manager.active_host_file.exists()
+
+    def test_remove_active_app_clears_pointer_file(
+        self, config_manager, sample_host_config, monkeypatch
+    ):
+        """remove_app on the active app clears active_app_file. was_active is captured BEFORE the
+        delete: with an active host set, get_active_app()'s cache read is guarded by app_exists, so
+        the old post-delete check saw the app gone, skipped the unlink, and left the stale pointer
+        (a re-added same-name app would then silently become active). Mirrors remove_host/server."""
+        import navig.commands.app as app_mod
+
+        monkeypatch.setattr(app_mod, "config_manager", config_manager)
+        config_manager.save_host_config("myhost", sample_host_config)
+        config_manager.set_active_host("myhost")
+        config_manager.set_active_app("myapp")  # sample_host_config defines app "myapp"
+        assert config_manager.active_app_file.exists()
+
+        app_mod.remove_app({"app_name": "myapp", "host": "myhost", "force": True, "quiet": True})
+
+        assert not config_manager.active_app_file.exists()  # pointer actually cleared
+        assert config_manager.get_active_app() != "myapp"
+
+    def test_removing_default_app_clears_host_default(
+        self, config_manager, sample_host_config, monkeypatch
+    ):
+        """Deleting the app a host names as default_app must drop the dangling reference, so
+        get_active_app's default fallback can't resurface it and a re-added same-name app doesn't
+        silently inherit "default"."""
+        import navig.commands.app as app_mod
+
+        monkeypatch.setattr(app_mod, "config_manager", config_manager)
+        config_manager.save_host_config("myhost", sample_host_config)
+        assert config_manager.load_host_config("myhost").get("default_app") == "myapp"
+
+        app_mod.remove_app({"app_name": "myapp", "host": "myhost", "force": True, "quiet": True})
+
+        assert config_manager.load_host_config("myhost").get("default_app") is None
+
+    def test_removing_non_default_app_keeps_host_default(
+        self, config_manager, sample_host_config, monkeypatch
+    ):
+        """Removing a NON-default app must leave the host's default_app untouched (no over-clearing)."""
+        import navig.commands.app as app_mod
+
+        monkeypatch.setattr(app_mod, "config_manager", config_manager)
+        config_manager.save_host_config("myhost", sample_host_config)  # default_app = "myapp"
+
+        app_mod.remove_app(
+            {"app_name": "myapp-staging", "host": "myhost", "force": True, "quiet": True}
+        )
+
+        assert config_manager.load_host_config("myhost").get("default_app") == "myapp"
+
     def test_get_active_host_from_global_active_host_key(self, config_manager, sample_host_config):
         """Test compatibility fallback to global config active_host key."""
         config_manager.save_host_config("myhost", sample_host_config)

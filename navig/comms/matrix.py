@@ -15,6 +15,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from navig.platform.paths import config_dir
+
 if TYPE_CHECKING:
     from navig.comms.matrix_store import MatrixStore
 
@@ -101,7 +103,7 @@ class NavigMatrixBot:
         if want_e2ee and not store_dir:
             import os
 
-            store_dir = os.path.expanduser("~/.navig/matrix-store")
+            store_dir = str(config_dir() / "matrix-store")
             os.makedirs(store_dir, exist_ok=True)
             logger.info("Matrix: crypto store at %s", store_dir)
 
@@ -152,7 +154,7 @@ class NavigMatrixBot:
 
             from navig.comms.matrix_store import MatrixStore
 
-            store_db = os.path.expanduser("~/.navig/matrix.db")
+            store_db = str(config_dir() / "matrix.db")
             self._store = MatrixStore(store_db)
             self._store.prune_events()  # keep DB tidy
             logger.info("Matrix: persistent store at %s", store_db)

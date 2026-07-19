@@ -16,7 +16,6 @@ import pytest
 
 from navig.wiki_rag import BM25Index, TextTokenizer, WikiDocument
 
-
 # ---------------------------------------------------------------------------
 # WikiDocument
 # ---------------------------------------------------------------------------

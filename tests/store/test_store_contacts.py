@@ -9,7 +9,6 @@ from navig.store.contacts import (
     normalize_phone,
 )
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 # normalize_phone
 # ──────────────────────────────────────────────────────────────────────────────
@@ -79,6 +78,27 @@ class TestParseRouteString:
         assert network == "email"
         assert address == "alice@example.com"
 
+    def test_canonicalises_phone_for_phone_network(self):
+        # A phone address on a phone network is normalised at the parse choke point
+        # so CLI / YAML / routes[] writes match the deck's normalised form.
+        assert _parse_route_string("sms:+1 (555) 123-4567") == ("sms", "+15551234567")
+        assert _parse_route_string("whatsapp:+33 6 12 34 56 78") == ("whatsapp", "+33612345678")
+
+    def test_does_not_normalise_non_phone_networks(self):
+        # normalize_phone would DESTROY an email (→ ""); non-phone networks are verbatim.
+        assert _parse_route_string("email:a.b@c.com") == ("email", "a.b@c.com")
+        assert _parse_route_string("discord:123456789") == ("discord", "123456789")
+        assert _parse_route_string("matrix:@user:server.org") == ("matrix", "@user:server.org")
+
+    def test_phone_network_non_phone_address_is_preserved(self):
+        # A WhatsApp group id / handle (has letters or '@') on a phone network must
+        # NOT be phone-normalised — it would be mangled/blanked.
+        assert _parse_route_string("whatsapp:12345-678@g.us") == ("whatsapp", "12345-678@g.us")
+
+    def test_phone_normalisation_never_blanks_the_address(self):
+        # normalize_phone("()") == "" — but a route address must never become empty.
+        assert _parse_route_string("sms:()") == ("sms", "()")
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ContactStore
@@ -117,6 +137,18 @@ class TestContactStoreAdd:
         store.add_contact("eve", "Eve")
         with pytest.raises(Exception):
             store.add_contact("eve", "Eve Duplicate")
+
+    def test_phone_route_dedups_across_formats(self, store):
+        # Adding the SAME number in two formats must collapse to ONE route: both
+        # canonicalise to +15551234567, so the UNIQUE(contact_id,network,address)
+        # constraint dedups them (before this fix they stored as two routes).
+        store.add_contact("frank", "Frank")
+        store.add_route("frank", "sms:+1 (555) 123-4567")
+        store.add_route("frank", "sms:+15551234567")
+        routes = store.resolve_alias("frank").routes
+        sms = [r for r in routes if r.network == "sms"]
+        assert len(sms) == 1
+        assert sms[0].address == "+15551234567"
 
 
 class TestContactStoreResolve:

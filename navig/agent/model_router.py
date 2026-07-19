@@ -20,14 +20,21 @@ NAVIG behaves exactly as its pre-router single-provider mode.
 ──────────────────────────────────────────────────────────────────────────────
 ARCHITECTURE NOTE: Two-Layer LLM Routing
 ──────────────────────────────────────────────────────────────────────────────
-THIS MODULE (Layer 2 — TIER routing) works alongside navig.llm_router
+THIS MODULE (Layer 2 — TIER routing) works alongside navig.llm.router
 (Layer 1 — MODE routing). They are complementary, not competing:
 
-  navig.llm_router            Layer 1: picks WHAT TO DO (mode: coding/chat/...)
+  navig.llm.router            Layer 1: picks WHAT TO DO (mode: coding/chat/...)
   navig.agent.model_router ←  Layer 2: picks WHICH MODEL SIZE (small/big/coder)
 
 agent/conversational.py is the correct orchestration point for both layers.
-DO NOT merge these two modules.
+DO NOT merge these two modules *into each other*.
+
+CONVERGENCE TARGET (in progress): navig/llm/routing/ (the UnifiedRouter,
+`get_router`) is the intended single replacement for BOTH this 3-tier module and
+llm/router.py's 5 modes. That migration is unfinished — `agent/ai_client.py`
+still uses HybridRouter here. New consolidation work should finish the
+UnifiedRouter migration, not add a fourth router.
+See docs/ai-models-and-modes.md § "The real issue … THREE routers".
 ──────────────────────────────────────────────────────────────────────────────
 """
 
@@ -42,6 +49,17 @@ from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Providers with OPEN-ENDED catalogs (gateways / aggregators / user-defined
+# endpoints): their manifest ``models`` list is a curated *subset*, not an
+# allowlist. A valid model the user configured (e.g. ``openrouter:mistralai/
+# mistral-large``) is frequently absent from that subset, so it must NOT be
+# "corrected" to the provider default — that silently ignores the operator's
+# choice. Registry-based model substitution below only applies to providers with
+# a FIXED catalog (nvidia, ollama, …), which is what it was written for.
+_OPEN_CATALOG_PROVIDERS: frozenset[str] = frozenset(
+    {"openrouter", "openai-compat", "openai_compat", "custom"}
+)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -248,7 +266,7 @@ class RoutingConfig:
         # model instead of failing every time.
         for slot in (cfg.small, cfg.big, cfg.coder_big):
             pid = str(slot.provider or "").strip().lower()
-            if not slot.model or not pid:
+            if not slot.model or not pid or pid in _OPEN_CATALOG_PROVIDERS:
                 continue
             try:
                 from navig.providers.registry import get_provider as _get_prov

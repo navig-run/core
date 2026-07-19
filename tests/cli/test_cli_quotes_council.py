@@ -85,7 +85,7 @@ def test_hacker_quotes_all_unique_quotes():
 # commands/council
 # ---------------------------------------------------------------------------
 
-_WARN = "navig.console_helper.warn"
+_WARN = "navig.console_helper.warning"
 
 
 def _make_formation(agents=2):

@@ -57,7 +57,11 @@ class TestIsSimpleTurn:
     def test_url_is_not_simple(self):
         assert is_simple_turn("check out https://example.com") is False
 
-    @pytest.mark.parametrize("keyword", list(_COMPLEX_KEYWORDS)[:10])
+    # `sorted`, not `list`: _COMPLEX_KEYWORDS is a frozenset, so its iteration order
+    # varies per process (string-hash randomization). Under pytest-xdist each worker
+    # then collected a DIFFERENT 10 keywords in a different order, and xdist aborts the
+    # whole run with "Different tests were collected between gw0 and gwN".
+    @pytest.mark.parametrize("keyword", sorted(_COMPLEX_KEYWORDS)[:10])
     def test_complex_keyword_is_not_simple(self, keyword: str):
         assert is_simple_turn(f"please {keyword} this") is False
 

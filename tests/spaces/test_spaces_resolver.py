@@ -14,7 +14,6 @@ from navig.spaces.resolver import (
     resolve_space,
 )
 
-
 # ---------------------------------------------------------------------------
 # _find_project_navig_root
 # ---------------------------------------------------------------------------
@@ -121,7 +120,13 @@ class TestDiscoverSpacePaths:
     def test_returns_empty_dict_when_no_spaces(self, tmp_path: Path) -> None:
         from navig.platform import paths as nav_paths
         fake_global = tmp_path / "global_config"
-        with patch.object(nav_paths, "config_dir", return_value=fake_global):
+        # Isolate the project walk-up too: pytest's tmp lives inside the repo,
+        # so the scan would find the repo's own .navig and leak a 'project'
+        # entry (this test is about container emptiness, not project discovery).
+        with (
+            patch.object(nav_paths, "config_dir", return_value=fake_global),
+            patch("navig.spaces.resolver._find_project_navig_root", return_value=None),
+        ):
             result = discover_space_paths(cwd=tmp_path)
         assert result == {}
 

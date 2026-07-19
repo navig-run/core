@@ -1,6 +1,8 @@
 ﻿"""Tests for navig/tui/widgets/step_indicator.py."""
 from __future__ import annotations
+
 import pytest
+
 
 class TestStepIndicator:
     def _ind(self, c=1, t=3, l=None):

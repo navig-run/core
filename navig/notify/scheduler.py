@@ -21,8 +21,34 @@ _task: asyncio.Task | None = None
 _TICK_SECONDS = 45
 
 
+def _due_briefings(last_check: datetime, now: datetime, times: list[str]) -> list[str]:
+    """Briefing ``"HH:MM"`` times whose scheduled instant (for *now*'s date) falls
+    in the half-open window ``(last_check, now]``.
+
+    Window-based, NOT an exact-minute string match: a slow tick (the per-tick SMS
+    PATCH + network email scan can overrun the 45s interval) then cannot skip the
+    briefing's minute — it fires on the next tick instead of being lost for the
+    day. Contiguous half-open windows (each tick sets ``last_check = now``) mean a
+    given instant lands in exactly one window, so it fires exactly once; seeding
+    ``last_check = now`` at startup keeps a restart from replaying times already
+    past. Malformed / out-of-range entries are skipped.
+    """
+    due: list[str] = []
+    for t in times:
+        try:
+            hh, mm = (int(x) for x in str(t).split(":", 1))
+            inst = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        except (ValueError, TypeError):
+            continue
+        if last_check < inst <= now:
+            due.append(t)
+    return due
+
+
 async def _loop(gateway) -> None:
-    last_briefing_key: str | None = None
+    # Anchor for the briefing window; seeded to now so a restart doesn't replay
+    # briefing times that already passed today. Advanced every tick below.
+    last_check = datetime.now()
     while True:
         # 1) Keep the inbound SMS webhook in sync with the public URL.
         try:
@@ -32,30 +58,35 @@ async def _loop(gateway) -> None:
         except Exception:
             logger.debug("notify: sms webhook auto-config tick failed", exc_info=True)
 
-        # 2) Fire scheduled briefings (once per matching minute).
+        # 2) Fire scheduled briefings — window-based so a slow tick can't skip a
+        #    minute (see _due_briefings). One dispatch per tick even if several
+        #    times fall in the same window (e.g. after a long stall).
+        now = datetime.now()
         try:
             from navig.notify import prefs
 
             s = prefs.get_settings()
-            if s["briefing_enabled"] and s["briefing_times"]:
-                now = datetime.now()
-                hhmm = now.strftime("%H:%M")
-                key = now.strftime("%Y-%m-%d %H:%M")
-                if hhmm in s["briefing_times"] and key != last_briefing_key:
-                    last_briefing_key = key
-                    from navig.notify.briefings import build_and_dispatch_briefing
+            if s["briefing_enabled"] and _due_briefings(last_check, now, s.get("briefing_times") or []):
+                from navig.notify.briefings import build_and_dispatch_briefing
 
-                    await build_and_dispatch_briefing()
+                await build_and_dispatch_briefing()
         except Exception:
             logger.debug("notify: briefing tick failed", exc_info=True)
+        last_check = now  # advance the window every tick, even on error
 
         # 3) Email-ops: filter→notify on new mail + scheduled email briefings.
+        # Lives in the optional navig-email plugin; the import is soft (skipped
+        # when the plugin isn't installed) and only ticks when the "email" module
+        # is enabled.
         try:
-            from navig.email_ops.service import get_email_service
+            from navig.modules.registry import get_registry
 
-            await get_email_service().tick(gateway)
+            if get_registry().is_enabled("email"):
+                from navig_email.service import get_email_service
+
+                await get_email_service().tick(gateway)
         except Exception:
-            logger.debug("notify: email_ops tick failed", exc_info=True)
+            logger.debug("notify: email tick skipped", exc_info=True)
 
         await asyncio.sleep(_TICK_SECONDS)
 

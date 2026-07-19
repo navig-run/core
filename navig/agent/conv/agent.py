@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import json
 import logging
+import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -44,6 +45,22 @@ _COMPRESS_AFTER_TURN: int = 3        # turns before context compression starts
 _BUDGET_WARN_PCT: float = 0.70       # inject budget-warning message above this
 _BUDGET_HARD_PCT: float = 0.90       # disable tool_choice above this
 _DISPLAY_TOOLS_LIMIT: int = 20       # max tools listed in system prompt snippet
+
+# Identity / capability questions ("who are you", "what can you do") are short —
+# they'd normally take the slim minimal prompt, which omits the tool inventory,
+# so the model improvises a narrow list. When a short message matches this, we
+# use the FULL prompt (with capabilities) so the answer reflects real breadth.
+_CAPABILITY_QUESTION_RE = re.compile(
+    r"\b(?:"
+    r"who\s+are\s+you|what\s+are\s+you|"
+    r"what\s+(?:can|do)\s+you\s+(?:do|help\s+with)|"
+    r"what\s+(?:are|can)\s+you\s+capable|"
+    r"your\s+(?:capabilit|abilit|feature|function|tool|skill)\w*|"
+    r"(?:tell\s+me\s+about|introduce)\s+yourself|"
+    r"what\s+kind\s+of\s+(?:things|stuff|tasks|work)\s+can\s+you"
+    r")\b",
+    re.IGNORECASE,
+)
 _HISTORY_RETAIN_MESSAGES: int = 20   # run_agentic teardown message cap (unused after JSONL fix)
 _AGENTIC_CLIENT_TIMEOUT: float = 120.0  # asyncio-level LLM call timeout for tool work
 _AGENTIC_CHAT_TIMEOUT: float = 35.0     # tighter timeout for short chat-feel msgs (small model)
@@ -111,7 +128,11 @@ class ConversationalAgent:
         self._last_detected_language: str = "en"
         self._session_fallback_language: str = ""
         self._has_text_detected: bool = False
-        self._focus_mode = self._last_user_message = self._tier_override = ""
+        self._last_user_message = self._tier_override = ""
+        # Set by run_agentic when it rotated to a sibling account (e.g. a capped
+        # Claude Max subscription → another one). Callers may read it to surface
+        # "answered with <account>"; reset at the start of every turn.
+        self._last_account_fallback: dict[str, Any] | None = None
         self._entrypoint, self.context = "channel", {}
         self._plan_context_loaded: bool = False
         self._plan_ctx_loaded_at: float = 0.0  # epoch timestamp of last plan ctx fetch
@@ -120,6 +141,11 @@ class ConversationalAgent:
         self._user_profile_loaded: bool = False
         # Declared here for static-analysis visibility (set True in run_agentic on first call)
         self._agentic_tools_registered: bool = False
+        # Lazily-built skill matcher — auto-activates matching SKILL.md skills
+        # (installed + plugin-provided) into the prompt each turn. See
+        # _build_skills_section. None until first turn; then a
+        # (working_dir, SkillsContext) tuple, rebuilt if the active space changes.
+        self._skills_ctx = None
 
     @property
     def ai_client(self):
@@ -270,21 +296,6 @@ class ConversationalAgent:
         if previous:
             self._session_fallback_language = previous
 
-    def set_focus_mode(self, mode: str) -> None:
-        """Switch the agent's mood/focus profile by name (e.g. ``'deep'``, ``'flow'``).
-
-        Resolves the profile via ``navig.agent.soul.get_mood_profile``.
-        If the soul module is unavailable or the profile name is unknown,
-        silently falls back to ``'balance'`` so the agent remains functional.
-        """
-        try:
-            from navig.agent.soul import get_mood_profile
-
-            self._focus_mode = get_mood_profile(mode).id
-        except Exception:
-            # Soul module may not be installed in all deployments; fallback is safe.
-            self._focus_mode = "balance"
-
     def _get_memory_components(self):
         """Lazily build (FactRetriever, MemoryAutoExtractor) over the shared KeyFactStore.
 
@@ -310,7 +321,7 @@ class ConversationalAgent:
 
             async def _extractor_llm(prompt: str, **_kw: Any) -> str:
                 # Cheap tier; run the sync generator off the event loop.
-                from navig.llm_generate import llm_generate
+                from navig.llm.generate import llm_generate
 
                 return await _asyncio.to_thread(
                     llm_generate, [{"role": "user", "content": prompt}], mode="summarize"
@@ -424,6 +435,38 @@ class ConversationalAgent:
             parts.append("Fresh session — no prior conversation loaded.")
         return "\n".join(parts)
 
+    def _build_skills_section(self, user_message: str) -> str:
+        """Auto-activate matching SKILL.md skills for this turn and render them.
+
+        Wires the (formerly unplugged) SkillsContext into the agent: a skill
+        whose activation keywords / CC ``description`` overlap the user's request
+        is injected as instructions — so installed skills *and* plugin-provided
+        skills become discoverable without the user naming a command (e.g.
+        "edit a video" activates a video skill that runs ``navig generate``).
+        Bounded (``max_active``) and degrade-safe — never blocks a turn.
+        """
+        try:
+            from navig.agent.skills_context import SkillsContext
+            from navig.spaces.active import get_active_working_dir
+
+            # Resolve the active space's working dir. In the daemon the process
+            # never chdirs (it serves many spaces via a session ContextVar), so
+            # relying on cwd would inject the wrong space's project skills.
+            wd = str(get_active_working_dir())
+            cached = self._skills_ctx
+            if cached is None or cached[0] != wd:
+                # include_installed=True → also match plugin-provided + block
+                # skills, not just project/global stores. Cache per working dir
+                # so load() runs once per space, not once per turn.
+                cached = (wd, SkillsContext(workspace_dir=wd, include_installed=True))
+                self._skills_ctx = cached
+            ctx = cached[1]
+            active = ctx.activate(user_message=user_message)
+            return ctx.format_for_system_prompt(active)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("skills auto-activation skipped: %s", exc)
+            return ""
+
     def _normalize_supported_lang_code(self, code: str) -> str:
         normalized = (code or "").strip().lower()
         if not normalized:
@@ -452,17 +495,47 @@ class ConversationalAgent:
     def _build_system_prompt(self, user_message: str, *, minimal: bool = False) -> str:
         code = self._resolve_prompt_language(user_message)
         lang_instruction = self._lang.build_instruction(code)
+        # "Who are you?" / "What can you do?" are short messages, so they'd take
+        # the slim path — but the slim prompt omits the tool inventory, which is
+        # exactly what these questions need. Promote them to the full prompt so
+        # the answer reflects real breadth instead of an improvised narrow list.
+        if minimal and _CAPABILITY_QUESTION_RE.search(user_message or ""):
+            minimal = False
         if minimal:
             # Slim path for short chat-feel messages: ~250 chars instead
             # of ~2,900. The user doesn't need the full identity or chat
             # rules to get a "Hey, what's up?" style reply, and the LLM
             # round-trip is dramatically faster with less input to read.
-            return self._soul_loader.build_minimal_prompt(lang_instruction=lang_instruction)
+            # A compact capability line rides along (~50 tokens) so a short
+            # "what can you do?" in ANY language still knows the real breadth.
+            return self._soul_loader.build_minimal_prompt(
+                lang_instruction=lang_instruction,
+                capabilities=self._capability_summary(compact=True),
+            )
+        # NB: matched SKILL.md skills are injected into the *user turn* (see
+        # run_agentic), NOT here — they're query-specific, so appending them to
+        # the cached system block would bust the tools+system prompt cache every
+        # turn (same reason recall is prepended to the user turn).
         return self._soul_loader.build_system_prompt(
             soul=self._soul_loader.cached_content or "",
             lang_instruction=lang_instruction,
             awareness=self._build_awareness_context(),
+            capabilities=self._capability_summary(),
         )
+
+    def _capability_summary(self, *, compact: bool = False) -> str:
+        """Live summary of the agent's real tools (empty when none registered).
+
+        Stable across a session (the registry is populated once at startup), so
+        it rides the cached system block without busting the prompt cache.
+        *compact* returns the one-line comma-joined form for the minimal prompt."""
+        try:
+            from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+
+            return _AGENT_REGISTRY.capability_summary(compact=compact)
+        except Exception as exc:  # noqa: BLE001 — never let this break the prompt
+            logger.debug("_capability_summary skipped: %s", exc)
+            return ""
 
     def _planner_fallback(self) -> str:
         """Return a planner-generated response, or an actionable 'no provider' message."""
@@ -484,6 +557,10 @@ class ConversationalAgent:
         *tier_override* is forwarded to the routing layer to force a specific
         LLM tier (e.g. ``'large'``).
         """
+        # Fresh per turn (covers BOTH the ReAct and single-shot paths, and an
+        # early return before run_agentic's own reset) so a caller never reads a
+        # stale rotation from a previous message.
+        self._last_account_fallback = None
         # Lazy-register tools on first call — idempotent after first success.
         if not self._agentic_tools_registered:
             try:
@@ -505,17 +582,9 @@ class ConversationalAgent:
         self._last_user_message, self._tier_override = message, tier_override
         self._history.add("user", message)
         response = await self._get_ai_response(message)
-        try:
-            from navig.agent.soul import ContextSignal, get_mood_profile, shape_response
-
-            response = shape_response(
-                response,
-                ContextSignal.build(message),
-                get_mood_profile(self._focus_mode),
-            )
-        except Exception as exc:
-            # Soul shaping is best-effort; the raw response is still valid output.
-            logger.debug("soul shaping skipped: %s", exc)
+        # (The former soul `shape_response`/`ContextSignal`/`get_mood_profile` post-processing
+        # was removed from navig.agent.soul; this block always fell into its except and
+        # returned the raw response, which is what happens now without the dead import.)
         plan = self._plan_extractor.extract(response)
         if plan:
             result = await self._executor.execute_plan(plan)
@@ -534,6 +603,7 @@ class ConversationalAgent:
         on_partial=None,
         tier_override: str = "",
         effort: str = "",
+        session_key: str = "",
     ) -> str:
         """Native ReAct multi-step tool-calling loop.
 
@@ -550,15 +620,20 @@ class ConversationalAgent:
         """
         from navig.agent.agent_tool_registry import _AGENT_REGISTRY
         from navig.agent.effort import (
-            auto_detect_effort, get_thinking_params, resolve_effort,
+            auto_detect_effort,
+            get_thinking_params,
+            resolve_effort,
         )
         from navig.agent.prompt_caching import supports_caching
         from navig.agent.tools import register_all_tools
         from navig.agent.usage_tracker import CostTracker, IterationBudget, UsageEvent
         from navig.providers import (
-            CompletionRequest, CompletionResponse, Message, create_client, get_builtin_provider,
+            CompletionRequest,
+            CompletionResponse,
+            Message,
+            create_client,
+            get_builtin_provider,
         )
-        from navig.providers.auth import AuthProfileManager
         from navig.providers.clients import ToolDefinition
 
         if not self._agentic_tools_registered:
@@ -567,6 +642,13 @@ class ConversationalAgent:
                 self._agentic_tools_registered = True
             except Exception as exc:
                 logger.warning("run_agentic: tool registration failed: %s", exc)
+
+        # Stable key for the stateful browser tool's per-chat persistent browser.
+        # Callers (e.g. the Telegram channel) pass a chat-stable session_key; CLI
+        # falls back to this instance's ephemeral id (per-run scope). Injected into
+        # browser_tool args at dispatch — never declared in its schema, so the LLM
+        # never sees it.
+        _browser_session_key = session_key or self._session_id
 
         budget = IterationBudget(max_iterations=max_iterations)
         if (
@@ -588,7 +670,7 @@ class ConversationalAgent:
 
         explicit_toolsets = [toolset] if isinstance(toolset, str) else list(toolset)
         try:
-            from navig.llm_router import suggest_toolsets
+            from navig.llm.router import suggest_toolsets
 
             suggested = suggest_toolsets(user_input=message)
             merged = list(explicit_toolsets)
@@ -650,7 +732,7 @@ class ConversationalAgent:
         _forced_mode = _TIER_TO_MODE.get((tier_override or "").strip())
         _resolve_mode = _forced_mode or ("small_talk" if _short_chat else "coding")
         try:
-            from navig.llm_router import resolve_llm
+            from navig.llm.router import resolve_llm
 
             resolved = resolve_llm(mode=_resolve_mode)
             provider_name = resolved.provider
@@ -668,12 +750,14 @@ class ConversationalAgent:
         # required for caching + effort/thinking to take effect.
         if _resolve_mode in ("big_tasks", "coding") and (provider_name or "").lower() != "anthropic":
             try:
-                _ant_key, _ = AuthProfileManager().resolve_auth("anthropic")
-                if _ant_key:
+                from navig.providers.inference import resolve_provider_credential
+
+                _ant_key, _ant_oauth = resolve_provider_credential("anthropic")
+                if _ant_key or _ant_oauth:  # API key OR a claude-max OAuth subscription
                     provider_name = "anthropic"
                     model_name = "claude-opus-4-8"
                     base_url = None
-                    logger.debug("brain: switched to anthropic/claude-opus-4-8 (key present)")
+                    logger.debug("brain: switched to anthropic/claude-opus-4-8 (credential present)")
             except Exception as exc:  # noqa: BLE001
                 logger.debug("anthropic brain-preference probe skipped: %s", exc)
 
@@ -696,10 +780,13 @@ class ConversationalAgent:
         except Exception as exc:  # noqa: BLE001
             logger.debug("effort resolution skipped: %s", exc)
 
+        # The connection (account) the primary client is using; None for a
+        # shared-key provider. Drives per-account cooldowns + sibling rotation.
+        _used_connection_id: str | None = None
         try:
             provider_cfg = get_builtin_provider(provider_name)
             if provider_cfg is None:
-                from navig.llm_router import PROVIDER_BASE_URLS
+                from navig.llm.router import PROVIDER_BASE_URLS
                 from navig.providers.types import ModelApi, ProviderConfig
 
                 url = base_url or PROVIDER_BASE_URLS.get(provider_name, "https://openrouter.ai/api/v1")
@@ -708,19 +795,31 @@ class ConversationalAgent:
                     base_url=url,
                     api=ModelApi.OPENAI_COMPLETIONS,
                 )
-            auth_mgr = AuthProfileManager()
-            api_key, _ = auth_mgr.resolve_auth(provider_name)
+            from navig.providers.inference import resolve_rotating_credential
+
+            # Connection-first (claude-max OAuth subscription / stored key), then
+            # the shared key store — so a Claude subscription with NO API key
+            # works. Rotating variant SKIPS an account that's cooling down (e.g.
+            # a Claude Max subscription capped earlier this session — including by
+            # the CLI/deck, which share this cooldown map) and returns which
+            # account it used so a mid-turn failure can hop to a sibling.
+            api_key, oauth_token, _used_connection_id = resolve_rotating_credential(
+                provider_name, model_name
+            )
             # Chat-feel messages get a tight 35s timeout (small model, no
             # tools). Real tool-using work keeps the 120s budget. The user
             # sees a fast error on "hey" instead of staring at 3 typing
             # indicators for 2 minutes.
             _client_timeout = _AGENTIC_CHAT_TIMEOUT if _short_chat else _AGENTIC_CLIENT_TIMEOUT
-            client = create_client(provider_cfg, api_key=api_key, timeout=_client_timeout)
+            client = create_client(
+                provider_cfg, api_key=api_key, oauth_token=oauth_token, timeout=_client_timeout
+            )
         except Exception as exc:
             logger.error("run_agentic: could not create LLM client: %s", exc)
             return f"Couldn't connect to the LLM provider ({provider_name}): {exc}"
 
         self._last_user_message = message
+        self._last_account_fallback = None  # fresh per turn; set only on a rotation
         # For short chat-feel messages, build the slim ~250-char prompt
         # (no SOUL identity block, no chat rules, no awareness context).
         # This is the single biggest token-cost win for cold replies.
@@ -750,8 +849,15 @@ class ConversationalAgent:
         # tools+system cache every turn). Skipped on short chat for latency.
         _user_content = message
         if not _short_chat:
+            # Query-specific context rides the *user turn* (not the cached system
+            # block): matched SKILL.md skills first, then recalled facts.
+            prefix_parts: list[str] = []
+            if skills_block := self._build_skills_section(message):
+                prefix_parts.append(skills_block)
             if recall := self._recall_block(message):
-                _user_content = f"{recall}\n\n{message}"
+                prefix_parts.append(recall)
+            if prefix_parts:
+                _user_content = "\n\n".join([*prefix_parts, message])
 
         history_messages = list(self.conversation_history)
         working_messages: list[Message] = [
@@ -804,27 +910,29 @@ class ConversationalAgent:
             except json.JSONDecodeError:
                 args = {}
 
+            # Approval interlock — FAIL CLOSED. A gated tool must never execute
+            # because the gate itself broke; this used to swallow every gate
+            # exception and proceed (the agent-loop fail-open seam #299's
+            # policy_check fix did not cover).
             try:
-                from navig.tools.approval import (
-                    ApprovalDecision,
-                    get_approval_gate,
-                    needs_approval,
-                )
+                from navig.tools.approval import gate_agent_tool_call
 
-                if needs_approval(tool_call_item.name):
-                    gate = get_approval_gate()
-                    decision = await gate.check(
-                        tool_name=tool_call_item.name,
-                        safety_level="moderate",
-                        reason="agentic",
-                    )
-                    if decision == ApprovalDecision.DENIED:
-                        return (
-                            tool_call_item.id,
-                            f"[Denied: operator did not approve '{tool_call_item.name}']",
-                        )
-            except Exception as exc:
-                logger.debug("Exception suppressed: %s", exc)
+                denial = await gate_agent_tool_call(
+                    tool_call_item.name,
+                    parameters=args,
+                    session_key=_browser_session_key,
+                )
+            except Exception as exc:  # noqa: BLE001 — interlock unavailable → deny
+                logger.error(
+                    "approval interlock unavailable for '%s' — failing closed: %s",
+                    tool_call_item.name,
+                    exc,
+                )
+                denial = (
+                    f"[Denied: approval interlock unavailable for '{tool_call_item.name}']"
+                )
+            if denial is not None:
+                return (tool_call_item.id, denial)
 
             # Provable trust: adversarially verify DESTRUCTIVE tool calls before they
             # run (read-only tools skip — no latency cost on the common path). Returns
@@ -854,6 +962,12 @@ class ConversationalAgent:
             except Exception as exc:  # noqa: BLE001
                 logger.debug("tool verification skipped: %s", exc)
 
+            # Inject the stable per-chat session key for the stateful browser tool
+            # so its persistent per-chat browser is keyed correctly. Undeclared in
+            # the tool schema ⇒ invisible to the LLM; both dispatch paths forward it.
+            if tool_call_item.name == "browser_tool":
+                args = {**args, "_session_id": _browser_session_key}
+
             try:
                 from navig.agent.speculative import get_speculative_executor
 
@@ -878,6 +992,12 @@ class ConversationalAgent:
         # errors, recover the turn ONCE on the fast small model instead of
         # losing the reply. Critical when the configured big/coder tiers point
         # at slow or unreachable endpoints (e.g. a 70B that read-times-out).
+        #
+        # NOTE: this flag tracks *model degradation* (dropping to the cheap
+        # model) — it is deliberately NOT set by account rotation. Rotating to a
+        # sibling subscription (same model, full quality) can happen repeatedly
+        # across turns (A→B→C); it's self-bounding because each capped account is
+        # cooled and skipped. Only the fast-model drop is once-per-message.
         _fell_back = False
 
         async def _fast_retry(on_partial_cb) -> "CompletionResponse | None":
@@ -887,7 +1007,7 @@ class ConversationalAgent:
             usage records under the model that actually answered."""
             nonlocal model_name, provider_name
             try:
-                from navig.llm_router import resolve_llm as _resolve_llm
+                from navig.llm.router import resolve_llm as _resolve_llm
 
                 fb = _resolve_llm(mode="small_talk")
             except Exception as _exc:  # noqa: BLE001
@@ -900,7 +1020,7 @@ class ConversationalAgent:
 
             fb_cfg = get_builtin_provider(fb.provider)
             if fb_cfg is None:
-                from navig.llm_router import PROVIDER_BASE_URLS
+                from navig.llm.router import PROVIDER_BASE_URLS
                 from navig.providers.types import ModelApi, ProviderConfig
 
                 fb_cfg = ProviderConfig(
@@ -912,9 +1032,11 @@ class ConversationalAgent:
                     api=ModelApi.OPENAI_COMPLETIONS,
                 )
             try:
-                fb_key, _ = AuthProfileManager().resolve_auth(fb.provider)
+                from navig.providers.inference import resolve_provider_credential
+
+                fb_key, fb_oauth = resolve_provider_credential(fb.provider)
                 fb_client = create_client(
-                    fb_cfg, api_key=fb_key, timeout=_AGENTIC_CHAT_TIMEOUT
+                    fb_cfg, api_key=fb_key, oauth_token=fb_oauth, timeout=_AGENTIC_CHAT_TIMEOUT
                 )
             except Exception as _exc:  # noqa: BLE001
                 logger.debug("fast-retry: client create failed: %s", _exc)
@@ -984,6 +1106,119 @@ class ConversationalAgent:
             # Record cost under the model that actually answered.
             provider_name, model_name = fb.provider, fb.model
             return result
+
+        async def _account_retry(req, reason: str, *, stream: bool = False) -> "CompletionResponse | None":
+            """Retry the SAME request (model + tools) on a SIBLING account of the
+            same provider — recovering a capped Claude Max subscription WITHIN the
+            turn, before dropping to the fast model. When *stream* is set (a
+            chat-feel turn with an ``on_partial`` sink), the sibling **streams**
+            too so the Telegram edit stays live through the rotation; otherwise a
+            single blocking call.
+
+            On success it **adopts** the sibling as the turn's ``client`` (closing
+            the capped one) so later iterations don't keep hitting the dead
+            account, updates ``_used_connection_id`` (keeping per-account cooldown
+            marking correct), and records the winning account on
+            ``self._last_account_fallback``. Returns the response, or None."""
+            nonlocal _used_connection_id, client
+            try:
+                from navig.llm.fallback_policy import (
+                    account_cool_key,
+                    categorize_error,
+                    mark_cooldown,
+                )
+                from navig.providers.inference import (
+                    accounts_to_try,
+                    credential_for_connection,
+                    list_provider_connections,
+                )
+            except Exception:  # noqa: BLE001
+                return None
+
+            async def _aclose(c) -> None:
+                _c = getattr(c, "close", None)
+                if callable(_c):
+                    try:
+                        await _c()
+                    except Exception:  # noqa: BLE001
+                        pass
+
+            # Sibling accounts to try — shared selection with the CLI/ask path via
+            # `accounts_to_try` (skips the just-failed account + any cooling; no
+            # re-probe here — a mid-turn dead end drops to the fast model).
+            siblings = accounts_to_try(
+                list_provider_connections(provider_name), provider_name, model_name,
+                exclude_connection_id=_used_connection_id, reprobe_when_all_cooling=False,
+            )
+            for acct in siblings:
+                cid = acct.get("connection_id")
+                cool_key = account_cool_key(provider_name, model_name, cid)
+                cred = credential_for_connection(acct, provider_name)
+                if not cred or not (cred[0] or cred[1]):
+                    continue
+                acct_client = create_client(
+                    provider_cfg, api_key=cred[0], oauth_token=cred[1], timeout=_client_timeout
+                )
+                try:
+                    if stream and on_partial is not None and hasattr(acct_client, "complete_stream"):
+                        _acc: list[str] = []
+                        _fin: str | None = None
+                        _usg: dict | None = None
+                        _mdl: str | None = None
+
+                        # Bind the loop-varying client + accumulator as defaults so the
+                        # closure captures THIS iteration's values (ruff B023), even though
+                        # it is awaited immediately below.
+                        async def _drive_acct(_client=acct_client, _out=_acc) -> None:
+                            nonlocal _fin, _usg, _mdl
+                            async for ch in _client.complete_stream(req):
+                                d = getattr(ch, "delta", None)
+                                if d:
+                                    _out.append(d)
+                                    try:
+                                        await on_partial("".join(_out))
+                                    except Exception:  # noqa: BLE001
+                                        pass
+                                if getattr(ch, "finish_reason", None):
+                                    _fin = ch.finish_reason
+                                if getattr(ch, "usage", None):
+                                    _usg = ch.usage
+                                if getattr(ch, "model", None):
+                                    _mdl = ch.model
+
+                        await asyncio.wait_for(_drive_acct(), timeout=_client_timeout)
+                        resp = CompletionResponse(
+                            content="".join(_acc) or None, tool_calls=None,
+                            finish_reason=_fin, usage=_usg,
+                            model=_mdl or model_name, provider=provider_name,
+                        )
+                    else:
+                        resp = await asyncio.wait_for(
+                            acct_client.complete(req), timeout=_client_timeout
+                        )
+                except Exception as _exc:  # noqa: BLE001
+                    mark_cooldown(cool_key, categorize_error(_exc))
+                    logger.warning("run_agentic: sibling account %s also failed (%s)", cid[:8], _exc)
+                    await _aclose(acct_client)  # only close on FAILURE
+                    continue
+                # Success — adopt the sibling client for the rest of the turn and
+                # retire the capped one.
+                await _aclose(client)
+                client = acct_client
+                _used_connection_id = cid
+                self._last_account_fallback = {
+                    "to": acct.get("name") or f"account {cid[:8]}",
+                    "connection_id": cid,
+                    "provider": provider_name,
+                    "model": model_name,
+                    "reason": reason,
+                }
+                logger.warning(
+                    "run_agentic: rotated to sibling account %s for %s:%s (primary %s)",
+                    acct.get("name") or cid[:8], provider_name, model_name, reason,
+                )
+                return resp
+            return None
 
         while not budget.is_exhausted():
             turn += 1
@@ -1061,12 +1296,12 @@ class ConversationalAgent:
 
                     async def _drive_stream() -> None:
                         nonlocal _final_finish, _final_usage, _final_model
-                        async for chunk in client.complete_stream(request):
+                        async for chunk in client.complete_stream(request):  # noqa: B023 — awaited in-iteration; closure never outlives the loop step
                             delta = getattr(chunk, "delta", None)
                             if delta:
-                                _accum.append(delta)
+                                _accum.append(delta)  # noqa: B023 — same
                                 try:
-                                    await on_partial("".join(_accum))
+                                    await on_partial("".join(_accum))  # noqa: B023 — same
                                 except Exception as exc:  # noqa: BLE001
                                     logger.debug(
                                         "on_partial callback raised %r; continuing",
@@ -1112,9 +1347,34 @@ class ConversationalAgent:
                     break
             except Exception as exc:
                 logger.error("run_agentic: LLM call failed on turn %d: %s", turn, exc)
-                _fb = None if _fell_back else await _fast_retry(on_partial)
+                _fb = None
+                if not _fell_back:
+                    from navig.llm.fallback_policy import (
+                        account_cool_key,
+                        categorize_error,
+                        mark_cooldown,
+                        should_rotate_account,
+                    )
+
+                    _cat = categorize_error(exc)
+                    # Record the cap on the account we used so later turns — and
+                    # the CLI/deck, which share this cooldown map — skip it.
+                    if _used_connection_id:
+                        mark_cooldown(
+                            account_cool_key(provider_name, model_name, _used_connection_id), _cat
+                        )
+                    # 1) Same model on a SIBLING account (full quality — e.g. a
+                    #    second Claude Max subscription). Repeatable across turns
+                    #    (A→B→C) since it's NOT a quality degradation and is
+                    #    self-bounding: each capped account is cooled + skipped.
+                    if should_rotate_account(_cat):
+                        _fb = await _account_retry(request, _cat, stream=_can_stream)
+                    # 2) No sibling account left → drop to the fast model, ONCE.
+                    if _fb is None:
+                        _fb = await _fast_retry(on_partial)
+                        if _fb is not None:
+                            _fell_back = True
                 if _fb is not None:
-                    _fell_back = True
                     response = _fb
                 else:
                     final_response = f"Error during agentic execution (turn {turn}): {exc}"
@@ -1202,7 +1462,9 @@ class ConversationalAgent:
 
             if parallel_batch:
                 par_results = await asyncio.gather(
-                    *[_dispatch_single(tool_call) for tool_call in parallel_batch],
+                    # Via the semaphore so _MAX_PARALLEL_TOOLS is actually enforced
+                    # (the batch previously called _dispatch_single directly).
+                    *[_sem_dispatch(tool_call) for tool_call in parallel_batch],
                     return_exceptions=True,
                 )
                 for idx, result in enumerate(par_results):
@@ -1252,13 +1514,16 @@ class ConversationalAgent:
             logger.debug("memory auto-extract scheduling skipped: %s", exc)
 
         try:
-            from navig.agent.speculative import get_speculative_executor, reset_speculative_executor
+            from navig.agent.speculative import get_speculative_executor
 
+            # Read-only stats snapshot ONLY. Do NOT cancel_speculations() or
+            # reset the SHARED singleton per turn — that raced concurrent turns
+            # (each cancelling the other's in-flight speculations + nulling the
+            # global mid-turn) AND defeated the cross-turn cache (every turn
+            # restarted cold). The executor is process-lived with a TTL cache.
             spec = get_speculative_executor()
             if spec is not None:
-                await spec.cancel_speculations()
-                stats = spec.stats
-                cache_stats = stats.get("cache") or {}
+                cache_stats = (spec.stats.get("cache") or {})
                 if cache_stats.get("hits", 0) > 0:
                     logger.info(
                         "speculative cache stats: hits=%d misses=%d hit_rate=%.1f%%",
@@ -1266,9 +1531,18 @@ class ConversationalAgent:
                         cache_stats.get("misses", 0),
                         float(cache_stats.get("hit_rate", 0.0)) * 100,
                     )
-                reset_speculative_executor()
         except Exception as exc:
-            logger.debug("Exception suppressed during speculative cache integration reset: %s", exc)
+            logger.debug("speculative stats read skipped: %s", exc)
+
+        # Close the primary LLM client's httpx pool — otherwise every agentic turn
+        # leaks an open connection pool / sockets until GC (the fast-retry fb_client
+        # is already closed; the primary client was not).
+        try:
+            _close = getattr(client, "close", None)
+            if _close:
+                await _close()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("agent client close skipped: %s", exc)
 
         cost = tracker.session_cost()
         logger.info("run_agentic completed: %s", cost.summary_str())
@@ -1424,7 +1698,7 @@ class ConversationalAgent:
         # config["ai"]["default_provider"] (both written by Telegram /models), so
         # user's provider selection is respected even when ai_client.provider=="none".
         try:
-            from navig.routing.router import RouteRequest, get_router
+            from navig.llm.routing.router import RouteRequest, get_router
 
             _req_meta: dict[str, Any] = {}
             _sto = getattr(self, "_session_tier_overrides", None)

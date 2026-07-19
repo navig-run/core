@@ -15,7 +15,7 @@ def agents_list():
         for agent in list_agents():
             typer.echo(f"  {agent}")
     except Exception:
-        ch.warn("navig agents is not yet fully implemented in this build.")
+        ch.warning("navig agents is not yet fully implemented in this build.")
 
 
 @app.command("run")
@@ -26,4 +26,4 @@ def agents_run(
     """Run a specific agent on a task."""
     from navig import console_helper as ch
 
-    ch.warn("navig agents run is not yet implemented in this build.")
+    ch.warning("navig agents run is not yet implemented in this build.")

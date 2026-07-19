@@ -251,10 +251,14 @@ def _space_context(space: str | None) -> str:
         return ""
     try:
         from navig.gateway.deck.routes.apps import (
-            _get_spaces_dir,
+            _confined_space_dir,
             _read_file_content,
         )
-        sdir = _get_spaces_dir() / space
+        # `space` comes from a stored goal (client-supplied at goal creation) — confine it so a
+        # `../` name can't read files outside the spaces tree.
+        sdir = _confined_space_dir(space)
+        if sdir is None:
+            return ""
         vision = _read_file_content(sdir / "VISION.md", 800)
         roadmap = _read_file_content(sdir / "ROADMAP.md", 800)
         parts = []
@@ -312,7 +316,7 @@ def _parse_task_list(raw: str) -> list[dict[str, Any]]:
 
 
 def _generate_tasks_sync(title: str, description: str, space: str | None) -> list[dict[str, Any]]:
-    from navig.llm_generate import llm_generate
+    from navig.llm.generate import llm_generate
     ctx = _space_context(space)
     sys = (
         "You are a planning assistant. Break a high-level goal into a short, "
@@ -558,7 +562,7 @@ def _research(query: str, max_results: int = 4) -> tuple[str, list[str]]:
     Returns (context_text, source_urls). Degrades to ("", []) when no search
     provider / network is available (DuckDuckGo is the keyless default)."""
     try:
-        from navig.tools.web import web_search, web_fetch
+        from navig.tools.web import web_fetch, web_search
     except Exception:
         return "", []
     lines: list[str] = []
@@ -638,7 +642,7 @@ def _run_card_sync(card: dict[str, Any], mode: str, actor: str = "user") -> dict
     approval → run, park in 'agent' lane awaiting approval.
     auto     → run, move to 'done'.
     """
-    from navig.llm_generate import llm_generate
+    from navig.llm.generate import llm_generate
     store = _store()
 
     # Mark running.
@@ -747,6 +751,21 @@ async def handle_board_card_run(request: "web.Request") -> "web.Response":
     return _ok({"card": ran, "mode": mode, "triggered": triggered})
 
 
+async def _dismiss_card_ask(gateway, card_id: str) -> None:
+    """Drop any pending Inbox approval ask for this card. The board lane
+    (approve/reject) resolves the card OUTSIDE the ask, so without this the ask lingers and
+    answering it later would re-run _on_answer → move + cascade again (double-running
+    auto_advance dependents). Symmetric with _surface_card_approval_ask's own
+    replace_pending_by_source. Best-effort — a registry hiccup must not fail the mutation."""
+    reg = getattr(gateway, "request_registry", None)
+    if reg is None or not hasattr(reg, "replace_pending_by_source"):
+        return
+    try:
+        await reg.replace_pending_by_source(f"card:{card_id}")
+    except Exception:
+        logger.debug("failed to dismiss card approval ask for %s", card_id, exc_info=True)
+
+
 async def handle_board_card_approve(request: "web.Request") -> "web.Response":
     card_id = request.match_info["id"]
     store = _store()
@@ -756,6 +775,7 @@ async def handle_board_card_approve(request: "web.Request") -> "web.Response":
     gateway = request.app.get("gateway") if hasattr(request, "app") else None
     await _in_executor(store.update_card, card_id, {"agent_status": "done"})
     moved = await _in_executor(store.move_card, card_id, "done", actor="user")
+    await _dismiss_card_ask(gateway, card_id)  # this lane resolved it — drop the stale Inbox ask
     triggered = await _cascade(card_id, actor="agent", gateway=gateway)
     await _emit_update(request, {"kind": "card_approved", "id": card_id})
     return _ok({"card": moved, "triggered": triggered})
@@ -767,8 +787,10 @@ async def handle_board_card_reject(request: "web.Request") -> "web.Response":
     card = await _in_executor(store.get_card, card_id)
     if card is None:
         return _err("Card not found", 404)
+    gateway = request.app.get("gateway") if hasattr(request, "app") else None
     await _in_executor(store.update_card, card_id, {"agent_status": "idle"})
     moved = await _in_executor(store.move_card, card_id, "in_progress", actor="user")
+    await _dismiss_card_ask(gateway, card_id)  # this lane resolved it — drop the stale Inbox ask
     await _emit_update(request, {"kind": "card_rejected", "id": card_id})
     return _ok({"card": moved})
 
@@ -808,7 +830,7 @@ async def handle_board_subtask_delete(request: "web.Request") -> "web.Response":
 # ── Briefing ─────────────────────────────────────────────────────────────────
 
 def _build_briefing_sync() -> str:
-    from navig.llm_generate import llm_generate
+    from navig.llm.generate import llm_generate
     store = _store()
     goals = store.list_goals()
     cards = store.list_cards()

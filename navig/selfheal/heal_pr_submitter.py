@@ -36,7 +36,18 @@ from navig.selfheal.git_manager import (
 # Constants
 # ---------------------------------------------------------------------------
 
-_HEAL_PATCHES_DIR = _navig_config_dir() / "heal_patches"
+# Test seam — when ``None`` (the normal state), ``_heal_patches_dir()`` resolves
+# at CALL time so NAVIG_CONFIG_DIR isolation set after import still applies
+# (see navig/vault/migrate.py:_legacy_db_path).
+_HEAL_PATCHES_DIR: Path | None = None
+
+
+def _heal_patches_dir() -> Path:
+    return (
+        _HEAL_PATCHES_DIR if _HEAL_PATCHES_DIR is not None else _navig_config_dir() / "heal_patches"
+    )
+
+
 _LABEL_AUTO_HEAL = "auto-heal"
 _LABEL_NEEDS_REVIEW = "needs-review"
 _PR_BASE_BRANCH = "main"
@@ -151,10 +162,11 @@ class HealPRSubmitter:
         Returns:
             Path to the written patch file.
         """
-        _HEAL_PATCHES_DIR.mkdir(parents=True, exist_ok=True)
+        patches_dir = _heal_patches_dir()
+        patches_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         fname = f"{ts}_{failure_class.lower()}.patch.json"
-        patch_path = _HEAL_PATCHES_DIR / fname
+        patch_path = patches_dir / fname
 
         import json
 
@@ -174,12 +186,13 @@ class HealPRSubmitter:
 
     def list_pending_patches(self) -> list[Path]:
         """Return unsubmitted patch files stored locally."""
-        if not _HEAL_PATCHES_DIR.exists():
+        patches_dir = _heal_patches_dir()
+        if not patches_dir.exists():
             return []
         import json
 
         pending = []
-        for p in sorted(_HEAL_PATCHES_DIR.glob("*.patch.json")):
+        for p in sorted(patches_dir.glob("*.patch.json")):
             try:
                 data = json.loads(p.read_text(encoding="utf-8"))
                 if not data.get("submitted", False):

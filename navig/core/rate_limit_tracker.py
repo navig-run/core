@@ -157,10 +157,14 @@ def parse_rate_limit_headers(
 # ---------------------------------------------------------------------------
 
 def _fmt_count(n: int) -> str:
-    """Human-friendly number: 7_999_856 → '8.0M', 33_599 → '33.6K', 799 → '799'."""
-    if n >= 1_000_000:
+    """Human-friendly number: 7_999_856 → '8.0M', 33_599 → '33.6K', 799 → '799'.
+
+    Thresholds are rounded so values like 999_999 display as '1.0M' rather
+    than the confusing '1000.0K'.
+    """
+    if n >= 999_950:
         return f"{n / 1_000_000:.1f}M"
-    if n >= 1_000:
+    if n >= 950:
         return f"{n / 1_000:.1f}K"
     return str(n)
 

@@ -63,9 +63,10 @@ def test_step_registered_in_wizard():
 
 
 def test_deferred_command_listed_for_lighthouse():
-    import inspect
-
+    # The command moved out of the function body into the INTEGRATION_FIX_HINTS table
+    # (single source of truth), which the function reads — so grepping the function's
+    # source no longer finds the literal. Assert the actual mapping instead.
     from navig.onboarding import runner
 
-    src = inspect.getsource(runner._deferred_integration_commands)
-    assert "navig lighthouse deploy" in src
+    cmd, _desc = runner.INTEGRATION_FIX_HINTS["lighthouse"]
+    assert cmd == "navig lighthouse deploy"

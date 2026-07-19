@@ -22,11 +22,10 @@ def evolve_skill(
     """Generate and refine a new skill definition (SKILL.md)."""
     from navig.core.evolution.skill import SkillEvolver
 
-    if not skills_root:
-        # Default to navig/skills if exists, else ~/.navig/skills
-        # For now assume local project skills
-        skills_root = Path("skills")  # Relative to CWD
-
+    # skills_root=None lets SkillEvolver default to config_dir()/skills — where the agent reads
+    # global skills (skills_context._global_skills_dir) and skill_drafter writes them, so an
+    # evolved skill is discoverable. Never inject a CWD-relative default here. An explicit
+    # --root/-r still wins.
     evolver = SkillEvolver(skills_root)
     evolver.max_retries = retries
 
@@ -141,7 +140,7 @@ def evolve_status(
 ):
     """Show performance trends and regression alerts from the auto-profiler."""
     from navig.perf.profiler import (
-        PERF_DIR,
+        _perf_dir,
         detect_regressions,
         load_recent_samples,
         suggest_optimizations,
@@ -168,7 +167,7 @@ def evolve_status(
         return
 
     ch.header("🧬 NAVIG Auto-Evolutive Profiler Status")
-    ch.dim(f"  Perf data dir : {PERF_DIR}")
+    ch.dim(f"  Perf data dir : {_perf_dir()}")
     ch.dim(f"  Samples loaded: {len(samples)} (last {days} days)")
     ch.dim("")
 

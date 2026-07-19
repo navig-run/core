@@ -174,40 +174,52 @@ class Eyes(Component):
                 pass  # best-effort; failure is non-critical
 
     async def collect_metrics(self) -> SystemMetrics:
-        """Collect current system metrics."""
+        """Collect current system metrics — OFF the event loop.
+
+        Every call here blocks: ``cpu_percent(interval=0.1)`` literally SLEEPS,
+        and ``disk_usage("/")`` on Windows resolves to the current drive and can
+        stall on a cold volume. This runs from the agent's watch loop inside the
+        daemon, so inline it stalled deck/OS/webhook every single tick.
+        """
         metrics = SystemMetrics()
 
         if self._psutil:
             try:
-                # CPU
-                metrics.cpu_percent = self._psutil.cpu_percent(interval=0.1)
-
-                # Memory
-                mem = self._psutil.virtual_memory()
-                metrics.memory_percent = mem.percent
-                metrics.memory_used_mb = mem.used / (1024 * 1024)
-
-                # Disk
-                disk = self._psutil.disk_usage("/")
-                metrics.disk_percent = disk.percent
-                metrics.disk_used_gb = disk.used / (1024**3)
-
-                # Load average (Unix only)
-                if hasattr(os, "getloadavg"):
-                    metrics.load_average = os.getloadavg()
-
-                # Network
-                net = self._psutil.net_io_counters()
-                metrics.network_bytes_sent = net.bytes_sent
-                metrics.network_bytes_recv = net.bytes_recv
-
-                # Processes
-                metrics.process_count = len(self._psutil.pids())
-
+                metrics = await asyncio.to_thread(self._collect_blocking)
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
         metrics.timestamp = datetime.now()
+        return metrics
+
+    def _collect_blocking(self) -> SystemMetrics:
+        """The blocking half of `collect_metrics` — only ever run in a worker."""
+        metrics = SystemMetrics()
+
+        # CPU: a non-blocking delta sample from the shared collector, which owns
+        # the priming (a bare interval=None returns a fake 0.0 on first call).
+        from navig.commands.monitor import get_cpu_info, get_system_disk
+
+        metrics.cpu_percent = float(get_cpu_info().get("overall_percent") or 0.0)
+
+        mem = self._psutil.virtual_memory()
+        metrics.memory_percent = mem.percent
+        metrics.memory_used_mb = mem.used / (1024 * 1024)
+
+        # The SYSTEM drive (C:\ / /) — never an enumeration, which is what froze
+        # the daemon for 81 minutes on a machine with a cold network drive.
+        for row in get_system_disk():
+            metrics.disk_percent = float(row["percent"])
+            metrics.disk_used_gb = float(row["used_gb"])
+
+        if hasattr(os, "getloadavg"):
+            metrics.load_average = os.getloadavg()
+
+        net = self._psutil.net_io_counters()
+        metrics.network_bytes_sent = net.bytes_sent
+        metrics.network_bytes_recv = net.bytes_recv
+
+        metrics.process_count = len(self._psutil.pids())
         return metrics
 
     async def _check_thresholds(self, metrics: SystemMetrics) -> None:

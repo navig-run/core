@@ -18,7 +18,6 @@ Plugin Loading:
 
 import logging
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -220,13 +219,35 @@ def _handle_start_command(extra_args: list[str]) -> bool:
     return True
 
 
+def _has_help_page(topic: str) -> bool:
+    """Return True when a rich in-app help page (``navig/help/<topic>.md``) exists.
+
+    Used by :func:`_normalize_help_compat_args` to keep ``navig help <topic>``
+    on the in-app help command (which renders the markdown guide) instead of
+    rewriting it to ``navig <topic> --help``.
+
+    ``index`` is excluded on purpose: ``index.md`` is the bare-``navig help``
+    landing page, not a guide for the ``navig index`` command — the rewrite to
+    ``navig index --help`` must keep winning there.
+    """
+    name = topic.strip().lower()
+    if not name or name in {"index", "readme"}:
+        return False
+    # Only plain topic tokens may touch the filesystem (no path separators).
+    if not all(ch.isalnum() or ch in "-_" for ch in name):
+        return False
+    return (Path(__file__).resolve().parent / "help" / f"{name}.md").is_file()
+
+
 def _normalize_help_compat_args(argv: list[str]) -> list[str]:
     """Normalize legacy help forms to canonical ``--help``.
 
     Compatibility rules (best-effort):
     - ``navig <path> help`` -> ``navig <path> --help``
     - ``navig <path> -h``   -> ``navig <path> --help`` (only when ``-h`` is trailing)
-    - ``navig help <cmd>``  -> ``navig <cmd> --help``   (leading help rewrite)
+    - ``navig help <cmd>``  -> ``navig <cmd> --help``   (leading help rewrite,
+      ONLY when no ``navig/help/<cmd>.md`` guide exists — see
+      :func:`_has_help_page`; topics with a guide stay on ``navig help``)
 
     We intentionally do not rewrite top-level ``navig help`` or ``navig -h``.
     """
@@ -281,7 +302,13 @@ def _normalize_help_compat_args(argv: list[str]) -> list[str]:
         return argv
 
     # Leading help: `navig help db` → `navig db --help`
+    # …EXCEPT when a rich in-app guide exists (navig/help/<topic>.md): those
+    # route to the `help` command so the markdown page renders instead of
+    # Typer's flag dump. Topics without a page keep the legacy rewrite, so
+    # `navig <cmd> --help` behaviour is unchanged for every other command.
     if non_global_tokens[0] == "help" and len(non_global_tokens) >= 2:
+        if len(non_global_tokens) == 2 and _has_help_page(non_global_tokens[1]):
+            return argv
         normalized = list(argv)
         help_arg_index = 1 + non_global_positions[0]
         del normalized[help_arg_index]
@@ -311,6 +338,22 @@ def _normalize_help_compat_args(argv: list[str]) -> list[str]:
         return normalized
 
     return argv
+
+
+def _note_terminal_exit_code(code: object | None) -> None:
+    """Report the process's terminal exit code to the operation ledger.
+
+    The atexit operation-completion handler cannot see the exit code itself
+    (``sys.exc_info()`` is empty during interpreter shutdown), so main() — the
+    single point every invocation exits through — hands it over here first.
+    Wrapped so a recording hiccup can NEVER change the real process exit code.
+    """
+    try:
+        from navig.cli.middleware import note_exit_code
+
+        note_exit_code(code)
+    except Exception as exc:  # noqa: BLE001 — recording must never mask the exit
+        _log.debug("note_exit_code failed: %s", exc)
 
 
 def _get_console():
@@ -366,9 +409,17 @@ def _check_first_run() -> None:
     Non-TTY environments (CI, scripts) auto-skip interactive Phase 2 steps
     via _tty_check() guards already built into each Phase 2 step.
 
+    Output contract: stdout belongs to the OUTPUT of the command about to
+    dispatch; the wizard is pre-command narration, so everything it prints is
+    routed to stderr. Terminals still show it; pipes and ``--json`` consumers
+    stay clean. (``--json`` invocations additionally skip onboarding entirely
+    — see should_auto_run_onboarding.)
+
     Opt-out: set NAVIG_SKIP_ONBOARDING=1 in the environment.
     """
     try:
+        import contextlib
+
         from navig.onboarding.runner import (
             run_engine_onboarding,
             should_auto_run_onboarding,
@@ -377,11 +428,18 @@ def _check_first_run() -> None:
         if not should_auto_run_onboarding(sys.argv):
             return
 
-        run_engine_onboarding(
-            show_banner=True,
-            respect_skip_env=True,
-            skip_if_configured=True,
-        )
+        # One seam covers every write site: Rich consoles (console_helper's
+        # global one included) resolve sys.stdout at print time, so the
+        # banner, per-step progress, step output, and the verification
+        # dashboard all land on stderr. stdin is untouched — interactive
+        # prompts still work. Explicit `navig onboard` / `navig init` are NOT
+        # wrapped: there the wizard IS the command's output.
+        with contextlib.redirect_stdout(sys.stderr):
+            run_engine_onboarding(
+                show_banner=True,
+                respect_skip_env=True,
+                skip_if_configured=True,
+            )
     except Exception as exc:  # never crash main on onboarding failure
         _eprint(f"[dim]First-run setup skipped: {exc}[/dim]")
 
@@ -422,7 +480,6 @@ _BUILTIN_COMMANDS: frozenset[str] = frozenset({
     "migrate",
     "server-template",
     "bridge",
-    "farmore",
     "copilot",
     "inbox",
     "sync",
@@ -471,6 +528,7 @@ _BUILTIN_COMMANDS: frozenset[str] = frozenset({
     "webdash",
     "snapshot", "replay",
     "cloud",
+    "repo",
     "benchmark",
     "finance",
     "work",
@@ -486,7 +544,8 @@ _BUILTIN_COMMANDS: frozenset[str] = frozenset({
     "mount",
     "update",
     "proactive",
-    "package", "pack", "packs",
+    "plugin", "plugins",
+    "hub", "connections",
 })
 
 
@@ -553,11 +612,9 @@ def _should_skip_plugin_loading(argv: list[str]) -> bool:
 
     # Core built-in commands that never use plugins.
     # Skipping plugins saves ~110ms on these hot paths.
+    # (`plugin` management is itself built-in now — commands/plugin.py.)
     if args[0] in _BUILTIN_COMMANDS:
         return True
-
-    if args[0] == "plugin":
-        return False
 
     # Check plugin cache for known plugin commands (best-effort speedup).
     # Never short-circuit unknown commands here: stale cache can otherwise
@@ -602,305 +659,6 @@ def _should_skip_plugin_loading(argv: list[str]) -> bool:
     return False
 
 
-def add_plugin_commands(app) -> None:
-    """
-    Add plugin management commands to the main app.
-
-    Commands:
-    - navig plugin list: Show all plugins and their status
-    - navig plugin enable <name>: Enable a plugin
-    - navig plugin disable <name>: Disable a plugin
-    - navig plugin info <name>: Show detailed plugin information
-    """
-    import typer
-
-    from navig import console_helper as ch
-
-    plugin_app = typer.Typer(
-        name="plugin",
-        help="Manage NAVIG plugins",
-        no_args_is_help=True,
-    )
-
-    def _plugin_identifiers(info) -> list[str]:
-        identifiers: list[str] = []
-        for candidate in (info.name, info.path.name):
-            if candidate and candidate not in identifiers:
-                identifiers.append(candidate)
-        return identifiers
-
-    @plugin_app.command("list")
-    def plugin_list(
-        all_plugins: bool = typer.Option(
-            False, "--all", "-a", help="Include disabled plugins"
-        ),
-    ):
-        """List all installed plugins."""
-        from rich.table import Table
-
-        from navig.plugins import get_plugin_manager
-
-        manager = get_plugin_manager()
-        plugins = manager.list_plugins()
-
-        if not plugins:
-            ch.info("No plugins installed")
-            ch.dim("Built-in plugins are in navig/plugins/")
-            ch.dim("User plugins can be added to ~/.navig/plugins/")
-            return
-
-        table = Table(title="NAVIG Plugins")
-        table.add_column("Name", style="cyan")
-        table.add_column("Version", style="dim")
-        table.add_column("Source", style="dim")
-        table.add_column("Status", style="bold")
-        table.add_column("Description")
-
-        for info in sorted(plugins.values(), key=lambda plugin: plugin.name.lower()):
-            if not all_plugins and not info.enabled:
-                continue
-
-            if info.loaded:
-                status = "[green]+ Loaded[/green]"
-            elif not info.enabled:
-                status = "[dim]o Disabled[/dim]"
-            elif info.error:
-                status = (
-                    f"[red]x {info.error[:30]}...[/red]"
-                    if len(info.error) > 30
-                    else f"[red]x {info.error}[/red]"
-                )
-            else:
-                status = "[yellow]? Not loaded[/yellow]"
-
-            source_icons = {"builtin": "builtin", "user": "user", "project": "project"}
-            source = f"{source_icons.get(info.source, '?')}"
-
-            table.add_row(
-                info.name,
-                info.version,
-                source,
-                status,
-                (
-                    info.description[:50] + "..."
-                    if len(info.description) > 50
-                    else info.description
-                ),
-            )
-
-        ch.console.print(table)
-
-        if _failed_plugins:
-            ch.dim("")
-            ch.warning(
-                f"{len(_failed_plugins)} plugin(s) failed to load. Use 'navig plugin info <name>' for details."
-            )
-
-    @plugin_app.command("info")
-    def plugin_info(
-        name: str = typer.Argument(..., help="Plugin name"),
-    ):
-        """Show detailed information about a plugin."""
-        from navig.plugins import get_plugin_manager
-
-        manager = get_plugin_manager()
-        info = manager.get_plugin_info(name)
-
-        if not info:
-            ch.error(f"Plugin '{name}' not found")
-            raise typer.Exit(1)
-
-        ch.heading(f"Plugin: {info.name}")
-        ch.dim(f"Version: {info.version}")
-        ch.dim(f"Source: {info.source} ({info.path})")
-        ch.dim(f"Description: {info.description or '(no description)'}")
-        ch.dim("")
-
-        if info.loaded:
-            ch.success("Status: Loaded and active")
-        elif not info.enabled:
-            ch.warning("Status: Disabled")
-            ch.dim("Enable with: navig plugin enable " + name)
-        elif info.error:
-            ch.error("Status: Failed to load", info.error)
-
-        if info.missing_deps:
-            ch.dim("")
-            ch.warning("Missing dependencies:")
-            for dep in info.missing_deps:
-                ch.dim(f"  • {dep}")
-            ch.dim("")
-            ch.dim("Install with: pip install " + " ".join(info.missing_deps))
-
-    @plugin_app.command("enable")
-    def plugin_enable(
-        name: str = typer.Argument(..., help="Plugin name to enable"),
-    ):
-        """Enable a disabled plugin."""
-        from navig.config import get_config_manager
-        from navig.plugins import get_plugin_manager
-
-        config = get_config_manager()
-        manager = get_plugin_manager()
-
-        info = manager.get_plugin_info(name)
-        if not info:
-            ch.error(f"Plugin '{name}' not found")
-            raise typer.Exit(1)
-
-        for plugin_name in _plugin_identifiers(info):
-            config.enable_plugin(plugin_name)
-
-        ch.success(f"Plugin '{info.name}' enabled")
-        ch.dim("Restart NAVIG to load the plugin")
-
-    @plugin_app.command("disable")
-    def plugin_disable(
-        name: str = typer.Argument(..., help="Plugin name to disable"),
-    ):
-        """Disable a plugin (without uninstalling)."""
-        from navig.config import get_config_manager
-        from navig.plugins import get_plugin_manager
-
-        config = get_config_manager()
-        manager = get_plugin_manager()
-
-        info = manager.get_plugin_info(name)
-        if not info:
-            ch.error(f"Plugin '{name}' not found")
-            raise typer.Exit(1)
-
-        for plugin_name in _plugin_identifiers(info):
-            config.disable_plugin(plugin_name)
-
-        ch.success(f"Plugin '{info.name}' disabled")
-        ch.dim("Restart NAVIG to unload the plugin")
-
-    @plugin_app.command("install")
-    def plugin_install(
-        path: str = typer.Argument(..., help="Path to plugin directory or Git URL"),
-    ):
-        """Install a plugin from local path or Git URL."""
-        import os
-        from pathlib import Path
-
-        from navig.config import get_config_manager
-
-        config = get_config_manager()
-        source_path = Path(path).expanduser()
-
-        if source_path.exists() and source_path.is_dir():
-            try:
-                source_path = source_path.resolve(strict=True)
-            except OSError as exc:
-                ch.error("Invalid plugin path", str(exc))
-                raise typer.Exit(1) from exc
-
-            if source_path.is_symlink():
-                ch.error(
-                    "Invalid plugin path",
-                    "Plugin source directories cannot be symbolic links.",
-                )
-                raise typer.Exit(1)
-
-            linked_entry = next(
-                (entry for entry in source_path.rglob("*") if entry.is_symlink()), None
-            )
-            if linked_entry is not None:
-                ch.error(
-                    "Invalid plugin path",
-                    f"Plugin source contains a symbolic link: {linked_entry}",
-                )
-                raise typer.Exit(1)
-
-            # Local directory installation
-            plugin_file = source_path / "plugin.py"
-            if not plugin_file.exists():
-                ch.error("Invalid plugin", "Directory must contain plugin.py")
-                raise typer.Exit(1)
-
-            plugin_name = os.path.basename(str(source_path.resolve(strict=False)))
-
-            # P1-9: Validate plugin name — prevent path traversal via crafted names
-            import re as _re
-
-            if plugin_name in {"", ".", ".."} or not _re.fullmatch(
-                r"[A-Za-z0-9][A-Za-z0-9_-]*", plugin_name
-            ):
-                ch.error(
-                    f"Invalid plugin name: '{plugin_name}'",
-                    "Plugin names must contain only letters, digits, underscores, or hyphens.",
-                )
-                raise typer.Exit(1)
-
-            dest_root = config.plugins_dir.resolve()
-            dest_path = (dest_root / plugin_name).resolve()
-
-            try:
-                dest_path.relative_to(dest_root)
-            except ValueError:
-                ch.error(
-                    "Invalid plugin destination",
-                    "Resolved plugin path escapes the NAVIG plugins directory.",
-                )
-                raise typer.Exit(1) from None
-
-            if dest_path.exists():
-                ch.error(f"Plugin '{plugin_name}' already exists")
-                ch.dim(f"Remove it first: rm -rf {dest_path}")
-                raise typer.Exit(1)
-
-            # Copy plugin to user plugins directory
-            shutil.copytree(source_path, dest_path)
-            ch.success(f"Installed plugin '{plugin_name}' to {dest_path}")
-            ch.dim("Restart NAVIG to load the plugin")
-
-        elif path.startswith(("http://", "https://", "git@")):
-            # Git URL installation
-            ch.error("Git URL installation not yet implemented")
-            ch.dim(
-                "Clone the repository manually and use: navig plugin install ./path/to/plugin"
-            )
-            raise typer.Exit(1)
-
-        else:
-            ch.error(f"Invalid path: {path}")
-            ch.dim("Provide a local directory path or Git URL")
-            raise typer.Exit(1)
-
-    @plugin_app.command("uninstall")
-    def plugin_uninstall(
-        name: str = typer.Argument(..., help="Plugin name to uninstall"),
-        force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
-    ):
-        """Uninstall a user-installed plugin."""
-        import shutil
-
-        from navig.plugins import get_plugin_manager
-
-        manager = get_plugin_manager()
-
-        info = manager.get_plugin_info(name)
-        if not info:
-            ch.error(f"Plugin '{name}' not found")
-            raise typer.Exit(1)
-
-        if info.source == "builtin":
-            ch.error("Cannot uninstall built-in plugins")
-            ch.dim("You can disable it instead: navig plugin disable " + name)
-            raise typer.Exit(1)
-
-        if not force:
-            confirm = typer.confirm(f"Uninstall plugin '{info.name}'?")
-            if not confirm:
-                raise typer.Abort()
-
-        shutil.rmtree(info.path)
-        ch.success(f"Uninstalled plugin '{info.name}'")
-
-    # Register plugin commands
-    app.add_typer(plugin_app, name="plugin")
-
 
 def main() -> None:
     """
@@ -923,6 +681,21 @@ def main() -> None:
                     pass
 
     try:
+        # Compatibility normalization for legacy help syntaxes.
+        sys.argv = _normalize_help_compat_args(sys.argv)
+
+        # Fast-path: handle --version / -v / --help / bare invocation WITHOUT
+        # importing config (pyyaml + the core.* managers) or the full CLI. This
+        # keeps `navig help` / `navig --version` on the sub-50ms lightweight-core
+        # path. Must run BEFORE first-run onboarding so these flags always work
+        # on a fresh install on every platform.
+        if _maybe_handle_fast_path(sys.argv):
+            return
+
+        # Past the fast-path this is a real command, so now pull in config +
+        # crash handling. Deferred on purpose: everything below is the heaviest
+        # thing on the help/version path, and the fast-path above needs none of
+        # it — importing it eagerly would tax every `navig help` invocation.
         from navig.config import reset_config_manager, set_config_cache_bypass
         from navig.core.crash_handler import crash_handler
 
@@ -936,15 +709,6 @@ def main() -> None:
         set_config_cache_bypass(no_cache_requested)
         if no_cache_requested:
             reset_config_manager()
-
-        # Compatibility normalization for legacy help syntaxes.
-        sys.argv = _normalize_help_compat_args(sys.argv)
-
-        # Fast-path: handle --version / -v / --help / bare invocation without
-        # importing the full CLI.  Must run BEFORE first-run onboarding so that
-        # these flags always work on a fresh install on every platform.
-        if _maybe_handle_fast_path(sys.argv):
-            return
 
         # First-run onboarding — fires when ~/.navig/onboarding.json is absent.
         # Runs after the fast-path so that -v / --version / --help are never
@@ -967,6 +731,11 @@ def main() -> None:
             if not any(tok in ("gateway", "daemon") for tok in sys.argv[1:3]):
                 from navig.spaces.active import get_active_working_dir  # noqa: PLC0415
 
+                # Remember where the user actually invoked the CLI (before we chdir
+                # to the active space) so directory-aware commands like `navig menu`
+                # can operate on the folder the user is standing in, not the space.
+                _os.environ["NAVIG_INVOCATION_CWD"] = str(_Path.cwd())
+
                 _wd = get_active_working_dir()
                 if _wd and _wd.is_dir() and _wd.resolve() != _Path.cwd().resolve():
                     _os.chdir(_wd)
@@ -981,48 +750,100 @@ def main() -> None:
 
         skip_plugins = _should_skip_plugin_loading(sys.argv)
 
-        # Load plugins only when necessary (fast-path for help/version)
+        # Load plugins only when necessary (fast-path for help/version).
+        # Plugin MANAGEMENT (`navig plugin …`) is a normal external command now
+        # (commands/plugin.py via _EXTERNAL_CMD_MAP) — no discovery needed for it.
         if not skip_plugins:
             load_plugins_into_app(app)
-            # Add plugin management commands only when plugin system is active.
-            # This avoids importing rich/console_helper during `navig --help`.
-            add_plugin_commands(app)
-
-            # Auto-load packages listed in ~/.navig/packages_autoload.json
-            try:
-                from navig.commands.package import autoload_packages
-
-                autoload_packages()
-            except Exception as _e:  # noqa: BLE001
-                import logging as _logging
-
-                _logging.getLogger(__name__).debug(
-                    "autoload_packages() failed (non-critical): %s", _e
-                )
 
         # Run the CLI
         app()
 
     except KeyboardInterrupt:
+        # Record the cancel for the operation ledger BEFORE the process exits —
+        # atexit can't observe the exit code itself (see middleware.note_exit_code).
+        _note_terminal_exit_code(130)
         _eprint("\n[dim]Interrupted[/dim]")
         sys.exit(130)
     except SystemExit as e:
+        # The one chokepoint every real command leaves through — success is
+        # SystemExit(0), typer.Exit(n)/usage errors are SystemExit(n). Report it
+        # to the ledger before re-raising so the atexit completer records the
+        # truthful status (a non-zero exit is NOT a success).
+        _note_terminal_exit_code(e.code)
         # Catch Typer/Click parsing errors that indicate PowerShell mangled the input
         if e.code != 0 and len(sys.argv) >= 2:
             _handle_powershell_parsing_error(sys.argv)
-        # "Did you mean?" suggestions for misspelled top-level commands
+        # Unknown command: (1) a plugin may provide it → suggest + one-key
+        # activate; (2) otherwise "did you mean" for misspellings.
+        # Click exits 2 for EVERY usage error — including a bad flag on a real,
+        # registered command — so only suggest when the command itself is
+        # unknown (never registered on the app), else `navig github --badflag`
+        # would masquerade as a missing-plugin hint.
         if e.code == 2 and len(sys.argv) >= 2:
             from navig.cli.registration import extract_non_global_tokens
 
             command_tokens = extract_non_global_tokens(sys.argv[1:])
-            if command_tokens:
-                _suggest_did_you_mean(command_tokens[0])
+            # `app` is imported inside the try above — unbound if we exited
+            # before that import, hence locals() rather than a bare name.
+            cli_app = locals().get("app")
+            if command_tokens and not _is_registered_command(cli_app, command_tokens[0]):
+                handled = False
+                try:
+                    from navig.cli.providers import suggest_provider
+
+                    handled = suggest_provider(command_tokens[0], sys.argv)
+                except SystemExit:
+                    raise  # re-run of the activated command — propagate its code
+                except Exception:  # noqa: BLE001 — suggestion must never mask exit
+                    handled = False
+                if not handled:
+                    _suggest_did_you_mean(command_tokens[0])
         raise
     except Exception as e:
-        # Use our robust crash handler
+        # A missing optional plugin is a CONFIGURATION state, not a bug — routing it
+        # to the crash handler filed a crash report (and dumped a traceback) for what
+        # only needs one install line. Resolved HERE rather than as an `except
+        # PluginRequired` clause on purpose: that would need a module-level import of
+        # navig.plugins, whose package __init__ pulls in console_helper → rich, on
+        # every single `navig` invocation. This path only runs once we're already
+        # crashing, so the import cost is free.
+        from navig.plugins.require import PluginRequired
+
+        if isinstance(e, PluginRequired):
+            _note_terminal_exit_code(2)
+            _eprint(f"[red]✗[/red] {e}")
+            _eprint(f"  [dim]Install it:[/dim]  {e.hint}")
+            sys.exit(2)
+
+        # Use our robust crash handler (it calls sys.exit(1)).
+        _note_terminal_exit_code(1)
         from navig.core.crash_handler import crash_handler
 
         crash_handler.handle_exception(e)
+
+
+def _is_registered_command(app, name: str) -> bool:
+    """True if *name* is a command/group actually registered on the typer app.
+
+    Used to tell "unknown command" (suggest a provider) apart from "usage error
+    inside a known command" (click exits 2 for both).
+    """
+    if app is None:
+        return False
+    try:
+        for group in app.registered_groups:
+            if group.name == name:
+                return True
+        for cmd in app.registered_commands:
+            cmd_name = cmd.name or (
+                cmd.callback.__name__.replace("_", "-") if cmd.callback else ""
+            )
+            if cmd_name == name:
+                return True
+    except Exception:  # noqa: BLE001 — never break exit handling over a lookup
+        pass
+    return False
 
 
 def _suggest_did_you_mean(unknown: str) -> None:

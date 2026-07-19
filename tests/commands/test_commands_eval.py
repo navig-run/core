@@ -1,8 +1,9 @@
 """Tests for navig/commands/eval.py."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from typer.testing import CliRunner
-from unittest.mock import patch, MagicMock
 
 from navig.commands.eval import app
 

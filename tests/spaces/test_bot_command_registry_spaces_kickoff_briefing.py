@@ -5,16 +5,14 @@ Batch 81: navig/bot/command_registry.py, navig/spaces/kickoff.py,
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # bot/command_registry.py
 # ---------------------------------------------------------------------------
 from navig.bot.command_registry import BotCommand, CommandRegistry, get_command_registry
-
 
 _SAMPLE_SCHEMA = {
     "type": "function",
@@ -136,9 +134,9 @@ class TestCommandRegistry:
 # spaces/kickoff.py  (private helpers)
 # ---------------------------------------------------------------------------
 from navig.spaces.kickoff import (
-    _vision_goal,
-    _extract_pending_actions,
     SpaceKickoff,
+    _extract_pending_actions,
+    _vision_goal,
 )
 
 

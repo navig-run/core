@@ -17,7 +17,6 @@ from navig.comms.types import (
     NotificationTarget,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -106,7 +105,7 @@ class TestResolveChannel:
     def test_auto_with_user_id_uses_identity_store(self):
         target = NotificationTarget.auto("user-123")
         with patch("navig.comms.dispatch._default_channel", "telegram"):
-            with patch("navig.identity.store.get_user_preferred_channel", return_value="matrix", create=True):
+            with patch("navig.identity.store.get_user_preferred_channel", return_value="matrix"):
                 with patch.dict("sys.modules", {"navig.identity.store": MagicMock(get_user_preferred_channel=lambda uid: "matrix")}):
                     result = dispatch_mod._resolve_channel("auto", target)
         # Either uses identity store result or falls back to default — both valid

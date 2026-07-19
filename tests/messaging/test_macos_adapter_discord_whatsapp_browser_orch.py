@@ -16,7 +16,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # navig/adapters/os/macos.py
 # ---------------------------------------------------------------------------
-
 from navig.adapters.os.macos import MacOSAdapter
 
 
@@ -100,10 +99,24 @@ def test_get_home_directory_default(adapter, monkeypatch):
     assert adapter.get_home_directory() == Path("/Users/Shared")
 
 
-def test_get_config_directory(adapter, monkeypatch):
+def test_get_config_directory_delegates_to_the_platform_ssot(adapter, monkeypatch):
+    """`get_config_directory` is NOT an OS-idiomatic guess derived from $HOME.
+
+    It delegates to ``navig.platform.paths.config_dir()`` — the platform SSOT — so it
+    always matches where NAVIG really reads and writes config (see the docstring on the
+    base adapter). This test used to assert ``$HOME/.navig``, i.e. precisely the
+    divergent guess that was deliberately removed. It could never have passed anyway:
+    the session-wide conftest fixture points NAVIG_CONFIG_DIR at an isolated temp dir,
+    and the SSOT honours that override.
+    """
+    from navig.platform.paths import config_dir
+
     monkeypatch.setenv("HOME", "/Users/alice")
-    cfg_dir = adapter.get_config_directory()
-    assert cfg_dir == Path("/Users/alice/.navig")
+    assert adapter.get_config_directory() == config_dir()  # SSOT, not a $HOME guess
+
+    # ...and it follows the SSOT's override rather than $HOME.
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", "/tmp/navig-cfg-probe")
+    assert adapter.get_config_directory() == Path("/tmp/navig-cfg-probe")
 
 
 def test_get_system_info_command(adapter):

@@ -22,8 +22,6 @@ import socket
 
 import typer
 
-from navig._daemon_defaults import _GATEWAY_PORT
-
 try:
     import httpx
 
@@ -52,9 +50,16 @@ def _flux_callback(ctx: typer.Context) -> None:
         smart_launch("flux", flux_app)
 
 
-_GW = f"http://127.0.0.1:{_GATEWAY_PORT}"
 _FLUX_READ_TIMEOUT: int = 5   # Fast reads / deletes against the local mesh daemon
 _FLUX_WRITE_TIMEOUT: int = 10  # Mutations (POST) may take longer
+
+
+def _gw() -> str:
+    """Live local gateway base URL — resolved per call so it follows the
+    self-healing bind (~/.navig/gateway.json), not a guessed default port."""
+    from navig.gateway_client import gateway_base_url
+
+    return gateway_base_url()
 
 
 # ─────────────────────────── helpers ─────────────────────────────────────────
@@ -76,13 +81,13 @@ def _get(path: str) -> dict:
         import urllib.request
 
         try:
-            with urllib.request.urlopen(f"{_GW}{path}", timeout=_FLUX_READ_TIMEOUT) as r:
+            with urllib.request.urlopen(f"{_gw()}{path}", timeout=_FLUX_READ_TIMEOUT) as r:
                 return json.loads(r.read())
         except OSError as e:
             typer.echo(_daemon_offline_msg(), err=True)
             raise SystemExit(1) from e
     try:
-        r = httpx.get(f"{_GW}{path}", timeout=_FLUX_READ_TIMEOUT)
+        r = httpx.get(f"{_gw()}{path}", timeout=_FLUX_READ_TIMEOUT)
         r.raise_for_status()
         return r.json()
     except httpx.ConnectError as _exc:
@@ -100,7 +105,7 @@ def _post(path: str, payload: dict) -> dict:
         try:
             data = json.dumps(payload).encode()
             req = urllib.request.Request(
-                f"{_GW}{path}", data=data, headers={"Content-Type": "application/json"}
+                f"{_gw()}{path}", data=data, headers={"Content-Type": "application/json"}
             )
             with urllib.request.urlopen(req, timeout=_FLUX_WRITE_TIMEOUT) as r:
                 return json.loads(r.read())
@@ -108,7 +113,7 @@ def _post(path: str, payload: dict) -> dict:
             typer.echo(_daemon_offline_msg(), err=True)
             raise SystemExit(1) from e
     try:
-        r = httpx.post(f"{_GW}{path}", json=payload, timeout=_FLUX_WRITE_TIMEOUT)
+        r = httpx.post(f"{_gw()}{path}", json=payload, timeout=_FLUX_WRITE_TIMEOUT)
         r.raise_for_status()
         return r.json()
     except httpx.ConnectError as _exc:
@@ -261,11 +266,11 @@ def clear() -> None:
     """Clear the routing target — commands run locally."""
     try:
         if _HTTPX:
-            httpx.delete(f"{_GW}/mesh/target", timeout=_FLUX_READ_TIMEOUT)
+            httpx.delete(f"{_gw()}/mesh/target", timeout=_FLUX_READ_TIMEOUT)
         else:
             import urllib.request
 
-            req = urllib.request.Request(f"{_GW}/mesh/target", method="DELETE")
+            req = urllib.request.Request(f"{_gw()}/mesh/target", method="DELETE")
             urllib.request.urlopen(req, timeout=_FLUX_READ_TIMEOUT)
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
@@ -288,7 +293,11 @@ def install(
     peer: str | None = typer.Argument(None, help="Target node_id / hostname (for --push)"),
 ) -> None:
     """Show one-liner install commands, or push the install to a peer (--push)."""
-    src = gateway or f"http://{_lan_ip()}:{_GATEWAY_PORT}"
+    # Peers must hit the port the gateway ACTUALLY bound (live-resolved),
+    # reached over the LAN IP rather than loopback.
+    from navig.gateway_client import gateway_live_defaults
+
+    src = gateway or f"http://{_lan_ip()}:{gateway_live_defaults()[0]}"
 
     if push:
         if not peer:
@@ -329,9 +338,9 @@ def token(
         tok = cfg.get("mesh_token", "")
     except SystemExit:
         try:
-            from navig.config import load_config
+            from navig.config import get as _cfg_get
 
-            tok = load_config().get("gateway", {}).get("mesh_token", "")
+            tok = _cfg_get("gateway.mesh_token", "")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 

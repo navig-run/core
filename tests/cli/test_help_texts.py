@@ -15,7 +15,6 @@ import pytest
 import navig.help_texts as ht
 from navig.help_texts import CommandHelp, OptionHelp, get_group_help
 
-
 # ---------------------------------------------------------------------------
 # Dataclass shape
 # ---------------------------------------------------------------------------

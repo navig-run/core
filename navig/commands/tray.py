@@ -27,16 +27,25 @@ tray_app = typer.Typer(
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TRAY_SCRIPT = PROJECT_ROOT / "scripts" / "navig_tray.py"
 TRAY_PYW = PROJECT_ROOT / "scripts" / "navig_tray.pyw"
-LOCK_FILE = config_dir() / "tray.lock"
+# Test seam — when ``None`` (the normal state), the resolver below evaluates
+# at CALL time so NAVIG_CONFIG_DIR isolation set after import still applies
+# (see navig/vault/migrate.py:_legacy_db_path).
+LOCK_FILE: Path | None = None
+
+
+def _lock_file() -> Path:
+    return LOCK_FILE if LOCK_FILE is not None else config_dir() / "tray.lock"
+
+
 INSTALL_SCRIPT = PROJECT_ROOT / "scripts" / "install-tray.ps1"
 
 
 def _is_tray_running() -> tuple[bool, int | None]:
     """Check if tray app is already running."""
-    if not LOCK_FILE.exists():
+    if not _lock_file().exists():
         return False, None
     try:
-        pid = int(LOCK_FILE.read_text().strip())
+        pid = int(_lock_file().read_text(encoding="utf-8").strip())
         if sys.platform == "win32":
             import ctypes
 
@@ -143,7 +152,7 @@ def tray_stop():
 
         # Clean up lock file
         try:
-            LOCK_FILE.unlink(missing_ok=True)
+            _lock_file().unlink(missing_ok=True)
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
@@ -167,9 +176,7 @@ def tray_status(
     running, pid = _is_tray_running()
 
     if json_output:
-        import json as json_mod
-
-        ch.console.print(json_mod.dumps({"running": running, "pid": pid}))
+        ch.emit_json({"running": running, "pid": pid}, indent=None)
         return
 
     if running:

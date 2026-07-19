@@ -192,6 +192,19 @@ DEPRECATION_MAP = {
     "navig plugin info": "navig plugin show",
     "navig plugin install": "navig plugin add",
     "navig plugin uninstall": "navig plugin remove",
+    # Legacy pack systems → plugin format (removal after migrate-packs ships)
+    "navig package": "navig plugin",
+    "navig pack": "navig plugin",
+    "navig packs": "navig plugin",
+    # SQLite maintenance moved under `navig db` (`store status` changed MEANING:
+    # it is now the wiring summary — the old DB-health rows live at db local status)
+    "navig store status": "navig db local status",
+    "navig store maintenance": "navig db local maintenance",
+    "navig store backup": "navig db local backup",
+    "navig store migrate": "navig db local migrate",
+    "navig store cleanup": "navig db local cleanup",
+    # Module registry CLI folded into the Store hub
+    "navig modules": "navig store",
     # Addon (deprecated for template)
     "navig addon list": "navig template list",
     "navig addon enable": "navig template run --enable",

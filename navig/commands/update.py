@@ -187,12 +187,19 @@ def _step_doctor():
     t0 = time.monotonic()
     warnings = []
     try:
-        from navig.commands.doctor import run_doctor_checks
+        # collect_report is the canonical programmatic doctor seam — the exact
+        # checks `navig doctor --json` runs. skip_deps: the package refresh ran
+        # as the update step just before this, so re-probing pip here is
+        # redundant (and slow). Any non-ok row (⚠ warn or ✗ fail) is surfaced.
+        from navig.commands.doctor import collect_report
 
-        results = run_doctor_checks(quiet=True) or []
-        for r in results:
-            if getattr(r, "level", "") in ("warning", "error"):
-                warnings.append(getattr(r, "message", str(r)))
+        report = collect_report(quiet=True, skip_deps=True)
+        for section in report.get("sections", []):
+            for check in section.get("checks", []):
+                if not check.get("ok", True):
+                    label = str(check.get("label", "")).strip()
+                    detail = str(check.get("detail", "")).strip()
+                    warnings.append(f"{label}: {detail}" if detail else (label or "issue"))
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
     note = f"{len(warnings)} warning(s)" if warnings else "no issues"
@@ -242,6 +249,55 @@ def _sync_path(src_dir, con):
             _p(con, f"[dim]  + PATH entry synced: {path_exe}[/dim]")
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
+
+
+def _offer_redeploys(con):
+    """After a successful local update, offer to refresh the deployed Lighthouse
+    edge + deck when they're behind what this (now-updated) navig ships.
+
+    This is the "automatic, user-friendly" half: the user runs ``navig update``
+    and is prompted to push the matching edge/deck — nothing to remember.
+    """
+    try:
+        from navig.core import Config
+
+        cfg = Config()
+    except Exception:  # noqa: BLE001
+        return
+    import navig as _nav
+
+    cur = str(getattr(_nav, "__version__", "") or "")
+
+    # Lighthouse edge — bundled worker version vs the live one.
+    try:
+        from navig.commands.lighthouse import (
+            _bundled_worker_version,
+            _deployed_worker_version,
+        )
+
+        url = str(cfg.get("cloud.lighthouse_url", "") or "").strip()
+        if url:
+            latest = _bundled_worker_version()
+            deployed = _deployed_worker_version(url)
+            if latest and deployed and latest != deployed:
+                _p(con, f"[yellow]  Lighthouse edge behind:[/yellow] deployed v{deployed} · bundled v{latest}")
+                if typer.confirm("  Redeploy Lighthouse now?", default=True):
+                    subprocess.run(
+                        [sys.executable, "-m", "navig", "lighthouse", "redeploy"], check=False
+                    )
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; never fail an update on the redeploy nudge
+
+    # Deck — navig version it was deployed from vs this one.
+    try:
+        url = str(cfg.get("deck.public_url", "") or "").strip()
+        deployed = str(cfg.get("deck.deployed_version", "") or "").strip()
+        if url and deployed and deployed != cur:
+            _p(con, f"[yellow]  Deck behind:[/yellow] deployed v{deployed} · this navig v{cur}")
+            if typer.confirm("  Redeploy the deck now?", default=True):
+                subprocess.run([sys.executable, "-m", "navig", "miniapp", "deploy"], check=False)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _run_update(check=False, force=False, dry_run=False, channel=None):
@@ -376,6 +432,9 @@ def _run_update(check=False, force=False, dry_run=False, channel=None):
         con.print()
 
     _sync_path(src_dir, con)
+
+    # After a successful local update, offer to refresh the deployed edge + deck.
+    _offer_redeploys(con)
 
 
 # ============================================================================
@@ -586,6 +645,10 @@ def update_run(
 
     if not result.success:
         raise typer.Exit(1)
+
+    # Local update succeeded → offer to refresh the deployed Lighthouse edge + deck.
+    if not host and not group and not all_hosts and not dry_run:
+        _offer_redeploys(con)
 
 
 # ---------------------------------------------------------------------------

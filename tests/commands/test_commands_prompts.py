@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import typer
 from typer.testing import CliRunner
@@ -13,9 +14,22 @@ from navig.commands.prompts import prompts_app
 runner = CliRunner()
 
 
+@contextmanager
 def _patch_dir(tmp_path: Path):
-    """Context manager that patches _PROMPTS_DIR to tmp_path."""
-    return patch("navig.commands.prompts._PROMPTS_DIR", tmp_path)
+    """Isolate BOTH prompt paths onto ``tmp_path``.
+
+    `prompts new/edit/remove` still write through the ``_PROMPTS_DIR`` constant,
+    but `prompts list` was rewritten to be multi-root (user · package · space ·
+    claude · plugins) and now reads ``navig.prompts.registry``. These tests only
+    patched the constant, so `list` kept scanning the machine's REAL roots — and
+    every "the file I just wrote shows up" assertion has been red on main ever
+    since. Patch the write constant AND the registry's root resolver.
+    """
+    with (
+        patch("navig.commands.prompts._PROMPTS_DIR", tmp_path),
+        patch("navig.prompts.registry.get_prompt_dirs", return_value=[(tmp_path, "user")]),
+    ):
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -55,12 +69,26 @@ class TestPromptsList:
         assert result.exit_code == 0
         assert "No prompts" in result.output
 
-    def test_empty_dir_shows_path(self, tmp_path):
+    def test_empty_state_names_a_command_that_actually_exists(self, tmp_path):
+        """The empty state must point at a REAL command.
+
+        It used to say "Add one with navig prompts new …" — there is no `new`
+        command (`edit` creates the file and opens it), so the one place a new
+        user lands sent them to a dead end. It used to print the prompts
+        DIRECTORY too; there is no single directory any more (prompts come from
+        several roots), which is why the old path assertion only passed by
+        accident on a fragment of the temp path.
+        """
         with _patch_dir(tmp_path):
             result = runner.invoke(prompts_app, ["list"])
-        # The path appears in the output (possibly wrapped by Rich)
-        path_parts = [p for p in str(tmp_path).split("\\") if len(p) >= 4]
-        assert any(part in result.output for part in path_parts)
+        assert result.exit_code == 0
+
+        registered = {c.name for c in prompts_app.registered_commands}
+        hinted = [c for c in registered if f"navig prompts {c}" in result.output]
+        assert hinted, (
+            f"the empty state names no existing command — it said: {result.output.strip()!r}\n"
+            f"(available: {sorted(registered)})"
+        )
 
     def test_list_txt_file(self, tmp_path):
         (tmp_path / "my-prompt.txt").write_text("content")
@@ -82,11 +110,17 @@ class TestPromptsList:
         assert "a" in result.output
         assert "b" in result.output
 
-    def test_creates_dir_if_missing(self, tmp_path):
+    def test_listing_does_not_create_the_directory(self, tmp_path):
+        """`list` is read-only. The old single-root implementation mkdir'd the
+        prompts dir as a side effect of listing it; the multi-root registry does
+        not — scanning several roots must not conjure directories on disk. (The
+        write commands still create their target: see `new` below.)"""
         missing = tmp_path / "new" / "deep"
         with _patch_dir(missing):
-            runner.invoke(prompts_app, ["list"])
-        assert missing.exists()
+            result = runner.invoke(prompts_app, ["list"])
+        assert result.exit_code == 0
+        assert not missing.exists()
+
 
     def test_non_txt_md_not_listed(self, tmp_path):
         (tmp_path / "config.yaml").write_text("yaml")

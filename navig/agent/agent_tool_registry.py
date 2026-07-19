@@ -71,6 +71,38 @@ class AgentToolEntry:
 CheckFn = Callable[[], bool]
 
 
+# Friendly, user-facing domain labels for toolset groups — used to describe the
+# agent's real breadth in its system prompt. Each entry is (short, verbose):
+# the terse form feeds the compact one-line summary (minimal prompt), the verbose
+# form the bulleted full-prompt summary. Both live here so they can't drift. An
+# UNLISTED toolset falls back to a title-cased name for both, so a newly-added
+# toolset still surfaces (the summary tracks the live registry).
+#
+# NOTE: this covers the conv-agent path (navig chat / deck). The one-shot
+# `navig ask` path can't populate this registry cheaply (importing every tool
+# module costs ~372ms), so it describes the SAME breadth in prose via
+# config.py::_DEFAULT_AI_PROMPT. When you add a capability domain here, mirror it
+# there so `navig ask "who are you"` stays accurate too.
+_TOOLSET_LABELS: dict[str, tuple[str, str]] = {
+    "browser": ("browse & operate websites",
+                "Browse & operate real websites — open pages, click, read, fill forms, automate flows"),
+    "remote": ("run your servers over SSH", "Run commands on your servers over SSH"),
+    "devops": ("deploy & manage infrastructure", "Deploy, manage Docker, CI/CD and infrastructure"),
+    "git": ("git & code review", "Version control — inspect history, branch, commit, review diffs"),
+    "worktree": ("parallel git worktrees", "Work on several branches at once in isolated git worktrees"),
+    "lsp": ("code intelligence", "Read & understand codebases with code intelligence"),
+    "memory": ("long-term memory", "Remember facts about you and recall them later"),
+    "wiki": ("a knowledge wiki", "Keep and search a personal knowledge wiki"),
+    "plan": ("planning", "Plan multi-step work and track phases"),
+    "todo": ("task lists", "Manage tasks and to-do lists"),
+    "search": ("web & content search", "Search the web and your own content"),
+    "coordinator": ("multi-agent coordination", "Coordinate several sub-agents to tackle one goal in parallel"),
+    "background_task": ("background jobs", "Run long jobs in the background and check on them later"),
+    "skills": ("installable skills", "Learn and apply installable skills"),
+    "core": ("files & local commands", "Read & write files and run local commands"),
+}
+
+
 # ─────────────────────────────────────────────────────────────
 # Registry
 # ─────────────────────────────────────────────────────────────
@@ -153,6 +185,41 @@ class AgentToolRegistry:
             if _is_available(entry):
                 results.append(name)
         return sorted(results)
+
+    def capability_summary(
+        self, toolsets: list[str] | None = None, *, compact: bool = False
+    ) -> str:
+        """A summary of what the agent can ACTUALLY do right now.
+
+        Generated from the live registry (only ``check_fn``-passing tools in the
+        given *toolsets*, or all when ``None``), grouped by toolset with friendly
+        domain labels. Returns ``""`` when nothing is available. Fed into the
+        system prompt so the model describes its real breadth when asked, instead
+        of improvising a narrow list — and it can never drift from the actual
+        tools, because it *is* the actual tools.
+
+        *compact* returns a single comma-joined line (each label trimmed to the
+        part before its ``—``) for the slim/minimal prompt — language-agnostic, so
+        even a short non-English "what can you do?" still gets the real breadth.
+        The default is the verbose bulleted form for the full prompt.
+        """
+        seen: set[str] = set()
+        for entry in self._entries.values():
+            if toolsets is not None and entry.toolset not in toolsets:
+                continue
+            if _is_available(entry):
+                seen.add(entry.toolset)
+        if not seen:
+            return ""
+        if compact:
+            return ", ".join(
+                _TOOLSET_LABELS.get(ts, ("", ""))[0] or ts.replace("_", " ").lower()
+                for ts in sorted(seen)
+            )
+        return "\n".join(
+            f"- {_TOOLSET_LABELS.get(ts, ('', ''))[1] or ts.replace('_', ' ').title()}"
+            for ts in sorted(seen)
+        )
 
     def get_openai_schemas(
         self,

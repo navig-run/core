@@ -11,7 +11,7 @@ Record schema::
       "actor":      "telegram:123456789",         # who initiated
       "action":     "db.query",                   # action slug
       "policy":     "allow",                      # PolicyDecision value
-      "status":     "success",                    # success | denied | error | pending_approval
+      "status":     "success",                    # success | approved | denied | error | pending_approval
       "input_hash": "sha256:abcdef...",           # sha256 of sanitized input (no secrets)
       "output_len": 128,                          # character length of output
       "metadata":   {}                            # optional extra fields
@@ -46,8 +46,16 @@ from navig.platform import paths
 
 logger = logging.getLogger(__name__)
 
-# Default path — can be overridden via AuditLog(path=...)
-_DEFAULT_PATH = paths.config_dir() / "runtime" / "audit.jsonl"
+
+def _default_path() -> Path:
+    """Resolve the audit-log path at CALL time — never import time.
+
+    ``config_dir()`` honours ``NAVIG_CONFIG_DIR``; a module-level constant
+    would freeze the real user home before test/daemon isolation applies
+    (see ``navig/vault/migrate.py:_legacy_db_path``). Overridable via
+    ``AuditLog(path=...)``.
+    """
+    return paths.config_dir() / "runtime" / "audit.jsonl"
 
 
 class AuditLog:
@@ -59,7 +67,7 @@ class AuditLog:
     """
 
     def __init__(self, path: Path | None = None) -> None:
-        self._path = Path(path) if path else _DEFAULT_PATH
+        self._path = Path(path) if path else _default_path()
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
@@ -83,7 +91,7 @@ class AuditLog:
         :param actor:      Identifier of the initiating actor.
         :param action:     Dot-notation action slug (e.g. ``"db.query"``).
         :param policy:     PolicyDecision value string.
-        :param status:     ``"success" | "denied" | "error" | "pending_approval"``.
+        :param status:     ``"success" | "approved" | "denied" | "error" | "pending_approval"``.
         :param raw_input:  Raw input text (will be hashed, not stored verbatim).
         :param raw_output: Raw output text (only length is stored).
         :param metadata:   Optional extra fields to include in the record.

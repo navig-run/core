@@ -90,6 +90,29 @@ class SpaceManifest:
     def package_allowlist(self) -> list[str]:
         return self._id_list("packages")
 
+    @property
+    def app_allowlist(self) -> list[str]:
+        """The space's PINNED apps (desktop sidebar view-filter, locked 2026-07-09).
+
+        Non-empty = only these module ids, in this order; empty/absent = all
+        apps. A view-filter over the globally-enabled modules — never a second
+        enablement store.
+        """
+        return self._id_list("apps")
+
+    @property
+    def books(self) -> str | None:
+        """The finance BOOK this space works in (locked rule #6: Default space →
+        personal books; Company space → company books).
+
+        Absent/empty ⇒ the default (personal) book — full back-compat. A name
+        selects a separate ledger partition; consumers sanitize it for storage.
+        """
+        v = self.data.get("books")
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+        return None
+
 
 def find_manifest_file(space_dir: Path) -> Path | None:
     """Return the manifest path for *space_dir*, or None for a bare ``.navig/``."""
@@ -136,3 +159,45 @@ def is_space_dir(path: Path) -> bool:
     except OSError:
         return False
     return find_manifest_file(path) is not None
+
+
+class ManifestNotWritable(Exception):
+    """A space manifest can't be safely written in place — it's a YAML manifest
+    (edit the key by hand) or unreadable / non-object JSON. Callers surface the
+    message (CLI error, deck 409); we never clobber a file we couldn't read."""
+
+
+def set_manifest_field(
+    space_dir: Path, key: str, value: Any, *, id_hint: str | None = None
+) -> Path:
+    """Set — or DELETE, when *value* is None — one top-level manifest field,
+    preserving every other key, and return the written path.
+
+    The single safe writer for a JSON manifest: a bare ``.navig/`` (or missing
+    dir) is bootstrapped with a minimal ``space.json`` (``id`` = *id_hint* or the
+    folder name); a YAML manifest, or unreadable / non-object JSON, raises
+    :class:`ManifestNotWritable` instead of being overwritten — a failed read
+    must never become a destructive write (see the config-layer rule in
+    CLAUDE.md). Writes pretty JSON with a trailing newline, matching the scaffold.
+    """
+    nav = space_dir / ".navig"
+    path = find_manifest_file(space_dir)
+    if path is not None and path.suffix in (".yaml", ".yml"):
+        raise ManifestNotWritable(f"space manifest is YAML — edit its `{key}:` by hand")
+    if path is None:  # bare .navig/ (or nothing yet) — create the minimal manifest
+        nav.mkdir(parents=True, exist_ok=True)
+        path = nav / MANIFEST_NAMES[0]
+        data: dict[str, Any] = {"id": id_hint or space_dir.name}
+    else:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+        except Exception as exc:  # noqa: BLE001
+            raise ManifestNotWritable("space manifest is unreadable JSON — fix it by hand") from exc
+        if not isinstance(data, dict):
+            raise ManifestNotWritable("space manifest is not a JSON object")
+    if value is None:
+        data.pop(key, None)
+    else:
+        data[key] = value
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return path
