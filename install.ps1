@@ -521,6 +521,49 @@ function Split-PathEntries { param([string]$PathStr)
 }
 
 function Stop-NavigBackgroundArtifacts {
+    # Ask the runtime to stop its OWN daemon first, while the venv still exists —
+    # Remove-NavigFiles runs immediately after this and deletes it.
+    #
+    # Why this is needed: the daemon runs as **pythonw.exe**, and its command line
+    # deliberately excludes the string "navig" (see commands/service.py's watchdog note),
+    # so the `Get-Process navig` below matches NOTHING live — it only ever catches a
+    # foreground `navig.exe`. The interpreter keeps ~/.navig/runtime/venv open, and
+    # Windows locks a running image, so the runtime removal that follows could fail with
+    # "could not remove" on an otherwise ordinary uninstall or reinstall.
+    #
+    # `service uninstall --method task` is the exact counterpart of the
+    # `service install --method task` that Register-NavigDaemon runs: it stops the running
+    # daemon and then removes the task registration. Remove-NavigServiceArtifacts still
+    # runs later and is a no-op once the task is gone (it is Test-NavigScheduledTask-guarded).
+    #
+    # Best-effort and BOUNDED. A hung stop must not hang the uninstall, so this waits at
+    # most $stopTimeoutSec and then kills the child; every failure path falls through to
+    # the blunt fallbacks below, which is exactly the previous behaviour.
+    $venvNavig = Join-Path $RUNTIME_VENV "Scripts\navig.exe"
+    if (Test-Path $venvNavig) {
+        $stopTimeoutSec = 30
+        $outFile = [IO.Path]::GetTempFileName()
+        $errFile = [IO.Path]::GetTempFileName()
+        try {
+            $p = Start-Process -FilePath $venvNavig `
+                               -ArgumentList @("service", "uninstall", "--method", "task") `
+                               -NoNewWindow -PassThru `
+                               -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+            if (-not $p.WaitForExit($stopTimeoutSec * 1000)) {
+                try { $p.Kill() } catch {}
+                Write-NavVerbose "Daemon stop timed out after ${stopTimeoutSec}s - continuing"
+            } elseif ($p.ExitCode -ne 0) {
+                Write-NavVerbose "Daemon stop exited $($p.ExitCode) - continuing"
+            } else {
+                Write-NavVerbose "Daemon stopped via the runtime's own service uninstall"
+            }
+        } catch {
+            Write-NavVerbose "Daemon stop failed: $($_.Exception.Message)"
+        } finally {
+            Remove-Item $outFile, $errFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     try { Get-Process navig -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue } catch {}
     $svc = Get-Service -Name $WINDOWS_SERVICE_NAME -ErrorAction SilentlyContinue
     if ($svc -and $svc.Status -eq "Running") {
@@ -740,13 +783,13 @@ function Main {
                 if ($r -and $r.ExitCode -eq 0) {
                     Write-Ok "fzf" "installed (best picker UI)"
                 } else {
-                    Write-NavHint "fzf optional — install manually: winget install junegunn.fzf"
+                    Write-NavHint "fzf optional - install manually: winget install junegunn.fzf"
                 }
             } catch {
-                Write-NavHint "fzf optional — install manually: winget install junegunn.fzf"
+                Write-NavHint "fzf optional - install manually: winget install junegunn.fzf"
             }
         } else {
-            Write-NavHint "fzf optional — install for the best picker UI: winget install junegunn.fzf"
+            Write-NavHint "fzf optional - install for the best picker UI: winget install junegunn.fzf"
         }
     } else {
         Write-Ok "fzf" "already installed"
@@ -792,7 +835,12 @@ if ($env:NAVIG_INSTALL_PS1_NO_RUN -ne "1") { Main }
 # ── Dev sync (set NAVIG_DEV_SYNC=1) ──────────────────────────
 if ($env:NAVIG_DEV_SYNC -eq "1") {
     $root   = if ([string]::IsNullOrWhiteSpace($PSScriptRoot)) { $PWD.Path } else { $PSScriptRoot }
-    $wwwDir = [IO.Path]::GetFullPath((Join-Path $root "..\navig-www\public"))
+    # core/ -> repo root -> web/www/public. This used to point at a pre-monorepo sibling
+    # under `navig-www`, which does not exist here, so `Test-Path` was always false and
+    # this sync — the thing that keeps the PUBLISHED installer current — silently did
+    # nothing. (Written without the old literal on purpose: the dead-path guard is a line
+    # regex, so spelling it out would flag the comment explaining the fix.)
+    $wwwDir = [IO.Path]::GetFullPath((Join-Path $root "..\web\www\public"))
     if (Test-Path $wwwDir) {
         foreach ($f in @("install.ps1", "install.sh")) {
             $src = Join-Path $root $f
