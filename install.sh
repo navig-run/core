@@ -7,7 +7,7 @@
 #
 # Options:
 #   -v | --version <ver>   Pin version (e.g. 2.7.0)
-#   -a | --action <mode>   install (default) | uninstall | reinstall
+#   -a | --action <mode>   install (default) | uninstall | reinstall | repair
 #   -y | --yes             Skip interactive prompts
 #        --verbose         Verbose output
 #        --dry-run         Preview only
@@ -15,7 +15,7 @@
 #
 # Environment:
 #   NAVIG_VERSION    Pin version
-#   NAVIG_ACTION     install | uninstall | reinstall
+#   NAVIG_ACTION     install | uninstall | reinstall | repair  (repair = reinstall)
 #   NO_COLOR         Disable color
 #   NAVIG_VERBOSE    Enable verbose (set to 1)
 
@@ -435,8 +435,67 @@ setup_config() {
 }
 
 # ── Stop background processes / services ─────────────────────
+# This shell and its ancestors, newline-separated. `pkill -f` matches the FULL command
+# line, so an installer invoked by absolute path — `bash /home/me/navig-core/install.sh
+# --action uninstall` — matches its own pattern and SIGTERMs itself partway through the
+# uninstall, leaving the runtime removed and the profile lines still in place, with no
+# error. Verified on Linux: a script at /tmp/navig-probe/run.sh is listed by
+# `pgrep -f navig` as its own pid. The two DOCUMENTED invocations are safe
+# (`curl … | bash` has cmdline "bash"; `bash install.sh` is relative), which is why this
+# never showed up — but running it from a clone is exactly what a developer does.
+# `ps -o ppid=` rather than /proc so this still works on macOS.
+# Kept as defence in depth now that the pattern itself is narrow (_navig_proc_pattern):
+# an installer copied under the runtime directory would still self-match.
+_navig_self_chain() {
+    local pid=$$ guard=0
+    while [ -n "$pid" ] && [ "$pid" -gt 1 ] 2>/dev/null && [ "$guard" -lt 32 ]; do
+        printf '%s\n' "$pid"
+        pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+        guard=$((guard + 1))
+    done
+}
+
+# ERE-escape a literal so it can be embedded in a pgrep pattern. $HOME is
+# user-controlled: a home directory holding `+`, `(` or `.` would otherwise change the
+# pattern's meaning, or make pgrep reject it outright — which fails SILENTLY, stopping
+# nothing on the one path whose whole job is to stop things.
+_re_escape() {
+    printf '%s' "${1:-}" | sed 's/[][\\.^$*+?(){}|]/\\&/g'
+}
+
+# The command-line shapes that identify a NAVIG process, as one extended regex.
+#
+# ⚠ Deliberately NOT the bare word "navig". `pgrep -f` matches the FULL command line, so
+# that pattern also matched an editor holding a file under a navig checkout, a terminal
+# running a navig script, and the agent session driving the install — none of them NAVIG,
+# all of them SIGTERMed by an uninstall. Narrowing here removes only bystanders: every
+# real NAVIG background process is either invoked as `navig …`, launched as a `-m navig…`
+# module, or run by the managed runtime, and all three are still matched.
+#
+# The CLI itself is matched separately, by process NAME (`pgrep -x navig`), because a
+# cmdline pattern cannot tell the binary from `code ~/projects/navig` — which ends in
+# "/navig" and is exactly the process an operator would most hate to lose.
+_navig_proc_pattern() {
+    printf '%s|%s|%s' \
+        '(-m navig($|[. ])|navig gateway|navig[._]daemon)' \
+        "$(_re_escape "$RUNTIME_DIR")" \
+        "$(_re_escape "$SHIM_PATH")"
+}
+
 _stop_navig_background() {
-    pkill -f 'navig' 2>/dev/null || true
+    # Every NAVIG process MINUS this uninstaller's own tree, so the set of navig daemons
+    # stopped is unchanged — an ancestor is never a daemon, and when a reinstall is driven
+    # BY navig it is the process we least want to kill.
+    local skip pid pattern
+    skip=" $(_navig_self_chain | tr '\n' ' ') "
+    pattern="$(_navig_proc_pattern)"
+    for pid in $(
+        pgrep -x 'navig' 2>/dev/null || true
+        pgrep -f "$pattern" 2>/dev/null || true
+    ); do
+        case "$skip" in *" $pid "*) continue ;; esac
+        kill "$pid" 2>/dev/null || true
+    done
     if command -v systemctl > /dev/null 2>&1; then
         for unit in navig-daemon navig-tunnel navig; do
             systemctl stop    "${unit}.service" 2>/dev/null || true
@@ -462,9 +521,15 @@ uninstall_navig() {
         esac
     fi
 
-    row_step "Removing" "$_nav_str"
+    # In reinstall mode this is a phase of an install, not an uninstall — announcing
+    # "Removing NAVIG" and later "fully uninstalled" would tell the operator their install
+    # is gone right before it is rebuilt. Mirrors install.ps1's -ForReinstall.
+    if [ "$preserve_data" = "1" ]; then
+        row_step "Clearing" "existing installation"
+    else
+        row_step "Removing" "$_nav_str"
+    fi
     _uninstall_ok=1
-    _removed_items=""
 
     # 1. Stop background processes and services
     _stop_navig_background
@@ -514,18 +579,47 @@ uninstall_navig() {
     done
     if [ "$_rc_cleaned" = "1" ]; then
         row_ok  "Shell profiles" "PATH entries removed"
-        row_warn "Note"          "open a new terminal to apply PATH changes"
+        # Not in reinstall mode: fix_path re-adds the same lines a few steps later, so
+        # telling the operator to open a new terminal would be advice against the truth.
+        [ "$preserve_data" = "1" ] || row_warn "Note" "open a new terminal to apply PATH changes"
     else
         row_warn "Shell profiles" "no tagged entries found — skipping"
     fi
 
     # 6. Done
-    if [ "${_uninstall_ok}" = "1" ]; then
+    if [ "$preserve_data" = "1" ]; then
+        if [ "${_uninstall_ok}" = "1" ]; then
+            row_ok "Cleared" "previous installation removed — user data kept"
+        else
+            row_warn "Cleared" "previous installation removed with warnings — check output above."
+        fi
+    elif [ "${_uninstall_ok}" = "1" ]; then
         row_ok "Done" "$_nav_str fully uninstalled."
     else
         row_warn "Done" "$_nav_str removed with warnings — check output above."
     fi
     return 0
+}
+
+# ── Actions ───────────────────────────────────────────────────
+# ONE list. The positional case, the validator, the usage text and the invalid-action
+# error all read from it, so an action can no longer be advertised without being handled
+# — which is precisely how `reinstall` and `repair` shipped as accepted-and-ignored.
+_NAVIG_ACTIONS="install uninstall reinstall repair"
+
+_action_is_valid() {
+    case " $_NAVIG_ACTIONS " in *" ${1:-} "*) return 0 ;; esac
+    return 1
+}
+
+# `repair` is an alias for `reinstall`, mirroring install.ps1's Normalize-NavigAction so
+# the same word means the same thing on both platforms.
+_action_is_reinstall() {
+    [ "${1:-}" = "reinstall" ] || [ "${1:-}" = "repair" ]
+}
+
+_actions_help() {
+    printf '%s' "$_NAVIG_ACTIONS" | sed 's/ / | /g'
 }
 
 # ── Argument defaults ─────────────────────────────────────────
@@ -540,14 +634,15 @@ _HELP=0
 _parse_args() {
     while [ $# -gt 0 ]; do
         case "$1" in
-            # Bare positional subcommand: install | uninstall | reinstall | repair
-            install|uninstall|reinstall|repair) _ACTION="$1" ;;
             -v|--version)    shift; _VERSION="${1:-}"  ;;
             -a|--action)     shift; _ACTION="${1:-}"   ;;
             -y|--yes)        _YES=1                     ;;
             --dry-run)       _DRY_RUN=1                 ;;
             --verbose|-V)    NAV_VERBOSE=1              ;;
             -h|--help)       _HELP=1                    ;;
+            # Bare positional subcommand, from the one action list. Anything else is
+            # ignored, exactly as before.
+            *) if _action_is_valid "$1"; then _ACTION="$1"; fi ;;
         esac
         shift
     done
@@ -560,7 +655,7 @@ show_usage() {
     printf "  bash install.sh [OPTIONS]\n\n"
     printf "Options:\n"
     printf "  -v <ver>    Pin version\n"
-    printf "  -a <mode>   install | uninstall | reinstall\n"
+    printf "  -a <mode>   %s  (repair = reinstall)\n" "$(_actions_help)"
     printf "  -y          Skip prompts\n"
     printf "  --verbose   Verbose output\n"
     printf "  --dry-run   Preview only\n"
@@ -575,17 +670,14 @@ main() {
     _parse_args "$@"
 
     if [ "$_HELP" = "1" ]; then show_usage; return; fi
-    case "$_ACTION" in
-        install|uninstall|reinstall|repair) ;;
-        *)
-            print_failure \
-                "invalid action" \
-                "Unsupported action: $_ACTION" \
-                "Use one of: install, uninstall, reinstall, repair" \
-                "bash install.sh --action install"
-            return 1
-            ;;
-    esac
+    if ! _action_is_valid "$_ACTION"; then
+        print_failure \
+            "invalid action" \
+            "Unsupported action: $_ACTION" \
+            "Use one of: $(_actions_help)" \
+            "bash install.sh --action install"
+        return 1
+    fi
 
     if [ "$_DRY_RUN" = "1" ]; then
         printf "Dry run mode - no changes will be made\n"
@@ -609,6 +701,23 @@ main() {
         _inst_ver=$(navig --version 2>&1 | grep -oE '[0-9]+[.][0-9.]+' | head -1 || true)
         uninstall_navig 0 "${_inst_ver:-}"
         return
+    fi
+
+    # ── Reinstall / repair: tear the old install down, then fall through to install ──
+    # `reinstall` and `repair` were accepted, validated and documented from the start but
+    # never dispatched anywhere, so both silently did a plain overlay install — leaving
+    # exactly the stale runtime a reinstall exists to replace. install.ps1 has always had
+    # this branch (Invoke-NavigUninstall -PreserveUserData -ForReinstall), and
+    # uninstall_navig's whole preserve_data=1 path was written for it and unreachable.
+    # User data is preserved; only the managed runtime, shim and PATH lines go, and the
+    # install below re-adds the PATH lines idempotently (fix_path).
+    if _action_is_reinstall "$_ACTION"; then
+        if [ -d "$RUNTIME_DIR" ] || [ -e "$SHIM_PATH" ]; then
+            print_section "Reinstall"
+            uninstall_navig 1
+        else
+            log_verbose "Reinstall: nothing installed — continuing as a plain install"
+        fi
     fi
 
     # ── Environment ───────────────────────────────────────────
