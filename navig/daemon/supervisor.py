@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from navig._daemon_defaults import _GATEWAY_PORT
+from navig.core.proc_text import console_encoding
 from navig.core.yaml_io import atomic_write_text
 from navig.platform import paths
 
@@ -48,7 +49,42 @@ PID_FILE: Path | None = None
 STATE_FILE: Path | None = None
 
 
+def _under_pytest() -> bool:
+    """True when this process is a test run rather than the operator's daemon."""
+    return "pytest" in sys.modules
+
+
+def _pytest_state_dir() -> Path:
+    """A throwaway, per-process daemon-state dir used ONLY under pytest.
+
+    Why this exists: ``paths.config_dir()`` falls back to the operator's REAL
+    ``~/.navig`` whenever a test has not isolated it, so a bare ``NavigDaemon()``
+    resolved ``_pid_file()`` to the operator's live ``supervisor.pid``. Measured on
+    the operator's own machine (2026-09-04): their real ``daemon.log`` recorded
+    ``Stale PID file (pid=7) - removing and starting fresh`` -- pid 7 is a value that
+    only exists inside a test stub -- and three seconds later
+    ``Swept 1 orphan daemon PID(s): [56800]``, where 56800 was their LIVE supervisor.
+
+    That is the whole failure: a test overwrites the pid file, the live daemon is no
+    longer *recorded* as running, and the next start therefore classifies it as an
+    orphan of a previous generation and ``taskkill /F /T``s it. Same config dir, so
+    the (correct) config-dir scoping in :meth:`_kill_orphan_daemons` cannot help --
+    the daemon really is "ours", it was just erased from the file that vouches for it.
+    The operator loses their bot, with no traceback and no shutdown line.
+
+    Per-process (``os.getpid()``) so xdist workers cannot fight over one path.
+    """
+    import tempfile
+
+    return Path(tempfile.gettempdir()) / f"navig-pytest-daemon-{os.getpid()}"
+
+
 def _daemon_dir() -> Path:
+    # An explicitly isolated brain (NAVIG_CONFIG_DIR) is honoured by config_dir()
+    # itself. The pytest branch covers the tests that isolate NOTHING -- see
+    # _pytest_state_dir for what that cost the operator.
+    if _under_pytest() and not os.environ.get("NAVIG_CONFIG_DIR"):
+        return _pytest_state_dir() / "daemon"
     return paths.config_dir() / "daemon"
 
 
@@ -60,8 +96,101 @@ def _state_file() -> Path:
     return STATE_FILE if STATE_FILE is not None else _daemon_dir() / "state.json"
 
 
+def _capture_code_identity() -> dict[str, Any]:
+    """Snapshot which code THIS process loaded at boot, so a later ``navig doctor`` can
+    tell whether the running daemon is executing STALE code — i.e. the source moved on
+    disk after boot (a merge, a ``git pull``, a branch switch) while the daemon kept the
+    old modules in memory ("merged but not live"). Best-effort; never raises.
+
+    Records the source dir + git HEAD/branch for an editable checkout, and always the
+    package version. Git is detected via ``git rev-parse`` (which walks UP to the repo
+    root) rather than ``(<src>/.git).exists()`` — in this monorepo ``.git`` lives at the
+    repo root, not inside the editable ``core/`` src dir.
+    """
+    info: dict[str, Any] = {"captured_at": datetime.now(timezone.utc).isoformat()}
+    try:
+        import navig as _nav  # noqa: PLC0415
+
+        info["version"] = str(getattr(_nav, "__version__", "") or "")
+    except Exception:  # noqa: BLE001
+        pass  # version is a bonus; the git commit below is the primary signal
+    try:
+        # <src>/navig/daemon/supervisor.py -> parents[2] == <src> (the editable root)
+        src_dir = Path(__file__).resolve().parents[2]
+        info["src"] = str(src_dir)
+        rev = subprocess.run(
+            ["git", "-C", str(src_dir), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5, encoding="utf-8", errors="replace",
+        )
+        if rev.returncode == 0 and rev.stdout.strip():
+            info["install"] = "git"
+            info["commit"] = rev.stdout.strip()
+            br = subprocess.run(
+                ["git", "-C", str(src_dir), "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=5, encoding="utf-8", errors="replace",
+            )
+            if br.returncode == 0 and br.stdout.strip():
+                info["branch"] = br.stdout.strip()
+        else:
+            info["install"] = "pip"
+    except Exception:  # noqa: BLE001
+        pass  # git absent / timed out — version-only identity is still useful
+    return info
+
+
+def _elevation_hint(pid: int) -> str:
+    """The actionable message for an 'access denied' stop — almost always an
+    elevation mismatch (the daemon runs elevated; this terminal does not)."""
+    if os.name == "nt":
+        return (
+            f"it's running elevated (Administrator) but this terminal is not "
+            f"(pid {pid}), so Windows denied the stop. Re-run in an Administrator "
+            f"terminal, or force it:  taskkill /F /PID {pid} /T"
+        )
+    return (
+        f"permission denied signalling pid {pid} — it may run as a different user or "
+        f"elevated. Try:  sudo kill -9 {pid}"
+    )
+
+
 def _resolve_log_dir() -> Path:
-    """Resolve log directory using navig.platform.paths (respects OS conventions)."""
+    """Resolve the daemon's log directory.
+
+    Normally ``paths.log_dir()`` -- the OS-idiomatic location that ``navig service
+    logs`` and ``navig doctor`` read. TWO cases must NOT resolve there, because both
+    mean "this process is not the operator's daemon":
+
+    * **Under pytest.** ``NavigDaemon.__init__`` opens ``daemon.log`` before any test
+      body runs, so a test cannot opt out by isolating late. The operator's real
+      ``daemon.log`` carried lines naming pytest tmp dirs
+      (``.../pytest-of-subdose/popen-gw3/test_add_telegram_bot0/...``) interleaved
+      with genuine boot records -- the one file you would read to find out why the
+      daemon died, filled with noise by the test suite.
+
+    ``NAVIG_CONFIG_DIR`` is deliberately NOT a trigger here, and that is a CORRECTION.
+    It looked like the right signal for "an isolated brain", but the Windows scheduled
+    task sets it on every launch (``_task_bootstrap_args`` bakes
+    ``NAVIG_CONFIG_DIR=<home>`` in), so keying on it moved the REAL daemon's logs.
+    Measured within minutes of shipping it: ``~/.navig/logs/daemon.log`` was live at
+    17:40 while ``%LOCALAPPDATA%/navig/logs/daemon.log`` -- the file ``navig service
+    logs`` and the deck viewer actually read -- sat frozen at 17:35. That is the same
+    split-brain the surrounding work exists to remove.
+
+    The pytest check alone is sufficient for the isolation it was added for:
+    ``"pytest" in sys.modules`` is true for the whole test process, so it applies
+    however late a test sets its env.
+
+    An explicit ``NAVIG_LOG_DIR`` always wins: it is a deliberate statement of intent
+    and ``paths.log_dir()`` already honours it.
+    """
+    if os.environ.get("NAVIG_LOG_DIR"):
+        return paths.log_dir()
+    if _under_pytest():
+        return _pytest_state_dir() / "logs"
     return paths.log_dir()
 
 MAX_RESTART_DELAY = 120  # seconds
@@ -163,6 +292,9 @@ class ChildProcess:
             return True
         except Exception as exc:
             logger.error("Failed to start %s: %s", self.name, exc)
+            # The log handle was opened before Popen — close it so a crash-looping child
+            # that fails to spawn doesn't leak one file descriptor per restart attempt.
+            self._close_log()
             return False
 
     def stop(self, logger: logging.Logger, timeout: float = 10) -> None:
@@ -260,6 +392,11 @@ class NavigDaemon:
         daemon.run()                # blocks until shutdown
     """
 
+    # Human-readable reason set by stop_running_daemon() when it returns False, so a
+    # CLI caller can tell the operator WHY (e.g. an elevation mismatch) — a bare False
+    # is unactionable. Reset at the start of every stop attempt.
+    _last_stop_error: str | None = None
+
     def __init__(self, *, health_port: int = 0):
         _ensure_dirs()
         self.logger = _make_logger("navig.daemon", _resolve_log_dir() / "daemon.log")
@@ -268,6 +405,11 @@ class NavigDaemon:
         self._running = False
         self._health_port = health_port
         self._health_server: Any = None
+        # Snapshot the code this process loaded at boot (git commit / version) so
+        # `navig doctor` can flag a daemon that's running stale code after the source
+        # moved on disk. Captured ONCE here — never recomputed — so it reflects boot,
+        # not whatever HEAD happens to be at the next _write_state().
+        self._boot_code: dict[str, Any] = _capture_code_identity()
 
     # -- child registration ------------------------------------------------
 
@@ -359,12 +501,37 @@ class NavigDaemon:
 
     @staticmethod
     def read_pid() -> int | None:
-        if _pid_file().exists():
-            try:
-                return int(_pid_file().read_text(encoding="utf-8").strip())
-            except (ValueError, OSError):
-                return None
-        return None
+        """The daemon's PID — but only if it is STILL the process that wrote the file.
+
+        A pidfile records a NUMBER, and a number is not an identity. This returned the
+        recorded integer whenever the file parsed, so after a crash or a reboot — when the
+        OS has handed that number to something else — every consumer acted on a stranger:
+
+          * ``stop_running_daemon`` sent ``taskkill /PID n /T`` and then ``/F /T`` to it
+            with no identity check at all, killing an unrelated process TREE;
+          * ``is_running`` reported the daemon up because *something* answered to the
+            number, so ``navig service status`` / ``doctor`` / the tray all lied;
+          * ``navig service start`` refused to start ("already running").
+
+        ``pid_from_pidfile`` is the canonical answer and was already adopted by
+        ``navig agent stop``, ``gateway``, ``tray`` and the MCP agent tool — the daemon
+        supervisor was the holdout, which is the "harden one path into a destructive
+        action, enumerate EVERY path" failure. It compares the process ``create_time``
+        against the file's mtime: the owner writes the pidfile just after starting, so a
+        process that recycled the number necessarily started after the file was written.
+
+        ``None`` now means missing / unparseable / dead / unreadable / recycled — all of
+        which mean "not running", the safe answer. Every caller already handles ``None``,
+        and ``navig service stop``'s fast path turns it into a clean "Daemon is not
+        running" instead of a force-kill aimed at whatever inherited the number.
+
+        No ``cmdline_contains`` marker: the daemon legitimately runs under several shapes
+        (``pythonw -m navig``, a console launch, a frozen exe), and a marker that failed to
+        match would make a LIVE daemon unstoppable — a worse failure than the one fixed.
+        """
+        from navig.daemon.single_instance import pid_from_pidfile  # noqa: PLC0415
+
+        return pid_from_pidfile(_pid_file())
 
     @staticmethod
     def is_running() -> bool:
@@ -422,7 +589,8 @@ class NavigDaemon:
                         f'(Get-CimInstance Win32_Process -Filter "ProcessId={pid}").CommandLine',
                     ],
                     capture_output=True,
-                    text=True,
+                    encoding=console_encoding(),
+                    errors="replace",
                     timeout=_PROC_GRACEFUL_TIMEOUT,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
@@ -445,6 +613,7 @@ class NavigDaemon:
             "pid": os.getpid(),
             "started_at": datetime.now(timezone.utc).isoformat(),
             "children": [c.to_dict() for c in self.children],
+            "boot_code": getattr(self, "_boot_code", {}),
         }
         try:
             atomic_write_text(_state_file(), json.dumps(state, indent=2))
@@ -483,7 +652,31 @@ class NavigDaemon:
             await writer.drain()
             writer.close()
 
-        self._health_server = await asyncio.start_server(handler, "127.0.0.1", self._health_port)
+        try:
+            self._health_server = await asyncio.start_server(
+                handler, "127.0.0.1", self._health_port
+            )
+        except OSError as exc:
+            # The health endpoint is DIAGNOSTICS; the supervisor's job is running children.
+            # This call sits at the top of `_supervisor_loop` OUTSIDE its try/except, so an
+            # escaping bind error meant not one child was ever started — the auxiliary
+            # killing the essential. `--health-port` is set when installing a PERSISTENT
+            # service, so the service manager would have restarted the daemon into the same
+            # failure indefinitely.
+            #
+            # Deliberately NOT falling back to another port: monitoring is pointed at the
+            # port the operator chose, so quietly moving it would answer on a port nobody
+            # watches — worse than being honestly absent.
+            self.logger.error(
+                "Health-check port %d unavailable (%s) — daemon continuing WITHOUT it. "
+                "Something else holds the port, or on Windows it is inside a reserved range "
+                "(check: netsh interface ipv4 show excludedportrange protocol=tcp). "
+                "Children are unaffected; choose another with --health-port.",
+                self._health_port,
+                exc,
+            )
+            self._health_server = None
+            return
         self.logger.info("Health-check listening on 127.0.0.1:%d", self._health_port)
 
     # -- main loop ---------------------------------------------------------
@@ -595,20 +788,16 @@ class NavigDaemon:
     # -- external control --------------------------------------------------
 
     @staticmethod
-    def _kill_orphan_daemons(exclude_pid: int | None = None) -> list[int]:
-        """Kill all pythonw/python processes that are navig daemon instances.
+    def _enumerate_navig_pids() -> list[int]:
+        """Return every PID whose command line looks like a navig daemon/gateway/worker.
 
-        Finds every python process whose command line contains 'navig.daemon'
-        (or 'navig\\daemon\\entry') except *exclude_pid* and the current process,
-        then force-kills them with taskkill /F on Windows or SIGKILL on POSIX.
-
-        Returns the list of PIDs that were targeted.
+        Machine-wide and config-dir-AGNOSTIC by design — the caller
+        (:meth:`_kill_orphan_daemons`) scopes which of these are actually ours before
+        killing anything. Best-effort: a failed enumeration returns ``[]``.
         """
-        current_pid = os.getpid()
-        killed: list[int] = []
-
-        if sys.platform == "win32":
-            try:
+        pids: list[int] = []
+        try:
+            if sys.platform == "win32":
                 result = subprocess.run(
                     [
                         "powershell",
@@ -628,58 +817,136 @@ class NavigDaemon:
                         ),
                     ],
                     capture_output=True,
-                    text=True,
+                    encoding=console_encoding(),
+                    errors="replace",
                     timeout=10,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
-                for token in result.stdout.split():
-                    try:
-                        found_pid = int(token.strip())
-                    except ValueError:
-                        continue
-                    if found_pid == current_pid:
-                        continue
-                    if exclude_pid is not None and found_pid == exclude_pid:
-                        continue
-                    killed.append(found_pid)
-                    subprocess.run(
-                        ["taskkill", "/F", "/PID", str(found_pid), "/T"],
-                        capture_output=True,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                    )
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; never crash the stop path
-        else:
-            try:
-                import signal as _signal
+            else:
                 result = subprocess.run(
                     ["pgrep", "-f", r"navig\.daemon|navig gateway start|telegram_worker"],
                     capture_output=True,
                     text=True,
                     timeout=5,
                 )
-                for token in result.stdout.split():
-                    try:
-                        found_pid = int(token.strip())
-                    except ValueError:
-                        continue
-                    if found_pid == current_pid:
-                        continue
-                    if exclude_pid is not None and found_pid == exclude_pid:
-                        continue
-                    killed.append(found_pid)
-                    try:
-                        os.kill(found_pid, _signal.SIGKILL)
-                    except OSError:
-                        pass
+        except Exception:  # noqa: BLE001 — best-effort; never crash the stop path
+            return pids
+        for token in result.stdout.split():
+            try:
+                pids.append(int(token.strip()))
+            except ValueError:
+                continue
+        return pids
+
+    @staticmethod
+    def _force_kill_pid(pid: int) -> None:
+        """Force-kill a PID + its tree — taskkill /F /T on Windows, SIGKILL on POSIX."""
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/F", "/PID", str(pid), "/T"],
+                capture_output=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        else:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+
+    @staticmethod
+    def _kill_orphan_daemons(
+        exclude_pid: int | None = None,
+        *,
+        config_dir: Path | None = None,
+        config_dir_reader=None,
+        pids: list[int] | None = None,
+        killer=None,
+        keep: set[int] | None = None,
+    ) -> list[int]:
+        """Force-kill stale navig daemon/gateway/worker processes **for OUR brain only**.
+
+        Sweeps stale daemon generations left by previous restarts. The enumeration
+        (PowerShell / pgrep) is machine-wide, so every candidate PID is scoped by its
+        effective ``NAVIG_CONFIG_DIR`` before being killed: a process whose config dir
+        differs from ours — OR cannot be read — is LEFT ALONE. This mirrors the gateway
+        supersede guard (``single_instance.kill_other_instances`` / ``config_dir_of``);
+        without it a ``navig service stop`` under a different ``NAVIG_CONFIG_DIR`` would
+        force-kill the operator's live brain (all lights green, no shutdown line — the
+        documented catastrophe). "Refusing to kill" is the safe failure: a stale
+        SAME-brain instance is still reaped, and a port bind self-heals.
+
+        **Ancestors are protected.** Excluding only ``current_pid`` is not enough: the
+        enumeration matches any command line *mentioning* ``navig.daemon``, which
+        includes this process's own launcher chain (``py.exe`` → ``python.exe``), and
+        the kill is ``taskkill /F /T`` — a TREE kill. Sweeping the launcher therefore
+        killed the daemon that was starting, before it ever wrote its pid file: the
+        Task Scheduler entry from ``navig service install`` ran, exited 1, and left no
+        log, so autostart looked installed and delivered nothing. ``ancestor_pids()``
+        is the module that exists to answer "the tree we must never kill"; the gateway
+        supersede guard already used it and this sweeper was the holdout.
+
+        Returns the list of PIDs that were killed. ``config_dir`` / ``config_dir_reader``
+        / ``pids`` / ``killer`` / ``keep`` are injectable for testing.
+        """
+        current_pid = os.getpid()
+        if keep is None:
+            try:
+                from navig.daemon.single_instance import ancestor_pids
+
+                keep = ancestor_pids()
+            except Exception:  # noqa: BLE001 — self-exclusion below still holds
+                keep = {current_pid}
+        try:
+            from navig.platform import paths
+
+            mine = (config_dir if config_dir is not None else paths.config_dir()).resolve()
+        except Exception:  # noqa: BLE001 — can't identify our own brain → kill nothing (safe)
+            return []
+
+        if config_dir_reader is not None:
+            read_cfg = config_dir_reader
+        else:
+            from navig.daemon.single_instance import config_dir_of
+
+            read_cfg = config_dir_of
+        kill = killer if killer is not None else NavigDaemon._force_kill_pid
+        candidates = pids if pids is not None else NavigDaemon._enumerate_navig_pids()
+
+        killed: list[int] = []
+        for found_pid in candidates:
+            if found_pid == current_pid or found_pid in keep:
+                continue
+            if exclude_pid is not None and found_pid == exclude_pid:
+                continue
+            # Config-dir scoping — NEVER kill a process that isn't ours or can't be
+            # identified. A different config dir is a different brain; an unreadable
+            # one might be. Refusing to kill costs at most a surviving stale instance.
+            # Normalize BOTH sides: a reader may hand back an unresolved path, and a
+            # near-miss would silently widen the sweep back to machine-wide — the exact
+            # bug this scoping exists to prevent.
+            try:
+                theirs = read_cfg(found_pid)
+                theirs = Path(theirs).resolve() if theirs is not None else None
             except Exception:  # noqa: BLE001
-                pass  # best-effort
+                theirs = None
+            if theirs is None or theirs != mine:
+                continue
+            killed.append(found_pid)
+            try:
+                kill(found_pid)
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; never crash the stop path
 
         return killed
 
     @staticmethod
     def stop_running_daemon() -> bool:
-        """Send stop signal to a running daemon. Returns True if stopped."""
+        """Send stop signal to a running daemon. Returns True if stopped.
+
+        On failure sets :attr:`_last_stop_error` with an actionable reason (an
+        elevation mismatch is the common one) so the CLI can tell the operator WHY
+        and how to recover — a bare False leaves them stuck."""
+        NavigDaemon._last_stop_error = None
         pid = NavigDaemon.read_pid()
         if pid is None:
             # No PID file, but there may still be orphan daemon processes —
@@ -688,19 +955,28 @@ class NavigDaemon:
             return False
         try:
             if sys.platform == "win32":
-                # Use taskkill with /T (tree) for clean shutdown
+                # Graceful first: taskkill /T (tree) without /F. Windows-only.
                 r = subprocess.run(
                     ["taskkill", "/PID", str(pid), "/T"],
                     capture_output=True,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
-                # taskkill writes to stdout on Windows, not stderr
-                tk_out = (r.stdout + r.stderr).lower()
-                if r.returncode != 0 and b"not found" in tk_out:
-                    # Process already gone — clean up stale PID file
-                    _pid_file().unlink(missing_ok=True)
-                    NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
-                    return True
+                # taskkill writes its message to stdout on Windows, not stderr.
+                out = (r.stdout + r.stderr).decode("utf-8", "replace")
+                low = out.lower()
+                if r.returncode != 0:
+                    if "not found" in low:
+                        # Process already gone — clean up stale PID file.
+                        _pid_file().unlink(missing_ok=True)
+                        NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
+                        return True
+                    if "access is denied" in low or "access denied" in low:
+                        # Force-kill will be denied too (an elevation mismatch), so
+                        # don't burn the 10 s graceful wait — report and bail now.
+                        NavigDaemon._last_stop_error = _elevation_hint(pid)
+                        return False
+                # else: graceful sent, or "can only be terminated forcefully" — fall
+                # through to the wait + force-kill below.
             else:
                 os.kill(pid, signal.SIGTERM)
             # Wait a moment for clean exit
@@ -717,17 +993,25 @@ class NavigDaemon:
                     capture_output=True,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
-                tk_out = (r.stdout + r.stderr).lower()
-                if r.returncode != 0 and b"not found" in tk_out:
-                    _pid_file().unlink(missing_ok=True)
-                    NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
-                    return True
+                out = (r.stdout + r.stderr).decode("utf-8", "replace")
+                low = out.lower()
                 if r.returncode == 0:
                     # Force-kill succeeded — process is gone
                     time.sleep(0.5)
                     _pid_file().unlink(missing_ok=True)
                     NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
                     return True
+                if "not found" in low:
+                    _pid_file().unlink(missing_ok=True)
+                    NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
+                    return True
+                # Force-kill genuinely failed — record WHY so the caller can act.
+                if "access is denied" in low or "access denied" in low:
+                    NavigDaemon._last_stop_error = _elevation_hint(pid)
+                else:
+                    NavigDaemon._last_stop_error = (
+                        f"taskkill couldn't stop pid {pid}: {out.strip() or 'unknown error'}"
+                    )
             else:
                 force_signal = getattr(signal, "SIGKILL", signal.SIGTERM)
                 os.kill(pid, force_signal)
@@ -739,6 +1023,8 @@ class NavigDaemon:
                     NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
                     return True
             NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
+            if NavigDaemon._last_stop_error is None:
+                NavigDaemon._last_stop_error = f"pid {pid} is still running after a force-kill."
             return False
         except ProcessLookupError:
             # Process already gone
@@ -747,12 +1033,14 @@ class NavigDaemon:
             NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
             return True
         except PermissionError:
+            NavigDaemon._last_stop_error = _elevation_hint(pid)
             return False
-        except OSError:
+        except OSError as exc:
             if not NavigDaemon.is_running():
                 if _pid_file().exists():
                     _pid_file().unlink(missing_ok=True)
                 NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
                 return True
+            NavigDaemon._last_stop_error = f"couldn't stop pid {pid}: {exc}"
             return False
 

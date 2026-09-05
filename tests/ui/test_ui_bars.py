@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 import navig.ui.bars as bars_mod
 from navig.ui.bars import _make_bar, render_metric_bars, render_sparklines
 from navig.ui.models import Metric

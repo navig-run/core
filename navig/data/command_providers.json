@@ -6,7 +6,7 @@
       "plugin": "navig-mobile",
       "module": null,
       "pip": "navig-mobile",
-      "description": "NAVIG Mobile module — pro-grade Android + iOS device operations (a 3uTools for both platforms): connect, device info, apps, file pull, screenshots, backups, plus forensics / spyware-scan / rooting-jailbreak assist / dev-tools / OSINT, and app UI automation, verification & assertions (a11y snapshots, tap/fill, `ui assert` machine checks, evidence capture, replay via agent-device — powers the app-ui-verify Block). Wired into `navig mobile` (+ `navig android` / `navig ios`). A first-party navig plugin (free, toggleable)."
+      "description": "NAVIG Mobile — pro-grade Android + iOS device operations: connect, device info, apps, file pull, screenshots, backups, plus forensics / spyware-scan / root-jailbreak assist / OSINT, and app UI automation (a11y snapshots, tap/fill, `ui assert` machine checks, evidence capture). Wired into `navig mobile` (+ `navig android` / `navig ios`). A first-party navig plugin (free, toggleable)."
     },
     "antivirus": {
       "plugin": "navig-antivirus",
@@ -26,6 +26,18 @@
       "pip": "navig-calendar",
       "description": "Calendar view & sync (Google Calendar / CalDAV)"
     },
+    "dedupe": {
+      "plugin": "navig-dedupe",
+      "module": null,
+      "pip": "navig-dedupe",
+      "description": "NAVIG Dedupe — a free, standalone perceptual duplicate finder for photos, video, audio & any file. Non-destructive (quarantine, never delete). Installs without navig; also wired into `navig dedupe`."
+    },
+    "design": {
+      "plugin": "navig-text",
+      "module": null,
+      "pip": "navig-text",
+      "description": "NAVIG Text module — AI text generation (drafts/articles/captions/briefs) + `navig design` (agent HTML/CSS restyle + design tokens) for the Design Mode lens. A first-party navig plugin (free, toggleable). The TEXT facet of the shared media generation engine."
+    },
     "devhost": {
       "plugin": "navig-devhost",
       "module": null,
@@ -40,6 +52,12 @@
       "module": "download",
       "pip": "navig-download",
       "description": "Universal media downloader (yt-dlp) — video, audio & files"
+    },
+    "ebay": {
+      "plugin": "navig-ebay",
+      "module": null,
+      "pip": "navig-ebay",
+      "description": "NAVIG eBay module — sell on eBay via the official Sell APIs (draft, publish, price, orders) wired into `navig ebay`. A first-party navig plugin (free, toggleable)."
     },
     "email": {
       "plugin": "navig-email",
@@ -78,13 +96,13 @@
       "plugin": "navig-mobile",
       "module": null,
       "pip": "navig-mobile",
-      "description": "NAVIG Mobile module — pro-grade Android + iOS device operations (a 3uTools for both platforms): connect, device info, apps, file pull, screenshots, backups, plus forensics / spyware-scan / rooting-jailbreak assist / dev-tools / OSINT, and app UI automation, verification & assertions (a11y snapshots, tap/fill, `ui assert` machine checks, evidence capture, replay via agent-device — powers the app-ui-verify Block). Wired into `navig mobile` (+ `navig android` / `navig ios`). A first-party navig plugin (free, toggleable)."
+      "description": "NAVIG Mobile — pro-grade Android + iOS device operations: connect, device info, apps, file pull, screenshots, backups, plus forensics / spyware-scan / root-jailbreak assist / OSINT, and app UI automation (a11y snapshots, tap/fill, `ui assert` machine checks, evidence capture). Wired into `navig mobile` (+ `navig android` / `navig ios`). A first-party navig plugin (free, toggleable)."
     },
     "mobile": {
       "plugin": "navig-mobile",
       "module": null,
       "pip": "navig-mobile",
-      "description": "NAVIG Mobile module — pro-grade Android + iOS device operations (a 3uTools for both platforms): connect, device info, apps, file pull, screenshots, backups, plus forensics / spyware-scan / rooting-jailbreak assist / dev-tools / OSINT, and app UI automation, verification & assertions (a11y snapshots, tap/fill, `ui assert` machine checks, evidence capture, replay via agent-device — powers the app-ui-verify Block). Wired into `navig mobile` (+ `navig android` / `navig ios`). A first-party navig plugin (free, toggleable)."
+      "description": "NAVIG Mobile — pro-grade Android + iOS device operations: connect, device info, apps, file pull, screenshots, backups, plus forensics / spyware-scan / root-jailbreak assist / OSINT, and app UI automation (a11y snapshots, tap/fill, `ui assert` machine checks, evidence capture). Wired into `navig mobile` (+ `navig android` / `navig ios`). A first-party navig plugin (free, toggleable)."
     },
     "mstore": {
       "plugin": "navig-msstore",
@@ -114,7 +132,7 @@
       "plugin": "navig-text",
       "module": null,
       "pip": "navig-text",
-      "description": "NAVIG Text module — AI text generation (drafts/articles/captions/briefs). A first-party navig plugin (free, toggleable). The TEXT facet of the shared media generation engine."
+      "description": "NAVIG Text module — AI text generation (drafts/articles/captions/briefs) + `navig design` (agent HTML/CSS restyle + design tokens) for the Design Mode lens. A first-party navig plugin (free, toggleable). The TEXT facet of the shared media generation engine."
     },
     "tiktok": {
       "plugin": "navig-download",

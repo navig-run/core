@@ -26,10 +26,6 @@ def test_resolve_telegram_token_uses_vault_provider_scan(monkeypatch):
     monkeypatch.delenv("NAVIG_TELEGRAM_BOT_TOKEN", raising=False)
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
 
-    class _Secret:
-        def reveal(self):
-            return ""
-
     class _Info:
         def __init__(self, credential_id, enabled=True):
             self.id = credential_id
@@ -40,8 +36,13 @@ def test_resolve_telegram_token_uses_vault_provider_scan(monkeypatch):
             self.data = data
 
     class _Vault:
-        def get_secret(self, provider, key, caller=None):
-            return _Secret()
+        # The real `Vault.get(provider, profile_id=None, caller=…)`. This fake used to
+        # define `get_secret(provider, key, caller=…)` — a signature the real Vault has
+        # never had (`get_secret` takes ONE argument, a label) — so it answered happily
+        # for a call that could only ever raise in production. Returning None here keeps
+        # this test exercising what it is named for: the provider-scan fallback.
+        def get(self, provider, profile_id=None, caller=None):
+            return None
 
         def list(self, provider=None):
             if provider == "telegram":

@@ -50,6 +50,17 @@ class BaseTool(ABC):
     parameters: dict[str, Any] = {}  # Defines NavigToolParameter keys
     owner_only: bool = False
 
+    #: Declare that this tool keeps state per conversation. The agent then injects the
+    #: stable per-chat key as ``args["_session_id"]``.
+    #:
+    #: Opt-in, and **undeclared in the tool schema** — the model never sees it and cannot
+    #: choose it; it is context, not an argument. A tool that keeps per-chat state without
+    #: setting this silently shares that state across every conversation the daemon
+    #: serves, which for a tool like ``todo_create`` (it REPLACES the list) means one chat
+    #: destroying another's. This replaced a hardcoded ``if name == "browser_tool"`` in
+    #: the agent loop, per the registry-driven law: tools self-register, no hardcoded lists.
+    needs_session: bool = False
+
     def get_meta(self) -> dict[str, Any]:
         """
         Exports the tool definition aligning strictly

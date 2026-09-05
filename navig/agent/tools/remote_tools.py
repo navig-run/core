@@ -13,6 +13,7 @@ to the agentic ReAct loop:
 from __future__ import annotations
 
 import logging
+import shlex
 import time
 from typing import Any
 
@@ -163,25 +164,33 @@ class RemoteFileReadTool(BaseTool):
             if not path:
                 return ToolResult(name=self.name, success=False, error="'path' is required")
 
-            # Build navig file show command
-            parts = ["navig", "file", "show", f'"{path}"']
+            # Build navig file show command. Every caller-supplied value is
+            # shlex-quoted so shell metacharacters ($(), ;, backticks, |) in a
+            # path/host/lines value cannot break out of their argument on the
+            # REMOTE shell (an attacker could reach this via prompt injection).
+            parts = ["navig", "file", "show", shlex.quote(path)]
             host = args.get("host")
             if host:
-                parts.extend(["--host", host])
+                parts.extend(["--host", shlex.quote(str(host))])
             if args.get("tail"):
                 parts.append("--tail")
             lines = args.get("lines")
             if lines:
-                parts.extend(["--lines", str(lines)])
+                parts.extend(["--lines", shlex.quote(str(lines))])
 
             cmd = " ".join(parts)
             await self._emit(on_status, "remote", f"Reading {path}", 10)
 
             executor = _get_executor()
+            # Do NOT force use_b64=False: that bypassed execute_command's _needs_b64
+            # guard and interpolated `cmd` straight into the LOCAL shell, so a path
+            # like "$(id)" command-substituted on this machine (local RCE). Leaving
+            # use_b64 to auto-detect base64-encodes any command with shell metachars
+            # before it reaches create_subprocess_shell — the cross-platform-safe
+            # path the rest of the executor already relies on.
             result = await executor.execute_command(
                 cmd,
                 host=None,  # Already part of the navig command
-                use_b64=False,
                 timeout=args.get("timeout", 60),
             )
 

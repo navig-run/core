@@ -38,6 +38,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from navig.core.proc_text import console_encoding
 from navig.core.yaml_io import atomic_write_text
 from navig.platform.paths import config_dir
 
@@ -93,7 +94,8 @@ def _machine_id() -> str | None:
                         "(Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID",
                     ],
                     capture_output=True,
-                    text=True,
+                    encoding=console_encoding(),
+                    errors="replace",
                     timeout=5,
                 )
                 uuid = result.stdout.strip()
@@ -159,6 +161,39 @@ def _build_anon_id() -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
+#: The one config key that turns the install ping off. Read here and by
+#: ``navig telemetry`` so the status you are shown is the state that actually applies.
+TELEMETRY_CONFIG_KEY = "telemetry.enabled"
+
+
+def telemetry_opted_out_in_config(strict: bool = False) -> bool:
+    """True only when the user has EXPLICITLY set ``telemetry.enabled`` to false.
+
+    An unset key means "not answered", which keeps the existing opt-out default (the
+    ping fires) — this function narrows collection, it never widens it. The value goes
+    through ``coerce_bool`` because ``navig config set telemetry.enabled false`` stores
+    the *string* ``"false"``, which is truthy.
+
+    ``strict`` decides what an unreadable config means, and the two callers genuinely
+    differ. The ping runs inside ``navig init`` and must never block it, so it takes the
+    default and fails open. ``navig telemetry`` is a status report, and reporting
+    "enabled" when the config could not be read would be claiming knowledge it does not
+    have — it passes ``strict=True`` and lets the failure surface as "unknown".
+    """
+    try:
+        from navig.config import ConfigManager
+        from navig.core.coerce import coerce_bool
+
+        raw = ConfigManager().get(TELEMETRY_CONFIG_KEY, None)
+        if raw is None:
+            return False
+        return not coerce_bool(raw, default=True)
+    except Exception:  # noqa: BLE001 — a config failure must never block or crash init
+        if strict:
+            raise
+        return False
+
+
 def ping_install_if_first_time() -> None:
     """
     Fire one anonymous HTTP ping on the first install, then never again.
@@ -173,6 +208,13 @@ def ping_install_if_first_time() -> None:
     """
     # Hard opt-out
     if os.environ.get(_OPT_OUT_VAR):
+        return
+
+    # Config opt-out. `navig telemetry disable` writes telemetry.enabled=False, and
+    # until now NOTHING read that key — the command printed "Telemetry disabled." and
+    # this ping still fired on the next `navig init`. A control that reports success
+    # while doing nothing is worse than no control at all.
+    if telemetry_opted_out_in_config():
         return
 
     # Already pinged

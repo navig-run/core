@@ -17,6 +17,7 @@ ROADMAP parser from routes.apps.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -84,6 +85,9 @@ def _space_card(canonical: str, cfg: Any, *, active_path: str | None) -> dict[st
         # Pinned apps (desktop sidebar view-filter): non-empty = only these, in
         # this order; empty = all. Never affects enablement (that's global).
         "app_allowlist": manifest.app_allowlist,
+        # Per-app SECTION layouts (order + hidden) — the same kind of view-filter
+        # as app_allowlist, one level down.
+        "app_sections": manifest.app_sections,
         "counts": {
             "skills": len(manifest.skill_allowlist),
             "packages": len(manifest.package_allowlist),
@@ -96,7 +100,11 @@ def _space_card(canonical: str, cfg: Any, *, active_path: str | None) -> dict[st
 
 async def handle_deck_spaces_scan(request: "web.Request") -> "web.Response":
     """GET — every discovered space (across roots), enriched + flagged."""
-    try:
+
+    def _collect() -> dict[str, Any]:
+        # Enumerating spaces + loading each manifest + parsing two ROADMAP files per space is
+        # all blocking filesystem work — run it off the event loop so a machine with many spaces
+        # (or a slow disk) can't stall the gateway. Mirrors handle_deck_spaces (#441).
         from navig.spaces.resolver import discover_space_paths  # noqa: PLC0415
 
         active = _active_path()
@@ -104,7 +112,10 @@ async def handle_deck_spaces_scan(request: "web.Request") -> "web.Response":
         cards = [_space_card(name, cfg, active_path=active) for name, cfg in sorted(spaces.items())]
         # active first, then enabled, then name
         cards.sort(key=lambda c: (0 if c["active"] else 1, 0 if c["enabled"] else 1, c["name"]))
-        return _ok({"spaces": cards, "active": next((c["id"] for c in cards if c["active"]), None)})
+        return {"spaces": cards, "active": next((c["id"] for c in cards if c["active"]), None)}
+
+    try:
+        return _ok(await asyncio.to_thread(_collect))
     except Exception as exc:  # noqa: BLE001
         logger.exception("spaces/scan failed")
         return _err(str(exc), 500)
@@ -152,7 +163,7 @@ def _titleize(s: str) -> str:
 # neutral to both this deck route and the hub Store collector). Re-exported under the
 # historical private names so callers here — and test_entitlement_parity.py, which imports
 # `catalog._TIER_RANK` — keep working unchanged.
-from navig.license.entitlement import TIER_RANK as _TIER_RANK  # noqa: E402
+from navig.license.entitlement import TIER_RANK as _TIER_RANK  # noqa: E402,F401
 from navig.license.entitlement import is_unlocked as _is_unlocked  # noqa: E402
 from navig.license.entitlement import live_caps_and_rank as _live_caps_and_rank  # noqa: E402
 
@@ -700,18 +711,23 @@ async def handle_deck_catalog_install(request: "web.Request") -> "web.Response":
     return _ok({"spec": spec, "installed": True})
 
 
-async def handle_deck_space_enable(request: "web.Request") -> "web.Response":
+async def _set_space_enabled(sid: str, enabled: bool) -> bool:
+    """Toggle a space's registry flag off the loop (set_enabled reads + rewrites the registry file)."""
     from navig.spaces import registry as _registry  # noqa: PLC0415
 
+    return await asyncio.to_thread(lambda: _registry.set_enabled(sid, enabled))
+
+
+async def handle_deck_space_enable(request: "web.Request") -> "web.Response":
     sid = request.match_info.get("id", "")
-    return _ok({"id": sid, "enabled": True}) if _registry.set_enabled(sid, True) else _err("not registered", 404)
+    ok = await _set_space_enabled(sid, True)
+    return _ok({"id": sid, "enabled": True}) if ok else _err("not registered", 404)
 
 
 async def handle_deck_space_disable(request: "web.Request") -> "web.Response":
-    from navig.spaces import registry as _registry  # noqa: PLC0415
-
     sid = request.match_info.get("id", "")
-    return _ok({"id": sid, "enabled": False}) if _registry.set_enabled(sid, False) else _err("not registered", 404)
+    ok = await _set_space_enabled(sid, False)
+    return _ok({"id": sid, "enabled": False}) if ok else _err("not registered", 404)
 
 
 async def handle_deck_space_apps(request: "web.Request") -> "web.Response":
@@ -748,6 +764,66 @@ async def handle_deck_space_apps(request: "web.Request") -> "web.Response":
         return _ok({"id": sid, "apps": apps})
     except Exception as exc:  # noqa: BLE001
         logger.exception("spaces/apps failed")
+        return _err(str(exc), 500)
+
+
+async def handle_deck_space_app_sections(request: "web.Request") -> "web.Response":
+    """POST { sections: { appId: { order?: [ids], hidden?: [ids] } } }.
+
+    Sets the space's per-app SECTION layouts — the desktop sidebar's second-level
+    view-filter (which sections an app shows, in which order). Same contract as
+    ``/apps`` one level down: unknown manifest keys are preserved, a bare
+    ``.navig/`` gets a minimal ``space.json``, YAML manifests are read-only (409).
+
+    Validation is strict on SHAPE and silent on CONTENT: ids are opaque strings
+    owned by the desktop's section registry, and the daemon has no business
+    deciding which of them are real — an id that stops matching simply stops
+    applying (see ``SpaceManifest.app_sections``).
+    """
+    try:
+        from navig.spaces.resolver import discover_space_paths  # noqa: PLC0415
+        from navig.spaces.space_manifest import (  # noqa: PLC0415
+            ManifestNotWritable,
+            set_manifest_field,
+        )
+
+        sid = request.match_info.get("id", "")
+        cfg = discover_space_paths(include_disabled=True).get(sid)
+        if cfg is None:
+            return _err(f"space '{sid}' not found", 404)
+
+        body = await request.json()
+        sections = body.get("sections")
+        if not isinstance(sections, dict):
+            return _err("body must be { sections: { appId: { order?, hidden? } } }", 400)
+
+        clean: dict[str, dict[str, list[str]]] = {}
+        for app_id, layout in sections.items():
+            if not isinstance(app_id, str) or not app_id.strip():
+                return _err("every key must be a non-empty app id", 400)
+            if not isinstance(layout, dict):
+                return _err(f"'{app_id}' must map to {{ order?, hidden? }}", 400)
+            entry: dict[str, list[str]] = {}
+            for key in ("order", "hidden"):
+                ids = layout.get(key)
+                if ids is None:
+                    continue
+                if not isinstance(ids, list) or not all(isinstance(s, str) and s.strip() for s in ids):
+                    return _err(f"'{app_id}.{key}' must be a list of section ids", 400)
+                if ids:
+                    entry[key] = [s.strip() for s in ids]
+            # Drop empty entries so clearing a layout removes the key entirely
+            # rather than leaving `{"finance": {}}` behind forever.
+            if entry:
+                clean[app_id.strip()] = entry
+
+        try:
+            set_manifest_field(Path(cfg.path), "app_sections", clean, id_hint=sid)
+        except ManifestNotWritable as exc:
+            return _err(str(exc), 409)
+        return _ok({"id": sid, "app_sections": clean})
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("spaces/app-sections failed")
         return _err(str(exc), 500)
 
 
@@ -791,16 +867,20 @@ async def handle_deck_space_books(request: "web.Request") -> "web.Response":
 
 async def handle_deck_space_activate(request: "web.Request") -> "web.Response":
     """Set the active space (binds the working dir, like `navig space switch`)."""
-    try:
+    sid = request.match_info.get("id", "")
+
+    def _activate() -> dict[str, Any] | None:
+        # Discovery + manifest load + .resolve() + three writes (working-dir, registry, config
+        # mirror) are all blocking — run them off the event loop. Returns None for an unknown
+        # space so the caller can 404. `_set_active_space` stays best-effort inside the thread.
         from navig.spaces import registry as _registry  # noqa: PLC0415
         from navig.spaces.active import set_active_working_dir  # noqa: PLC0415
         from navig.spaces.resolver import discover_space_paths  # noqa: PLC0415
         from navig.spaces.space_manifest import load_space_manifest  # noqa: PLC0415
 
-        sid = request.match_info.get("id", "")
         cfg = discover_space_paths(include_disabled=True).get(sid)
         if cfg is None:
-            return _err(f"space '{sid}' not found", 404)
+            return None
         manifest = load_space_manifest(Path(cfg.path))
         working_dir = (Path(cfg.path) / (manifest.root or ".")).resolve()
         set_active_working_dir(working_dir)
@@ -811,7 +891,13 @@ async def handle_deck_space_activate(request: "web.Request") -> "web.Response":
             _set_active_space(sid)
         except Exception:  # noqa: BLE001
             pass
-        return _ok({"id": sid, "active": True, "working_dir": str(working_dir)})
+        return {"id": sid, "active": True, "working_dir": str(working_dir)}
+
+    try:
+        result = await asyncio.to_thread(_activate)
+        if result is None:
+            return _err(f"space '{sid}' not found", 404)
+        return _ok(result)
     except Exception as exc:  # noqa: BLE001
         logger.exception("spaces/activate failed")
         return _err(str(exc), 500)

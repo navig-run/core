@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from navig.platform.windows_utils import (
     check_pid_exists,

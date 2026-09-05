@@ -116,6 +116,33 @@ def _clean_registry(monkeypatch):
     ConnectorAuthManager.reset_providers()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_vault(monkeypatch):
+    """Keep the CLI's vault reads off the real machine, and model "connected".
+
+    The CLI resolves connectedness from the vault and hydrates a connector's token
+    before search/fetch/health — connectors keep the durable token in the vault, and
+    every CLI process builds fresh, token-less instances. Two consequences for tests:
+
+    1. Without this fixture the suite would read the *operator's own vault*, making
+       results depend on which accounts happen to be linked on this machine.
+    2. These tests express "connected" by setting ``_status = CONNECTED`` on a fake,
+       so injection is stubbed to succeed for exactly those — no real tokens, and the
+       not-connected paths still behave as not-connected.
+
+    Individual tests override either stub with their own monkeypatch.
+    """
+
+    async def _inject(self, connector):
+        if connector.status in (ConnectorStatus.CONNECTED, ConnectorStatus.DEGRADED):
+            connector.set_access_token("test-token")
+            return True
+        return False
+
+    monkeypatch.setattr(ConnectorAuthManager, "inject_token", _inject)
+    monkeypatch.setattr(ConnectorAuthManager, "list_connected_accounts", lambda self: {})
+
+
 # ── Tests ────────────────────────────────────────────────────────────────
 
 
@@ -255,6 +282,11 @@ class TestConnectorSearch:
 
 
 class TestConnectorFetch:
+    @pytest.fixture(autouse=True)
+    def _gmail_is_connected(self):
+        """Fetching from Gmail requires a connected Gmail, same as the real thing."""
+        get_connector_registry().get("gmail")._status = ConnectorStatus.CONNECTED
+
     def test_fetch_resource(self):
         result = runner.invoke(connector_app, ["fetch", "gmail:msg-1"])
         assert result.exit_code == 0
@@ -409,3 +441,95 @@ class TestRegisterOauthConfig:
         auth = ConnectorAuthManager()
         # Should not raise and should emit a warning (we just verify no exception)
         _register_oauth_config("unsupported_connector", auth)
+
+
+# ── Connectedness comes from the VAULT, not from in-process instances ────────
+#
+# Regression: every one of these commands decided "is anything connected?" from
+# `registry.list_connected()`, which filters `_instances` -- and instances are created
+# lazily, so a fresh CLI process has none. Measured on the real registry: 16 connectors
+# registered, `list_connected()` == [], every `list_all()` status "disconnected".
+# So on a healthy install with Gmail linked:
+#   navig connector list    -> Gmail shown as "disconnected"
+#   navig connector status  -> "No connectors connected."
+#   navig connector search  -> "No connectors connected. Use `navig connector connect`"
+#   navig connector health gmail -> "Connector 'gmail' is not connected."
+# and search/fetch never loaded the vault token, so the connector raised the opaque
+# "Connector 'gmail' has no access token" even when reached.
+
+
+def _vault_has_gmail(monkeypatch, email: str = "user@example.com"):
+    """Simulate a user who linked Gmail: the credential lives in the vault."""
+    monkeypatch.setattr(
+        ConnectorAuthManager, "list_connected_accounts", lambda self: {"gmail": email}
+    )
+
+    async def _inject(self, connector):
+        connector.set_access_token("vault-token")
+        return True
+
+    monkeypatch.setattr(ConnectorAuthManager, "inject_token", _inject)
+
+
+class TestVaultBackedConnectedness:
+    def test_list_shows_vault_linked_connector_as_connected(self, monkeypatch):
+        _vault_has_gmail(monkeypatch)
+        result = runner.invoke(connector_app, ["list", "--json"])
+        assert result.exit_code == 0
+        data = {c["id"]: c for c in json.loads(result.output)}
+        assert data["gmail"]["status"] == "connected", (
+            "a linked account must not render as disconnected just because this "
+            "process has not instantiated the connector yet"
+        )
+        assert data["gmail"]["account"] == "user@example.com"
+        # A genuinely unlinked connector is untouched.
+        assert data["google_calendar"]["status"] == "disconnected"
+
+    def test_status_finds_vault_linked_connector_with_no_live_instances(self, monkeypatch):
+        _vault_has_gmail(monkeypatch)
+        registry = get_connector_registry()
+        assert registry.list_connected() == [], "precondition: no instance is connected"
+
+        result = runner.invoke(connector_app, ["status"])
+        assert result.exit_code == 0
+        assert "No connectors connected" not in result.output
+        assert "gmail" in result.output
+
+    def test_search_uses_vault_linked_connectors(self, monkeypatch):
+        _vault_has_gmail(monkeypatch)
+        result = runner.invoke(connector_app, ["search", "hello", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert any(r["source"] == "gmail" for r in data), (
+            "search found nothing because it only looked at in-process instances"
+        )
+
+    def test_search_hydrates_the_token_before_calling_the_connector(self, monkeypatch):
+        _vault_has_gmail(monkeypatch)
+        runner.invoke(connector_app, ["search", "hello", "--json"])
+        gmail = get_connector_registry().get("gmail")
+        assert gmail._access_token == "vault-token", (
+            "the vault token must reach the instance -- without it the connector "
+            "raises 'has no access token'"
+        )
+
+    def test_health_accepts_a_vault_linked_connector(self, monkeypatch):
+        _vault_has_gmail(monkeypatch)
+        result = runner.invoke(connector_app, ["health", "gmail"])
+        assert result.exit_code == 0
+        assert "is not connected" not in result.output
+        assert "healthy" in result.output.lower()
+
+    def test_unlinked_oauth_connector_gets_an_actionable_message_not_a_token_error(self):
+        """The autouse fixture leaves the vault empty, so gmail is genuinely unlinked."""
+        result = runner.invoke(connector_app, ["fetch", "gmail:msg-1"])
+        assert result.exit_code == 1
+        out = result.output.lower()
+        assert "no access token" not in out, "the raw RuntimeError must not reach the user"
+        assert "not connected" in out and "navig connector connect gmail" in result.output
+
+    def test_non_oauth_connector_still_works_without_any_vault_entry(self):
+        """google_calendar declares requires_oauth=False — it must not need a token."""
+        result = runner.invoke(connector_app, ["fetch", "google_calendar:evt-1"])
+        assert result.exit_code == 0
+        assert "Event" in result.output

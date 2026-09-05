@@ -5,8 +5,6 @@ Tests for set_session_context, clear_session_context, get_logger, StructuredLogg
 import json
 import logging
 
-import pytest
-
 from navig.core.logging import (
     COMPONENT_PREFIXES,
     LOG_FORMAT,

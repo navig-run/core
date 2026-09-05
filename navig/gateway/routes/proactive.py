@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
-
 try:
     from aiohttp import web  # noqa: F401
 except ImportError as _exc:
     raise RuntimeError("aiohttp is required for gateway routes (pip install aiohttp)") from _exc
 from navig.agent.proactive.engine import get_proactive_engine
+from navig.core.background import spawn
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import (
     json_error_response,
@@ -54,7 +53,7 @@ def _proactive_start(gw):
             return auth
         engine = get_proactive_engine()
         if not engine.running:
-            asyncio.create_task(engine.start())
+            spawn(engine.start())
             return json_ok({"status": "started"})
         return json_ok({"status": "already_running"})
 
@@ -83,7 +82,7 @@ def _proactive_check(gw):
         engine = get_proactive_engine()
         if engine.is_checking:
             return json_error_response("Proactive engine busy", status=409, code="busy")
-        asyncio.create_task(engine.run_checks(None))
+        spawn(engine.run_checks(None))
         return json_ok({"status": "triggered"})
 
     return h

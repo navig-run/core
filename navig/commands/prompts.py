@@ -38,14 +38,27 @@ def prompts_list(
 
     from navig.prompts.registry import load_all_prompts
 
-    prompts = load_all_prompts()
-    if not all_scopes:
-        prompts = [p for p in prompts if p.scope != "builtin"]
+    discovered = load_all_prompts()
+    prompts = discovered if all_scopes else [p for p in discovered if p.scope != "builtin"]
     if not prompts:
+        # "No prompts found" is only true when nothing was FOUND. NAVIG ships 34 builtin
+        # prompts, so on a stock install the default view is empty purely because they
+        # were filtered — and reporting that as "none" tells the operator navig has no
+        # prompts at all, with `--all` (the one thing that would show them) unmentioned.
+        # Same rule as `navig doctor`: never report an absence you did not verify.
+        hidden = len(discovered) - len(prompts)
+        if hidden:
+            console.print(
+                f"[dim]No user, space or package prompts — {hidden} builtin "
+                f"(internal LLM) prompt(s) hidden. See them with[/dim] "
+                "navig prompts list --all"
+            )
+        else:
+            console.print("[dim]No prompts found.[/dim]")
         # Name a command that EXISTS: there is no `prompts new` (`edit` creates
         # the file and opens it), and pointing users at a phantom command is how
         # an empty state turns into a dead end.
-        console.print("[dim]No prompts found. Add one with[/dim] navig prompts edit <name>")
+        console.print("[dim]Add one with[/dim] navig prompts edit <name>")
         return
 
     by_scope: dict[str, list] = defaultdict(list)

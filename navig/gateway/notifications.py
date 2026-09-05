@@ -44,6 +44,10 @@ class Notification:
     keyboard: list[list[dict]] | None = field(default=None)
     # When True, ``message`` is already fully formatted — skip the title/emoji wrapper.
     raw_message: bool = False
+    # Delivery bookkeeping for the queue drain (see TelegramNotifier._settle).
+    # `compare=False` so requeueing never changes how a notification compares —
+    # equality is about WHAT is being said, not how many times we have tried.
+    delivery_attempts: int = field(default=0, compare=False, repr=False)
 
     def to_telegram_message(self) -> str:
         """Format for Telegram (parse_mode=HTML).
@@ -114,6 +118,12 @@ class ChannelNotifier(ABC):
     orchestrate them uniformly.
     """
 
+    # Delivery attempts a queued/batched notification gets before it is dropped
+    # LOUDLY. Defined ONCE here because every channel needs the same budget and
+    # both implementations independently drained their buffer before the send —
+    # a private copy per channel is how the two drifted apart in the first place.
+    _MAX_DELIVERY_ATTEMPTS = 3
+
     @abstractmethod
     async def start(self) -> None:
         """Start the notification channel (polling, webhooks, etc.)."""
@@ -123,8 +133,13 @@ class ChannelNotifier(ABC):
         """Gracefully shut down the channel."""
 
     @abstractmethod
-    async def send(self, notification: "Notification") -> None:
-        """Queue or send a single notification."""
+    async def send(self, notification: "Notification") -> bool:
+        """Queue or send a single notification.
+
+        Returns True if the notification was delivered (immediate send) or
+        accepted for async delivery (queued/batched), False if the channel
+        rejected an immediate send. Callers that don't care may ignore it.
+        """
 
     @abstractmethod
     async def send_alert(
@@ -132,8 +147,8 @@ class ChannelNotifier(ABC):
         title: str,
         message: str,
         priority: NotificationPriority = NotificationPriority.HIGH,
-    ) -> None:
-        """Convenience: send an alert-type notification."""
+    ) -> bool:
+        """Convenience: send an alert-type notification. Returns like send()."""
 
 
 class TelegramNotifier(ChannelNotifier):
@@ -148,6 +163,13 @@ class TelegramNotifier(ChannelNotifier):
     - Batched low-priority notifications
     - Proactive engagement (greetings, check-ins, feature discovery)
     """
+
+    # `_MAX_DELIVERY_ATTEMPTS` is inherited from ChannelNotifier. The drain runs
+    # on the proactive scheduler tick (30s by default), so it is roughly a
+    # one-minute window for a transient rejection to clear.
+
+    # Grace for the final buffered flush during stop() before it is abandoned.
+    _SHUTDOWN_DRAIN_SEC = 5.0
 
     def __init__(
         self,
@@ -218,20 +240,44 @@ class TelegramNotifier(ChannelNotifier):
         )
 
     async def start(self):
-        """Start the notification system."""
+        """Start the notification system.
+
+        Idempotent. A second ``start()`` while the loop is alive would overwrite
+        ``_scheduler_task`` and ORPHAN the running one — two loops draining one
+        queue, and only the newer reachable by ``stop()``. The channel restart path
+        now reuses this object across restarts, so re-entry is reachable.
+        """
+        if self._running and self._scheduler_task and not self._scheduler_task.done():
+            return
         self._running = True
-        self._scheduler_task = asyncio.create_task(self._scheduler_loop())
+        self._scheduler_task = asyncio.create_task(
+            self._scheduler_loop(), name="telegram-notifier-scheduler"
+        )
         logger.info("Telegram notifier started")
 
     async def stop(self):
-        """Stop the notification system."""
+        """Stop the notification system.
+
+        Both tasks are reaped. ``_batch_timer`` was never cancelled here, so a
+        pending 30s flush outlived stop() and woke up to send on a channel that
+        was already tearing down — and with delivery retries it can now arm a
+        successor, which would chain past shutdown. Cancelling it also reaches
+        the flush's own shutdown branch: it delivers what is buffered and then
+        declines to schedule anything further.
+
+        Bounded, because that last-gasp flush is a network call: a wedged send
+        must not wedge shutdown.
+        """
         self._running = False
-        if self._scheduler_task:
-            self._scheduler_task.cancel()
+        for task in (self._scheduler_task, self._batch_timer):
+            if task is None or task.done():
+                continue
+            task.cancel()
             try:
-                await self._scheduler_task
-            except asyncio.CancelledError:
-                pass  # task cancelled; expected during shutdown
+                await asyncio.wait_for(task, timeout=self._SHUTDOWN_DRAIN_SEC)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass  # cancelled or too slow to matter; expected during shutdown
+        self._batch_timer = None
 
     async def _scheduler_loop(self):
         """Main scheduler loop."""
@@ -340,16 +386,85 @@ class TelegramNotifier(ChannelNotifier):
                 await asyncio.sleep(60)
 
     async def _run_task(self, task: ScheduledTask):
-        """Run a scheduled task."""
+        """Run a scheduled task.
+
+        ``send()`` returns True for anything queued or batched ("accepted"), so a
+        False here means a CRITICAL notification was genuinely rejected — worth
+        naming the task that produced it, since `last_run` is stamped either way
+        and the task will not run again today.
+        """
         try:
             notification = await task.func()
-            if notification:
-                await self.send(notification)
+            if notification and not await self.send(notification):
+                logger.error(
+                    "Scheduled task %s produced a notification that was NOT delivered: %r",
+                    task.name,
+                    notification.title,
+                )
         except Exception as e:
             logger.error("Task %s failed: %s", task.name, e)
 
+    def _settle(self, notification: Notification, delivered: bool) -> None:
+        """Drop *notification* from the queue, or keep it for another attempt.
+
+        The queue is the delivery promise: ``send()`` returns True for a queued
+        notification meaning "accepted for delivery", not "sent". Removing a row
+        whose send was REJECTED turns that promise into a silent drop — and the
+        rejections that matter here are the routine ones (a Telegram 429 when a
+        burst of alerts goes out at once, a network blip), not permanent faults.
+        Retrying on the next tick clears exactly those.
+
+        Bounded, because a notification that can never be delivered (a malformed
+        payload Telegram keeps refusing) must not wedge the queue forever — after
+        ``_MAX_DELIVERY_ATTEMPTS`` it is dropped LOUDLY, which is the one outcome
+        the old code produced for every failure on the first try.
+        """
+        if delivered:
+            notification.delivery_attempts = 0
+            self._discard(notification)
+            return
+
+        notification.delivery_attempts += 1
+        if notification.delivery_attempts >= self._MAX_DELIVERY_ATTEMPTS:
+            logger.error(
+                "Notification DROPPED after %d failed delivery attempts: %r [%s, %s]",
+                notification.delivery_attempts,
+                notification.title,
+                notification.type,
+                notification.priority.name,
+            )
+            self._discard(notification)
+        else:
+            logger.warning(
+                "Notification delivery failed (attempt %d/%d), requeued: %r [%s]",
+                notification.delivery_attempts,
+                self._MAX_DELIVERY_ATTEMPTS,
+                notification.title,
+                notification.type,
+            )
+
+    def _discard(self, notification: Notification) -> None:
+        """Remove *notification* from the queue by identity.
+
+        ``list.remove`` matches on equality, and two alerts raised in the same
+        tick can compare equal (same type/title/message/priority) — which would
+        drop the wrong row and leave this one queued forever. Identity is what we
+        actually mean.
+        """
+        for i, queued in enumerate(self.queue):
+            if queued is notification:
+                del self.queue[i]
+                return
+
     async def _process_queue(self):
-        """Process pending notifications."""
+        """Process pending notifications.
+
+        Every branch settles each notification against its REAL delivery result:
+        delivered (or intentionally suppressed) drops it, a rejection requeues it
+        until the attempt budget runs out. ``_send_notification`` has always
+        returned that result — the drain used to throw it away and remove the row
+        regardless, so a single rejected HIGH alert was gone for good.
+        """
         async with self._queue_lock:
             if not self.queue:
                 return
@@ -361,42 +476,67 @@ class TelegramNotifier(ChannelNotifier):
 
             # Send critical immediately
             for n in critical:
-                await self._send_notification(n)
-                self.queue.remove(n)
+                self._settle(n, await self._send_notification(n))
 
             # Send high priority
             for n in high:
-                await self._send_notification(n)
-                self.queue.remove(n)
+                self._settle(n, await self._send_notification(n))
 
-            # Batch low priority (send if more than 3 or older than 30 min)
-            if len(low) >= 3 or (low and (datetime.now() - low[0].created_at).seconds > 1800):
-                await self._send_batched(low)
+            # Batch low priority (send if more than 3 or older than 30 min).
+            # `.total_seconds()` — NOT `.seconds`, which is the sub-day component
+            # of the delta, so a LOW notification sitting for 24h+30s reported 30
+            # seconds old and kept failing the age check it had long since passed.
+            if low and (
+                len(low) >= 3
+                or (datetime.now() - low[0].created_at).total_seconds() > 1800
+            ):
+                delivered = await self._send_batched(low)
                 for n in low:
-                    self.queue.remove(n)
+                    self._settle(n, delivered)
 
             # NORMAL notifications are batched by send(); no direct queue branch.
 
-    async def _send_notification(self, notification: Notification):
-        """Send a single notification (with quiet-hours gating)."""
+    async def _send_notification(self, notification: Notification) -> bool:
+        """Send a single notification (with quiet-hours gating).
+
+        Returns True if delivered (or intentionally suppressed), False if the
+        send was rejected or errored — so callers don't report a phantom success.
+        """
         try:
             # Quiet-hours / DND gating
             if self._should_suppress(notification):
                 logger.debug("Suppressed notification (quiet hours/DND): %s", notification.title)
-                return
+                return True  # intentionally not sent — not a delivery failure
             message = notification.to_telegram_message()
-            await self.channel.send_message(
+            sent = await self.channel.send_message(
                 self.chat_id,
                 message,
                 keyboard=notification.keyboard or None,
             )
+            # send_message returns None on a REJECTED send WITHOUT raising (rate-limit,
+            # API error, timeout) — the `except` below never sees it. A proactive alert
+            # that silently fails to deliver is exactly the "healed at 3am, told nobody"
+            # trap; at minimum surface it so it's diagnosable instead of looking sent.
+            if sent is None:
+                logger.warning(
+                    "Notification NOT delivered — Telegram rejected the send: %r [%s]",
+                    notification.title,
+                    getattr(notification, "type", "?"),
+                )
+                return False
+            return True
         except Exception as e:
             logger.error("Failed to send notification: %s", e)
+            return False
 
-    async def _send_batched(self, notifications: list[Notification]):
-        """Send batched notifications."""
+    async def _send_batched(self, notifications: list[Notification]) -> bool:
+        """Send batched notifications. Returns True when the batch was delivered.
+
+        The result is the queue drain's settle signal — an empty batch is
+        vacuously delivered, a rejected one keeps every row for another attempt.
+        """
         if not notifications:
-            return
+            return True
 
         from navig.gateway.channels.telegram_html import html_escape
 
@@ -408,9 +548,18 @@ class TelegramNotifier(ChannelNotifier):
 
         message = "\n".join(lines)
         try:
-            await self.channel.send_message(self.chat_id, message)
+            sent = await self.channel.send_message(self.chat_id, message)
+            # None = Telegram rejected the send without raising (see _send_notification).
+            if sent is None:
+                logger.warning(
+                    "Batched notifications NOT delivered — Telegram rejected the send (%d items)",
+                    len(notifications),
+                )
+                return False
+            return True
         except Exception as e:
             logger.error("Failed to send batched notifications: %s", e)
+            return False
 
     def _should_suppress(self, notification: Notification) -> bool:
         """Check if notification should be held (quiet hours / DND mode)."""
@@ -422,29 +571,37 @@ class TelegramNotifier(ChannelNotifier):
         except Exception:
             return False
 
-    async def send(self, notification: Notification):
-        """Queue a notification for sending with 30s batching window."""
+    async def send(self, notification: Notification) -> bool:
+        """Queue a notification for sending with 30s batching window.
+
+        CRITICAL is sent immediately and returns its real delivery result; HIGH
+        (queued) and NORMAL/LOW (batched) are delivered asynchronously, so they
+        return True to mean "accepted for delivery" (a later reject is logged).
+        """
         if notification.priority == NotificationPriority.CRITICAL:
-            # Send critical notifications immediately
-            await self._send_notification(notification)
+            # Send critical notifications immediately — return the real result so
+            # a rejected must-deliver alert isn't reported as sent.
+            return await self._send_notification(notification)
         elif notification.priority == NotificationPriority.HIGH:
             # HIGH goes to main queue (processed on next scheduler tick)
             async with self._queue_lock:
                 self.queue.append(notification)
+            return True
         else:
             # NORMAL + LOW enter the 30s batching window
             self._batch_buffer.append(notification)
             if self._batch_timer is None or self._batch_timer.done():
                 self._batch_timer = asyncio.create_task(self._flush_batch_after_delay())
+            return True
 
     async def send_alert(
         self,
         title: str,
         message: str,
         priority: NotificationPriority = NotificationPriority.HIGH,
-    ):
-        """Send an alert notification."""
-        await self.send(
+    ) -> bool:
+        """Send an alert notification. Returns like send()."""
+        return await self.send(
             Notification(
                 type="alert",
                 title=title,
@@ -454,20 +611,66 @@ class TelegramNotifier(ChannelNotifier):
         )
 
     async def _flush_batch_after_delay(self):
-        """Wait batch_window_sec then flush the buffer as a single message."""
+        """Wait batch_window_sec then flush the buffer as a single message.
+
+        NORMAL/LOW notifications never enter ``self.queue`` — they live in
+        ``_batch_buffer`` and this is their only delivery path, so a rejected
+        flush used to lose the whole batch with one log line. They are put back
+        for another window instead, on the same bounded budget as the queue.
+        """
+        cancelled = False
         try:
             await asyncio.sleep(self._batch_window_sec)
         except asyncio.CancelledError:
-            pass  # task cancelled; expected during shutdown
+            # Task cancelled; expected during shutdown. Still flush what is
+            # buffered, but do NOT arm another timer — that would outlive stop().
+            cancelled = True
         # Drain buffer
         batch = list(self._batch_buffer)
         self._batch_buffer.clear()
         if not batch:
             return
         if len(batch) == 1:
-            await self._send_notification(batch[0])
+            delivered = await self._send_notification(batch[0])
         else:
-            await self._send_batched(batch)
+            delivered = await self._send_batched(batch)
+        if delivered:
+            for n in batch:
+                n.delivery_attempts = 0
+            return
+        self._requeue_batch(batch, rearm=not cancelled)
+
+    def _requeue_batch(self, batch: list[Notification], *, rearm: bool = True) -> None:
+        """Return a rejected batch to the buffer and re-arm the flush timer."""
+        retry: list[Notification] = []
+        for n in batch:
+            n.delivery_attempts += 1
+            if n.delivery_attempts >= self._MAX_DELIVERY_ATTEMPTS:
+                logger.error(
+                    "Notification DROPPED after %d failed delivery attempts: %r [%s, %s]",
+                    n.delivery_attempts,
+                    n.title,
+                    n.type,
+                    n.priority.name,
+                )
+            else:
+                retry.append(n)
+        if not retry:
+            return
+        logger.warning(
+            "Batched delivery failed — %d notification(s) requeued for the next window",
+            len(retry),
+        )
+        # Preserve arrival order: the retries are older than anything buffered
+        # while the flush was in flight.
+        self._batch_buffer[:0] = retry
+        if not rearm:
+            return
+        # Arm UNCONDITIONALLY: `self._batch_timer` is the flush task currently
+        # running this code, so it is neither None nor done() — the usual
+        # "already armed?" check would decline to schedule and strand the retries
+        # until some unrelated notification happened to arm a timer.
+        self._batch_timer = asyncio.create_task(self._flush_batch_after_delay())
 
     # ========================================================================
     # Scheduled Task Implementations

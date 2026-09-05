@@ -224,3 +224,4 @@ def webhook_test(
         _ch.success(f"Test event delivered to webhook {webhook_id}.")
     else:
         _ch.error(f"Test failed: {result.get('error', 'unknown')}")
+        raise typer.Exit(1)

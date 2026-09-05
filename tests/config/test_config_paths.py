@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 import navig.installer.modules.config_paths as cp_mod
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
 
@@ -46,6 +44,7 @@ class TestConfigPathsPlan:
     def test_actions_are_reversible(self, tmp_path):
         ctx = _ctx(tmp_path / "fresh")
         actions = cp_mod.plan(ctx)
+        assert actions, "actions was empty, so the loop below asserted nothing"
         for a in actions:
             assert a.reversible is True
 

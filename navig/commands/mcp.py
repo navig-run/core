@@ -2,6 +2,8 @@
 
 from typing import Any
 
+import typer
+
 from navig import console_helper as ch
 
 
@@ -57,7 +59,7 @@ def install_mcp_cmd(name: str, options: dict[str, Any]):
     if not results:
         ch.error(f"MCP server '{name}' not found in directory")
         ch.info("Search available servers with: navig mcp search <query>")
-        return
+        raise typer.Exit(2)
 
     # Use first exact match or first result
     server_info = None
@@ -92,7 +94,8 @@ def uninstall_mcp_cmd(name: str, options: dict[str, Any]):
             ch.warning("Cancelled")
             return
 
-    mcp_manager.uninstall_server(name)
+    if not mcp_manager.uninstall_server(name):
+        raise typer.Exit(_exit_code_for(mcp_manager, name))
 
 
 def _server_public_dict(server) -> dict[str, Any]:
@@ -181,6 +184,16 @@ def list_mcp_cmd(options: dict[str, Any]):
     )
 
 
+def _exit_code_for(mcp_manager, name: str) -> int:
+    """2 when the server does not exist, 1 when the operation itself failed.
+
+    The manager signals both with a single False, but the two are different classes and
+    the repo already draws that line: "not found" is usage (2), an operation that failed
+    is 1. `test_info_unknown_server_is_reported_not_crashed` pins it for `info`.
+    """
+    return 2 if name not in getattr(mcp_manager, "servers", {}) else 1
+
+
 def enable_mcp_cmd(name: str, options: dict[str, Any]):
     """Enable an MCP server."""
     if options.get("dry_run"):
@@ -188,7 +201,13 @@ def enable_mcp_cmd(name: str, options: dict[str, Any]):
         return
 
     mcp_manager = _get_mcp_manager()
-    mcp_manager.enable_server(name)
+    # enable_server() prints its own "not found" / save-failure message and returns False.
+    # Discarding it exited 0: `navig mcp enable nosuchserver` printed "x MCP server
+    # 'nosuchserver' not found" and reported success to the shell, so `navig mcp enable X
+    # && <next step>` ran the next step against a server that was never enabled.
+    # `info` was already fixed this way; these three were left behind.
+    if not mcp_manager.enable_server(name):
+        raise typer.Exit(_exit_code_for(mcp_manager, name))
 
 
 def disable_mcp_cmd(name: str, options: dict[str, Any]):
@@ -198,7 +217,8 @@ def disable_mcp_cmd(name: str, options: dict[str, Any]):
         return
 
     mcp_manager = _get_mcp_manager()
-    mcp_manager.disable_server(name)
+    if not mcp_manager.disable_server(name):   # same shape as enable, same exit-0 bug
+        raise typer.Exit(_exit_code_for(mcp_manager, name))
 
 
 def start_mcp_cmd(name: str, options: dict[str, Any]):
@@ -249,7 +269,9 @@ def status_mcp_cmd(name: str, options: dict[str, Any]):
             ch.raw_print("null")  # parseable "no such server" for scripts
         else:
             ch.error(f"MCP server '{name}' not found")
-        return
+        # The `null` is still printed first — a script can read either signal, but the
+        # exit code must not say "here is the status you asked for".
+        raise typer.Exit(2)
 
     if options.get("json"):
         import json

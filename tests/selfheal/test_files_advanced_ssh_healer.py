@@ -6,11 +6,11 @@ Batch 121: tests for
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import typer
 
 # ---------------------------------------------------------------------------
 # Helpers shared by all files_advanced tests
@@ -55,13 +55,16 @@ class TestDeleteFileCmd:
         ):
             return _fa.delete_file_cmd(remote, options)
 
-    def test_not_found_returns_false(self):
-        result = self._run(
-            "/tmp/nope",
-            {},
-            [_cmd_result(stdout="not_found")],
-        )
-        assert result is False
+    def test_not_found_raises_exit_2(self):
+        # A CLI command signals a hard failure via a non-zero exit code (the production
+        # callers in commands/files.py ignore the return value), not a False return.
+        with pytest.raises(typer.Exit) as exc:
+            self._run(
+                "/tmp/nope",
+                {},
+                [_cmd_result(stdout="not_found")],
+            )
+        assert exc.value.exit_code == 2
 
     def test_dry_run_file_returns_true(self):
         result = self._run(
@@ -86,16 +89,17 @@ class TestDeleteFileCmd:
             )
         assert result is True
 
-    def test_directory_without_recursive_returns_false(self):
-        result = self._run(
-            "/tmp/mydir",
-            {},
-            [
-                _cmd_result(stdout="exists"),
-                _cmd_result(stdout="dir"),
-            ],
-        )
-        assert result is False
+    def test_directory_without_recursive_raises_exit(self):
+        with pytest.raises(typer.Exit) as exc:
+            self._run(
+                "/tmp/mydir",
+                {},
+                [
+                    _cmd_result(stdout="exists"),
+                    _cmd_result(stdout="dir"),
+                ],
+            )
+        assert exc.value.exit_code == 1
 
     def test_directory_force_delete_returns_true(self):
         result = self._run(
@@ -121,28 +125,32 @@ class TestDeleteFileCmd:
         )
         assert result is True
 
-    def test_file_delete_failure_returns_false(self):
-        result = self._run(
-            "/tmp/f.txt",
-            {"force": True},
-            [
-                _cmd_result(stdout="exists"),
-                _cmd_result(stdout="file"),
-                _cmd_result(returncode=1, stderr="permission denied"),
-            ],
-        )
-        assert result is False
+    def test_file_delete_failure_raises_exit(self):
+        with pytest.raises(typer.Exit) as exc:
+            self._run(
+                "/tmp/f.txt",
+                {"force": True},
+                [
+                    _cmd_result(stdout="exists"),
+                    _cmd_result(stdout="file"),
+                    _cmd_result(returncode=1, stderr="permission denied"),
+                ],
+            )
+        assert exc.value.exit_code == 1
 
-    def test_json_mode_no_force_returns_false(self):
-        result = self._run(
-            "/tmp/f.txt",
-            {"json": True},
-            [
-                _cmd_result(stdout="exists"),
-                _cmd_result(stdout="file"),
-            ],
-        )
-        assert result is False
+    def test_json_mode_no_force_raises_exit(self):
+        # --json without --force is a usage failure → non-zero exit (consistent with the
+        # module's other JSON-mode errors), not a silent exit-0 alongside a false body.
+        with pytest.raises(typer.Exit) as exc:
+            self._run(
+                "/tmp/f.txt",
+                {"json": True},
+                [
+                    _cmd_result(stdout="exists"),
+                    _cmd_result(stdout="file"),
+                ],
+            )
+        assert exc.value.exit_code == 1
 
 
 # ---------------------------------------------------------------------------
@@ -170,8 +178,10 @@ class TestMkdirCmd:
     def test_dry_run_json(self):
         assert self._run("/srv/newdir", {"dry_run": True, "json": True}) is True
 
-    def test_invalid_mode_returns_false(self):
-        assert self._run("/srv/x", {"mode": "abc"}) is False
+    def test_invalid_mode_raises_exit(self):
+        with pytest.raises(typer.Exit) as exc:
+            self._run("/srv/x", {"mode": "abc"})
+        assert exc.value.exit_code == 1
 
     def test_success(self):
         assert (
@@ -183,15 +193,14 @@ class TestMkdirCmd:
             is True
         )
 
-    def test_failure_returns_false(self):
-        assert (
+    def test_failure_raises_exit(self):
+        with pytest.raises(typer.Exit) as exc:
             self._run(
                 "/srv/newdir",
                 {"mode": "755"},
                 [_cmd_result(returncode=1, stderr="permission denied")],
             )
-            is False
-        )
+        assert exc.value.exit_code == 1
 
     def test_parents_flag(self):
         mock_cm, mock_remote_ops = _make_patches([_cmd_result(returncode=0)])
@@ -228,8 +237,10 @@ class TestChmodCmd:
         ):
             return _fa.chmod_cmd(remote, mode, options)
 
-    def test_invalid_mode_returns_false(self):
-        assert self._run("/tmp/f", "xyz", {}) is False
+    def test_invalid_mode_raises_exit(self):
+        with pytest.raises(typer.Exit) as exc:
+            self._run("/tmp/f", "xyz", {})
+        assert exc.value.exit_code == 1
 
     def test_dry_run_returns_true(self):
         assert self._run("/tmp/f", "644", {"dry_run": True}) is True
@@ -237,8 +248,10 @@ class TestChmodCmd:
     def test_success(self):
         assert self._run("/tmp/f", "644", {}, [_cmd_result(returncode=0)]) is True
 
-    def test_failure_returns_false(self):
-        assert self._run("/tmp/f", "644", {}, [_cmd_result(returncode=1, stderr="err")]) is False
+    def test_failure_raises_exit(self):
+        with pytest.raises(typer.Exit) as exc:
+            self._run("/tmp/f", "644", {}, [_cmd_result(returncode=1, stderr="err")])
+        assert exc.value.exit_code == 1
 
     def test_recursive_flag_in_cmd(self):
         mock_cm, mock_remote_ops = _make_patches([_cmd_result(returncode=0)])
@@ -281,8 +294,10 @@ class TestChownCmd:
     def test_success(self):
         assert self._run("/tmp/f", "www-data", {}, [_cmd_result(returncode=0)]) is True
 
-    def test_failure_returns_false(self):
-        assert self._run("/tmp/f", "root", {}, [_cmd_result(returncode=1, stderr="err")]) is False
+    def test_failure_raises_exit(self):
+        with pytest.raises(typer.Exit) as exc:
+            self._run("/tmp/f", "root", {}, [_cmd_result(returncode=1, stderr="err")])
+        assert exc.value.exit_code == 1
 
 
 # ---------------------------------------------------------------------------

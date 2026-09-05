@@ -56,7 +56,10 @@ steps:
     safety: destructive
     capabilities: [remote, exec:navig]
     network: required
-    argv: [navig, upload, "{{inputs.build_dir}}", "{{inputs.app_path}}/"]
+    # `navig upload` has never existed — uploading to a remote is `navig file add
+    # <local> [remote]`. This step is reached AFTER the destructive backup step, so the
+    # dead verb left an apply half-done: a stray `.backup.<ts>` on the server and no deploy.
+    argv: [navig, file, add, "{{inputs.build_dir}}", "{{inputs.app_path}}/"]
 
   - id: permissions
     kind: command

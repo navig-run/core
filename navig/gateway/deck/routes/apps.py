@@ -27,13 +27,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import re
-import tempfile
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+from navig.core.aio_subprocess import communicate_or_kill
+from navig.core.json_io import atomic_write_json, load_json_for_update
+from navig.scheduler.habit_store import HABIT_NAME_PREFIX
 
 try:
     from aiohttp import web
@@ -42,7 +44,6 @@ except ImportError:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
-_HABIT_NAME_PREFIX = "habit:"
 _TASKS_FILE_NAME = "tasks.json"
 
 # Per-file threading locks to prevent races between concurrent requests
@@ -89,30 +90,19 @@ def _load_cron_jobs() -> tuple[list[dict], int]:
     if svc is not None:
         return [j.to_dict() for j in svc.jobs.values()], svc._job_counter
 
-    p = _cron_jobs_path()
-    if not p.exists():
-        return [], 0
-    try:
-        with _CRON_LOCK:
-            data = json.loads(p.read_text(encoding="utf-8"))
-        return data.get("jobs", []), data.get("counter", 0)
-    except Exception:
-        return [], 0
+    # File fallback (live scheduler down). load_json_for_update RAISES on a transient
+    # read failure (a lock that survived retries) instead of returning empty — so a
+    # subsequent save can't wipe the persisted reminders over a read blip.
+    with _CRON_LOCK:
+        data = load_json_for_update(_cron_jobs_path(), default={"jobs": [], "counter": 0})
+    return data.get("jobs", []), data.get("counter", 0)
 
 
 def _save_cron_jobs(jobs: list[dict], counter: int) -> None:
     p = _cron_jobs_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    data = {"counter": counter, "jobs": jobs}
     with _CRON_LOCK:
-        tmp_fd, tmp_name = tempfile.mkstemp(dir=p.parent, suffix=".tmp")
-        try:
-            with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
-                fh.write(json.dumps(data, indent=2))
-            os.replace(tmp_name, p)
-        except Exception:
-            Path(tmp_name).unlink(missing_ok=True)
-            raise
+        atomic_write_json({"counter": counter, "jobs": jobs}, p)
 
 
 async def _async_load_cron_jobs() -> tuple[list[dict], int]:
@@ -126,28 +116,19 @@ async def _async_save_cron_jobs(jobs: list[dict], counter: int) -> None:
 
 
 def _load_tasks() -> list[dict]:
-    p = _tasks_path()
-    if not p.exists():
-        return []
-    try:
-        with _TASKS_LOCK:
-            return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return []
+    # load_json_for_update: missing/empty file → []; corrupt → quarantined to *.corrupt
+    # + []; but a file that EXISTS with content yet is transiently unreadable (a Windows
+    # AV/backup lock) RAISES — so a read blip can't return [] and let the caller's save
+    # wipe every task. (The old `except: return []` did exactly that = silent data loss.)
+    with _TASKS_LOCK:
+        return load_json_for_update(_tasks_path(), default=[])
 
 
 def _save_tasks(tasks: list[dict]) -> None:
     p = _tasks_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     with _TASKS_LOCK:
-        tmp_fd, tmp_name = tempfile.mkstemp(dir=p.parent, suffix=".tmp")
-        try:
-            with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
-                fh.write(json.dumps(tasks, indent=2))
-            os.replace(tmp_name, p)
-        except Exception:
-            Path(tmp_name).unlink(missing_ok=True)
-            raise
+        atomic_write_json(tasks, p)
 
 
 async def _async_load_tasks() -> list[dict]:
@@ -186,7 +167,7 @@ async def handle_deck_apps_health(request: "web.Request") -> "web.Response":
     Shape: { date, steps, active_minutes, streak_days, heart_rate_zone }
     """
     jobs, _ = await _async_load_cron_jobs()
-    habit_jobs = [j for j in jobs if j.get("name", "").startswith(_HABIT_NAME_PREFIX)]
+    habit_jobs = [j for j in jobs if j.get("name", "").startswith(HABIT_NAME_PREFIX)]
 
     # Count habits completed today (last_run is today)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -220,13 +201,13 @@ async def handle_deck_apps_tasks_get(request: "web.Request") -> "web.Response":
 
         tasks = await _async_load_tasks()
         jobs, _ = await _async_load_cron_jobs()
-        habit_jobs = [j for j in jobs if j.get("name", "").startswith(_HABIT_NAME_PREFIX)]
+        habit_jobs = [j for j in jobs if j.get("name", "").startswith(HABIT_NAME_PREFIX)]
 
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         habits = []
         for j in habit_jobs:
-            name_raw = j.get("name", "")[len(_HABIT_NAME_PREFIX):]
+            name_raw = j.get("name", "")[len(HABIT_NAME_PREFIX):]
             # Decode the base64 message embedded in the command for a human label
             label = name_raw
             cmd = j.get("command", "")
@@ -324,9 +305,9 @@ async def handle_deck_apps_habits_toggle(request: "web.Request") -> "web.Respons
         import functools  # noqa: PLC0415
 
         for job in svc.jobs.values():
-            if not job.name.startswith(_HABIT_NAME_PREFIX):
+            if not job.name.startswith(HABIT_NAME_PREFIX):
                 continue  # only habit jobs are togglable here — never a plain cron job
-            jname = job.name[len(_HABIT_NAME_PREFIX):]
+            jname = job.name[len(HABIT_NAME_PREFIX):]
             if job.id == habit_id or jname == habit_id:
                 # CronJob.last_run is a datetime (to_dict isoformats it) — pass
                 # a real datetime, not the _utcnow() ISO string.
@@ -343,10 +324,10 @@ async def handle_deck_apps_habits_toggle(request: "web.Request") -> "web.Respons
     matched = False
     for j in jobs:
         name = j.get("name", "")
-        if not name.startswith(_HABIT_NAME_PREFIX):
+        if not name.startswith(HABIT_NAME_PREFIX):
             continue  # only habit jobs are togglable — never touch a plain cron job's last_run
         jid = str(j.get("id", ""))
-        jname = name[len(_HABIT_NAME_PREFIX):]
+        jname = name[len(HABIT_NAME_PREFIX):]
         if jid == habit_id or jname == habit_id:
             j["last_run"] = _utcnow()
             matched = True
@@ -372,12 +353,16 @@ async def handle_deck_apps_reminders_get(request: "web.Request") -> "web.Respons
         return _ok([])
 
     try:
-        # user_id=0 is the fallback for reminders created without a Telegram user context
-        # We return all non-completed upcoming reminders across all users for the Deck
+        # We return all non-completed upcoming reminders across all users for the Deck.
+        # Compare against the canonical UTC '…Z' shape remind_at is STORED in (RuntimeStore
+        # normalizes via _to_utc_iso, #635) — a bare `.isoformat()` here is '+00:00', which
+        # string-sorts differently from '…Z' at the boundary (same cross-format class as #639).
+        from navig.store.base import _utcnow as _store_utcnow
+
         rows = store._read_all(  # type: ignore[attr-defined]
             "SELECT id, user_id, chat_id, message, remind_at, created_at "
             "FROM reminders WHERE completed = 0 AND remind_at > ? ORDER BY remind_at LIMIT 50",
-            (datetime.now(timezone.utc).isoformat(),),
+            (_store_utcnow(),),
         )
         items = [
             {
@@ -415,7 +400,16 @@ async def handle_deck_apps_reminders_add(request: "web.Request") -> "web.Respons
 
     if fire_at_str:
         try:
-            fire_at = datetime.fromisoformat(fire_at_str.rstrip("Z")).replace(tzinfo=timezone.utc)
+            # Preserve any real UTC offset (e.g. -04:00) instead of discarding it, accept a
+            # trailing 'Z', default a naive value to UTC, then normalize to UTC so the stored
+            # isoformat is a canonical UTC string — RuntimeStore compares remind_at
+            # lexicographically against _utcnow(). The old `rstrip("Z").replace(tzinfo=utc)`
+            # kept the wall-clock and forced UTC, so an offset-bearing time fired at the wrong
+            # instant (18:00-04:00 was stored as 18:00Z instead of 22:00Z).
+            fire_at = datetime.fromisoformat(str(fire_at_str).replace("Z", "+00:00"))
+            if fire_at.tzinfo is None:
+                fire_at = fire_at.replace(tzinfo=timezone.utc)
+            fire_at = fire_at.astimezone(timezone.utc)
         except Exception:
             return _err("Invalid fire_at ISO8601 value")
     elif in_minutes is not None:
@@ -430,10 +424,18 @@ async def handle_deck_apps_reminders_add(request: "web.Request") -> "web.Respons
     if store is None:
         return _err("Runtime store unavailable", 503)
 
+    # Resolve the operator's Telegram chat so the reminder PUSHES to Telegram, not just the
+    # deck feed. Falls back to 0 when no Telegram user is configured — a chat-less reminder
+    # then delivers via the notify channels (deck feed) instead of being dropped (#623). Keep
+    # user_id=0: the deck's get returns all reminders and delete has a no-user fallback, so the
+    # deck's own list/cancel stay consistent regardless of chat_id.
+    from navig.gateway.deck.routes.schedule import _resolve_default_user_chat
+
+    _uid, chat_id = _resolve_default_user_chat()
     try:
         rid = store.create_reminder(
             user_id=0,
-            chat_id=0,
+            chat_id=chat_id,
             message=message,
             remind_at=fire_at,
         )
@@ -738,7 +740,7 @@ async def handle_deck_apps_calendar(request: "web.Request") -> "web.Response":
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=8.0)
+        stdout, _ = await communicate_or_kill(proc, 8.0)
         if proc.returncode == 0 and stdout:
             try:
                 events = json.loads(stdout.decode("utf-8"))
@@ -756,7 +758,7 @@ async def handle_deck_apps_calendar(request: "web.Request") -> "web.Response":
 async def _life_habits_today(today: str) -> dict:
     """Return habit summary for *today*."""
     jobs, _ = await _async_load_cron_jobs()
-    habit_jobs = [j for j in jobs if j.get("name", "").startswith(_HABIT_NAME_PREFIX)]
+    habit_jobs = [j for j in jobs if j.get("name", "").startswith(HABIT_NAME_PREFIX)]
     habits_done = sum(1 for j in habit_jobs if (j.get("last_run") or "").startswith(today))
     return {"habits_total": len(habit_jobs), "habits_done_today": habits_done}
 
@@ -1101,17 +1103,23 @@ async def handle_deck_apps_devops(request: "web.Request") -> "web.Response":
     except Exception:
         pass
 
+    # `navig.daemon_client.get_daemon_status` has never existed — neither the module nor the
+    # function — so this whole block always raised and the except branch below was the only
+    # code that ever ran: deploy_health came from fleet_count and recent_activity stayed [].
+    # That fallback is kept verbatim (it is the panel's only ever-observed behaviour); the
+    # activity feed is now filled from the real source sibling deck routes already use.
+    deploy_health = "healthy" if fleet_count > 0 else "warning"
     try:
-        from navig.daemon_client import get_daemon_status  # type: ignore[import]
-        status = get_daemon_status()
-        if status and status.get("running"):
-            deploy_health = "healthy"
-        recent_activity = [
-            {"id": str(i), "label": ev.get("label", "event"), "ts": ev.get("ts", "")}
-            for i, ev in enumerate(status.get("recent_events", [])[:5])
-        ] if status else []
-    except Exception:
-        deploy_health = "healthy" if fleet_count > 0 else "warning"
+        from navig.gateway.system_events import get_system_events
+
+        queue = get_system_events()
+        if queue is not None:
+            recent_activity = [
+                {"id": ev.id, "label": ev.event_type, "ts": ev.timestamp.isoformat()}
+                for ev in reversed(queue.get_history(limit=5))  # newest first
+            ]
+    except Exception:  # noqa: BLE001 - an activity feed must never fail the summary
+        logger.debug("devops summary: recent activity unavailable", exc_info=True)
 
     return _ok({
         "host_status": host_status,

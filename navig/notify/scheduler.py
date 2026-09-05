@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
+from datetime import time as _time
 
 logger = logging.getLogger("navig.notify")
 
@@ -22,8 +23,8 @@ _TICK_SECONDS = 45
 
 
 def _due_briefings(last_check: datetime, now: datetime, times: list[str]) -> list[str]:
-    """Briefing ``"HH:MM"`` times whose scheduled instant (for *now*'s date) falls
-    in the half-open window ``(last_check, now]``.
+    """Briefing ``"HH:MM"`` times whose scheduled instant falls in the half-open
+    window ``(last_check, now]``.
 
     Window-based, NOT an exact-minute string match: a slow tick (the per-tick SMS
     PATCH + network email scan can overrun the 45s interval) then cannot skip the
@@ -32,15 +33,24 @@ def _due_briefings(last_check: datetime, now: datetime, times: list[str]) -> lis
     given instant lands in exactly one window, so it fires exactly once; seeding
     ``last_check = now`` at startup keeps a restart from replaying times already
     past. Malformed / out-of-range entries are skipped.
+
+    The instant is resolved against **every date the window spans**, not just
+    ``now``'s. This used to build it from ``now``'s date alone, which broke the
+    guarantee above in exactly the case the design exists for: when a stalled tick
+    carried the window across midnight, a 23:55 briefing was looked up on *today's*
+    date, landed in the future, and was dropped for good. (A stall spanning more
+    than two calendar days could still skip a wholly-enclosed date; the loop
+    dispatches at most one briefing per tick regardless.)
     """
     due: list[str] = []
+    dates = sorted({last_check.date(), now.date()})
     for t in times:
         try:
             hh, mm = (int(x) for x in str(t).split(":", 1))
-            inst = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+            instants = [datetime.combine(d, _time(hh, mm)) for d in dates]
         except (ValueError, TypeError):
             continue
-        if last_check < inst <= now:
+        if any(last_check < inst <= now for inst in instants):
             due.append(t)
     return due
 
@@ -62,17 +72,33 @@ async def _loop(gateway) -> None:
         #    minute (see _due_briefings). One dispatch per tick even if several
         #    times fall in the same window (e.g. after a long stall).
         now = datetime.now()
-        try:
-            from navig.notify import prefs
+        if now < last_check:
+            # The WALL clock moved backwards: DST fall-back, or an NTP correction.
+            # `last_check = now` used to run unconditionally, so the anchor regressed
+            # and the window re-covered an interval already handled — every briefing
+            # time inside the repeated hour fired a second time. Hold the anchor and
+            # let real time catch up; the window resumes by itself. (A monotonic clock
+            # can't be used here: briefing times are wall-clock "HH:MM" by definition.)
+            logger.info(
+                "notify: wall clock moved backwards (%s → %s) — holding the briefing "
+                "window so the repeated interval can't re-fire today's briefings",
+                last_check,
+                now,
+            )
+        else:
+            try:
+                from navig.notify import prefs
 
-            s = prefs.get_settings()
-            if s["briefing_enabled"] and _due_briefings(last_check, now, s.get("briefing_times") or []):
-                from navig.notify.briefings import build_and_dispatch_briefing
+                s = prefs.get_settings()
+                if s["briefing_enabled"] and _due_briefings(
+                    last_check, now, s.get("briefing_times") or []
+                ):
+                    from navig.notify.briefings import build_and_dispatch_briefing
 
-                await build_and_dispatch_briefing()
-        except Exception:
-            logger.debug("notify: briefing tick failed", exc_info=True)
-        last_check = now  # advance the window every tick, even on error
+                    await build_and_dispatch_briefing()
+            except Exception:
+                logger.debug("notify: briefing tick failed", exc_info=True)
+            last_check = now  # advance the window every tick, even on error
 
         # 3) Email-ops: filter→notify on new mail + scheduled email briefings.
         # Lives in the optional navig-email plugin; the import is soft (skipped

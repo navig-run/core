@@ -47,7 +47,7 @@ try:
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
         Ed25519PrivateKey,
-        Ed25519PublicKey,
+        Ed25519PublicKey,  # noqa: F401 — availability probe; the except below is the point
     )
 except ImportError:
     sys.exit("install: pip install cryptography")
@@ -92,7 +92,7 @@ def cmd_keygen(args: argparse.Namespace) -> None:
     priv_path = _KEYS_DIR / f"{args.key_id}.priv"
     pub_path = _KEYS_DIR / f"{args.key_id}.pub.hex"
     priv_path.write_bytes(sk_bytes)
-    pub_path.write_text(pk_bytes.hex())
+    pub_path.write_text(pk_bytes.hex(), encoding="utf-8")
     try:
         import os
         import stat as _stat

@@ -16,6 +16,13 @@ from .queue import Task, TaskQueue, TaskStatus
 
 logger = get_debug_logger()
 
+# Terminal-task garbage collection cadence. TaskQueue.clear_completed() existed but was
+# never called, so _tasks/_completed (and persisted task_queue.json) grew for the daemon's
+# entire life — one permanent entry per finished job. The worker loop now sweeps on this
+# cadence, keeping recently-finished tasks so /tasks status/history stays useful.
+_TASK_GC_INTERVAL_S = 3600  # sweep hourly
+_TASK_GC_KEEP_HOURS = 24  # retain completed/failed/cancelled tasks for 24h
+
 
 @dataclass
 class WorkerConfig:
@@ -172,6 +179,9 @@ class TaskWorker:
 
     async def _worker_loop(self) -> None:
         """Main loop: poll the queue and dispatch tasks concurrently."""
+        import time as _time
+
+        last_gc = _time.monotonic()
         while self._running:
             try:
                 task = await self.queue.get_next(
@@ -184,6 +194,18 @@ class TaskWorker:
                         name=f"task-{task.id}",
                     )
                     self._active_tasks[task.id] = asyncio_task
+
+                # Periodically evict terminal tasks so the queue's maps (and the persisted
+                # task_queue.json) don't grow for the daemon's whole life — clear_completed()
+                # existed but nothing ever called it.
+                now = _time.monotonic()
+                if now - last_gc >= _TASK_GC_INTERVAL_S:
+                    last_gc = now
+                    removed = await self.queue.clear_completed(
+                        older_than_hours=_TASK_GC_KEEP_HOURS
+                    )
+                    if removed:
+                        logger.debug("TaskQueue GC: evicted %d terminal task(s)", removed)
             except asyncio.CancelledError:
                 break
             except Exception as exc:

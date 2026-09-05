@@ -1,4 +1,4 @@
-"""Disk collection must never hang — and must not come back empty on first use.
+r"""Disk collection must never hang — and must not come back empty on first use.
 
 `psutil.disk_partitions()` blocks FOREVER on a cold mapped network drive
 (measured on the operator's machine: U:\ never returned) and does not release

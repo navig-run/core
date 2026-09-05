@@ -35,6 +35,7 @@ logger = logging.getLogger("navig.llm.generate")
 # ─────────────────────────────────────────────────────────────
 from navig._llm_defaults import _DEFAULT_MAX_TOKENS as _LLM_DEFAULT_MAX_TOKENS  # noqa: F401
 from navig._llm_defaults import _DEFAULT_TEMPERATURE as _LLM_DEFAULT_TEMPERATURE  # noqa: F401
+from navig.core.coerce import coerce_bool
 
 _LLM_DEFAULT_TIMEOUT: float = 120.0     # Default HTTP timeout (seconds)
 
@@ -460,24 +461,22 @@ def _call_and_wrap(
 def _prompt_cache_enabled() -> bool:
     """Return True when Anthropic prompt caching is enabled in config (default: True).
 
-    Reads ``config.agent.prompt_cache``.  Defaults to *True* so caching is on
+    Reads ``agent.prompt_cache``.  Defaults to *True* so caching is on
     unless explicitly disabled.
     """
     try:
-        from navig.core.config_loader import load_config
+        from navig.config import get_config_manager
 
-        config = load_config()
-        agent_cfg = getattr(config, "agent", None)
-        if agent_cfg is None:
-            return True
-        return bool(getattr(agent_cfg, "prompt_cache", True))
+        return coerce_bool(
+            get_config_manager().get("agent.prompt_cache", True), default=True
+        )
     except Exception as exc:
         logger.debug("_prompt_cache_enabled: config unavailable (%s)", exc)
         return True
 
 
 def _load_fallback_chain() -> list[str]:
-    """Read ``config.agent.fallback_chain`` from project/global config.
+    """Read ``agent.fallback_chain`` from global config.
 
     Returns an empty list when the setting is absent or the config cannot be
     loaded — this is always safe (it simply disables the fallback).
@@ -491,16 +490,14 @@ def _load_fallback_chain() -> list[str]:
             - openrouter:google/gemini-2.5-flash
     """
     try:
-        from navig.core.config_loader import load_config
+        from navig.config import get_config_manager
 
-        config = load_config()
-        agent_cfg = getattr(config, "agent", None)
-        if agent_cfg is None:
-            return []
-        chain = getattr(agent_cfg, "fallback_chain", None)
+        chain = get_config_manager().get("agent.fallback_chain", None)
         if not chain:
             return []
-        return [str(s) for s in chain if s]
+        if isinstance(chain, str):  # a single spec written without a YAML list
+            chain = [chain]
+        return [str(s).strip() for s in chain if str(s).strip()]
     except Exception as exc:
         logger.debug("_load_fallback_chain: config unavailable (%s)", exc)
         return []
@@ -953,6 +950,56 @@ def _call_with_fallback(
 # ─────────────────────────────────────────────────────────────
 
 
+def _deny_if_unapproved(tool: str, parameters: dict[str, Any] | None) -> str | None:
+    """Approval interlock for the tool calls parsed out of an LLM reply. FAIL CLOSED.
+
+    This path parses a tool call from the MODEL'S OWN TEXT and executes it through
+    `ToolRouter`, which has no gate of its own — its only protection is
+    `safety_mode == "strict"`, and the default is `"standard"`. The router's `exec_pack`
+    registers `bash_exec` ("Execute a shell command") as DANGEROUS with a live handler.
+
+    Dormant today: `run_llm(enable_tools=...)` defaults False and no caller passes True.
+    Gated anyway, because "one keyword argument from live" is exactly the state the MCP
+    client pool was in when the same class was found there.
+
+    Synchronous by necessity — `_maybe_execute_tools` is a sync function — so it uses
+    `check_sync`, the same bridge the MCP stdio server uses. Returns a denial string, or
+    None to proceed.
+    """
+    from navig.tools.approval import ApprovalDecision, check_sync, needs_approval
+
+    try:
+        if not needs_approval(tool):
+            return None
+        decision = check_sync(
+            tool_name=tool,
+            safety_level="dangerous",
+            parameters=parameters or {},
+            reason="llm-parsed tool call",
+        )
+    except Exception as exc:  # noqa: BLE001 — interlock broke → deny, failing closed
+        logger.error(
+            "llm tool interlock unavailable for %r — failing closed: %s", tool, exc
+        )
+        return f"[Denied: approval interlock unavailable for '{tool}']"
+
+    if decision != ApprovalDecision.APPROVED:
+        return f"[Denied: operator did not approve '{tool}']"
+    return None
+
+
+def _refuse(result: LLMResult, denial: str) -> LLMResult:
+    """Report a refusal to the model instead of silently dropping its request.
+
+    The model reads this and adapts; returning the reply unchanged would leave it
+    believing the tool ran.
+    """
+    result.metadata = result.metadata or {}
+    result.metadata["tool_action"] = "denied"
+    result.content = f"{result.content}\n\n{denial}"
+    return result
+
+
 def _maybe_execute_tools(result: LLMResult) -> LLMResult:
     """
     Parse LLM output for tool calls and execute via ToolRouter.
@@ -987,11 +1034,14 @@ def _maybe_execute_tools(result: LLMResult) -> LLMResult:
         # LLM chose to respond directly — no tool call
         return result
 
-    # Load safety policy from config (if available)
-    safety_policy = _load_tools_safety_policy()
-    router = get_tool_router(safety_policy=safety_policy)
+    # The router loads the operator's `tools:` policy itself (see load_safety_policy) —
+    # building a second copy here is what let the two readers drift, and passing one to an
+    # already-built singleton never applied it anyway.
+    router = get_tool_router()
 
     if isinstance(action, ToolCallAction):
+        if denial := _deny_if_unapproved(action.tool, action.parameters):
+            return _refuse(result, denial)
         tool_result = router.execute(action)
         formatted = format_tool_result_for_llm(tool_result)
         result.metadata = result.metadata or {}
@@ -1001,6 +1051,11 @@ def _maybe_execute_tools(result: LLMResult) -> LLMResult:
         return result
 
     if isinstance(action, MultiStepAction):
+        # Every step, not just the first: a plan is approved step by step, and one
+        # refusal must stop the chain rather than let the rest run.
+        for step in action.steps:
+            if denial := _deny_if_unapproved(step.tool, step.parameters):
+                return _refuse(result, denial)
         tool_results = router.execute_multi(action.steps)
         formatted_parts = [format_tool_result_for_llm(r) for r in tool_results]
         formatted = "\n\n".join(formatted_parts)
@@ -1013,27 +1068,6 @@ def _maybe_execute_tools(result: LLMResult) -> LLMResult:
     return result
 
 
-def _load_tools_safety_policy() -> dict[str, Any]:
-    """
-    Load safety policy from GlobalConfig.tools section.
-
-    Returns empty dict if config is unavailable.
-    """
-    try:
-        from navig.core.config_loader import load_config
-
-        config = load_config()
-        tools_cfg = getattr(config, "tools", None)
-        if tools_cfg is None:
-            return {}
-        return {
-            "blocked_tools": list(getattr(tools_cfg, "blocked_tools", [])),
-            "require_confirmation": list(getattr(tools_cfg, "require_confirmation", [])),
-            "max_calls_per_turn": getattr(tools_cfg, "max_calls_per_turn", 10),
-            "safety_mode": getattr(tools_cfg, "safety_mode", "standard"),
-        }
-    except Exception:
-        return {}
 
 
 # ─────────────────────────────────────────────────────────────

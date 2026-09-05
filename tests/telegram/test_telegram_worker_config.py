@@ -62,6 +62,31 @@ def test_telegram_and_deck_config(monkeypatch: pytest.MonkeyPatch):
     assert dk["auth_max_age"] == 120
 
 
+def test_config_builders_coerce_config_set_string_bools(monkeypatch: pytest.MonkeyPatch):
+    """`navig config set` stores raw strings and bool("false") is True, so the deck /
+    matrix / mcp feature toggles must coerce — otherwise a string "false"/"off"/"no"
+    reads truthy and never disables them. (require_auth is deliberately left raw — a
+    default-True auth gate is an owner decision, see the deck-auth coercion note.)"""
+    from navig.daemon import telegram_worker as tw
+
+    cfg = {
+        "deck": {"enabled": "false", "dev_mode": "off"},
+        "matrix": {"enabled": "true", "homeserver": "https://hs"},
+        "bridge": {"mcp_auto_connect": "no"},
+    }
+    monkeypatch.setattr(tw, "get_config_manager", lambda: SimpleNamespace(global_config=cfg))
+
+    dk = tw._deck_config()
+    assert dk["enabled"] is False, "deck.enabled 'false' must disable the deck"
+    assert dk["dev_mode"] is False
+
+    mx = tw._matrix_config()
+    assert mx["enabled"] is True, "matrix.enabled 'true' must enable it"
+
+    mcp = tw._mcp_bridge_config()
+    assert mcp["auto_connect"] is False, "mcp_auto_connect 'no' must disable auto-connect"
+
+
 def test_main_parses_args_and_runs(monkeypatch: pytest.MonkeyPatch):
     from navig.daemon import telegram_worker as tw
 

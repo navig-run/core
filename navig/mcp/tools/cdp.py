@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from navig.core.coerce import coerce_bool
+
 
 def _run(coro):
     from navig.browser.cdp_runtime import run as _rt_run
@@ -54,11 +56,22 @@ def _tool_cdp_new(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
     )
 
 
+def _requested_port(args: dict[str, Any]) -> int | None:
+    """The port the model actually named, or None if it named none.
+
+    `int(args.get("port", 9222))` substituted a literal for the model's silence, which
+    the action layer then could not tell from a deliberate choice — so an unspecified
+    port addressed 9222 even when the only launched browser was somewhere else.
+    """
+    raw = args.get("port")
+    return None if raw in (None, "") else int(raw)
+
+
 def _tool_cdp_stop(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
     from navig.browser import cdp_actions
 
     all_ports = bool(args.get("all", False))
-    return cdp_actions.stop(port=None if all_ports else int(args.get("port", 9222)),
+    return cdp_actions.stop(port=None if all_ports else _requested_port(args),
                             all_ports=all_ports)
 
 
@@ -66,7 +79,7 @@ def _tool_cdp_detach(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
     from navig.browser import cdp_actions
 
     all_ports = bool(args.get("all", False))
-    return cdp_actions.detach(port=None if all_ports else int(args.get("port", 9222)),
+    return cdp_actions.detach(port=None if all_ports else _requested_port(args),
                               all_ports=all_ports)
 
 
@@ -171,8 +184,12 @@ def _tool_cdp_login(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
         username=args.get("username"),
         open_url=args.get("open_url"),
         tab=args.get("tab"), url=args.get("url"),
-        allow_insecure=bool(args.get("allow_insecure", False)),
-        auto_submit=bool(args.get("auto_submit", True)),
+        # coerce, not bool(): these args come from a MODEL, and a model emitting the
+        # JSON string "false" would make bool() read it as True. For allow_insecure
+        # that disables the https-only guard in origin_match — i.e. it would type a
+        # vaulted password into an http:// page.
+        allow_insecure=coerce_bool(args.get("allow_insecure"), default=False),
+        auto_submit=coerce_bool(args.get("auto_submit"), default=True),
     ))
 
 
@@ -466,6 +483,12 @@ def register(server: Any) -> None:
         "cdp_scroll": "moderate",
         "cdp_move": "moderate",
         "cdp_detach": "moderate",
-        # safe (unlisted → "safe"): cdp_targets, cdp_snapshot, cdp_screenshot,
-        # cdp_tabs, cdp_switch, cdp_launched
+        # read-only — recorded explicitly so a missing entry is a build failure,
+        # not a silent default to "safe".
+        "cdp_targets": "safe",
+        "cdp_snapshot": "safe",
+        "cdp_screenshot": "safe",
+        "cdp_tabs": "safe",
+        "cdp_switch": "safe",
+        "cdp_launched": "safe",
     })

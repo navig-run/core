@@ -211,21 +211,58 @@ class RemediationEngine:
         )
 
     def _load_actions(self) -> None:
-        """Load persisted remediation actions from disk."""
+        """Load persisted remediation actions from disk.
+
+        A failed READ must never become a destructive WRITE: this left `_actions`
+        empty (or partial) on any failure, and every recording path ends in
+        `_save_actions()`, whose atomic write then replaced the file with that
+        incomplete set — losing the audit trail of what the agent had already done
+        to the operator's machines. `load_json_for_update` rides out transient locks
+        and refuses to mask an unreadable-but-populated file.
+        """
+        from navig.core.json_io import JsonReadError, load_json_for_update
+
+        self._load_failed = False
         if not self.actions_file.exists():
             return
 
         try:
-            raw = json.loads(self.actions_file.read_text(encoding="utf-8"))
-            actions = raw.get("actions", [])
-            for item in actions:
-                action = RemediationAction.from_dict(item)
-                self._actions[action.id] = action
-        except Exception as e:
+            raw = load_json_for_update(self.actions_file, default={})
+        except JsonReadError as e:
+            self._load_failed = True
             self._log(f"Failed to load remediation actions: {e}", level="warning")
+            return
+
+        for item in raw.get("actions", []):
+            try:
+                action = RemediationAction.from_dict(item)
+            except Exception as e:  # noqa: BLE001 — one bad row must not drop the rest
+                self._load_failed = True
+                self._log(f"Failed to load a remediation action: {e}", level="warning")
+                return
+            self._actions[action.id] = action
 
     def _save_actions(self) -> None:
-        """Persist remediation actions to disk for later inspection."""
+        """Persist remediation actions to disk. Refuses after a failed load.
+
+        Recorded rather than silent — see `GoalPlanner._save_goals` for why. Runs in
+        the autonomy loop, so it must not raise.
+        """
+        if getattr(self, "_load_failed", False):
+            from navig.core import incidents
+
+            incidents.record(
+                incidents.STORE_WRITE_REFUSED,
+                store="remediation",
+                path=str(self.actions_file),
+            )
+            self._log(
+                "Refusing to save remediation actions: the existing file could not "
+                "be read, so writing now would replace it with an incomplete set.",
+                level="warning",
+            )
+            return
+
         try:
             payload = {
                 "updated_at": datetime.now().isoformat(),

@@ -9,9 +9,13 @@ import pathlib
 
 import pytest
 
+# services/signals, not a pre-monorepo sibling `navig-signals/`. The old path stopped
+# existing at the monorepo migration, so this guard silently skipped from then until
+# 2026-09-01 — and what it guards is that the published SDK signs exactly the way the
+# server verifies, i.e. the difference between every event working and every event 401ing.
 _SDK = (
     pathlib.Path(__file__).resolve().parents[3]
-    / "navig-signals" / "py" / "navig_signals" / "__init__.py"
+    / "services" / "signals" / "py" / "navig_signals" / "__init__.py"
 )
 
 

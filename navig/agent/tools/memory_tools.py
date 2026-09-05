@@ -265,7 +265,17 @@ class MemoryDeleteTool(BaseTool):
 
             store = KeyFactStore()
             if hasattr(store, "soft_delete"):
-                store.soft_delete(fact_id)
+                if not store.soft_delete(fact_id):
+                    # soft_delete returns False ONLY when no fact with this id exists
+                    # (an already-deleted fact still matches its row → True). Report the
+                    # miss honestly instead of claiming a phantom success to the agent,
+                    # which would then tell the user it deleted something it never found.
+                    return ToolResult(
+                        name=self.name,
+                        success=False,
+                        error=f"no key-fact with id '{fact_id}' (never existed or already purged)",
+                        elapsed_ms=(time.monotonic() - t0) * 1000,
+                    )
             else:
                 return ToolResult(
                     name=self.name,

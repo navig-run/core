@@ -155,7 +155,12 @@ async def _send_telegram(
             message=message,
             priority=prio_map.get(options.priority, NotificationPriority.NORMAL),
         )
-        await _telegram_notifier.send(notif)
+        # `send()` returns True for anything queued or batched ("accepted for
+        # delivery") and the REAL delivery result for CRITICAL, which it sends
+        # inline. Discarding it reported success for a must-deliver message the
+        # transport had just rejected.
+        if not await _telegram_notifier.send(notif):
+            return DeliveryResult.failure("telegram", "the transport rejected the send")
         return DeliveryResult.success("telegram")
     except Exception as exc:
         logger.exception("Telegram send failed")
@@ -178,8 +183,18 @@ async def _send_matrix(
         return DeliveryResult.failure("matrix", "No matrix_room_id in target")
 
     try:
-        await _matrix_notifier.send_message(room_id, message)
-        return DeliveryResult.success("matrix")
+        # `NavigMatrixBot.send_message` is documented "Returns event_id or None" and
+        # signals EVERY failure that way — no client, an unexpected server response,
+        # or an exception it caught itself. So the `except` below never fires for a
+        # failed send, and discarding the return reported success for a bot that was
+        # not even connected. `navig matrix send` has always checked `if result:`;
+        # the daemon-side callers did not.
+        event_id = await _matrix_notifier.send_message(room_id, message)
+        if not event_id:
+            return DeliveryResult.failure(
+                "matrix", "the Matrix bot returned no event id (not connected or rejected)"
+            )
+        return DeliveryResult.success("matrix", message_id=event_id)
     except Exception as exc:
         logger.exception("Matrix send failed")
         return DeliveryResult.failure("matrix", str(exc))

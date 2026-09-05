@@ -394,6 +394,7 @@ class TestCompactBoundary:
         store.mark_compact_boundary()
         store.append(SessionEntry(role="user", content="after"))
         messages = store.resume()
+        assert messages, "messages was empty, so the loop below asserted nothing"
         for msg in messages:
             assert msg["content"] != "[compact boundary]"
 
@@ -625,6 +626,35 @@ class TestCleanup:
         self._create_old_session(session_dir, "keep2", days_old=60)
         removed = cleanup_old_sessions(max_age_days=90, base_dir=session_dir)
         assert removed == 0
+
+    # A transient read lock or corrupt meta must NEVER cause a delete: the old code
+    # treated an unreadable meta as epoch 0, so a momentary AV/backup lock on a RECENT
+    # session's meta deleted its entire history. "Never delete what you can't age."
+
+    def test_cleanup_does_not_delete_on_transient_read_lock(self, session_dir: Path):
+        self._create_old_session(session_dir, "ancient", days_old=100)
+        with patch.object(Path, "read_text", side_effect=PermissionError("sharing violation")):
+            removed = cleanup_old_sessions(max_age_days=90, base_dir=session_dir)
+        assert removed == 0
+        assert (session_dir / "ancient.meta.json").exists()
+        assert (session_dir / "ancient.jsonl").exists()
+
+    def test_cleanup_skips_corrupt_meta_but_still_cleans_valid_old(self, session_dir: Path):
+        self._create_old_session(session_dir, "ancient", days_old=100)
+        (session_dir / "broken.meta.json").write_text("{ not valid json", encoding="utf-8")
+        (session_dir / "broken.jsonl").write_text('{"role":"user","content":"x"}\n', encoding="utf-8")
+        removed = cleanup_old_sessions(max_age_days=90, base_dir=session_dir)
+        assert removed == 1  # only the genuinely-old, readable session
+        assert not (session_dir / "ancient.meta.json").exists()
+        assert (session_dir / "broken.meta.json").exists()  # corrupt is left untouched
+        assert (session_dir / "broken.jsonl").exists()
+
+    def test_cleanup_skips_meta_with_no_last_active(self, session_dir: Path):
+        (session_dir / "nofield.meta.json").write_text('{"session_id": "nofield"}', encoding="utf-8")
+        (session_dir / "nofield.jsonl").write_text("", encoding="utf-8")
+        removed = cleanup_old_sessions(max_age_days=90, base_dir=session_dir)
+        assert removed == 0
+        assert (session_dir / "nofield.meta.json").exists()
 
 
 # ─────────────────────────────────────────────────────────────

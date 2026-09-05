@@ -151,9 +151,24 @@ class ConnectorAuthManager:
         return creds.email if creds else None
 
     def is_connected(self, connector_id: str) -> bool:
-        """Return True if a non-expired token exists in the vault."""
+        """Return True if a *usable* token exists in the vault.
+
+        "Usable" deliberately includes an **expired access token that carries a refresh
+        token**. OAuth access tokens are short-lived — Google's last one hour — and
+        ``get_access_token()`` refreshes them transparently on the very next call. Treating
+        an aged-out access token as "not connected" reported a perfectly healthy account as
+        disconnected roughly an hour after it was linked, and told the user to reconnect —
+        which "fixed" it for exactly one more hour. Only a credential that is expired *and*
+        has no refresh token genuinely needs the user to re-authenticate.
+
+        This matches the semantics ``list_connected_accounts()`` already documents
+        ("Includes expired tokens (still 'connected', just needs refresh)"); the two
+        surfaces previously disagreed.
+        """
         creds = self._load_from_vault(connector_id)
-        return creds is not None and not creds.is_expired
+        if creds is None:
+            return False
+        return bool(creds.refresh) or not creds.is_expired
 
     async def inject_token(self, connector) -> bool:
         """Load *connector*'s stored token from the vault into the instance.
@@ -168,7 +183,12 @@ class ConnectorAuthManager:
             connector.set_access_token(token)
             return True
         except Exception as exc:
-            logger.debug("Token injection for %s failed: %s", connector.id, exc)
+            # WARNING, not DEBUG: callers collapse this to a bare False and surface a
+            # generic "token unavailable (reconnect)", so the reason the refresh failed
+            # (revoked grant, network, provider config gone) would otherwise exist
+            # nowhere the operator can see. This is the failure path for a credential
+            # that IS stored — it means something broke, not that nothing was set up.
+            logger.warning("Token injection for %s failed: %s", connector.id, exc)
             return False
 
     def list_connected_accounts(self) -> dict[str, str]:
@@ -316,15 +336,15 @@ class ConnectorAuthManager:
         return None
 
     def _save_to_vault(self, connector_id: str, creds: OAuthCredentials) -> None:
-        """Persist OAuth credentials to vault."""
-        # Remove old entry if exists
-        try:
-            existing = self._vault.get(connector_id, profile_id="connector")
-            if existing:
-                self._vault.remove(existing.id)
-        except Exception:  # noqa: BLE001
-            pass  # best-effort cleanup of stale entry
+        """Persist OAuth credentials to the vault.
 
+        ``vault.add`` upserts by the unique ``(provider, profile)`` label — it updates the
+        existing row **in place**, keeping the same credential id (see ``Vault.put``). So we must
+        NOT remove-then-add: that opened a window where a failed ``add`` after a *committed*
+        ``remove`` lost the refresh token entirely (a silent logout → full re-auth), and it churned
+        a fresh id plus two audit entries on every hourly token refresh instead of one in-place
+        update. A single ``add`` is atomic and preserves the id.
+        """
         self._vault.add(
             provider=connector_id,
             credential_type=CredentialType.OAUTH.value,

@@ -368,7 +368,14 @@ class NavigDbDumpTool(BaseTool):
                 cmd = f"pg_dump -U postgres {shlex.quote(database)}"
 
             if output_path.endswith(".gz"):
-                cmd = f"{cmd} | gzip > {out_safe}"
+                # Run the pipeline under bash with pipefail so a FAILED dump surfaces as a
+                # nonzero exit. A shell pipeline returns only the LAST stage's status
+                # (gzip's), and gzip happily exits 0 compressing an empty stream — so a
+                # failed mysqldump (bad password, DB down) would be reported as a completed
+                # backup over an empty .gz (silent backup data loss). If bash is absent the
+                # command fails honestly rather than lying.
+                inner = f"set -o pipefail; {cmd} | gzip > {out_safe}"
+                cmd = f"bash -c {shlex.quote(inner)}"
             else:
                 cmd = f"{cmd} > {out_safe}"
 

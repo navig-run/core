@@ -43,7 +43,7 @@ def test_stop_does_not_claim_success_while_the_browser_still_serves_cdp(registry
     # The tracked pid is a corpse — terminating it "succeeds" (already gone).
     monkeypatch.setattr(t, "_terminate_pid", lambda _pid: True)
     # We cannot find/kill the real process (simulates psutil missing, or a stubborn browser).
-    monkeypatch.setattr(t, "_debug_browser_pids", lambda _p, _u: [], raising=False)
+    monkeypatch.setattr(t, "_debug_browser_pids", lambda _p, _u, **_k: [], raising=False)
     # …and the port is STILL answering: the browser is alive.
     monkeypatch.setattr(t, "probe_port", lambda _p, timeout=1.0: object())
 
@@ -59,7 +59,7 @@ def test_a_browser_it_could_not_close_stays_in_the_registry(registry, monkeypatc
     t.record_launched(9222, pid=999_999, app="chrome", user_data_dir="/tmp/cdp-profiles/x")
 
     monkeypatch.setattr(t, "_terminate_pid", lambda _pid: True)
-    monkeypatch.setattr(t, "_debug_browser_pids", lambda _p, _u: [], raising=False)
+    monkeypatch.setattr(t, "_debug_browser_pids", lambda _p, _u, **_k: [], raising=False)
     monkeypatch.setattr(t, "probe_port", lambda _p, timeout=1.0: object())  # still alive
 
     t.stop_launched(9222)
@@ -76,7 +76,7 @@ def test_stop_kills_the_process_actually_serving_the_port(registry, monkeypatch)
     t.record_launched(9222, pid=111, app="chrome", user_data_dir="/tmp/cdp-profiles/x")
     monkeypatch.setattr(t, "_terminate_pid", lambda pid: (killed.append(pid), True)[1])
     # 111 is the dead launcher; 222 is the browser genuinely serving the port.
-    monkeypatch.setattr(t, "_debug_browser_pids", lambda _p, _u: [222], raising=False)
+    monkeypatch.setattr(t, "_debug_browser_pids", lambda _p, _u, **_k: [222], raising=False)
     monkeypatch.setattr(t, "probe_port", lambda _p, timeout=1.0: None)  # gone after the kill
 
     res = t.stop_launched(9222)
@@ -90,7 +90,7 @@ def test_stop_reports_closed_when_the_port_is_dead(registry, monkeypatch):
     """A browser the user already closed: nothing to kill, honestly reported closed."""
     t.record_launched(9222, pid=111, app="chrome", user_data_dir=None)
     monkeypatch.setattr(t, "_terminate_pid", lambda _pid: True)
-    monkeypatch.setattr(t, "_debug_browser_pids", lambda _p, _u: [], raising=False)
+    monkeypatch.setattr(t, "_debug_browser_pids", lambda _p, _u, **_k: [], raising=False)
     monkeypatch.setattr(t, "probe_port", lambda _p, timeout=1.0: None)
 
     res = t.stop_launched(9222)
@@ -118,7 +118,10 @@ def test_only_processes_carrying_our_debug_port_are_selected(monkeypatch):
     fake_psutil = type("psutil", (), {"process_iter": staticmethod(lambda _a: procs)})
     monkeypatch.setitem(__import__("sys").modules, "psutil", fake_psutil)
 
-    assert t._debug_browser_pids(9222, None) == [4]
+    # exe_hint is what stop_launched always passes (the app it recorded). Without SOME
+    # identifying signal the sweep now refuses to select anything — see
+    # test_cdp_stop_attribution.py: a foreign tool's debug browser can share our port.
+    assert t._debug_browser_pids(9222, None, exe_hint="chrome") == [4]
 
 
 def test_the_profile_dir_narrows_selection_further(monkeypatch):

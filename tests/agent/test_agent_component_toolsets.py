@@ -1,12 +1,8 @@
 """Tests for agent/component.py, agent/pattern_observer.py, agent/toolsets.py."""
 from __future__ import annotations
 
-import asyncio
-import tempfile
 from dataclasses import fields
 from datetime import datetime
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -235,8 +231,10 @@ class TestMergeToolsets:
         combined = merge_toolsets(["core", "search"])
         core = resolve_toolset_names("core") or []
         search = resolve_toolset_names("search") or []
+        assert core, "core was empty, so the loop below asserted nothing"
         for t in core:
             assert t in combined
+        assert search, "search was empty, so the loop below asserted nothing"
         for t in search:
             assert t in combined
 

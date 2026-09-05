@@ -22,6 +22,9 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from navig.core.aio_subprocess import communicate_or_kill
+from navig.core.ocr import ocr_unavailable_reason
+
 logger = logging.getLogger(__name__)
 
 _MAX_CONCURRENCY = 2
@@ -138,7 +141,7 @@ async def analyze_media(channel: Any, media_id: int) -> dict[str, Any]:
     elif kind in _AUDIO_KINDS:
         transcript = await _transcribe_path(local_path)
     elif kind in _VIDEO_KINDS:
-        transcript, ocr_text, vnote = await _analyze_video(data, local_path)
+        transcript, ocr_text, vnote = await analyze_video_file(local_path)
         if vnote:
             analysis["video_note"] = vnote
     else:
@@ -195,18 +198,114 @@ async def _analyze_image(data: bytes) -> tuple[str | None, str | None]:
         return None, None
 
 
-async def _transcribe_path(path: Path) -> str | None:
+async def _transcribe_path(path: Path, language: str | None = None) -> str | None:
     try:
+        from navig.core.language import resolve_language
         from navig.voice.stt import transcribe as stt_transcribe
 
-        return await stt_transcribe(str(path))
+        # Pass the resolved preference explicitly. Passing nothing used to inherit
+        # STTConfig's hard-coded "en", so non-English audio was transcribed as if
+        # it were English; `None` means detect, which is what an unpinned install
+        # should do.
+        return await stt_transcribe(str(path), language=resolve_language(language))
     except Exception as exc:  # noqa: BLE001
         logger.debug("transcription failed: %s", exc)
         return None
 
 
-async def _analyze_video(data: bytes, path: Path) -> tuple[str | None, str | None, str | None]:
-    """Return (transcript, ocr_text, note). Uses ffmpeg when present."""
+def _covered_by(fragment: str, fuller: str) -> bool:
+    """True when *fragment* says nothing *fuller* does not already say.
+
+    Two rules, and the second is strictly additive — it only ever merges pairs
+    the first already failed on, so nothing that used to collapse stops doing so.
+
+    **Substring** catches a caption growing at its edges, which is the ordinary
+    build-up ("Hello world" → "Hello world!").
+
+    **Token subsequence** catches the case substring cannot see: a word appearing
+    in the MIDDLE. That is what OCR noise looks like across frames — one frame of
+    the reported clip read `что я осознал? семья и дети` and the next read
+    `что я осознал? 414 семья и дети` (a misread of "44"), so neither string
+    contains the other and the transcript printed the same sentence twice.
+
+    ⚠ Deliberately NOT digit-normalisation-plus-similarity, which is the obvious
+    reach and is wrong twice over. Measured on those two strings: the first frame
+    read no number AT ALL, so normalising digits leaves them different (ratio
+    0.964) — it would not have merged this, the case it was proposed for. And a
+    threshold loose enough to catch it merges genuinely different captions.
+    Ordered-subsequence needs no threshold and cannot merge two lines that differ
+    in any token: `Step 1` and `Step 2` both survive, where digit-normalisation
+    would silently drop one.
+    """
+    frag, full = fragment.casefold(), fuller.casefold()
+    if frag in full:
+        return True
+    # `tok in it` consumes the iterator up to the match, so this is the standard
+    # ordered-subsequence test: every token of the fragment, in the same order.
+    it = iter(full.split())
+    return all(tok in it for tok in frag.split())
+
+
+def _merge_ocr_frames(texts: list[str | None]) -> str | None:
+    """Collapse per-frame OCR into one block, dropping repeats.
+
+    On-screen captions typically **build up** across frames ("Hello" → "Hello
+    world" → "Hello world!"), so exact-duplicate removal is not enough: the same
+    sentence would appear three times in partial forms. Coverage (see
+    :func:`_covered_by`) is the cheap rule that matches how captions actually
+    behave — a fragment already covered by a longer line is dropped, and a longer
+    line supersedes the fragment it grew from. Order of first appearance is kept,
+    because it is the order the viewer read them in.
+    """
+    kept: list[str] = []
+    for raw in texts:
+        text = " ".join((raw or "").split())
+        if not text:
+            continue
+        if any(_covered_by(text, k) for k in kept):
+            continue  # already covered by a fuller line
+        # This line supersedes any earlier fragment of itself.
+        kept = [k for k in kept if not _covered_by(k, text)]
+        kept.append(text)
+    return "\n".join(kept) or None
+
+
+async def _ocr_frames(paths: list[Path]) -> str | None:
+    """OCR each frame and merge. Local OCR — CPU, not API spend."""
+    try:
+        from navig.core.ocr import extract_ocr_text_from_image_bytes
+    except Exception:  # noqa: BLE001 — no OCR backend → nothing to read
+        return None
+    out: list[str | None] = []
+    for frame in paths:
+        try:
+            out.append(
+                await asyncio.to_thread(extract_ocr_text_from_image_bytes, frame.read_bytes())
+            )
+        except Exception as exc:  # noqa: BLE001 — one bad frame must not lose the rest
+            logger.debug("frame OCR failed for %s: %s", frame.name, exc)
+    return _merge_ocr_frames(out)
+
+
+async def analyze_video_file(
+    path: Path,
+    language: str | None = None,
+    *,
+    max_ocr_frames: int = 1,
+) -> tuple[str | None, str | None, str | None]:
+    """Return (transcript, ocr_text, note) for a video already on disk.
+
+    Public because the TikTok card's 📝 Transcript action needs exactly this and
+    must not grow a second copy of it. (The former private name took a `data`
+    argument it never read — only `path` was ever used.)
+
+    *max_ocr_frames* defaults to **1** deliberately. This function is also called
+    by ``analyze_media``, the catalog's fire-and-forget background analyser that
+    runs on **every** video the bot ever sees — raising the default would
+    multiply that background cost for everyone, silently. An explicit user action
+    (the Transcript button) asks for more and pays for it; bulk analysis keeps the
+    single thumbnail it has always used.
+    """
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         return None, None, "ffmpeg_unavailable"
@@ -219,20 +318,43 @@ async def _analyze_video(data: bytes, path: Path) -> tuple[str | None, str | Non
         audio = tmpd / "audio.wav"
         if await _run_ffmpeg([ffmpeg, "-y", "-i", str(path), "-vn", "-ac", "1", "-ar", "16000", str(audio)]):
             if audio.exists() and audio.stat().st_size > 0:
-                transcript = await _transcribe_path(audio)
-        # 2) A few sampled frames → OCR.
-        frame = tmpd / "frame.jpg"
-        if await _run_ffmpeg([ffmpeg, "-y", "-i", str(path), "-vf", "thumbnail", "-frames:v", "1", str(frame)]):
-            if frame.exists():
-                try:
-                    from navig.core.ocr import extract_ocr_text_from_image_bytes
+                transcript = await _transcribe_path(audio, language)
+        # 2) Frames → OCR. One thumbnail catches at most one caption, and TikTok
+        #    captions change throughout the clip, so anything asking for depth
+        #    samples scene changes instead.
+        if max_ocr_frames > 1:
+            frames_dir = tmpd / "frames"
+            try:
+                from navig.media.frames import extract_frames
 
-                    ocr_text = await asyncio.to_thread(
-                        extract_ocr_text_from_image_bytes, frame.read_bytes()
-                    )
-                except Exception:  # noqa: BLE001
-                    ocr_text = None
-    return transcript, ocr_text, None
+                sampled = await asyncio.to_thread(
+                    extract_frames,
+                    path,
+                    frames_dir,
+                    mode="scene",          # falls back to interval on a static clip
+                    max_frames=max_ocr_frames,
+                    # The library default is 600s, sized for long-form video. This
+                    # runs behind a button tap, and the scene pass can retry once
+                    # as an interval pass, so the real ceiling is twice this.
+                    timeout=60,
+                )
+            except Exception as exc:  # noqa: BLE001 — degrade to the single thumbnail
+                logger.debug("frame sampling failed, falling back to thumbnail: %s", exc)
+                sampled = []
+            if sampled:
+                ocr_text = await _ocr_frames(sampled)
+        if ocr_text is None:
+            frame = tmpd / "frame.jpg"
+            if await _run_ffmpeg([ffmpeg, "-y", "-i", str(path), "-vf", "thumbnail", "-frames:v", "1", str(frame)]):
+                if frame.exists():
+                    ocr_text = await _ocr_frames([frame])
+    # An empty OCR result means "no captions in this clip" — unless OCR is not
+    # installed, in which case it means "nobody looked". Those read identically
+    # downstream, which is how a missing dependency passes for a working feature.
+    note = None
+    if ocr_text is None and ocr_unavailable_reason():
+        note = "ocr_unavailable"
+    return transcript, ocr_text, note
 
 
 async def _run_ffmpeg(cmd: list[str]) -> bool:
@@ -240,7 +362,7 @@ async def _run_ffmpeg(cmd: list[str]) -> bool:
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
-        await asyncio.wait_for(proc.communicate(), timeout=120)
+        await communicate_or_kill(proc, 120)
         return proc.returncode == 0
     except Exception as exc:  # noqa: BLE001
         logger.debug("ffmpeg step failed: %s", exc)
@@ -249,13 +371,24 @@ async def _run_ffmpeg(cmd: list[str]) -> bool:
 
 async def _summarize(text: str) -> str | None:
     try:
+        from navig.core.language import resolve_language
         from navig.llm.generate import llm_generate
+
+        # Honour the operator's output language. This prompt was English-only, so
+        # a Russian clip whose transcript and OCR were both Russian still landed
+        # an English line in the catalog — and `/lang` claimed summaries followed
+        # the setting, which was not true until this call passed it along.
+        system = "Summarise this media's content in one concise sentence for a searchable catalog."
+        if language := resolve_language():
+            system += f" Write the summary in {language}."
+        else:
+            system += " Write the summary in the same language as the content."
 
         prompt = text[:6000]
         return await asyncio.to_thread(
             llm_generate,
             [
-                {"role": "system", "content": "Summarise this media's content in one concise sentence for a searchable catalog."},
+                {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
             "summarize",

@@ -7,8 +7,6 @@ Batch 123: tests for navig/commands/flux.py
 from __future__ import annotations
 
 import json
-from io import StringIO
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,6 +21,21 @@ from navig.commands.flux import (
 )
 
 _runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _restore_httpx_flag():
+    """Restore `flux._HTTPX`, which the tests below set inside a `patch.object` block.
+
+    `patch.object(_flux, "httpx")` restores the module it patched — but `_HTTPX`, the
+    "is httpx importable" flag, was assigned raw and never put back, so it stayed True
+    for every later test in the worker. On a machine without httpx that flips a
+    subsequent test onto the available path against the real, unpatched module.
+    Teardown here runs whether the test passes or fails.
+    """
+    original = _flux._HTTPX
+    yield
+    _flux._HTTPX = original
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +195,7 @@ class TestPeersCommand:
 
     def test_peers_list_plain(self):
         peers_data = [{"node_id": "abc123", "hostname": "node1", "os": "Linux",
-                       "health": "healthy", "load_pct": 10, "gateway_url": "http://x"}]
+                       "health": "online", "load_pct": 10, "gateway_url": "http://x"}]
         with _mock_get(peers_data):
             result = _runner.invoke(flux_app, ["peers", "--plain"])
         assert result.exit_code == 0
@@ -216,10 +229,14 @@ class TestPeersCommand:
 # ---------------------------------------------------------------------------
 
 
+# NodeRecord.health (mesh/registry.py) returns ONLY "online" / "degraded" / "offline".
+# These fixtures used to say "healthy" — a value the mesh never produces — which is why
+# `flux status` counting `== "healthy"` looked correct in CI while reporting 0 healthy
+# peers against a real daemon.
 class TestStatusCommand:
     def test_status_json(self):
         peers = [
-            {"node_id": "n1", "health": "healthy", "is_current_target": False},
+            {"node_id": "n1", "health": "online", "is_current_target": False},
             {"node_id": "n2", "health": "degraded", "is_current_target": True},
         ]
         with _mock_get(peers):
@@ -233,7 +250,7 @@ class TestStatusCommand:
         assert data["target"] == "n2"
 
     def test_status_text_output(self):
-        peers = [{"node_id": "n1", "health": "healthy", "is_current_target": False}]
+        peers = [{"node_id": "n1", "health": "online", "is_current_target": False}]
         with _mock_get(peers):
             with patch.object(_flux, "_lan_ip", return_value="10.0.0.2"):
                 result = _runner.invoke(flux_app, ["status"])

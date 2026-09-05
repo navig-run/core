@@ -154,7 +154,11 @@ class HealthStatus:
     """Result of a connector health check."""
 
     ok: bool
-    latency_ms: float
+    # Defaults to 0.0 so a failure detected BEFORE any request was timed (missing dependency,
+    # not connected, an exception) can report itself. Five connectors independently wrote
+    # `HealthStatus(ok=False, message=…)` on exactly those paths and raised TypeError instead —
+    # a health check that crashes precisely when the connector is unhealthy is worse than none.
+    latency_ms: float = 0.0
     degraded: bool = False
     message: str = ""
     checked_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

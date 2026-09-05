@@ -12,17 +12,34 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-def temp_home(monkeypatch, tmp_path):
-    """Create temporary home directory for tests."""
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Windows
-    yield tmp_path
+def config_manager(tmp_path, monkeypatch):
+    """A ConfigManager whose host configs really are isolated to this test.
 
+    This used to patch HOME/USERPROFILE and construct a bare ``ConfigManager()``, which
+    isolated NOTHING: ``hosts_dir`` comes from app-root detection, not the home dir, so
+    every test here resolved to the SAME `<repo>/core/.navig/hosts` — and every one of
+    them saves a host called `test-host`. Sequentially that is invisible (each test
+    overwrites, then reads its own write); under `-n auto` the workers race for one file,
+    which is why this file failed with a DIFFERENT pair of assertions on each full-suite
+    run ("apache2 == caddy" one run, "lighttpd == apache2" the next) while passing 12/12
+    in isolation. It also wrote into the developer's real checkout.
 
-@pytest.fixture
-def config_manager(temp_home):
-    """Create ConfigManager with temporary home."""
-    return ConfigManager()
+    ``config_dir=`` is the seam the constructor documents for exactly this ("skips
+    automatic app root detection") and is the ONLY one that moves ``hosts_dir``:
+    ``NAVIG_CONFIG_DIR`` — which conftest already isolates session-wide — governs
+    ``global_config_dir`` only.
+
+    ⚠ ``config_dir=`` is necessary and NOT sufficient. ``ContextManager.set_active_host``
+    does **not** go through ConfigManager for the project-local half — it computes
+    ``Path.cwd() / ".navig"`` directly and writes ``active_host`` there. No constructor
+    argument can reach that. Measured: with the ``config_dir=`` above already in place,
+    running this file still produced ``<repo>/core/.navig/config.yaml`` containing
+    ``active_host: switch-host``, in a file every xdist worker shares — and one the
+    operator's own ``navig`` reads when they work in ``core/``. ``chdir`` is the only
+    lever for a cwd-derived path, so it is part of the isolation, not tidiness.
+    """
+    monkeypatch.chdir(tmp_path)
+    return ConfigManager(config_dir=tmp_path)
 
 
 @pytest.fixture
@@ -326,3 +343,30 @@ class TestMultipleAppsWebserverTypes:
         # Verify apache2 app
         app = config_manager.load_app_config("switch-host", "apache-app")
         assert app["webserver"]["type"] == "apache2"
+
+
+class TestFixtureIsolation:
+    """The fixture must really isolate, and fail LOUDLY here if it stops.
+
+    Every test above saves a host called `test-host`. When `hosts_dir` resolved to the
+    shared `<repo>/core/.navig/hosts`, that was invisible sequentially and a race under
+    `-n auto` — this file failed with a DIFFERENT pair of assertions on each full-suite
+    run while passing 12/12 in isolation. These turn that heisenbug into a deterministic
+    failure at the point of the mistake.
+    """
+
+    def test_host_configs_are_written_inside_the_test_tmp_dir(self, config_manager, tmp_path):
+        assert tmp_path in config_manager.hosts_dir.parents, (
+            f"hosts_dir is {config_manager.hosts_dir}, outside this test's tmp_path — the "
+            "fixture is not isolating, so every test here shares one `test-host.yaml`"
+        )
+
+    # (A second assertion comparing against the app-root `.navig/hosts` derived from
+    # `Path(__file__)` was dropped: it is implied by the one above — a hosts_dir under
+    # tmp_path cannot also be the shared path — and deriving a repo path from __file__ makes
+    # `test_source_guards_are_wired` classify this ordinary suite as a tree-scanning guard.)
+
+    def test_a_saved_host_lands_in_this_tmp_dir_and_nowhere_else(self, config_manager, tmp_path):
+        config_manager.save_host_config("isolation-probe", {"name": "isolation-probe", "apps": {}})
+        written = list(tmp_path.rglob("isolation-probe.yaml"))
+        assert written, "the host config was written somewhere outside tmp_path"

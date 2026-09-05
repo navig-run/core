@@ -89,8 +89,20 @@ class FakeTelegramNotifier:
     def __init__(self):
         self.sent = []
 
-    async def send(self, notification):
+    async def send(self, notification) -> bool:
+        """Mirror ``ChannelNotifier.send``: True = delivered or accepted for delivery.
+
+        This returned ``None`` — falsy — so it modelled a transport that REJECTS every
+        send. That was invisible while ``_send_telegram`` discarded the return value, and
+        the moment #819 started checking it (``if not await notifier.send(notif)``) three
+        dispatch tests went red on main: the fake, not the code, was wrong.
+
+        A fake must mirror the real contract or it tests a different system than the one
+        that ships — the same way a fake that defined names the real class lacked kept
+        four DOA MCP endpoints green.
+        """
         self.sent.append(notification)
+        return True
 
 
 class TestCommsDispatch:

@@ -299,7 +299,10 @@ Extract text from screen or image using OCR.
 - `--image` - Image file path (default: screenshot)
 - `--region` - Region as x,y,w,h (optional)
 
-**Requirements:** pytesseract, Pillow
+**Requirements:** `pip install navig[ocr]` **plus** the Tesseract binary
+(`scoop install tesseract` / `brew install tesseract` / `apt install tesseract-ocr`).
+Run `navig doctor` → **Media Tools** to see which half is missing — without OCR
+every text-extraction surface returns nothing, which looks like an image with no text.
 
 **Example:**
 ```bash
@@ -355,7 +358,7 @@ navig ahk listener-edit
 | Window management | ✓ | ✓ | Both support |
 | Clipboard | ✓ | ✓ | ahk has extra features |
 | Screenshots | ✗ | ✓ | Windows-only |
-| OCR | ✗ | ✓ | Requires pytesseract |
+| OCR | ✗ | ✓ | Requires `navig[ocr]` + the Tesseract binary |
 | Hotkeys | ✗ | ✓ | Windows-only |
 | Mouse/keyboard | ✓ | ✓ | Both support |
 

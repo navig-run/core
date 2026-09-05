@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from navig.formations.types import AgentSpec, ApiConnector, Formation, ProfileConfig
 
 # ---------------------------------------------------------------------------

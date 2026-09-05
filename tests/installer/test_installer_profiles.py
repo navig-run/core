@@ -1,8 +1,6 @@
 """Tests for navig.installer.profiles — PROFILE_MODULES, DEFAULT_PROFILE, VALID_PROFILES."""
 from __future__ import annotations
 
-import pytest
-
 from navig.installer.profiles import DEFAULT_PROFILE, PROFILE_MODULES, VALID_PROFILES
 
 

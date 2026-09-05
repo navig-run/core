@@ -1,8 +1,6 @@
 """Hermetic unit tests for navig.core.capability_registry."""
 from __future__ import annotations
 
-import pytest
-
 from navig.core.capability_registry import (
     REGISTRY,
     CapabilityEntry,

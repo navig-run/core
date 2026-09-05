@@ -8,7 +8,6 @@ the get_group_help() / get_command_help() helper functions.
 from __future__ import annotations
 
 import inspect
-import re
 
 import pytest
 

@@ -13,7 +13,8 @@ def sync_status():
     """Show sync status."""
     from navig import console_helper as ch
 
-    ch.warning("navig sync is not yet implemented in this build.")
+    ch.warning("`sync` is not implemented — for files use: navig file add / navig file get")
+    raise typer.Exit(1)
 
 
 def _resolve_root(repo: str | None) -> Path | None:
@@ -50,7 +51,7 @@ def sync_instructions(
     ``.claude/CLAUDE.md``, ``.codex/AGENTS.md``, ``.gemini/GEMINI.md``, and injects the
     Copilot key into ``.vscode/settings.json`` WITHOUT touching any other setting.
 
-    The Python equivalent of ``scripts/sync-instructions.ps1`` — so it runs on macOS/Linux
+    The Python equivalent of ``tools/sync-instructions.ps1`` — so it runs on macOS/Linux
     too. ``--check`` is the CI/pre-commit drift gate.
     """
     from navig import console_helper as ch

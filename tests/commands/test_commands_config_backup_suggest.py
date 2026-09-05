@@ -3,14 +3,10 @@ and commands/suggest.py — batch 111."""
 
 from __future__ import annotations
 
-import shutil
-import subprocess
 import types
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # navig/commands/config.py — pure helpers
@@ -303,7 +299,6 @@ class TestGetTimePeriod:
 
     def test_morning_range(self):
         fn = self._fn()
-        from datetime import datetime
         from unittest.mock import patch
         with patch("navig.commands.suggest.datetime") as mock_dt:
             mock_dt.now.return_value.hour = 7
@@ -410,6 +405,7 @@ class TestGetFrequentCommands:
         mock_recorder.get_last_n.return_value = [op] * 2
         with patch("navig.operation_recorder.get_operation_recorder", return_value=mock_recorder):
             result = get_frequent_commands()
+        assert result, "result was empty, so the loop below asserted nothing"
         for item in result:
             assert isinstance(item, tuple)
 

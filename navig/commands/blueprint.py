@@ -12,7 +12,8 @@ def blueprint_list():
     """List available blueprints."""
     from navig import console_helper as ch
 
-    ch.warning("navig blueprint is not yet implemented in this build.")
+    ch.warning("`blueprint` is not implemented — outcomes are Blocks: navig block list")
+    raise typer.Exit(1)
 
 
 @blueprint_app.command("apply")
@@ -23,4 +24,5 @@ def blueprint_apply(
     """Apply a blueprint to a directory."""
     from navig import console_helper as ch
 
-    ch.warning("navig blueprint apply is not yet implemented in this build.")
+    ch.warning("`blueprint apply` is not implemented — use: navig apply <block-id>")
+    raise typer.Exit(1)

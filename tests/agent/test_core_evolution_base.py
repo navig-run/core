@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -299,9 +298,29 @@ class TestBaseEvolverCache:
 # ---------------------------------------------------------------------------
 
 class TestBaseEvolverSave:
-    def test_default_save_returns_none(self):
+    def test_default_save_reports_success(self):
+        """`_save` returns "is it on disk", and the base persists nothing.
+
+        This pinned `is None` until `evolve()` started reading the return value
+        (it discarded it before, and reported success even when the write had
+        failed — see tests/regression/test_evolution_save_failure_is_not_success.py).
+        None is now the *failure* reading, which is the safe direction for an
+        evolver that forgets to report; a base that saves nothing has not failed.
+        """
         evolver = AlwaysSuccessEvolver()
-        assert evolver._save("goal", "artifact") is None
+        assert evolver._save("goal", "artifact") is True
+
+    def test_an_evolver_that_cannot_save_does_not_report_success(self):
+        """The contract this return value exists for."""
+
+        class CannotSave(AlwaysSuccessEvolver):
+            def _save(self, goal, artifact):
+                self._save_error = "disk on fire"
+                return False
+
+        result = CannotSave().evolve("goal")
+        assert result.success is False
+        assert result.error == "disk on fire"
 
 
 # ---------------------------------------------------------------------------

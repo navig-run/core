@@ -26,6 +26,22 @@ not a class attribute), and more. Two of them guarded assertions that could not 
 **If a patch target does not exist, that is the finding.** Fix the target or delete the
 patch — do not conjure the attribute. The allowlist below is for the one case where
 creation is genuinely correct: an attribute that exists on another *platform*.
+
+MONKEYPATCH HAS THE SAME ESCAPE HATCH, and it was outside this guard until #742.
+``monkeypatch.setattr("a.b.c", v, raising=False)`` is exactly ``create=True``: it
+invents the attribute instead of complaining. Without the kwarg monkeypatch raises
+AttributeError on a bad target, so only the ``raising=False`` sites can hide a phantom
+— which is why this checks those and not the other ~235 object-form calls.
+
+It found four, all the same line in `tests/memory/test_memory_singletons.py`:
+``monkeypatch.setattr("navig.config.get_config", …, raising=False)`` under the comment
+*"Patch get_config so no real config is needed"*. `navig.config` has no `get_config`
+(it is `get_config_manager`), and the code under test reads `paths.data_dir()` anyway,
+so the patch fabricated a name nothing reads and the promised isolation never happened.
+The tests passed regardless because conftest already isolates NAVIG_CONFIG_DIR
+session-wide — so the patch was pure decoration, and removing it changed nothing
+(706 passed either way). A comment describing isolation that does not exist is worse
+than no comment: the next person trusts it.
 """
 
 from __future__ import annotations
@@ -191,3 +207,84 @@ def test_the_guard_does_not_flag_ordinary_patches(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert _create_true_sites(ok) == []
+
+
+# ── monkeypatch's equivalent escape hatch ────────────────────────────────────────
+
+
+def _raising_false_targets(path: Path) -> list[tuple[int, str]]:
+    """`monkeypatch.setattr("a.b.c", …, raising=False)` — string targets only.
+
+    The object form (`monkeypatch.setattr(mod, "attr", …, raising=False)`) cannot be
+    resolved statically, so it is out of scope rather than guessed at.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8-sig"))
+    out: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+            continue
+        if node.func.attr not in {"setattr", "delattr"}:
+            continue
+        if not any(
+            kw.arg == "raising"
+            and isinstance(kw.value, ast.Constant)
+            and kw.value.value is False
+            for kw in node.keywords
+        ):
+            continue
+        if node.args and isinstance(node.args[0], ast.Constant):
+            target = node.args[0].value
+            if isinstance(target, str) and "." in target:
+                out.append((node.lineno, target))
+    return out
+
+
+def _resolve(dotted: str) -> bool | None:
+    """True/False if the attribute is present/absent; None if it cannot be resolved."""
+    owner_path, _, attr = dotted.rpartition(".")
+    try:
+        return hasattr(importlib.import_module(owner_path), attr)
+    except Exception:  # noqa: BLE001 — could be pkg.mod.Class.method
+        parent, _, cls = owner_path.rpartition(".")
+        try:
+            return hasattr(getattr(importlib.import_module(parent), cls), attr)
+        except Exception:  # noqa: BLE001
+            return None
+
+
+def _raising_false_sites() -> list[tuple[str, int, str, bool | None]]:
+    return [
+        (_rel(path), lineno, dotted, _resolve(dotted))
+        for path in _test_files()
+        for lineno, dotted in _raising_false_targets(path)
+    ]
+
+
+def test_no_raising_false_patch_invents_a_missing_attribute() -> None:
+    phantom = [
+        f"{where}:{lineno} — monkeypatch.setattr({dotted!r}, …, raising=False)"
+        for where, lineno, dotted, present in _raising_false_sites()
+        if present is False
+    ]
+    assert not phantom, (
+        "`raising=False` created an attribute that does not exist — monkeypatch's "
+        "`create=True`. The patch fabricates a name nothing reads, so whatever it "
+        "claims to isolate is NOT isolated:\n  "
+        + "\n  ".join(phantom)
+        + "\n\nFix the target or delete the patch. Drop `raising=False` and monkeypatch "
+        "will tell you itself."
+    )
+
+
+def test_every_raising_false_target_could_be_resolved() -> None:
+    """A target this guard cannot import is a target it did not check. Saying so beats
+    passing over it — that silence is how the console_helper phantoms survived."""
+    unresolved = [
+        f"{where}:{lineno} — {dotted}"
+        for where, lineno, dotted, present in _raising_false_sites()
+        if present is None
+    ]
+    assert not unresolved, (
+        "these `raising=False` targets could not be imported, so they were NOT "
+        "checked:\n  " + "\n  ".join(unresolved)
+    )

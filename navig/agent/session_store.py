@@ -205,6 +205,9 @@ class SessionStore:
         self.meta_file = self._base_dir / f"{self.session_id}.meta.json"
         self._workspace = workspace
         self._meta: SessionMetadata | None = None
+        # Set when the sidecar exists but could not be read/parsed; `_save_meta`
+        # refuses while it stands so real counters are never replaced by a blank set.
+        self._meta_load_failed = False
         self._lock = threading.Lock()  # guards JSONL write + metadata update
 
     # ── Write operations ────────────────────────────────────
@@ -394,16 +397,69 @@ class SessionStore:
     # ── Internals ───────────────────────────────────────────
 
     def _load_or_create_meta(self) -> SessionMetadata:
-        """Load existing metadata or create a fresh instance."""
+        """Load existing metadata, or create a fresh instance when there is none.
+
+        The sharpest form of "a failed READ became a destructive WRITE": an
+        unreadable sidecar fell straight through to building a BLANK
+        `SessionMetadata` and saving it immediately — so one transient lock reset
+        `turn_count`, `total_tokens`, `total_cost`, `summary` and `created_at` to
+        zero, over the real numbers, at DEBUG log level. `append()` then does a
+        read-modify-write (`total_cost += ...`) on those zeros, so the session's
+        cost accounting silently restarts.
+
+        "Absent" and "unreadable" must therefore be handled differently: absent is
+        a genuine first write; unreadable means fresh metadata is used IN MEMORY so
+        the session can continue, but nothing is persisted over data we could not
+        read (`_save_meta` refuses while the flag stands).
+        """
         if self._meta is not None:
             return self._meta
-        if self.meta_file.exists():
+
+        from navig.core.json_io import JsonReadError, load_json_for_update
+
+        try:
+            data = load_json_for_update(self.meta_file, default={})
+        except JsonReadError as exc:
+            logger.warning(
+                "session meta %s could not be read — continuing without persisting "
+                "metadata so the existing counters are not overwritten: %s",
+                self.meta_file.name,
+                exc,
+            )
+            self._meta_load_failed = True
+            from navig.core import incidents
+
+            incidents.record(
+                incidents.STORE_WRITE_REFUSED,
+                store="session_meta",
+                path=str(self.meta_file),
+            )
+            self._meta = SessionMetadata(
+                session_id=self.session_id,
+                created_at=time.time(),
+                last_active=time.time(),
+                workspace=self._workspace,
+            )
+            return self._meta
+
+        if data:
             try:
-                data = json.loads(self.meta_file.read_text(encoding="utf-8"))
                 self._meta = SessionMetadata.from_dict(data)
                 return self._meta
-            except (json.JSONDecodeError, TypeError, OSError) as exc:
-                logger.debug("Failed to load meta %s: %s", self.meta_file.name, exc)
+            except (TypeError, ValueError) as exc:
+                logger.warning(
+                    "session meta %s did not parse — not overwriting it: %s",
+                    self.meta_file.name,
+                    exc,
+                )
+                self._meta_load_failed = True
+                self._meta = SessionMetadata(
+                    session_id=self.session_id,
+                    created_at=time.time(),
+                    last_active=time.time(),
+                    workspace=self._workspace,
+                )
+                return self._meta
 
         self._meta = SessionMetadata(
             session_id=self.session_id,
@@ -415,8 +471,12 @@ class SessionStore:
         return self._meta
 
     def _save_meta(self, meta: SessionMetadata) -> None:
-        """Persist metadata to the sidecar file."""
+        """Persist metadata to the sidecar file. Refuses after an unreadable load."""
         self._meta = meta
+        if getattr(self, "_meta_load_failed", False):
+            # The counters in memory are a fresh zero baseline, not the real ones —
+            # writing them would replace the session's accounting with near-zero.
+            return
         self.meta_file.parent.mkdir(parents=True, exist_ok=True)
         _content = json.dumps(meta.to_dict(), ensure_ascii=False, indent=2) + "\n"
         _tmp_path: Path | None = None
@@ -455,9 +515,20 @@ def cleanup_old_sessions(
     for meta_path in directory.glob("*.meta.json"):
         try:
             data = json.loads(meta_path.read_text(encoding="utf-8"))
-            last_active = data.get("last_active", 0.0)
-        except (json.JSONDecodeError, OSError):
-            last_active = 0.0
+        except (json.JSONDecodeError, OSError) as exc:
+            # Unreadable (a transient AV/backup lock) or corrupt — we cannot verify
+            # this session's age. Treating that as epoch 0 (the old behaviour) let a
+            # momentary read lock DELETE a recent session's entire history. Skip it;
+            # a later run with a readable file decides. Never delete what you can't read.
+            logger.debug("Skipping session with unreadable meta %s: %s", meta_path.name, exc)
+            continue
+
+        last_active = data.get("last_active") if isinstance(data, dict) else None
+        if not isinstance(last_active, (int, float)) or isinstance(last_active, bool):
+            # A non-mapping meta, or a missing/non-numeric last_active, is malformed in
+            # a way we can't age — don't delete on a value we can't trust.
+            logger.debug("Skipping session with malformed meta %s", meta_path.name)
+            continue
 
         if last_active < cutoff:
             sid = meta_path.stem.replace(".meta", "")

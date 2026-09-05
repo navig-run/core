@@ -1,0 +1,136 @@
+agent service install --user
+agent start --background
+ai config
+ai test
+and runs the
+audit-connections
+blueprint create
+blueprint create my-loadout
+blueprint show
+blueprint show ops-lead
+boot edit
+boot init
+boot log
+bot --gateway
+bridge matrix
+bridge matrix bench
+bridge matrix deploy
+bridge matrix generate-config
+bridge matrix login
+bridge matrix register
+bridge matrix setup
+bridge matrix status
+bridge matrix vault-set
+check-filesystem
+clean-packages
+cleanup-temp
+dashboard --no-live
+db-containers
+db-databases
+db-dump
+db-dump mydb
+db-list
+db-optimize
+db-optimize users
+db-query
+db-repair
+db-repair sessions
+db-shell
+db-show-tables
+db-show-tables mydb
+db-tables
+db-users
+deck apply
+deck apply sprint-42-loadout
+deck list
+deck remove
+deck remove old-deck
+deck save
+deck save sprint-42-loadout
+deck show
+docker compose restart --service
+docker list
+docker ps --json
+docker restart nginx --yes
+docker run
+docker stop nginx --yes
+fail2ban-status
+fail2ban-unban
+finance accounts
+finance add
+finance check
+finance hledger
+finance import
+finance income
+finance init
+firewall-add
+firewall-disable
+firewall-enable
+firewall-remove
+firewall-status
+health-check
+heartbeat configure --disable
+hello config-demo
+hello greet
+hello info
+hello remote-demo
+image generate
+logs mysql
+logs nginx
+logs php-fpm
+mcp config claude
+mcp config vscode
+mcp install --global
+mcp install --url
+mcp uninstall
+migrate rollback
+migrate run
+node edit
+node edit soul
+node fp
+node init
+node show
+paths --json
+repo conflicts --no-dirty
+restart
+restart all
+restart nginx
+restart php-fpm
+restore
+rotate-logs
+security-scan
+security-updates
+service config --edit
+software list --format
+space apply
+space clear
+space diff
+space jump
+space pack
+space pack devops-prod
+space publish
+space show
+space unapply
+space validate
+space workspace generate
+sql
+sqlfile
+ssh production
+ssh-audit
+stack up --foreground
+start --foreground
+start --no-gateway
+start -f
+system icons
+system init
+system sounds
+system theme
+system wallpaper
+system-maintenance
+topic action
+tunnel restart
+tunnel start
+tunnel status
+tunnel stop
+update-packages
+workspace

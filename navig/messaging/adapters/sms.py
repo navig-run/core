@@ -22,6 +22,7 @@ Config (``adapters.sms`` section)::
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -82,6 +83,15 @@ class SmsAdapter:
     ) -> DeliveryReceipt:
         """Send an SMS to the phone number encoded in ``thread_id``."""
         to_number = thread_id  # thread_id == phone number for SMS
+
+        # SMS is a text-only channel (capabilities == ["text"]). The method accepted an
+        # `attachments` arg but never sent it, returning success() — a silent media drop.
+        # Refuse instead so the delivery record reflects that the media was not sent.
+        if attachments:
+            return DeliveryReceipt.failure(
+                "SMS is a text-only channel and cannot send attachments"
+            )
+
         try:
             client = self._get_client()
             if self._provider == "twilio":
@@ -90,18 +100,23 @@ class SmsAdapter:
                     kwargs["messaging_service_sid"] = self._messaging_service_sid
                 else:
                     kwargs["from_"] = self._from_number
-                msg = client.messages.create(**kwargs)
+                # The Twilio SDK is synchronous — run its blocking HTTP round-trip off the
+                # event loop so a slow provider can't stall the single-threaded gateway
+                # (every other message/notification would freeze until it returned).
+                msg = await asyncio.to_thread(client.messages.create, **kwargs)
                 return DeliveryReceipt.success(
                     message_id=msg.sid,
                     status=DeliveryStatus.SENT,
                 )
             elif self._provider == "vonage":
-                resp = client.sms.send_message(
+                # Vonage SDK is synchronous too — offload the blocking send (see above).
+                resp = await asyncio.to_thread(
+                    client.sms.send_message,
                     {
                         "from": self._from_number,
                         "to": to_number.lstrip("+"),
                         "text": text,
-                    }
+                    },
                 )
                 msg_data = resp["messages"][0]
                 if msg_data["status"] == "0":

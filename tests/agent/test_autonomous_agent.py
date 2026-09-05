@@ -51,6 +51,12 @@ def test_gateway_status():
         else:
             print(f"[-] Status failed: {resp.status_code}")
             pytest.skip("Gateway status endpoint not available")
+    except AssertionError:
+        # A failed assertion is THIS TEST failing, not the gateway being absent.
+        # AssertionError is an Exception, so the broad handler below swallowed real
+        # failures into a skip -- including a deliberate `assert False, "Failed to
+        # create job"`. Re-raise so the run reports what actually happened.
+        raise
     except Exception as e:
         print(f"[-] Error: {e}")
         pytest.skip(f"Gateway error: {e}")
@@ -75,6 +81,12 @@ def test_cron_list():
         else:
             print(f"[-] Cron list failed: {resp.status_code}")
             pytest.skip("Cron endpoint not available")
+    except AssertionError:
+        # A failed assertion is THIS TEST failing, not the gateway being absent.
+        # AssertionError is an Exception, so the broad handler below swallowed real
+        # failures into a skip -- including a deliberate `assert False, "Failed to
+        # create job"`. Re-raise so the run reports what actually happened.
+        raise
     except Exception as e:
         print(f"[-] Error: {e}")
         pytest.skip(f"Gateway error: {e}")
@@ -109,6 +121,12 @@ def test_cron_add():
         else:
             print(f"[-] Failed to create job: {resp.status_code}")
             assert False, f"Failed to create job: {resp.status_code}"
+    except AssertionError:
+        # A failed assertion is THIS TEST failing, not the gateway being absent.
+        # AssertionError is an Exception, so the broad handler below swallowed real
+        # failures into a skip -- including a deliberate `assert False, "Failed to
+        # create job"`. Re-raise so the run reports what actually happened.
+        raise
     except Exception as e:
         print(f"[-] Error: {e}")
         pytest.skip(f"Gateway not accessible: {e}")
@@ -129,6 +147,12 @@ def test_cron_delete():
         else:
             print(f"[-] Failed to delete job: {resp.status_code}")
             assert False, f"Failed to delete job: {resp.status_code}"
+    except AssertionError:
+        # A failed assertion is THIS TEST failing, not the gateway being absent.
+        # AssertionError is an Exception, so the broad handler below swallowed real
+        # failures into a skip -- including a deliberate `assert False, "Failed to
+        # create job"`. Re-raise so the run reports what actually happened.
+        raise
     except Exception as e:
         print(f"[-] Error: {e}")
         pytest.skip(f"Gateway not accessible: {e}")
@@ -167,6 +191,12 @@ def test_heartbeat_trigger():
     except requests.Timeout:
         print("[-] Heartbeat timed out (>120s)")
         pytest.skip("Heartbeat timed out")
+    except AssertionError:
+        # A failed assertion is THIS TEST failing, not the gateway being absent.
+        # AssertionError is an Exception, so the broad handler below swallowed real
+        # failures into a skip -- including a deliberate `assert False, "Failed to
+        # create job"`. Re-raise so the run reports what actually happened.
+        raise
     except Exception as e:
         print(f"[-] Error: {e}")
         pytest.skip(f"Heartbeat error: {e}")
@@ -195,6 +225,12 @@ def test_heartbeat_history():
         else:
             print(f"[-] History retrieval failed: {resp.status_code}")
             pytest.skip(f"History failed: {resp.status_code}")
+    except AssertionError:
+        # A failed assertion is THIS TEST failing, not the gateway being absent.
+        # AssertionError is an Exception, so the broad handler below swallowed real
+        # failures into a skip -- including a deliberate `assert False, "Failed to
+        # create job"`. Re-raise so the run reports what actually happened.
+        raise
     except Exception as e:
         print(f"[-] Error: {e}")
         pytest.skip(f"History error: {e}")
@@ -225,6 +261,12 @@ def test_ai_config():
             print("[-] OpenRouter API key not configured")
             print("   Set it with: navig config set openrouter_api_key <your_key>")
             pytest.skip("AI not configured")
+    except AssertionError:
+        # A failed assertion is THIS TEST failing, not the gateway being absent.
+        # AssertionError is an Exception, so the broad handler below swallowed real
+        # failures into a skip -- including a deliberate `assert False, "Failed to
+        # create job"`. Re-raise so the run reports what actually happened.
+        raise
     except Exception as e:
         print(f"[-] Error: {e}")
         pytest.skip(f"AI config error: {e}")

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
-import pytest
+from datetime import datetime
 
 from navig.core.dict_utils import deep_merge, now_iso, truncate_output, utc_now
 

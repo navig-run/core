@@ -285,7 +285,12 @@ def contacts_remove(
             ch.dim("Cancelled.")
             return
 
-    store.remove_contact(alias_clean)
+    if not store.remove_contact(alias_clean):
+        # resolve_alias() said it was there, so a False here means the DELETE itself
+        # removed nothing — a locked or unwritable store. Reporting "removed" would
+        # leave the operator believing an address they can still be messaged at is gone.
+        ch.error(f"Contact @{alias_clean} was not removed — the store rejected the write.")
+        raise typer.Exit(1)
     ch.success(f"Contact @{alias_clean} removed.")
 
 
@@ -321,11 +326,21 @@ def contacts_route(
 
     net, addr = route_spec.split(":", 1)
 
+    route = f"{net.strip()}:{addr.strip()}"
     if action == "add":
-        store.add_route(alias_clean, f"{net.strip()}:{addr.strip()}", priority=priority)
+        if not store.add_route(alias_clean, route, priority=priority):
+            ch.error(f"Route {net}:{addr} was not added to @{alias_clean}.")
+            raise typer.Exit(1)
         ch.success(f"Route {net}:{addr} added to @{alias_clean}.")
     elif action == "remove":
-        store.remove_route(alias_clean, f"{net.strip()}:{addr.strip()}")
+        # remove_route() returns False when the contact has no such route — measured:
+        #   navig contacts route alice remove telegram:999999
+        #   -> "OK Route telegram:999999 removed from @alice." (exit 0)
+        # with alice's routes unchanged. The alias pre-check above cannot catch it,
+        # because the alias is fine; it is the ROUTE that was never there.
+        if not store.remove_route(alias_clean, route):
+            ch.error(f"@{alias_clean} has no route {net}:{addr} — nothing was removed.")
+            raise typer.Exit(1)
         ch.success(f"Route {net}:{addr} removed from @{alias_clean}.")
     else:
         ch.error(f"Unknown action '{action}' — use 'add' or 'remove'.")

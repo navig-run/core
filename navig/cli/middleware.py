@@ -316,8 +316,15 @@ def _register_operation_complete_atexit(ctx: typer.Context) -> None:
             except Exception as exc:
                 _log.debug("operation recorder write failed: %s", exc)
 
-        # daemon=False so the write completes before the process exits.
-        # join(1.0) caps exit delay to ≤1 s even on a slow DB.
+        # The write runs on a thread joined with a 1 s cap so a stuck ledger lock
+        # can never hang the operator's shell. That cap is a DEADLINE, not a
+        # guarantee: threading's own shutdown join has already run by the time
+        # atexit handlers execute, so a thread started here is waited on by nobody
+        # — when this join expires the write is abandoned outright, not finished
+        # later (daemon=False cannot change that; verified, not assumed). Hence
+        # OperationRecorder.complete_operation performs its authoritative ~3 ms
+        # append BEFORE any best-effort side-channel, and the in-flight marker
+        # written by mark_inflight() is the backstop when even that misses.
         t = threading.Thread(target=_write, daemon=False)
         t.start()
         t.join(timeout=1.0)
@@ -429,6 +436,31 @@ def register_fact_extraction() -> None:
 
     Skips meta-commands (memory, kg, index, history, version, help).
     Never surfaces errors to the user.
+
+    ⚠⚠ **NOT WIRED — this records nothing today, for four independent reasons.**
+    Pinned by ``tests/cli/test_fact_extraction_is_dormant.py``; do not "tidy" this note away
+    without making the decision it describes.
+
+    1. **Wrong object.** The worker asks ``get_memory_manager()`` — a ``MemoryManager`` — for
+       ``record_command``. That method exists only on ``UserProfile``
+       (``navig/memory/user_profile.py``), and ``middleware`` is its sole external caller.
+       ``fact_extractor`` and ``store_facts`` do not exist on either.
+    2. **The ``hasattr`` guard turns that mismatch into a silent skip** rather than an error,
+       so nothing ever reports the miss.
+    3. **The thread cannot finish.** It is a *daemon* thread started inside an ``atexit``
+       handler, and the interpreter does not wait for one: measured, such a thread completes
+       only if its work fits in **~5 ms** (0/1/5 ms landed, 50 ms did not). Its first
+       statement — ``from navig.memory.manager import get_memory_manager`` — costs **229 ms**.
+    4. **Every exception is swallowed** to ``_log.debug``.
+
+    ``tests/cli/test_cli_middleware.py`` asserts only that an atexit handler was
+    **registered** — never that a fact is recorded — so the suite currently certifies this
+    green. That is why the dormancy is asserted separately rather than merely written down.
+
+    **The decision is the owner's, and it is a product/privacy one, not a bug fix:** should
+    every CLI command a user runs be written into their profile? Either wire it deliberately
+    (which also needs a redesign — an atexit daemon thread cannot do 229 ms of work) or delete
+    it. As it stands it spawns a thread on every CLI exit to do nothing.
     """
     non_global = extract_non_global_tokens(sys.argv[1:])
     first_cmd = non_global[0] if non_global else ""

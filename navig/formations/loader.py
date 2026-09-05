@@ -150,6 +150,36 @@ def discover_formations() -> dict[str, Path]:
     return formation_map
 
 
+def formation_load_errors() -> list[tuple[Path, str]]:
+    """Formation dirs whose ``formation.json`` is present but INVALID, as ``(dir, reason)``.
+
+    Scans the same roots as :func:`discover_formations`, which silently SKIPS a broken
+    manifest (it logs and drops it) — so a doctor count of only the good ones is a green
+    light over a broken store. ``navig doctor`` uses this to surface the broken formation
+    instead. Best-effort and read-only; never raises.
+    """
+    errors: list[tuple[Path, str]] = []
+    for root in _get_formations_roots():
+        try:
+            if not root.is_dir():
+                continue
+            subdirs = sorted(root.iterdir())
+        except OSError:
+            continue  # unreadable root — skip it, don't let one bad dir break the scan
+        for subdir in subdirs:
+            manifest = subdir / "formation.json"
+            if not subdir.is_dir() or not manifest.exists():
+                continue
+            try:
+                data = json.loads(manifest.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as e:
+                errors.append((subdir, f"invalid formation.json ({e})"))
+                continue
+            if not isinstance(data, dict):
+                errors.append((subdir, "formation.json is not a JSON object"))
+    return errors
+
+
 def read_profile(workspace_dir: Path | None = None) -> ProfileConfig | None:
     """Read .navig/profile.json from workspace directory.
 

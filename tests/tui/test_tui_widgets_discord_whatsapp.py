@@ -92,7 +92,6 @@ StatusRow = _status_row_mod.StatusRow
 # ---------------------------------------------------------------------------
 from navig.messaging.adapter import DeliveryStatus, InboundEvent, Thread
 from navig.messaging.adapters.discord_adapter import (
-    DISCORD_AVAILABLE,
     DiscordMessagingAdapter,
 )
 from navig.messaging.adapters.whatsapp_cloud import WhatsAppCloudAdapter

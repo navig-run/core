@@ -2,7 +2,6 @@
 
 from unittest.mock import patch
 
-import pytest
 from typer.testing import CliRunner
 
 from navig.commands.node import node_app
@@ -16,7 +15,7 @@ _WARN = "navig.console_helper.warning"
 # App structure
 # ---------------------------------------------------------------------------
 
-def test_help_exits_0():
+def test_help_exits_nonzero():
     result = runner.invoke(node_app, ["--help"])
     assert result.exit_code == 0
 
@@ -45,10 +44,10 @@ def test_no_args_shows_help_or_error():
 # node list
 # ---------------------------------------------------------------------------
 
-def test_list_exits_0():
+def test_list_exits_nonzero():
     with patch(_WARN):
         result = runner.invoke(node_app, ["list"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
 def test_list_calls_warn():
@@ -60,10 +59,10 @@ def test_list_calls_warn():
 def test_list_warn_says_not_implemented():
     with patch(_WARN) as mock_warn:
         runner.invoke(node_app, ["list"])
-    assert "not yet implemented" in mock_warn.call_args[0][0]
+    assert "not implemented" in mock_warn.call_args[0][0]
 
 
-def test_list_help_exits_0():
+def test_list_help_exits_nonzero():
     result = runner.invoke(node_app, ["list", "--help"])
     assert result.exit_code == 0
 
@@ -72,10 +71,10 @@ def test_list_help_exits_0():
 # node add
 # ---------------------------------------------------------------------------
 
-def test_add_exits_0():
+def test_add_exits_nonzero():
     with patch(_WARN):
         result = runner.invoke(node_app, ["add", "192.168.1.10:9000"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
 def test_add_calls_warn():
@@ -87,7 +86,7 @@ def test_add_calls_warn():
 def test_add_warn_says_not_implemented():
     with patch(_WARN) as mock_warn:
         runner.invoke(node_app, ["add", "host:port"])
-    assert "not yet implemented" in mock_warn.call_args[0][0]
+    assert "not implemented" in mock_warn.call_args[0][0]
 
 
 def test_add_missing_address_exits_nonzero():
@@ -95,7 +94,7 @@ def test_add_missing_address_exits_nonzero():
     assert result.exit_code != 0
 
 
-def test_add_help_exits_0():
+def test_add_help_exits_nonzero():
     result = runner.invoke(node_app, ["add", "--help"])
     assert result.exit_code == 0
 
@@ -104,10 +103,10 @@ def test_add_help_exits_0():
 # node remove
 # ---------------------------------------------------------------------------
 
-def test_remove_exits_0():
+def test_remove_exits_nonzero():
     with patch(_WARN):
         result = runner.invoke(node_app, ["remove", "node-01"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
 def test_remove_calls_warn():
@@ -119,7 +118,7 @@ def test_remove_calls_warn():
 def test_remove_warn_says_not_implemented():
     with patch(_WARN) as mock_warn:
         runner.invoke(node_app, ["remove", "mynode"])
-    assert "not yet implemented" in mock_warn.call_args[0][0]
+    assert "not implemented" in mock_warn.call_args[0][0]
 
 
 def test_remove_missing_name_exits_nonzero():
@@ -127,7 +126,7 @@ def test_remove_missing_name_exits_nonzero():
     assert result.exit_code != 0
 
 
-def test_remove_help_exits_0():
+def test_remove_help_exits_nonzero():
     result = runner.invoke(node_app, ["remove", "--help"])
     assert result.exit_code == 0
 

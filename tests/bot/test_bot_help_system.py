@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from navig.bot.help_system import (
     CATEGORIES,
     CommandInfo,

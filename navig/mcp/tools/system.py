@@ -4,6 +4,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from navig.core.coerce import coerce_bool
+from navig.core.proc_text import decode_console_result
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +204,26 @@ def register(server: Any) -> None:
         }
     )
 
+    # See navig.mcp_server._gate_tool — unlisted defaults to "safe".
+    # A module's register() must be self-sufficient: register_all_tools creates this
+    # dict, but a direct `module.register(server)` call (tests, a plugin host) does not,
+    # and assuming it exists raised AttributeError. cdp.py already guarded; these did not.
+    if not hasattr(server, "_tool_safety"):
+        server._tool_safety = {}
+    server._tool_safety.update({
+        "navig_run_command": "dangerous",   # runs ANY navig verb, incl. destructive ones
+        "navig_web_fetch": "moderate",      # network egress (SSRF-guarded)
+        "navig_web_search": "moderate",
+        "firecrawl_scrape": "moderate",
+        "firecrawl_crawl": "moderate",
+        "firecrawl_search": "moderate",
+        # read-only — recorded explicitly so a missing entry is a build failure,
+        # not a silent default to "safe".
+        "navig_get_context": "safe",
+        "navig_list_databases": "safe",
+        "navig_search_docs": "safe",
+    })
+
 
 def _tool_list_databases(server: Any, args: dict[str, Any]) -> list[dict[str, Any]]:
     """List database connections extracted from host configs."""
@@ -279,12 +300,11 @@ def _tool_run_command(server: Any, args: dict[str, Any]) -> dict[str, Any]:
         }
 
     try:
-        result = subprocess.run(
+        result = decode_console_result(subprocess.run(
             ["python", "-m", "navig.cli", command] + cmd_args,
             capture_output=True,
-            text=True,
-            timeout=30,
-        )
+                        timeout=30,
+        ))
         return {
             "stdout": result.stdout,
             "stderr": result.stderr,

@@ -103,6 +103,7 @@ def test_help_text_covers_visible_commands():
         pytest.skip("_generate_help_text not found — adjust test to match impl")
     text = help_gen()
     visible = [e.command for e in registry if e.visible]
+    assert visible, "visible was empty, so the loop below asserted nothing"
     for cmd in visible:
         assert f"/{cmd}" in text, f"Visible command /{cmd} missing from /help output"
 

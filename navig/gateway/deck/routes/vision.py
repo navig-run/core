@@ -73,7 +73,6 @@ def _vision_catalog() -> dict:
     """Return providers + their vision-capable models so the Deck can render a picker."""
     try:
         from navig.providers.discovery import list_connected_providers
-        from navig.vault import get_vault
     except Exception as exc:
         logger.debug("vision catalog imports failed: %s", exc)
         return {"providers": []}

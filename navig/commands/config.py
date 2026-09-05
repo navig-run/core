@@ -1,8 +1,6 @@
 """Configuration management commands for NAVIG."""
 
 import json
-import os
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -522,44 +520,47 @@ def install_schemas(
     vscode_settings_written = False
     settings_path = Path.cwd() / ".vscode" / "settings.json"
     if write_vscode_settings:
+        from navig.core.json_io import (
+            JsonReadError,
+            atomic_write_json,
+            load_json_for_update,
+        )
+
         settings_path.parent.mkdir(parents=True, exist_ok=True)
-        settings: dict[str, Any] = {}
-        if settings_path.exists():
-            try:
-                settings = json.loads(settings_path.read_text(encoding="utf-8"))
-            except Exception:
-                settings = {}
-
-        yaml_schemas = settings.get("yaml.schemas")
-        if not isinstance(yaml_schemas, dict):
-            yaml_schemas = {}
-
-        # VS Code expects file paths or URLs as keys.
-        yaml_schemas[str(host_dst)] = [
-            "**/.navig/hosts/*.yml",
-            "**/.navig/hosts/*.yaml",
-            "**/hosts/*.yml",
-            "**/hosts/*.yaml",
-        ]
-        yaml_schemas[str(app_dst)] = [
-            "**/.navig/apps/*.yml",
-            "**/.navig/apps/*.yaml",
-            "**/apps/*.yml",
-            "**/apps/*.yaml",
-        ]
-        settings["yaml.schemas"] = yaml_schemas
-        _tmp_path: Path | None = None
+        # Read-modify-WRITE of the user's own .vscode/settings.json. A raw read that fell
+        # back to {} on a transient lock (the file open in the editor, an AV/backup scan
+        # landing mid-write) would then persist that {} — silently WIPING every setting the
+        # user has. load_json_for_update raises JsonReadError on a persistent transient lock
+        # (we skip the update, never overwrite) and quarantines a genuinely-corrupt file as
+        # settings.json.corrupt rather than discarding it. Missing/empty → fresh {}.
         try:
-            _fd, _tmp = tempfile.mkstemp(dir=settings_path.parent, suffix=".tmp")
-            _tmp_path = Path(_tmp)
-            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
-                _fh.write(json.dumps(settings, indent=2))
-            os.replace(_tmp_path, settings_path)
-            _tmp_path = None
-        finally:
-            if _tmp_path is not None:
-                _tmp_path.unlink(missing_ok=True)
-        vscode_settings_written = True
+            settings: dict[str, Any] = load_json_for_update(settings_path, default={})
+        except JsonReadError:
+            ch.warning(
+                f"Could not read {settings_path} (is it open or locked?) — skipping the "
+                "VS Code YAML-schema update so the file isn't overwritten. Re-run once it's free."
+            )
+        else:
+            yaml_schemas = settings.get("yaml.schemas")
+            if not isinstance(yaml_schemas, dict):
+                yaml_schemas = {}
+
+            # VS Code expects file paths or URLs as keys.
+            yaml_schemas[str(host_dst)] = [
+                "**/.navig/hosts/*.yml",
+                "**/.navig/hosts/*.yaml",
+                "**/hosts/*.yml",
+                "**/hosts/*.yaml",
+            ]
+            yaml_schemas[str(app_dst)] = [
+                "**/.navig/apps/*.yml",
+                "**/.navig/apps/*.yaml",
+                "**/apps/*.yml",
+                "**/apps/*.yaml",
+            ]
+            settings["yaml.schemas"] = yaml_schemas
+            atomic_write_json(settings, settings_path)
+            vscode_settings_written = True
 
     if json_out:
         ch.raw_print(
@@ -1077,6 +1078,13 @@ def set_config(key: str, value: str):
         navig config set openrouter_api_key sk-or-v1-...
         navig config set log_level DEBUG
         navig config set default_host production
+
+    Note on booleans: the value is stored VERBATIM, as a string — `false` is written
+    as the four characters "false", not as the boolean False. Consumers must read it
+    through `navig.core.coerce.coerce_bool`, because `bool("false")` is True and a raw
+    read would leave a feature the operator turned off switched ON.
+    `core/tests/quality/test_config_booleans_are_coerced.py` enforces that for every
+    documented toggle, and unconditionally for security controls that fail open.
     """
     config_manager = get_config_manager()
     normalized_key = key.strip().lower()
@@ -1138,7 +1146,7 @@ def set_config(key: str, value: str):
                     profile_id="default",
                     label=vault_provider.replace("_", " ").title(),
                 )
-            ch.dim(f"  Also stored in vault under [{vault_provider}/{vault_cred_type}]")
+            ch.dim(f"  Also stored in vault under \\[{vault_provider}/{vault_cred_type}]")
         except Exception:  # noqa: BLE001
             pass  # vault unavailable — config write is sufficient
 
@@ -1490,7 +1498,17 @@ def config_show_cmd(
     cm = get_config_manager()
 
     if scope == "global":
-        config = cm._load_global_config()
+        # NOT `_load_global_config()`. That returns the PYDANTIC-VALIDATED view
+        # (`validate_global_config(...).model_dump()`), which keeps only fields the
+        # schema declares -- so `config show` printed a config the operator does not
+        # have. Measured against one real install: 163 keys on disk, 126 shown, 114
+        # dropped, including the WHOLE `adapters` (Twilio credentials), `cloud`,
+        # `user`, `plugins`, `missions`, `llm_router` and `apps` subtrees, while
+        # schema defaults the operator never set were displayed as if configured.
+        #
+        # This is the command someone runs to find out why a setting is not taking
+        # effect. Showing them a filtered copy sends them looking in the wrong place.
+        config = cm.get_global_config() or {}
         ch.print_json(config)
     else:
         try:
@@ -1498,6 +1516,7 @@ def config_show_cmd(
             ch.print_json(config)
         except Exception as e:
             ch.error(str(e))
+            raise typer.Exit(1) from e
 
 
 @config_app.command("get")
@@ -1539,6 +1558,7 @@ def config_get_cmd(
 
     except Exception as e:
         ch.error(f"Error retrieving key: {e}")
+        raise typer.Exit(1) from e
 
 
 @config_app.command("set-raw", hidden=True)
@@ -1584,6 +1604,8 @@ def config_set_legacy_raw(
         atomic_write_yaml(config, global_config_file)
 
         ch.success(f"Updated '{key}' to: {parsed_value}")
+    except typer.Exit:
+        raise  # deliberate exit; the catch-all below would rewrite its code
     except Exception as e:
         ch.error(f"Error setting config: {e}")
         raise typer.Exit(1) from e

@@ -15,15 +15,6 @@ recursive-include config *.yaml *.yml *.txt *.json
 # [tool.setuptools.package-data]; a top-level tree would only reach the sdist.
 recursive-include navig/builtin *
 
-# Skills
-recursive-include skills *.md *.yaml *.yml *.json *.txt *.py
-
-# Workflow definitions
-recursive-include workflows *.yaml *.yml *.json
-
-# Plugin system
-recursive-include plugins *.py *.yaml *.json *.md
-
 # Deployment reference configs (not installed, but useful in source dist)
 recursive-include deploy *.yaml *.yml *.sh *.service *.conf *.sql
 

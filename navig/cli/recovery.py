@@ -318,8 +318,12 @@ def require_active_app(
         return app_name
 
     apps: list[str] = []
-    if hasattr(cfg, "list_apps"):
-        apps = cfg.list_apps()
+    # `list_apps(host_name)` REQUIRES a host, and there is none in scope here — the
+    # question this asks is "does the operator have any apps at all?", which
+    # `list_apps_from_files()` answers (it returns a list of names, the same shape the
+    # selector below consumes). The old call raised TypeError past its `hasattr` guard.
+    if hasattr(cfg, "list_apps_from_files"):
+        apps = cfg.list_apps_from_files()
 
     if not apps:
         empty_list_recovery("app", "app list")

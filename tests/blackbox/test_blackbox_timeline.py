@@ -1,10 +1,7 @@
 """Tests for navig.blackbox.timeline — render and format functions."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from navig.blackbox.timeline import format_event_summary, render_timeline
 from navig.blackbox.types import BlackboxEvent, EventType

@@ -1,4 +1,4 @@
-"""Cross-platform port of scripts/sync-instructions.ps1 (the mirror-generation core).
+"""Cross-platform port of tools/sync-instructions.ps1 (the mirror-generation core).
 
 MASTER (``.github/instructions/MASTER.instructions.md``) is the single source of truth for
 every AI tool's per-repo instructions. This module regenerates the mirrors from it — the

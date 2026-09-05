@@ -51,6 +51,8 @@ def export_crash_report(
             console.print("\n[dim]-- End of Crash Report --[/dim]")
             console.print("[dim]Copy the above JSON to include in a GitHub issue.[/dim]")
 
+    except typer.Exit:
+        raise  # deliberate exit; the catch-all below would rewrite its code
     except Exception as e:
         console.print(f"[red]Error exporting crash report:[/red] {e}")
         raise typer.Exit(1) from e

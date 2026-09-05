@@ -10,11 +10,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from io import StringIO
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 # ---------------------------------------------------------------------------
 # navig/blackbox/types.py — EventType, BlackboxEvent, Bundle

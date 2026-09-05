@@ -12,6 +12,7 @@ a JSON error with 200/4xx.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 try:
@@ -20,6 +21,10 @@ except ImportError:  # pragma: no cover
     web = None
 
 logger = logging.getLogger(__name__)
+
+# Upper bound for ?limit= on the pending list — an unclamped limit let a caller pull the
+# whole store in one request (the deck API is reachable remotely via Lighthouse).
+_MAX_PENDING_LIMIT = 500
 
 
 def _store():
@@ -45,16 +50,22 @@ async def handle_memory_pending(request: "web.Request") -> "web.Response":
         limit = int(request.query.get("limit", "200"))
     except (TypeError, ValueError):
         limit = 200
-    facts = _store().get_pending(limit=limit)
+    limit = max(1, min(_MAX_PENDING_LIMIT, limit))
+    # KeyFactStore is synchronous SQLite — every call here runs off the event loop so a big
+    # store (or a slow disk) can't stall the gateway. Safe: the store keeps a PER-THREAD
+    # connection (threading.local, check_same_thread=False) and serializes writes behind its
+    # own _write_lock. `_store()` is resolved INSIDE the thread because it lazily opens the
+    # DB / creates the schema on first use.
+    facts = await asyncio.to_thread(lambda: _store().get_pending(limit=limit))
     return web.json_response({"facts": [_fact_json(f) for f in facts], "count": len(facts)})
 
 
 async def handle_memory_approve(request: "web.Request") -> "web.Response":
     fact_id = request.match_info.get("fact_id", "")
-    store = _store()
     if fact_id == "all":
-        return web.json_response({"approved": store.approve_all_pending()})
-    ok = store.approve(fact_id)
+        approved = await asyncio.to_thread(lambda: _store().approve_all_pending())
+        return web.json_response({"approved": approved})
+    ok = await asyncio.to_thread(lambda: _store().approve(fact_id))
     return web.json_response({"ok": ok}, status=200 if ok else 404)
 
 
@@ -66,20 +77,20 @@ async def handle_memory_reject(request: "web.Request") -> "web.Response":
         reason = (body or {}).get("reason", "")
     except Exception:  # noqa: BLE001
         pass
-    ok = _store().reject(fact_id, reason or None)
+    ok = await asyncio.to_thread(lambda: _store().reject(fact_id, reason or None))
     return web.json_response({"ok": ok}, status=200 if ok else 404)
 
 
 async def handle_memory_export(request: "web.Request") -> "web.Response":
     fmt = (request.query.get("format") or "json").lower()
-    store = _store()
     if fmt in ("md", "markdown"):
-        return web.Response(text=store.export_markdown(), content_type="text/markdown")
+        text = await asyncio.to_thread(lambda: _store().export_markdown())
+        return web.Response(text=text, content_type="text/markdown")
     include_pending = request.query.get("all", "").lower() in ("1", "true", "yes")
-    return web.Response(
-        text=store.export_json(approved_only=not include_pending),
-        content_type="application/json",
+    text = await asyncio.to_thread(
+        lambda: _store().export_json(approved_only=not include_pending)
     )
+    return web.Response(text=text, content_type="application/json")
 
 
 async def handle_memory_import(request: "web.Request") -> "web.Response":
@@ -88,7 +99,8 @@ async def handle_memory_import(request: "web.Request") -> "web.Response":
     except Exception:  # noqa: BLE001
         text = ""
     try:
-        added, merged = _store().import_json(text)
+        # The heaviest path: a bulk import loops dup-lookup + upsert + FTS insert per fact.
+        added, merged = await asyncio.to_thread(lambda: _store().import_json(text))
     except ValueError as exc:
         return web.json_response({"error": str(exc)}, status=400)
     return web.json_response({"added": added, "merged": merged})
@@ -123,16 +135,27 @@ async function load(){
  const r = await fetch('/api/memory/facts/pending'); const d = await r.json();
  const el = document.getElementById('list');
  if(!d.facts || !d.facts.length){el.innerHTML='<p class="empty">No pending proposals. \\u2728</p>';return;}
- el.innerHTML = d.facts.map(f=>`<div class="card" data-id="${f.id}">
-   <div><div class="cat">${f.category}</div><div class="content">${escapeHtml(f.content)}</div></div>
+ // EVERY interpolated field is escaped — content was, but category/id were not. Both are
+ // server-constrained today (category is coerced to a VALID_CATEGORIES member on upsert, id is
+ // a uuid4), so this was latent rather than exploitable; escaping all of them keeps it that way
+ // if a category is ever added or validation loosened.
+ el.innerHTML = d.facts.map(f=>`<div class="card" data-id="${escapeHtml(f.id)}">
+   <div><div class="cat">${escapeHtml(f.category)}</div><div class="content">${escapeHtml(f.content)}</div></div>
    <div style="white-space:nowrap">
-     <button class="ok" onclick="act('${f.id}','approve')">Keep</button>
-     <button class="no" onclick="act('${f.id}','reject')">Drop</button>
+     <button class="ok" data-act="approve">Keep</button>
+     <button class="no" data-act="reject">Drop</button>
    </div></div>`).join('');
 }
-function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// Null-safe: a fact with a null/missing field used to throw on .replace and blank the whole page.
+function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// Delegated click — no inline onclick, so no id is ever interpolated into a JS string context.
+document.getElementById('list').addEventListener('click',e=>{
+ const btn=e.target.closest('button[data-act]'); if(!btn) return;
+ const card=btn.closest('.card[data-id]'); if(!card) return;
+ act(card.dataset.id,btn.dataset.act);
+});
 async function act(id,which){
- await fetch(`/api/memory/facts/${id}/${which}`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+ await fetch(`/api/memory/facts/${encodeURIComponent(id)}/${which}`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
  load();
 }
 async function approveAll(){await fetch('/api/memory/facts/all/approve',{method:'POST'});load();}

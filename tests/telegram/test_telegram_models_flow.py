@@ -106,6 +106,9 @@ async def test_models_with_active_provider_shows_tier_summary(monkeypatch):
 
     monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
     monkeypatch.setattr(
+        "navig.providers.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
+    monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
 
@@ -130,6 +133,7 @@ async def test_models_no_provider_shows_provider_picker(monkeypatch):
                 return None
 
     monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
+    monkeypatch.setattr("navig.providers.list_enabled_providers", lambda: [])
     monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [])
 
     await ch._handle_models_command(chat_id=100, user_id=200, text="/models")
@@ -172,6 +176,9 @@ async def test_tier_summary_shows_three_tiers(monkeypatch):
 
     monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
     monkeypatch.setattr(
+        "navig.providers.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
+    monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
 
@@ -198,6 +205,9 @@ async def test_tier_summary_uses_edit_when_message_id(monkeypatch):
 
     monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
     monkeypatch.setattr(
+        "navig.providers.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
+    monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
 
@@ -223,6 +233,9 @@ async def test_model_list_shows_checkmark_on_current(monkeypatch):
                 return SimpleNamespace(model="openai/gpt-4o-mini", provider="openai")
 
     monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
+    monkeypatch.setattr(
+        "navig.providers.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
     monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
@@ -255,6 +268,9 @@ async def test_model_list_pagination_buttons(monkeypatch):
                 return None
 
     monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
+    monkeypatch.setattr(
+        "navig.providers.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
     monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
@@ -289,6 +305,9 @@ async def test_model_list_page_1_has_prev(monkeypatch):
 
     monkeypatch.setattr("navig.llm.router.get_llm_router", lambda: _Router())
     monkeypatch.setattr(
+        "navig.providers.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
+    monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
 
@@ -309,6 +328,9 @@ async def test_model_list_no_models_shows_warning(monkeypatch):
     ch = _FakeModelsChannel()
     ch._resolve_cache = []
 
+    monkeypatch.setattr(
+        "navig.providers.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
     monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
@@ -335,6 +357,9 @@ async def test_model_list_resolution_failure_shows_distinct_warning(monkeypatch)
     """Resolver exceptions should show a distinct load-failure warning."""
     ch = _FakeModelsChannel()
 
+    monkeypatch.setattr(
+        "navig.providers.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
     monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
@@ -446,6 +471,9 @@ async def test_mdl_prov_activates_and_shows_tiers(monkeypatch):
     handler = CallbackHandler(ch)
 
     monkeypatch.setattr(
+        "navig.providers.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
+    monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
 
@@ -470,6 +498,7 @@ async def test_mdl_prov_unknown_answers_warning(monkeypatch):
     ch = _FakeCallbackChannel()
     handler = CallbackHandler(ch)
 
+    monkeypatch.setattr("navig.providers.get_provider", lambda pid: None)
     monkeypatch.setattr("navig.providers.registry.get_provider", lambda pid: None)
 
     await handler._handle_models_callback(
@@ -636,6 +665,9 @@ async def test_mdl_sel_assigns_model_and_refreshes(monkeypatch):
     handler = CallbackHandler(ch)
 
     monkeypatch.setattr(
+        "navig.providers.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
+    monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
 
@@ -670,6 +702,9 @@ async def test_mdl_sel_save_failure_shows_warning_and_refreshes(monkeypatch):
     handler = CallbackHandler(ch)
 
     monkeypatch.setattr(
+        "navig.providers.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
+    monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
 
@@ -703,6 +738,9 @@ async def test_mdl_sel_refresh_failure_does_not_override_success(monkeypatch):
     handler = CallbackHandler(ch)
 
     monkeypatch.setattr(
+        "navig.providers.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
+    monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
 
@@ -725,6 +763,9 @@ async def test_mdl_sel_rejects_negative_index(monkeypatch):
     ch = _FakeCallbackChannel()
     handler = CallbackHandler(ch)
 
+    monkeypatch.setattr(
+        "navig.providers.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
     monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
@@ -756,6 +797,9 @@ async def test_mdl_sel_resolution_failure_shows_warning(monkeypatch):
     ch = _FailingResolveCallbackChannel()
     handler = CallbackHandler(ch)
 
+    monkeypatch.setattr(
+        "navig.providers.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
     monkeypatch.setattr(
         "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
     )
@@ -804,6 +848,7 @@ async def test_provider_picker_shows_ready_providers(monkeypatch):
     ch = _FakeModelsChannel()
 
     manifest = _make_fake_manifest("xai", "xAI Grok", "🦊")
+    monkeypatch.setattr("navig.providers.list_enabled_providers", lambda: [manifest])
     monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [manifest])
     monkeypatch.setattr(
         "navig.providers.verifier.verify_provider",
@@ -822,6 +867,7 @@ async def test_provider_picker_has_nav_and_close(monkeypatch):
     """Provider picker always has Providers nav and Close buttons."""
     ch = _FakeModelsChannel()
 
+    monkeypatch.setattr("navig.providers.list_enabled_providers", lambda: [])
     monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [])
 
     await ch._show_models_provider_picker(chat_id=100)

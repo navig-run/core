@@ -23,7 +23,6 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
-import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -56,6 +55,10 @@ class WriteBatcher:
         Maximum time (ms) between enqueue and commit.
     """
 
+    # Cap for the timer-flush retry backoff (see ``_schedule_retry``). A persistently
+    # locked DB retries at most this often rather than hot-spinning every interval.
+    _MAX_RETRY_S = 5.0
+
     def __init__(
         self,
         get_conn,
@@ -70,8 +73,8 @@ class WriteBatcher:
         self._flush_interval_s = flush_interval_ms / 1000.0
         self._queue: list[_PendingWrite] = []
         self._queue_lock = threading.Lock()
-        self._last_enqueue: float = 0.0
         self._timer: threading.Timer | None = None
+        self._retry_failures = 0  # consecutive timer-flush failures (drives backoff)
         self._stats = {"enqueued": 0, "flushed": 0, "flush_count": 0}
 
     # ── Enqueue ───────────────────────────────────────────────
@@ -86,7 +89,6 @@ class WriteBatcher:
         with self._queue_lock:
             self._queue.append(_PendingWrite(sql=sql, params=params))
             self._stats["enqueued"] += 1
-            self._last_enqueue = time.monotonic()
 
             if len(self._queue) >= self._batch_size:
                 self._flush_unsafe()
@@ -106,7 +108,6 @@ class WriteBatcher:
                 _PendingWrite(sql=sql, params=(), is_many=True, seq_params=seq_params)
             )
             self._stats["enqueued"] += len(seq_params)
-            self._last_enqueue = time.monotonic()
 
             if len(self._queue) >= self._batch_size:
                 self._flush_unsafe()
@@ -127,8 +128,12 @@ class WriteBatcher:
         if not self._queue:
             return 0
 
+        # Copy — but DON'T clear yet. If the commit fails, the batch must stay in
+        # the queue: clearing up-front dropped already-accepted writes on any
+        # transaction error (locked DB, bad SQL, disk full). The caller holds
+        # _queue_lock, so nothing is appended during the flush and the batch stays
+        # the queue head; we remove exactly those entries only after COMMIT.
         batch = self._queue[:]
-        self._queue.clear()
         self._cancel_timer()
 
         count = 0
@@ -151,10 +156,12 @@ class WriteBatcher:
                     conn.execute("ROLLBACK")
                 except sqlite3.OperationalError:
                     pass  # best-effort: DB lock or unavailable; skip
-                raise
+                raise  # batch is preserved in the queue for a later retry
             finally:
                 conn.isolation_level = old_iso
 
+        del self._queue[: len(batch)]  # commit succeeded → drop the flushed entries
+        self._retry_failures = 0  # DB is writable again → reset the retry backoff
         self._stats["flushed"] += count
         self._stats["flush_count"] += 1
         return count
@@ -162,16 +169,55 @@ class WriteBatcher:
     # ── Timer management ──────────────────────────────────────
 
     def _schedule_timer(self) -> None:
-        """Schedule a flush after ``flush_interval_ms``."""
-        self._cancel_timer()
+        """Arm a flush timer, but only if one is not already pending.
+
+        Arming only when idle means the deadline is measured from the FIRST
+        unflushed enqueue, not the last. Resetting it on every enqueue (the old
+        behaviour) let steady sub-``batch_size`` traffic keep pushing the deadline
+        back, so the queue never flushed on time and writes were stranded in memory —
+        breaking the ``flush_interval_ms`` durability guarantee.
+        """
+        if self._timer is not None:
+            return
         self._timer = threading.Timer(self._flush_interval_s, self._timer_callback)
         self._timer.daemon = True
         self._timer.start()
 
     def _timer_callback(self) -> None:
-        """Called by the timer thread when flush interval expires."""
+        """Called by the timer thread when the flush interval expires.
+
+        This runs in a daemon ``threading.Timer`` thread that has NO caller to receive
+        an exception. ``_flush_unsafe`` deliberately RE-RAISES on a commit failure to
+        preserve the batch for retry — but if that propagated here it would (1) crash
+        the timer thread with an uncaught traceback and (2) leave no timer armed
+        (``_flush_unsafe`` clears it before failing), stranding the preserved writes in
+        memory until the next ``enqueue`` or ``close`` — and losing them outright if the
+        process exits quietly first. So catch, log, and re-arm a retry timer here. A
+        successful flush clears the queue and resets the backoff (in ``_flush_unsafe``).
+        """
         with self._queue_lock:
-            self._flush_unsafe()
+            try:
+                self._flush_unsafe()
+            except Exception:
+                pending = len(self._queue)
+                logger.warning(
+                    "WriteBatcher: scheduled flush failed; holding %d op(s) for retry",
+                    pending,
+                    exc_info=True,
+                )
+                if pending:
+                    self._schedule_retry()
+
+    def _schedule_retry(self) -> None:
+        """Re-arm the flush timer after a failed timer flush, with capped exponential
+        backoff so a persistently-locked DB retries (durably) without hot-spinning or
+        spamming the log every interval. Caller holds ``_queue_lock``; ``_flush_unsafe``
+        has already cleared ``_timer``, so this is the sole armer on the failure path."""
+        self._retry_failures += 1
+        delay = min(self._flush_interval_s * (2 ** self._retry_failures), self._MAX_RETRY_S)
+        self._timer = threading.Timer(delay, self._timer_callback)
+        self._timer.daemon = True
+        self._timer.start()
 
     def _cancel_timer(self) -> None:
         if self._timer is not None:

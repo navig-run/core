@@ -14,6 +14,7 @@ import typer
 
 from navig import console_helper as ch
 from navig.core.connection import _resolve_ssh_bin
+from navig.core.proc_text import decode_console_result
 
 
 def _check_powershell_quoting_issues(
@@ -124,10 +125,24 @@ def run_remote_command(
     # Detect PowerShell and warn about quoting issues for complex commands
     _check_powershell_quoting_issues(command, stdin, file, interactive, options)
 
+    # Multi-agent safety: claim the host before running anything on it, so a second
+    # session cannot mutate the same server underneath this one (see navig.core.host_lock
+    # for the incident that motivated it). guard_remote() no-ops on the local host, and
+    # NAVIG_HOST_LOCK=off disables the check entirely.
+    from navig.core import host_lock
+
+    host_lock.guard_remote(config_manager, host_name, f"navig run: {str(command or '')[:120]}")
+
     # Resolve the command from the appropriate source
     final_command = _resolve_command(command, stdin, file, interactive)
     if final_command is None:
-        return  # Error already printed by _resolve_command
+        # Error already printed by _resolve_command — but this used to `return`,
+        # so `navig run --file missing.sh` exited 0 with the command never sent.
+        # A flat 1 (not 2) because the specific reason is the helper's to know:
+        # it spans usage errors (nothing piped, empty input, no such file) AND
+        # real I/O failures, and the caller cannot tell them apart without
+        # breaking the helper's return-None contract.
+        raise typer.Exit(1)
 
     # Store original command for display purposes before base64 encoding
     display_command = final_command
@@ -152,7 +167,9 @@ def run_remote_command(
             final_command = _encode_b64_command(final_command)
 
         if final_command is None:
-            return  # Error already printed
+            # Error already printed by _encode_b64_command. Same reason as above:
+            # returning here reported a base64-encoding failure as a clean run.
+            raise typer.Exit(1)
 
     if options.get("dry_run"):
         # For multi-line commands, show preview
@@ -339,14 +356,20 @@ def _execute_with_progress(remote_ops, command: str, host_config: dict[str, Any]
 def _execute_local_command(
     command: str, capture_output: bool = True
 ) -> subprocess.CompletedProcess:
-    """Execute command on the local machine directly (no SSH)."""
+    """Execute command on the local machine directly (no SSH).
+
+    This is the ``navig run`` path for a local host. Captured as BYTES and decoded
+    afterwards: `text=True` decodes with the ANSI code page, which on a Russian-locale
+    Windows is cp1251 while `cmd.exe` writes cp866 — measured, that returned the
+    operator's own output as ``BUILTIN\\<14 wrong characters>``. A fixed `encoding=` is no
+    better, because `shell=True` passes the child's bytes through untouched: `git log`
+    arrives as raw UTF-8 and `whoami` in the console page, so whichever codec is named
+    mangles the other. See :func:`navig.core.proc_text.decode_console_result`.
+    """
     try:
         if capture_output:
-            return subprocess.run(  # noqa: S602
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
+            return decode_console_result(
+                subprocess.run(command, shell=True, capture_output=True)  # noqa: S602
             )
         return subprocess.run(command, shell=True)  # noqa: S602
     except Exception as _exc:  # noqa: BLE001
@@ -583,7 +606,11 @@ def install_remote_package(package: str, options: dict[str, Any]):
     host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
-    remote_ops = RemoteOperations(host_config)
+    # RemoteOperations takes the ConfigManager; the host config is an ARGUMENT to
+    # each call (it was passed to the constructor here, and then omitted from the
+    # calls below — so every execute_command raised TypeError for a missing
+    # server_config and `navig … install` could never install anything).
+    remote_ops = RemoteOperations(config_manager)
 
     ch.info(f"📦 Installing package: {package}")
 
@@ -631,8 +658,8 @@ def install_remote_package(package: str, options: dict[str, Any]):
     if not detected_pm:
         ch.info("   Auto-detecting package manager...")
         for pm in package_managers:
-            result = remote_ops.execute_command(f"which {pm['cmd']}")
-            if result["success"] and result["exit_code"] == 0:
+            result = remote_ops.execute_command(f"which {pm['cmd']}", host_config)
+            if result.returncode == 0:
                 detected_pm = pm
                 ch.success(f"   ✓ Detected: {pm['cmd']}")
                 break
@@ -641,22 +668,33 @@ def install_remote_package(package: str, options: dict[str, Any]):
         ch.error("Could not detect package manager.")
         ch.info("Supported: apt-get, yum, dnf, pacman, zypper, apk")
         ch.info(f'Try manually: navig run "<package-manager> install {package}"')
-        return
+        raise typer.Exit(1)
 
     # Dry-run check
     if options.get("dry_run"):
         ch.info(f"[DRY RUN] Would execute: {detected_pm['install']}")
         return
 
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    # Placed AFTER the --dry-run return above (and after the read-only package-manager
+    # detection): `apt-get install` / `yum install` takes the server's package-manager lock, so it
+    # contends with another session's install or purge — the #1099 incident exactly.
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, host_name, f"navig install: {package}")
+
     # Execute installation
     ch.info(f"   Using: {detected_pm['cmd']}")
-    result = remote_ops.execute_command(detected_pm["install"])
+    result = remote_ops.execute_command(detected_pm["install"], host_config)
 
-    if result["success"] and result["exit_code"] == 0:
+    if result.returncode == 0:
         ch.success(f"✅ Package installed: {package}")
-        if result["output"]:
-            ch.dim(f"\n{result['output']}")
+        if result.stdout:
+            ch.dim(f"\n{result.stdout}")
     else:
+        # Exited 0 on a FAILED install, so `navig remote install-package nginx &&
+        # <configure it>` ran the next step against a package that is not there.
         ch.error(f"❌ Installation failed: {package}")
-        if result.get("error"):
-            ch.error(f"Error: {result['error']}")
+        if result.stderr:
+            ch.error(f"Error: {result.stderr}")
+        raise typer.Exit(1)

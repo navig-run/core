@@ -2,11 +2,9 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from navig.core.window_manager import WindowManager
 

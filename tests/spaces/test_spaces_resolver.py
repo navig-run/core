@@ -5,8 +5,6 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from navig.spaces.resolver import (
     _find_project_navig_root,
     discover_space_paths,

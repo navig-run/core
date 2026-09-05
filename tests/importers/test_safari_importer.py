@@ -5,8 +5,6 @@ import plistlib
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from navig.importers.sources.safari import SafariImporter
 
 

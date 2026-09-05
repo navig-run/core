@@ -100,13 +100,13 @@ TELEGRAM_BOT_TOKEN=xxx bash install_navig_linux_enhanced.sh --install-samba --in
 ### Linux
 **Old way:**
 ```bash
-bash scripts/install_navig_linux.sh  # Just NAVIG
+bash installers/install_navig_linux.sh  # Just NAVIG
 # Then manually setup Samba and rclone
 ```
 
 **New way:**
 ```bash
-bash scripts/install_navig_linux_enhanced.sh  # Everything
+bash installers/install_navig_linux_enhanced.sh  # Everything
 ```
 
 ---

@@ -42,7 +42,7 @@ try:
 except ImportError:  # pragma: no cover
     web = None  # type: ignore[assignment]
 
-from navig.license.quota import TIER_CAPABILITIES, TierName
+from navig.license.quota import TierName
 
 logger = logging.getLogger(__name__)
 

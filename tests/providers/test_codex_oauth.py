@@ -11,7 +11,6 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from navig.providers import codex_oauth
-from navig.providers import connect as connect_mod
 from navig.providers.connect import begin_oauth, complete_oauth
 from navig.providers.connection_types import AuthState
 from navig.providers.connections import ConnectionStore

@@ -94,6 +94,7 @@ def memory_sessions(
         ch.error(f"Memory module not available: {e}")
     except Exception as e:
         ch.error(f"Error listing sessions: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("history")
@@ -112,7 +113,10 @@ def memory_history(
         db_path = Path(config.global_config_dir) / "memory" / "memory.db"
 
         if not db_path.exists():
-            ch.error("No conversation history")
+            # No history YET is an empty state, not a failure — the same function
+            # reports an existing-but-empty session with ch.info + exit 0 below.
+            # Keeping ch.error here made a first run look broken.
+            ch.info("No conversation history yet")
             return
 
         store = ConversationStore(db_path)
@@ -142,6 +146,7 @@ def memory_history(
 
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("clear")
@@ -193,6 +198,7 @@ def memory_clear(
         ch.info("Cancelled")
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("compact")
@@ -341,6 +347,7 @@ def memory_compact(
         raise
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("knowledge")
@@ -456,13 +463,21 @@ def memory_knowledge(
         else:
             ch.error(f"Unknown action: {action}")
             ch.info("Valid actions: list, add, search, clear")
+            # Without this the branch fell THROUGH to kb.close() and the function
+            # end — printing ✗ and exiting 0. There is no `return` here for a
+            # scanner to pair the error with, which is why no guard caught it.
+            kb.close()
+            raise typer.Exit(2)
 
         kb.close()
 
     except typer.Abort:
         ch.info("Cancelled")
+    except typer.Exit:
+        raise  # a deliberate exit code must not be reworded as "Error: 1"
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("stats")
@@ -509,6 +524,7 @@ def memory_stats():
 
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 # ============================================================================
@@ -561,6 +577,7 @@ def memory_bank_status(
 
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("index")
@@ -614,6 +631,7 @@ def memory_bank_index(
         ch.info("For embeddings, install: pip install sentence-transformers")
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("search")
@@ -695,6 +713,7 @@ def memory_bank_search(
 
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("files")
@@ -744,6 +763,7 @@ def memory_bank_files(
 
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("clear-bank")
@@ -780,6 +800,7 @@ def memory_bank_clear(
         ch.info("Cancelled")
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 # ============================================================================
@@ -853,6 +874,7 @@ def memory_facts_list(
 
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("remember")
@@ -899,6 +921,7 @@ def memory_remember(
 
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("forget")
@@ -925,7 +948,7 @@ def memory_forget(
                 return
 
             for fact, _ in results:
-                ch.console.print(f"  [{fact.id[:8]}] {fact.content}")
+                ch.console.print(f"  \\[{fact.id[:8]}] {fact.content}")
 
             if not force and not typer.confirm(f"Forget {len(results)} fact(s)?"):
                 ch.info("Cancelled")
@@ -942,7 +965,7 @@ def memory_forget(
 
             if not matches:
                 ch.error(f"No fact found matching '{fact_id}'")
-                return
+                raise typer.Exit(2)
 
             for f in matches:
                 if not force:
@@ -956,8 +979,11 @@ def memory_forget(
 
     except typer.Abort:
         ch.info("Cancelled")
+    except typer.Exit:
+        raise  # deliberate exit; the catch-all below would rewrite its code
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("fact-stats")
@@ -996,6 +1022,7 @@ def memory_fact_stats(
 
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("pending")
@@ -1035,6 +1062,7 @@ def memory_pending(
         ch.info("Approve with: navig memory approve <id|all>   ·   reject: navig memory reject <id>")
     except Exception as e:  # noqa: BLE001
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("approve")
@@ -1058,12 +1086,15 @@ def memory_approve(
         matches = [f for f in store.get_pending(limit=1000) if f.id.startswith(fact_id)]
         if not matches:
             ch.error(f"No pending fact matching '{fact_id}'")
-            return
+            raise typer.Exit(2)
         for f in matches:
             store.approve(f.id)
             ch.success(f"Approved: {f.content[:70]}")
+    except typer.Exit:
+        raise  # deliberate exit; the catch-all below would rewrite its code
     except Exception as e:  # noqa: BLE001
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("reject")
@@ -1083,12 +1114,15 @@ def memory_reject(
         matches = [f for f in store.get_pending(limit=1000) if f.id.startswith(fact_id)]
         if not matches:
             ch.error(f"No pending fact matching '{fact_id}'")
-            return
+            raise typer.Exit(2)
         for f in matches:
             store.reject(f.id, reason=reason or None)
             ch.success(f"Rejected: {f.content[:70]}")
+    except typer.Exit:
+        raise  # deliberate exit; the catch-all below would rewrite its code
     except Exception as e:  # noqa: BLE001
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("learn")
@@ -1113,10 +1147,11 @@ def memory_learn(
             return
         ch.success(f"Proposed {len(proposed)} pattern-based memory(ies):")
         for f in proposed:
-            ch.console.print(f"  [{f.id[:8]}] {f.content}")
+            ch.console.print(f"  \\[{f.id[:8]}] {f.content}")
         ch.info("Review with: navig memory pending")
     except Exception as e:  # noqa: BLE001
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("export")
@@ -1151,6 +1186,7 @@ def memory_export(
             print(text)
     except Exception as e:  # noqa: BLE001
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("import")
@@ -1179,6 +1215,7 @@ def memory_import(
             ch.info("Imported as pending — review with: navig memory pending")
     except Exception as e:  # noqa: BLE001
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @memory_app.command("sync")

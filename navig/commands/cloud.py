@@ -287,7 +287,6 @@ def cloud_tailscale(
     import navig.cloud.tailscale as ts
     from navig import console_helper as ch
 
-    cfg = _config()
     # Canonical resolver — reads nested gateway.port and falls back to the
     # gateway default (8789), NOT the daemon-IPC port. A flat
     # cfg.get("gateway.port", …) here does not resolve the dotted key.
@@ -352,8 +351,11 @@ def cloud_tailscale(
 def cloud_status() -> None:
     """Show cloud + tunnel status. Works whether or not the daemon is running."""
     from navig import console_helper as ch
+    from navig.core.coerce import coerce_bool
     cfg = _config()
-    enabled = bool(cfg.get("cloud.enabled", False))
+    # coerce_bool: a config value stored via `navig config set cloud.enabled false`
+    # is the string "false" -- bool("false") is True, so read it through coerce_bool.
+    enabled = coerce_bool(cfg.get("cloud.enabled", False))
     broker_url = cfg.get("cloud.broker_url", _BROKER_DEFAULT)
     api_key = cfg.get("deck.api_key", "") or ""
 

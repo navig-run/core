@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
 from navig.core.migrations import (
     CURRENT_VERSION,
     Migration,
@@ -23,7 +21,6 @@ from navig.core.models import (
     NavigCommand,
     NavigPack,
     PackStep,
-    SkillExample,
     SkillManifest,
 )
 

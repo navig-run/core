@@ -7,7 +7,6 @@ import io
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from rich.console import Console
 
 from navig.agent.conv.status_event import StatusEvent

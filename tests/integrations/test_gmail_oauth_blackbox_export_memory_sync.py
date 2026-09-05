@@ -1,11 +1,7 @@
 """Batch 58 — gmail oauth_config, blackbox export, memory sync."""
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # navig.connectors.gmail.oauth_config

@@ -25,8 +25,11 @@ Safety conventions (same floor as :mod:`navig.selfheal.ssh_healer`):
 
 from __future__ import annotations
 
+import contextlib
+import io
+import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -191,6 +194,18 @@ _STOP_LEAKED_BROWSERS = Remediation(
 )
 
 
+# Rewriting the operator's persistent user PATH is a machine-wide mutation OUTSIDE
+# navig's own state — every other process on the box reads it. The prune only drops
+# entries that cannot resolve anything, but a health check still must not reach into
+# the registry on its own; it names the command and the operator runs it.
+_CLEAN_USER_PATH = Remediation(
+    id="clean-user-path",
+    title="prune dead/duplicate directories from the user PATH",
+    safe=False,
+    hint="navig doctor clean-path --apply",
+)
+
+
 def _detail_has(*needles: str) -> Callable[[dict[str, Any]], bool]:
     def _applies(check: dict[str, Any]) -> bool:
         detail = str(check.get("detail") or "")
@@ -210,6 +225,11 @@ _LABEL_MAP: dict[str, tuple[Remediation, Callable[[dict[str, Any]], bool] | None
     "Event processor": (_RESTART_DAEMON, _detail_has("NOT RUNNING", "emit backlog growing")),
     "Telegram webhook": (_RESTART_DAEMON, _detail_has("STALE tenant")),
     "Leaked browsers": (_STOP_LEAKED_BROWSERS, None),
+    # Predicated: "PATH health" also fails with nothing to prune (a PATH that is simply
+    # long, or unreadable), and offering a cleanup that would free zero bytes is advice
+    # that wastes the operator's trust. The row only prints "reclaim:" when
+    # partition_path_entries actually found removable entries.
+    "PATH health": (_CLEAN_USER_PATH, _detail_has("reclaim:")),
 }
 
 
@@ -370,6 +390,32 @@ def _print_human(
         ch.info("re-run `navig doctor` any time to confirm")
 
 
+@contextlib.contextmanager
+def _quiet_stdout(enabled: bool) -> Iterator[None]:
+    """Divert stdout to stderr while *enabled* — the guard machine mode depends on.
+
+    Mirrors ``collect_report(quiet=…)``. Remediations narrate to the Rich console
+    (= stdout): ``_start_daemon`` prints on every path. Under ``--json`` that landed
+    ahead of the single JSON document, so ``json.loads(stdout)`` failed — and only on
+    runs where healing actually DID something, so a green install never showed it.
+
+    Wrapping the ``execute()`` call rather than each action means any remediation added
+    to ``_ACTIONS`` later is guarded by construction. Forwarding (not swallowing) keeps
+    the narration visible on stderr for humans watching a heal.
+    """
+    if not enabled:
+        yield
+        return
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            yield
+    finally:
+        # Forward even if the body raised — never eat diagnostics on the failure path.
+        if buf.getvalue():
+            sys.stderr.write(buf.getvalue())
+
+
 def run_heal(
     *,
     port: int | None = None,
@@ -389,7 +435,8 @@ def run_heal(
 
     after: dict[str, Any] | None = None
     if actions:
-        execute(actions, dry_run=dry_run)
+        with _quiet_stdout(json_output):
+            execute(actions, dry_run=dry_run)
         if any(a.executed for a in actions):
             if _SETTLE_SECONDS:
                 time.sleep(_SETTLE_SECONDS)

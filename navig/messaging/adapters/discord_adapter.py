@@ -1,10 +1,10 @@
 """
-Discord Messaging Adapter — Wraps the existing DiscordChannelAdapter for outbound sends.
+Discord Messaging Adapter — Wraps the existing DiscordChannel for outbound sends.
 
 Compliance: **official** — uses discord.py bot (official Bot API).
 Identity:   **bot** — messages come from the NAVIG bot account.
 
-Reuses :class:`~navig.gateway.channels.discord.DiscordChannelAdapter` for
+Reuses :class:`~navig.gateway.channels.discord.DiscordChannel` for
 the underlying connection and ``discord.py`` client.  This adapter adds the
 :class:`~navig.messaging.adapter.ChannelAdapter` protocol surface for
 deterministic routing and delivery tracking.
@@ -97,7 +97,21 @@ class DiscordMessagingAdapter:
             if channel is None:
                 return DeliveryReceipt.failure(f"Discord channel {thread_id} not found")
 
-            files = await self._build_files(attachments) if attachments else None
+            files = None
+            if attachments:
+                files = await self._build_files(attachments)
+                # Never report success after silently dropping media the caller asked
+                # us to send. No aiohttp session is ever set on this adapter, so a
+                # url-only attachment resolves to None (a bad path/data does too) — and
+                # the old code sent the text alone and still returned success(), a silent
+                # partial delivery. Resolve BEFORE sending and fail if any dropped, so
+                # nothing goes out on failure (retry-safe: a retry can't duplicate).
+                dropped = len(attachments) - len(files)
+                if dropped:
+                    return DeliveryReceipt.failure(
+                        f"could not resolve {dropped} of {len(attachments)} "
+                        "attachment(s); refusing to send a partial message"
+                    )
             msg = await channel.send(content=text or None, files=files or None)
             return DeliveryReceipt.success(
                 message_id=str(msg.id),

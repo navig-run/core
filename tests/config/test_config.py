@@ -18,18 +18,33 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture
 def temp_home(monkeypatch, tmp_path):
-    """Create temporary home directory for tests."""
+    """Create temporary home directory for tests.
+
+    ⚠ The ``chdir`` is load-bearing. ``ContextManager.set_active_host`` writes the
+    project-local half to ``Path.cwd() / ".navig"`` **directly**, without consulting
+    ConfigManager — so the ``config_dir=`` below cannot reach it. Measured: this file
+    still wrote ``<repo>/core/.navig/config.yaml`` (``active_host: myhost``,
+    ``active_app: myapp``) into the source tree, shared by every xdist worker and read by
+    the operator's own ``navig`` when they work in ``core/``.
+    """
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Windows
+    monkeypatch.chdir(tmp_path)
     yield tmp_path
 
 
 @pytest.fixture
-def config_manager(temp_home):
-    """Create ConfigManager with temporary home, isolated from project's .navig."""
-    # Pass explicit config_dir to skip auto-detection from cwd
-    # which would find the project's actual .navig directory
+def config_manager(temp_home, monkeypatch):
+    """Create ConfigManager with temporary home, isolated from project's .navig.
+
+    `config_dir=` controls base_dir/apps_dir/hosts_dir but NOT the global config —
+    `global_config_dir` is a live property reading NAVIG_CONFIG_DIR, which conftest
+    points at ONE session-wide dir. So `update_global_config({"active_host": ...})`
+    below was writing into the config every other test shares. Pinning the env var
+    is what actually isolates (the idiom used in test_config_manager_get_set.py).
+    """
     config_dir = temp_home / ".navig"
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(config_dir))
     return ConfigManager(config_dir=config_dir)
 
 

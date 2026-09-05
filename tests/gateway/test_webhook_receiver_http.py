@@ -136,3 +136,62 @@ async def test_invalid_json_400_before_dispatch():
         res = await client.post("/webhook/secure", data=b"{not valid json", headers={"X-Sig": "x"})
         assert res.status == 400
     assert received == []
+
+
+def test_config_set_string_booleans_are_coerced():
+    """`navig config set webhooks.* false` stores the STRING "false" (truthy). The receiver
+    must coerce it — otherwise the top-level toggle can't disable the receiver, a disabled
+    source stays enabled, and an unsigned source's `verify_signature: "false"` stays truthy so
+    its legitimate webhooks get rejected against a missing secret."""
+    rcv = WebhookReceiver(
+        {
+            "webhooks": {
+                "enabled": "false",  # config-set string, NOT a bool
+                "sources": {
+                    "unsigned": {"enabled": "true", "verify_signature": "false"},
+                    "gone": {"enabled": "false"},
+                },
+            }
+        }
+    )
+    assert rcv.enabled is False                              # top-level toggle honored
+    assert rcv._sources["unsigned"].enabled is True
+    assert rcv._sources["unsigned"].verify_signature is False  # not the truthy string "false"
+    assert rcv._sources["gone"].enabled is False
+
+
+def _unsigned_receiver() -> WebhookReceiver:
+    """An enabled source with signature verification off — so the request body reaches
+    event extraction (the code path the input-validation bugs live in)."""
+    return WebhookReceiver(
+        {"webhooks": {"sources": {"plain": {"enabled": True, "verify_signature": False}}}}
+    )
+
+
+async def test_non_object_json_body_is_400_not_a_500_crash():
+    """A valid but non-object JSON body (`[]`, `42`) parses fine, but extract_event_type /
+    the handlers call payload.get(...) — a list/int has no .get, which used to escape the
+    narrow parse try as an unhandled AttributeError → 500, reachable unauthenticated."""
+    rcv = _unsigned_receiver()
+    async with TestClient(TestServer(_app(rcv))) as client:
+        for bad in (b"[]", b"42", b'"x"', b"true"):
+            res = await client.post("/webhook/plain", data=bad)
+            assert res.status == 400, f"{bad!r} should be 400, got {res.status}"
+        # a real object still works
+        ok = await client.post("/webhook/plain", data=b'{"event": "ping"}')
+        assert ok.status == 200
+
+
+async def test_history_limit_zero_and_negative_are_bounded():
+    """`?limit=0` used to return the ENTIRE buffer (`[-0:]`) — over-exposing every stored
+    payload — and negatives sliced from the front. Both must return nothing now."""
+    rcv = _unsigned_receiver()
+    async with TestClient(TestServer(_app(rcv))) as client:
+        await client.post("/webhook/plain", data=b'{"n": 1}')
+        await client.post("/webhook/plain", data=b'{"n": 2}')
+
+        assert (await (await client.get("/webhook/history?limit=0")).json())["events"] == []
+        assert (await (await client.get("/webhook/history?limit=-5")).json())["events"] == []
+        # a normal limit still returns the stored events
+        many = await (await client.get("/webhook/history?limit=10")).json()
+        assert len(many["events"]) == 2

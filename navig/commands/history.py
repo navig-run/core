@@ -13,7 +13,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import typer
+
 from navig import console_helper as ch
+from navig.cli.options import is_dry_run
+from navig.console_helper import get_console
 from navig.operation_recorder import (
     OperationStatus,
     OperationType,
@@ -62,7 +66,7 @@ def show_history(
         except ValueError:
             ch.error(f"Invalid operation type: {operation_type}")
             ch.info("Valid types: " + ", ".join(t.value for t in OperationType))
-            return
+            raise typer.Exit(2) from None
 
     # Parse status
     op_status = None
@@ -72,7 +76,7 @@ def show_history(
         except ValueError:
             ch.error(f"Invalid status: {status}")
             ch.info("Valid statuses: success, failed, partial, cancelled")
-            return
+            raise typer.Exit(2) from None
 
     # Get operations
     operations = list(
@@ -147,6 +151,41 @@ def show_history(
         console.print("[dim]Use 'navig history replay <id>' to re-run[/dim]")
 
 
+# The canonical reader for the GLOBAL --dry-run flag. Kept under the private name so
+# existing call sites and tests are unchanged; the definition now lives in one place
+# because `context.py` needed exactly the same check.
+_is_dry_run = is_dry_run
+
+
+def _resolve_operation(recorder: Any, op_id: str) -> Any | None:
+    """Resolve ``op_id`` — a 1-based index or a record ID — to an operation.
+
+    Reports the reason and returns ``None`` when it cannot be resolved.
+
+    This was three identical copies, and each of them accepted index ``0``. Indices are
+    1-based ("1 = last"), so ``0`` produced ``index = -1`` and a ``limit=0`` read; the
+    bounds check ``index >= len(operations)`` is ``-1 >= 1`` → False, so it fell through
+    to ``operations[-1]`` and silently selected the MOST RECENT operation. Both callers
+    that reach this are destructive — ``navig history undo 0`` reversed an operation the
+    user never named, and ``replay 0`` re-executed one.
+    """
+    if op_id.isdigit():
+        index = int(op_id) - 1
+        if index < 0:
+            ch.error(f"Invalid index '{op_id}' — operation indices start at 1 (1 = last)")
+            return None
+        operations = list(recorder.iter_operations(limit=index + 1))
+        if index >= len(operations):
+            ch.error(f"No operation at index {op_id}")
+            return None
+        return operations[index]
+
+    op = recorder.get_operation(op_id)
+    if not op:
+        ch.error(f"Operation not found: {op_id}")
+    return op
+
+
 def show_operation_details(op_id: str, opts: dict[str, Any] = None) -> None:
     """
     Show detailed information about a specific operation.
@@ -160,20 +199,11 @@ def show_operation_details(op_id: str, opts: dict[str, Any] = None) -> None:
 
     recorder = get_operation_recorder()
 
-    # Handle numeric index
-    if op_id.isdigit():
-        index = int(op_id) - 1
-        operations = list(recorder.iter_operations(limit=index + 1))
-        if index >= len(operations):
-            ch.error(f"No operation at index {op_id}")
-            return
-        op = operations[index]
-    else:
-        op = recorder.get_operation(op_id)
-
+    op = _resolve_operation(recorder, op_id)
     if not op:
-        ch.error(f"Operation not found: {op_id}")
-        return
+        # _resolve_operation already printed the reason; naming an operation that
+        # does not exist is the usage class.
+        raise typer.Exit(2)
 
     if want_json:
         print(json.dumps(op.to_dict(), indent=2))
@@ -243,23 +273,14 @@ def replay_operation(
         opts: CLI options
     """
     opts = opts or {}
+    # `--dry-run` also arrives globally via ctx.obj; honour either spelling.
+    dry_run = _is_dry_run(opts, dry_run)
 
     recorder = get_operation_recorder()
 
-    # Handle numeric index
-    if op_id.isdigit():
-        index = int(op_id) - 1
-        operations = list(recorder.iter_operations(limit=index + 1))
-        if index >= len(operations):
-            ch.error(f"No operation at index {op_id}")
-            return
-        op = operations[index]
-    else:
-        op = recorder.get_operation(op_id)
-
+    op = _resolve_operation(recorder, op_id)
     if not op:
-        ch.error(f"Operation not found: {op_id}")
-        return
+        raise typer.Exit(2)
 
     # Build command
     command = op.command
@@ -271,7 +292,7 @@ def replay_operation(
     ch.info(f"Replaying: {command}")
 
     if dry_run:
-        ch.dim("[dry-run] Would execute the command above")
+        ch.dim("DRY RUN: Would execute the command above")
         return
 
     # Confirm before execution
@@ -305,10 +326,18 @@ def replay_operation(
         if result.returncode == 0:
             ch.success("Replay completed successfully")
         else:
+            # The replay IS the command — a failed replay must not report success.
+            # `navig history replay 1 && <next>` ran the next step regardless.
             ch.error(f"Replay failed with exit code {result.returncode}")
+            raise typer.Exit(1)
 
+    except typer.Exit:
+        # typer.Exit is a RuntimeError, so the broad handler below catches it and
+        # would turn the deliberate exit above into "Failed to replay: 1" at exit 0.
+        raise
     except Exception as e:
         ch.error(f"Failed to replay: {e}")
+        raise typer.Exit(1) from e
 
 
 def undo_operation(op_id: str, opts: dict[str, Any] = None) -> None:
@@ -337,32 +366,29 @@ def undo_operation(op_id: str, opts: dict[str, Any] = None) -> None:
 
     recorder = get_operation_recorder()
 
-    # Handle numeric index
-    if op_id.isdigit():
-        index = int(op_id) - 1
-        operations = list(recorder.iter_operations(limit=index + 1))
-        if index >= len(operations):
-            ch.error(f"No operation at index {op_id}")
-            return
-        op = operations[index]
-    else:
-        op = recorder.get_operation(op_id)
-
+    op = _resolve_operation(recorder, op_id)
     if not op:
-        ch.error(f"Operation not found: {op_id}")
-        return
+        raise typer.Exit(2)
 
     try:
         ensure_undoable(op, collect_undone(recent_records(recorder)))
         check_drift(op)
     except UndoRefused as exc:
+        # The top-level `navig undo` routes every refusal through _fail(), which
+        # always exits 1. This command documents itself as the same engine with the
+        # same rules, so it must agree — nothing was undone either way.
         ch.error(str(exc))
         ch.dim(f"Command was: {op.command}")
-        return
+        raise typer.Exit(1) from exc
 
     description = describe_undo(op)
     ch.info(f"Undoing: {op.command}")
     ch.info(f"  will: {description}")
+
+    # Before start_operation() — a dry run must not leave an undo record behind either.
+    if _is_dry_run(opts):
+        ch.dim("DRY RUN: Nothing was undone.")
+        return
 
     if not opts.get("yes", False):
         from rich.prompt import Confirm
@@ -388,8 +414,11 @@ def undo_operation(op_id: str, opts: dict[str, Any] = None) -> None:
             exit_code=1,
             duration_ms=(time.time() - started) * 1000,
         )
+        # The ledger has ALREADY recorded this undo as failed. Exiting 0 here made
+        # navig's two truth sources contradict each other: `navig history list`
+        # showed FAILED while the shell that ran it saw success.
         ch.error(f"Undo failed: {e}")
-        return
+        raise typer.Exit(1) from e
 
     undo_id = recorder.complete_operation(
         undo_record,
@@ -429,28 +458,47 @@ def export_history(
             count = recorder.export_csv(output_path, limit=limit)
         else:
             ch.error(f"Unknown format: {format}. Use 'json' or 'csv'")
-            return
+            raise typer.Exit(2)
 
         ch.success(f"Exported {count} operations to {output_file}")
 
+    except typer.Exit:
+        # Shield the deliberate exit above from the broad handler below, which would
+        # otherwise print "Export failed: 2" and exit 0.
+        raise
     except Exception as e:
+        # An audit export that wrote nothing must not look like a completed export —
+        # this is the file a compliance check reads.
         ch.error(f"Export failed: {e}")
+        raise typer.Exit(1) from e
 
 
 def clear_history(opts: dict[str, Any] = None) -> None:
     """Clear all operation history."""
     opts = opts or {}
 
+    recorder = get_operation_recorder()
+    count = recorder.count()
+
+    if _is_dry_run(opts):
+        ch.info(f"[yellow]DRY RUN:[/yellow] Would clear {count} operations from history")
+        ch.dim("No history was deleted.")
+        return
+
     if not opts.get("yes", False):
         from rich.prompt import Confirm
 
+        # Say what is actually lost. The old prompt was "Clear all operation history?",
+        # which reads like tidying a log — but these records ARE the undo history, so
+        # clearing them permanently removes the ability to `navig undo` any of them.
+        ch.warning(f"This deletes {count} operations, including their undo records.")
+        ch.dim("Anything already done can no longer be undone with 'navig undo'.")
         if not Confirm.ask("Clear all operation history?", default=False):
             ch.info("Cancelled")
             return
 
-    recorder = get_operation_recorder()
-    count = recorder.clear_history()
-    ch.success(f"Cleared {count} operations from history")
+    cleared = recorder.clear_history()
+    ch.success(f"Cleared {cleared} operations from history")
 
 
 def history_stats(opts: dict[str, Any] = None) -> None:
@@ -472,9 +520,13 @@ def history_stats(opts: dict[str, Any] = None) -> None:
         if count > 0:
             type_counts[op_type.value] = count
 
-    # Count by host
+    # Count by host. The totals above come from recorder.count(), which scans up to
+    # _UNBOUNDED_SCAN_LIMIT — so a bare 10000 here made the per-host numbers stop
+    # adding up to the total once the history grew past it, with nothing to say so.
+    from navig.operation_recorder import _UNBOUNDED_SCAN_LIMIT
+
     host_counts = {}
-    for op in recorder.iter_operations(limit=10000):
+    for op in recorder.iter_operations(limit=_UNBOUNDED_SCAN_LIMIT):
         host = op.host or "local"
         host_counts[host] = host_counts.get(host, 0) + 1
 
@@ -571,10 +623,6 @@ def _apply_modifications(command: str, modify: str) -> str:
 # TYPER SUB-APP — extracted from navig/cli/__init__.py
 # ============================================================================
 
-import typer  # noqa: E402
-
-from navig.console_helper import get_console
-
 history_app = typer.Typer(
     help="Command history, replay, and audit trail",
     invoke_without_command=True,
@@ -585,6 +633,12 @@ history_app = typer.Typer(
 @history_app.callback()
 def history_callback(ctx: typer.Context):
     """History management - shows recent history if no subcommand."""
+    # Every subcommand below writes into ctx.obj (`ctx.obj["yes"] = …`). Reached any
+    # way other than through the root `navig` callback — a test, a direct sub-app
+    # invocation — ctx.obj is None and that assignment dies with
+    # "'NoneType' object does not support item assignment". This group callback runs
+    # before every subcommand, so it is the one place that has to guarantee the dict.
+    ctx.ensure_object(dict)
     if ctx.invoked_subcommand is None:
         show_history(limit=20, opts=ctx.obj)
         raise typer.Exit()

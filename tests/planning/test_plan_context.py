@@ -413,3 +413,33 @@ class TestPlanContextEdgeCases:
         phase = snapshot["current_phase"]
         assert phase is not None
         assert "completion_pct: not_a_number" in phase
+
+
+# ─────────────────────────────────────────────────────────────
+# _call_with_timeout — the cap must actually fire (defeated-timeout regression)
+# ─────────────────────────────────────────────────────────────
+
+
+def test_call_with_timeout_returns_fast_result():
+    assert PlanContext._call_with_timeout(lambda: "hi", 5) == "hi"
+
+
+def test_call_with_timeout_bounds_a_hung_fn():
+    """A hung source `fn` must raise TimeoutError at the cap, not wedge the caller until it
+    finishes. (Regression: the `with ThreadPoolExecutor` exit's shutdown(wait=True) joined it.)"""
+    import threading
+    import time
+
+    release = threading.Event()
+
+    def _hang():
+        release.wait(30)  # released by the test so the abandoned worker exits promptly
+        return "done"
+
+    t0 = time.monotonic()
+    try:
+        with pytest.raises(TimeoutError):
+            PlanContext._call_with_timeout(_hang, 0.2)
+        assert time.monotonic() - t0 < 5, "the cap must fire; it hung past 0.2s before the fix"
+    finally:
+        release.set()

@@ -273,6 +273,7 @@ class PluginAPI:
         Returns:
             Tuple of (success, stdout, stderr)
         """
+        from navig.config import get_config_manager
         from navig.remote import RemoteOperations
 
         target_host = host_name or self.get_active_host()
@@ -284,9 +285,19 @@ class PluginAPI:
             return (False, "", f"Host '{target_host}' not found")
 
         try:
-            remote = RemoteOperations(host_config)
-            result = remote.execute(command, timeout=timeout)
-            return (result.success, result.stdout, result.stderr)
+            # RemoteOperations takes the ConfigManager; the host config is an
+            # ARGUMENT to each call. Passing host_config to the constructor and
+            # calling .execute() raised AttributeError, which the `except` below
+            # turned into a plain "(False, ...)" — so every plugin's remote call
+            # failed and reported it as a remote error.
+            remote = RemoteOperations(get_config_manager())
+            result = remote.execute_command(
+                command,
+                host_config,
+                capture_output=capture_output,
+                timeout=timeout,
+            )
+            return (result.returncode == 0, result.stdout or "", result.stderr or "")
         except Exception as e:
             return (False, "", str(e))
 
@@ -306,6 +317,7 @@ class PluginAPI:
         """
         from pathlib import Path
 
+        from navig.config import get_config_manager
         from navig.remote import RemoteOperations
 
         target_host = host_name or self.get_active_host()
@@ -317,8 +329,11 @@ class PluginAPI:
             return (False, f"Host '{target_host}' not found")
 
         try:
-            remote = RemoteOperations(host_config)
-            remote.upload(str(Path(local_path)), remote_path)
+            remote = RemoteOperations(get_config_manager())
+            # upload_file takes a Path, the remote path, and the host config, and
+            # returns a bool — .upload() never existed, so this always failed.
+            if not remote.upload_file(Path(local_path), remote_path, host_config):
+                return (False, f"Upload of '{local_path}' to '{target_host}' failed")
             return (True, "")
         except Exception as e:
             return (False, str(e))
@@ -339,6 +354,7 @@ class PluginAPI:
         """
         from pathlib import Path
 
+        from navig.config import get_config_manager
         from navig.remote import RemoteOperations
 
         target_host = host_name or self.get_active_host()
@@ -350,8 +366,11 @@ class PluginAPI:
             return (False, f"Host '{target_host}' not found")
 
         try:
-            remote = RemoteOperations(host_config)
-            remote.download(remote_path, str(Path(local_path)))
+            remote = RemoteOperations(get_config_manager())
+            # download_file takes the remote path, a local Path, and the host
+            # config, and returns a bool — .download() never existed.
+            if not remote.download_file(remote_path, Path(local_path), host_config):
+                return (False, f"Download of '{remote_path}' from '{target_host}' failed")
             return (True, "")
         except Exception as e:
             return (False, str(e))

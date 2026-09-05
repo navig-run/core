@@ -19,7 +19,6 @@ back to the legacy ``cloud.public_url`` and then the cloudflared tunnel URL.
 
 from __future__ import annotations
 
-import asyncio as _aio
 import json
 import logging
 import os
@@ -95,6 +94,43 @@ def _connect_url(base_url: str, *, version: str = "") -> str:
         sep = "&" if "?" in url else "?"
         url = f"{url}{sep}v={quote(version, safe='')}"
     return url
+
+
+# Files under the deck's `public/` that Next copies into `out/` verbatim and that
+# CONFIGURE the deployment rather than being part of the compiled app. `--skip-build`
+# reuses a previous `out/`, so an edit to one of these would silently not ship — the
+# deploy reports success and the change is simply absent. That is exactly the
+# "looks applied, isn't" class `_headers` itself belongs to, and it bit during the
+# work that introduced the header pipeline: a `_headers` edit deployed cleanly and
+# changed nothing.
+_PASSTHROUGH_ASSETS = ("_headers", "_redirects")
+
+
+def _refresh_passthrough_assets(deck: Path, out_dir: Path, *, log=None) -> list[str]:
+    """Copy deploy-config files from `public/` over `out/`. Returns what changed.
+
+    Only these named files, never a general `public/` sync: a stale `out/` may
+    legitimately differ from `public/` in ways a rebuild would resolve, and quietly
+    papering over that would trade one invisible staleness for another.
+    """
+    changed: list[str] = []
+    src_dir = deck / "public"
+    for name in _PASSTHROUGH_ASSETS:
+        src, dst = src_dir / name, out_dir / name
+        if not src.is_file():
+            continue
+        try:
+            new = src.read_bytes()
+            if dst.is_file() and dst.read_bytes() == new:
+                continue
+            dst.write_bytes(new)
+            changed.append(name)
+        except OSError as exc:  # noqa: PERF203 — report, never fail a deploy on this
+            if log:
+                log(f"Note: could not refresh {name} from public/: {exc}")
+    if changed and log:
+        log(f"Refreshed from public/ (skipped build would have shipped the old ones): {', '.join(changed)}")
+    return changed
 
 
 def _deck_bundle_signature(out_dir: Path) -> str:
@@ -181,6 +217,163 @@ def _tg_call(token: str, method: str, body: dict | None = None, *, timeout: floa
         return {"ok": False, "description": str(exc)}
 
 
+def redact_key_in_url(url: str) -> str:
+    """The Mini App button URL with its ``key=`` value replaced.
+
+    The button URL embeds the RAW ``deck.api_key`` (see :func:`_connect_url`), and
+    that key is the install's identity: it bypasses Telegram auth on the deck API
+    and its sha256 IS the lighthouse tenant. `navig miniapp status` is a read-only
+    diagnostic people run repeatedly and paste into issues and screenshots, so it
+    printed a live credential every time for no diagnostic gain: what the command
+    is actually judging is the ORIGIN and the ``v=`` cache-bust, both of which stay
+    visible here.
+
+    Everything except the key's value is preserved, deliberately — a redaction that
+    hides the whole URL would take the answer away with the secret. Setup flows that
+    hand the operator their magic link on purpose (``navig cloud connect``) are a
+    different contract and are left alone.
+    """
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    if not url:
+        return url
+    try:
+        parts = urlsplit(url)
+        if not parts.query:
+            return url
+        pairs = parse_qsl(parts.query, keep_blank_values=True)
+        if not any(k == "key" for k, _ in pairs):
+            return url
+        # A placeholder with no URL-special characters: "<redacted>" survives
+        # urlencode as "%3Credacted%3E", which is unreadable in a status line.
+        masked = [(k, "REDACTED" if k == "key" else v) for k, v in pairs]
+        return urlunsplit(
+            (parts.scheme, parts.netloc, parts.path, urlencode(masked), parts.fragment)
+        )
+    except Exception:  # noqa: BLE001 — never let a display helper break the command
+        # Unparseable: say so rather than risk echoing the key.
+        return "<unparseable url — not shown, it embeds the deck api_key>"
+
+
+# ── Mini App button health ────────────────────────────────────────────────────
+
+
+def miniapp_button_health(*, timeout: float = 6.0) -> tuple[bool, str, bool] | None:
+    """Does the bot's Mini App button point at the CURRENT deck bundle?
+
+    Telegram caches a Mini App **by URL** and ignores ``Cache-Control``, so the only
+    thing that makes a client re-fetch after a deploy is a change to the button URL
+    itself — which is why :func:`_connect_url` appends ``v=<deck.bundle_sig>``. A
+    button whose ``v=`` is missing or stale means every Telegram client keeps
+    rendering the bundle it cached the last time the URL changed, while the deploy,
+    the edge and the uplink all report perfectly healthy.
+
+    That is not hypothetical. This install's button had never carried a ``v=``, so
+    Telegram Desktop and iOS both served a months-old deck; that bundle predates the
+    baked ``NEXT_PUBLIC_LIGHTHOUSE_URL``, so it resolved the daemon through the broker
+    instead and died with HTTP 530 against a long-dead cloudflared host.
+
+    Returns ``(ok, detail, warn)`` for a doctor-style row, or ``None`` when no deck is
+    deployed and the question does not apply. ``ok=False, warn=True`` is the
+    could-not-verify state — a check that did not run must never render a green tick.
+
+    Reads config through a fresh :class:`ConfigManager` rather than ``Config()``: the
+    latter is a process-wide singleton that never re-reads the config dir, so a health
+    check built on it can silently describe the wrong install.
+    """
+    from urllib.parse import parse_qs, urlsplit
+
+    try:
+        from navig.config import ConfigManager
+
+        cm = ConfigManager()
+        deck_url = str(cm.get("deck.public_url", "") or "").strip().rstrip("/")
+        want_sig = str(cm.get("deck.bundle_sig", "") or "").strip()
+        want_key = str(cm.get("deck.api_key", "") or "").strip()
+    except Exception as exc:  # noqa: BLE001 — a health check must never crash its caller
+        return (False, f"COULD NOT VERIFY ({exc})", True)
+
+    if not deck_url:
+        return None  # no deck deployed — the button is not this install's concern
+
+    token = _bot_token()
+    if not token:
+        return (False, "could not check — no Telegram bot token configured", True)
+
+    resp = _tg_call(token, "getChatMenuButton", {}, timeout=timeout)
+    if not resp.get("ok"):
+        desc = resp.get("description") or "Telegram call failed"
+        return (False, f"COULD NOT VERIFY ({desc})", True)
+
+    info = resp.get("result") or {}
+    if str(info.get("type") or "") != "web_app":
+        return (False, "no Mini App button set — run `navig miniapp register`", True)
+
+    live = str((info.get("web_app") or {}).get("url") or "").strip()
+    parts = urlsplit(live)
+    live_origin = f"{parts.scheme}://{parts.netloc}" if parts.netloc else live
+    if live_origin.rstrip("/") != deck_url:
+        return (
+            False,
+            f"points at {live_origin} but your deck is deployed at {deck_url} — "
+            "run `navig miniapp register`",
+            False,
+        )
+
+    # The button's key is the install's IDENTITY, not a detail: the edge derives the
+    # tenant from sha256(deck.api_key), so a button still carrying a RETIRED key sends
+    # every Mini App session to a Durable Object with no uplink. Rotation is supposed to
+    # re-point the button (navig/cloud/rotation.py), but when that half fails the button
+    # keeps a perfect origin and a perfect v= — so the two checks either side of this one
+    # both pass while the deck cannot reach the brain at all. Compared, never printed.
+    have_key = (parse_qs(parts.query).get("key") or [""])[0].strip()
+    if not want_key:
+        return (
+            False,
+            "no deck.api_key in config, so the button's key cannot be checked",
+            True,
+        )
+    if not have_key:
+        return (
+            False,
+            "button URL carries no key=, so the Mini App cannot authenticate — "
+            "run `navig miniapp register`",
+            False,
+        )
+    if have_key != want_key:
+        return (
+            False,
+            "button URL carries a DIFFERENT deck.api_key than this install — the Mini "
+            "App resolves to a retired edge tenant with no brain attached — run "
+            "`navig miniapp register`",
+            False,
+        )
+
+    have_sig = (parse_qs(parts.query).get("v") or [""])[0].strip()
+    if not want_sig:
+        return (
+            False,
+            "no deck.bundle_sig recorded, so the button's cache-bust cannot be "
+            "checked — redeploy with `navig miniapp deploy`",
+            True,
+        )
+    if not have_sig:
+        return (
+            False,
+            "button URL carries no v= cache-bust, so every Telegram client keeps "
+            "serving the deck bundle it already cached — run `navig miniapp register`",
+            False,
+        )
+    if have_sig != want_sig:
+        return (
+            False,
+            f"button cache-bust v={have_sig} is stale (deployed bundle is {want_sig}), "
+            "so Telegram clients are on an older deck — run `navig miniapp register`",
+            False,
+        )
+    return (True, f"current bundle (v={want_sig})", False)
+
+
 # ── Deck deploy helpers ───────────────────────────────────────────────────────
 
 
@@ -202,7 +395,7 @@ def _find_deck_dir(explicit: str = "") -> Path | None:
     cur = Path.cwd()
     for parent in [cur, *cur.parents]:
         candidates.append(parent / "apps" / "deck")
-        candidates.append(parent / "navig-deck")
+        candidates.append(parent / "navig-deck")  # dead-path-ok: legacy polyrepo checkout, tried after apps/deck
     # Relative to this installed package. An editable install resolves
     # __file__ into <repo>/core/navig/commands/miniapp.py — parents[3] is the
     # repo root, so <repo>/apps/deck is the monorepo source.
@@ -210,7 +403,7 @@ def _find_deck_dir(explicit: str = "") -> Path | None:
     for up in (3, 4, 5):
         if len(here.parents) > up:
             candidates.append(here.parents[up] / "apps" / "deck")
-            candidates.append(here.parents[up] / "navig-deck")
+            candidates.append(here.parents[up] / "navig-deck")  # dead-path-ok: legacy polyrepo checkout
     for c in candidates:
         try:
             if (c / "package.json").is_file():
@@ -230,8 +423,8 @@ def _find_prebuilt_deck_out(explicit: str = "") -> Path | None:
       1. Explicit ``--dir`` / $NAVIG_DECK_DIR pointing straight at a built bundle.
       2. Installed ``navig-deck`` wheel — ``navig_deck.static_dir()``
          (``pip install navig`` pulls it; compiled ``out/`` ships as package data).
-      3. Dev-tree neighbours (monorepo): ``navig-deck/out``, ``navig-deck/dist``,
-         the wheel-builder staging dir, and ``navig-core/deck-static``.
+      3. Dev-tree neighbours (monorepo): ``apps/deck/out``, ``apps/deck/dist``,
+         the wheel-builder staging dir, and ``core/deck-static``.
     """
     def _ok(p: Path) -> bool:
         try:
@@ -262,15 +455,19 @@ def _find_prebuilt_deck_out(explicit: str = "") -> Path | None:
 
     # 3. Dev-tree neighbours (monorepo development without the installed wheel).
     here = Path(__file__).resolve()
-    repo_roots = {here.parents[up] for up in (4, 5) if len(here.parents) > up}
+    # parents[3] IS the monorepo root (core/navig/commands/<f> -> core -> root). The
+    # 4/5 entries date from the sibling-repo layout, where the deck lived NEXT TO
+    # navig-core rather than inside one tree; kept so a legacy checkout still works,
+    # but without 3 the relative paths below could never resolve in this repo.
+    repo_roots = {here.parents[up] for up in (3, 4, 5) if len(here.parents) > up}
     repo_roots.add(Path.cwd())
     repo_roots.update(Path.cwd().parents)
     for root in repo_roots:
         for rel in (
-            "navig-deck/out",
-            "navig-deck/dist",
-            "navig-deck/python/navig_deck/static",
-            "navig-core/deck-static",
+            "apps/deck/out",
+            "apps/deck/dist",
+            "apps/deck/python/navig_deck/static",
+            "core/deck-static",
             "deck-static",
         ):
             cand = root / rel
@@ -439,6 +636,7 @@ def run_miniapp_deploy(
             out_dir = cand
     elif deck is not None and skip_build and (deck / "out").is_dir():
         out_dir = deck / "out"
+        _refresh_passthrough_assets(deck, out_dir, log=_log)
 
     # End-user path (and fallback when the source can't be built): upload the
     # prebuilt bundle shipped with the navig-deck wheel — no Node, no source.
@@ -465,128 +663,139 @@ def run_miniapp_deploy(
     # Bake the lighthouse URL into a prebuilt bundle (built without it) when the
     # wheel ships a replaceable sentinel. Harmless no-op otherwise; the deck also
     # honours a runtime override set in its Settings (localStorage).
+    pre_bake_dir = out_dir
     if used_prebuilt and lh:
         out_dir = _bake_lighthouse_into_prebuilt(out_dir, lh, log=_log)
 
-    # ── Deploy ────────────────────────────────────────────────────────────
-    if via_wrangler:
-        url = None
-        npx = shutil.which("npx")
-        if not npx:
-            return {"ok": False, "status": "no_node", "error": "npx (wrangler) not found"}
-        try:
-            from navig.commands.lighthouse import resolve_cf_api_token
-
-            tok = resolve_cf_api_token()  # API token only — wrangler rejects OAuth
-            if tok and "CLOUDFLARE_API_TOKEN" not in build_env:
-                build_env["CLOUDFLARE_API_TOKEN"] = tok
-            acct = (cfg.get("cloud.lighthouse_account_id") or "").strip()
-            if acct and "CLOUDFLARE_ACCOUNT_ID" not in build_env:
-                build_env["CLOUDFLARE_ACCOUNT_ID"] = acct
-        except Exception:  # noqa: BLE001
-            pass
-        # cwd = the bundle's parent, target = its dir name — works for both a
-        # source build (deck/out) and a prebuilt bundle (…/navig_deck/static).
-        cwd, target = out_dir.parent, out_dir.name
-        _log(f"Deploying to Cloudflare Pages via wrangler (project '{project}') …")
-        _run([npx, "wrangler", "pages", "project", "create", project, "--production-branch", "main"], cwd, build_env)
-        dep = _run(
-            [npx, "wrangler", "pages", "deploy", target, "--project-name", project, "--branch", "main"],
-            cwd, build_env,
-        )
-        combined = f"{dep.stdout or ''}\n{dep.stderr or ''}".strip()
-        if dep.returncode != 0:
-            return {"ok": False, "status": "deploy_failed", "error": combined[-1800:], "deploy_output": combined}
-        url = _parse_pages_url(combined, project)
-    else:
-        # Pure-Python: upload to Workers Static Assets, reusing the Lighthouse credential.
-        from navig.commands.lighthouse import resolve_cf_token
-
-        tok = resolve_cf_token()
-        if not tok:
-            return {
-                "ok": False, "status": "no_cf_token",
-                "error": "no Cloudflare credential — run `navig lighthouse login` or `navig vault add cloudflare`",
-            }
-        try:
-            from navig.cloud import deck_deploy
-            from navig.cloud.lighthouse_deploy import DeployError
-
-            account_id = (cfg.get("cloud.lighthouse_account_id") or "").strip() or None
-            _log("Uploading the deck to Cloudflare (Workers Static Assets, no wrangler) …")
-            res = deck_deploy.deploy(out_dir, token=tok, account_id=account_id, worker_name=project)
-            url = res.url
-        except DeployError as exc:
-            return {"ok": False, "status": "deploy_failed", "error": str(exc), "deploy_output": str(exc)}
-
-    cfg.set("deck.public_url", url, scope="global")
-
-    # DO NOT write cloud.public_url here. It is the BRAIN's direct-mode ingress —
-    # `navig cloud direct <url>` and the tailscale funnel write it, and CloudManager
-    # reads it to decide "this brain is publicly reachable at <url>, no tunnel
-    # needed" (cloud/manager.py). Pointing it at the Deck (a *static asset* Worker
-    # that cannot serve /api/deck/*) made the brain believe it was directly
-    # reachable at a site that can't answer it — breaking reachability, and making
-    # `_reachable_ready()` report "configured" when nothing was.
-    # `miniapp register` now resolves the deck's URL from deck.public_url instead.
-    #
-    # Self-heal the provably-wrong value an older navig wrote: if cloud.public_url
-    # IS the deck URL, it was never a valid brain ingress — clear it so CloudManager
-    # falls back to its real mode (lighthouse / tunnel) instead of dialling a static site.
+    # `_bake_lighthouse_into_prebuilt` copies the whole bundle into a temp dir
+    # and hands the path back; nothing removed it, so every deploy leaked a full
+    # staging copy (91 `navig-deck-deploy-*` dirs on the operator's machine when
+    # this was found). try/finally rather than a call before each `return`: there
+    # are five exits below and a sixth added later would leak again silently.
+    staging = out_dir.parent if out_dir != pre_bake_dir else None
     try:
-        stale = (cfg.get("cloud.public_url") or "").strip().rstrip("/")
-        if stale and stale == url.rstrip("/"):
-            cfg.set("cloud.public_url", "", scope="global")
-            _log(
-                "Cleared cloud.public_url — an older navig set it to the Deck's URL, "
-                "which is not the brain's address (reachability now resolves correctly)."
+        # ── Deploy ────────────────────────────────────────────────────────────
+        if via_wrangler:
+            url = None
+            npx = shutil.which("npx")
+            if not npx:
+                return {"ok": False, "status": "no_node", "error": "npx (wrangler) not found"}
+            try:
+                from navig.commands.lighthouse import resolve_cf_api_token
+
+                tok = resolve_cf_api_token()  # API token only — wrangler rejects OAuth
+                if tok and "CLOUDFLARE_API_TOKEN" not in build_env:
+                    build_env["CLOUDFLARE_API_TOKEN"] = tok
+                acct = (cfg.get("cloud.lighthouse_account_id") or "").strip()
+                if acct and "CLOUDFLARE_ACCOUNT_ID" not in build_env:
+                    build_env["CLOUDFLARE_ACCOUNT_ID"] = acct
+            except Exception:  # noqa: BLE001
+                pass
+            # cwd = the bundle's parent, target = its dir name — works for both a
+            # source build (deck/out) and a prebuilt bundle (…/navig_deck/static).
+            cwd, target = out_dir.parent, out_dir.name
+            _log(f"Deploying to Cloudflare Pages via wrangler (project '{project}') …")
+            _run([npx, "wrangler", "pages", "project", "create", project, "--production-branch", "main"], cwd, build_env)
+            dep = _run(
+                [npx, "wrangler", "pages", "deploy", target, "--project-name", project, "--branch", "main"],
+                cwd, build_env,
             )
-    except Exception as exc:  # noqa: BLE001 — never fail a successful deploy on cleanup
-        _log(f"Note: could not clean up a stale cloud.public_url: {exc}")
-    # Stamp the navig version this deck was built from, so `navig miniapp version`
-    # / `navig update` can tell when the deployed deck is behind a new release.
-    try:
-        from navig import __version__ as _nv
-        cfg.set("deck.deployed_version", _nv, scope="global")
-    except Exception:  # noqa: BLE001
-        pass
-    # Content signature of the just-built bundle → cache-busts the Telegram Mini
-    # App button URL so a redeploy is actually fetched (Telegram's WebView cache
-    # ignores Cache-Control). Persisted so `miniapp register` reuses the same sig.
-    bundle_sig = _deck_bundle_signature(out_dir)
-    if bundle_sig:
+            combined = f"{dep.stdout or ''}\n{dep.stderr or ''}".strip()
+            if dep.returncode != 0:
+                return {"ok": False, "status": "deploy_failed", "error": combined[-1800:], "deploy_output": combined}
+            url = _parse_pages_url(combined, project)
+        else:
+            # Pure-Python: upload to Workers Static Assets, reusing the Lighthouse credential.
+            from navig.commands.lighthouse import resolve_cf_token
+
+            tok = resolve_cf_token()
+            if not tok:
+                return {
+                    "ok": False, "status": "no_cf_token",
+                    "error": "no Cloudflare credential — run `navig lighthouse login` or `navig vault add cloudflare`",
+                }
+            try:
+                from navig.cloud import deck_deploy
+                from navig.cloud.lighthouse_deploy import DeployError
+
+                account_id = (cfg.get("cloud.lighthouse_account_id") or "").strip() or None
+                _log("Uploading the deck to Cloudflare (Workers Static Assets, no wrangler) …")
+                res = deck_deploy.deploy(out_dir, token=tok, account_id=account_id, worker_name=project)
+                url = res.url
+            except DeployError as exc:
+                return {"ok": False, "status": "deploy_failed", "error": str(exc), "deploy_output": str(exc)}
+
+        cfg.set("deck.public_url", url, scope="global")
+
+        # DO NOT write cloud.public_url here. It is the BRAIN's direct-mode ingress —
+        # `navig cloud direct <url>` and the tailscale funnel write it, and CloudManager
+        # reads it to decide "this brain is publicly reachable at <url>, no tunnel
+        # needed" (cloud/manager.py). Pointing it at the Deck (a *static asset* Worker
+        # that cannot serve /api/deck/*) made the brain believe it was directly
+        # reachable at a site that can't answer it — breaking reachability, and making
+        # `_reachable_ready()` report "configured" when nothing was.
+        # `miniapp register` now resolves the deck's URL from deck.public_url instead.
+        #
+        # Self-heal the provably-wrong value an older navig wrote: if cloud.public_url
+        # IS the deck URL, it was never a valid brain ingress — clear it so CloudManager
+        # falls back to its real mode (lighthouse / tunnel) instead of dialling a static site.
         try:
-            cfg.set("deck.bundle_sig", bundle_sig, scope="global")
+            stale = (cfg.get("cloud.public_url") or "").strip().rstrip("/")
+            if stale and stale == url.rstrip("/"):
+                cfg.set("cloud.public_url", "", scope="global")
+                _log(
+                    "Cleared cloud.public_url — an older navig set it to the Deck's URL, "
+                    "which is not the brain's address (reachability now resolves correctly)."
+                )
+        except Exception as exc:  # noqa: BLE001 — never fail a successful deploy on cleanup
+            _log(f"Note: could not clean up a stale cloud.public_url: {exc}")
+        # Stamp the navig version this deck was built from, so `navig miniapp version`
+        # / `navig update` can tell when the deployed deck is behind a new release.
+        try:
+            from navig import __version__ as _nv
+            cfg.set("deck.deployed_version", _nv, scope="global")
         except Exception:  # noqa: BLE001
             pass
-    cfg.save(scope="global")
+        # Content signature of the just-built bundle → cache-busts the Telegram Mini
+        # App button URL so a redeploy is actually fetched (Telegram's WebView cache
+        # ignores Cache-Control). Persisted so `miniapp register` reuses the same sig.
+        bundle_sig = _deck_bundle_signature(out_dir)
+        if bundle_sig:
+            try:
+                cfg.set("deck.bundle_sig", bundle_sig, scope="global")
+            except Exception:  # noqa: BLE001
+                pass
+        cfg.save(scope="global")
 
-    # First-party producer: announce the deck deploy (best-effort).
-    try:
-        from navig.notify.producers.events import report_deploy_sync
+        # First-party producer: announce the deck deploy (best-effort).
+        try:
+            from navig.notify.producers.events import report_deploy_sync
 
-        report_deploy_sync("Deck (Mini App)", note=f"Live at {url}")
-    except Exception:  # noqa: BLE001
-        pass
+            report_deploy_sync("Deck (Mini App)", note=f"Live at {url}")
+        except Exception:  # noqa: BLE001
+            pass
 
-    result = {
-        "ok": True, "status": "deployed", "url": url, "lighthouse_url": lh or None,
-        "registered": False, "used_prebuilt": used_prebuilt,
-    }
-    if register:
-        token = _bot_token()
-        if token:
-            r = _tg_call(token, "setChatMenuButton", {
-                "menu_button": {
-                    "type": "web_app",
-                    "text": "NAVIG Deck",
-                    "web_app": {"url": _connect_url(url, version=bundle_sig)},
-                },
-            })
-            result["registered"] = bool(r.get("ok"))
-            if not r.get("ok"):
-                result["register_error"] = r.get("description")
-    return result
+        result = {
+            "ok": True, "status": "deployed", "url": url, "lighthouse_url": lh or None,
+            "registered": False, "used_prebuilt": used_prebuilt,
+        }
+        if register:
+            token = _bot_token()
+            if token:
+                r = _tg_call(token, "setChatMenuButton", {
+                    "menu_button": {
+                        "type": "web_app",
+                        "text": "NAVIG Deck",
+                        "web_app": {"url": _connect_url(url, version=bundle_sig)},
+                    },
+                })
+                result["registered"] = bool(r.get("ok"))
+                if not r.get("ok"):
+                    result["register_error"] = r.get("description")
+        return result
+    finally:
+        if staging is not None:
+            shutil.rmtree(staging, ignore_errors=True)
 
 
 @app.command("version")
@@ -702,14 +911,30 @@ def miniapp_deploy(
         # via its Settings (persisted per-browser).
         if not lh:
             ch.dim("Set your edge URL in the deck → Settings (or run `navig lighthouse login` first).")
+    # A deploy whose menu-button update did not land is NOT a footnote. Telegram keys
+    # its Mini App cache on the button URL and ignores Cache-Control, so until that URL
+    # changes every client keeps rendering the bundle it already cached — the assets are
+    # live and nobody can see them. Reporting that with ch.dim() is what let this install
+    # sit on a months-old deck (which then failed to reach the brain entirely).
+    _STALE_CACHE_NOTE = (
+        "Telegram caches the Mini App by URL, so until the button URL changes every "
+        "client keeps serving the deck it already cached — this deploy will be invisible."
+    )
     if register:
         if res.get("registered"):
             ch.success("Mini App button set — open your bot and tap the menu button.")
         elif res.get("register_error"):
             ch.warning(f"Couldn't set the Mini App button: {res['register_error']}")
-            ch.dim("Set it later with `navig miniapp register`.")
+            ch.warning(_STALE_CACHE_NOTE)
+            ch.dim("Fix with: navig miniapp register")
         else:
-            ch.dim("No bot token — skipped Mini App button. Run `navig miniapp register` later.")
+            ch.warning("No Telegram bot token — the Mini App button was NOT updated.")
+            ch.warning(_STALE_CACHE_NOTE)
+            ch.dim("Fix with: navig miniapp register")
+    else:
+        ch.warning("--no-register: the Mini App button was NOT updated.")
+        ch.warning(_STALE_CACHE_NOTE)
+        ch.dim("Fix with: navig miniapp register")
 
     ch.dim("")
     ch.dim(f"Your deck link (use anywhere): {res['url']}")
@@ -839,7 +1064,20 @@ def miniapp_status() -> None:
     ch.info(f"Menu button type: {btype}")
     if btype == "web_app":
         ch.info(f"  text: {info.get('text')!r}")
-        ch.info(f"  url:  {(info.get('web_app') or {}).get('url')}")
+        ch.info(f"  url:  {redact_key_in_url(str((info.get('web_app') or {}).get('url') or ''))}")
+        # Printing the URL is not the same as judging it. The URL can look perfectly
+        # right and still pin every Telegram client to a bundle from months ago —
+        # see miniapp_button_health() for why the v= cache-bust is the whole story.
+        verdict = miniapp_button_health()
+        if verdict is not None:
+            ok, detail, warn = verdict
+            if ok:
+                ch.success(f"Bundle: {detail}")
+            elif warn:
+                ch.warning(f"Bundle: {detail}")
+            else:
+                ch.error(f"Bundle: {detail}")
+                raise typer.Exit(code=1)
     elif btype == "default":
         ch.dim("  (no Mini App button set — clients show the default 'commands' menu)")
         ch.dim("  Run `navig miniapp register` to set one.")

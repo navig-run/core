@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// node_modules/unenv/dist/runtime/_internal/utils.mjs
+// ../../../../../node_modules/.pnpm/unenv@2.0.0-rc.24/node_modules/unenv/dist/runtime/_internal/utils.mjs
 // @__NO_SIDE_EFFECTS__
 function createNotImplementedError(name) {
   return new Error(`[unenv] ${name} is not implemented yet!`);
@@ -16,7 +16,7 @@ function notImplemented(name) {
 }
 __name(notImplemented, "notImplemented");
 
-// node_modules/unenv/dist/runtime/node/internal/perf_hooks/performance.mjs
+// ../../../../../node_modules/.pnpm/unenv@2.0.0-rc.24/node_modules/unenv/dist/runtime/node/internal/perf_hooks/performance.mjs
 var _timeOrigin = globalThis.performance?.timeOrigin ?? Date.now();
 var _performanceNow = globalThis.performance?.now ? globalThis.performance.now.bind(globalThis.performance) : () => Date.now() - _timeOrigin;
 var nodeTiming = {
@@ -254,7 +254,7 @@ var PerformanceObserver = class {
 };
 var performance = globalThis.performance && "addEventListener" in globalThis.performance ? globalThis.performance : new Performance();
 
-// node_modules/@cloudflare/unenv-preset/dist/runtime/polyfill/performance.mjs
+// ../../../../../node_modules/.pnpm/@cloudflare+unenv-preset@2.16.1_unenv@2.0.0-rc.24_workerd@1.20260623.1/node_modules/@cloudflare/unenv-preset/dist/runtime/polyfill/performance.mjs
 if (!("__unenv__" in performance)) {
   const proto = Performance.prototype;
   for (const key of Object.getOwnPropertyNames(proto)) {
@@ -275,7 +275,7 @@ globalThis.PerformanceObserver = PerformanceObserver;
 globalThis.PerformanceObserverEntryList = PerformanceObserverEntryList;
 globalThis.PerformanceResourceTiming = PerformanceResourceTiming;
 
-// node_modules/unenv/dist/runtime/node/internal/process/hrtime.mjs
+// ../../../../../node_modules/.pnpm/unenv@2.0.0-rc.24/node_modules/unenv/dist/runtime/node/internal/process/hrtime.mjs
 var hrtime = /* @__PURE__ */ Object.assign(/* @__PURE__ */ __name(function hrtime2(startTime) {
   const now = Date.now();
   const seconds = Math.trunc(now / 1e3);
@@ -294,10 +294,10 @@ var hrtime = /* @__PURE__ */ Object.assign(/* @__PURE__ */ __name(function hrtim
   return BigInt(Date.now() * 1e6);
 }, "bigint") });
 
-// node_modules/unenv/dist/runtime/node/internal/process/process.mjs
+// ../../../../../node_modules/.pnpm/unenv@2.0.0-rc.24/node_modules/unenv/dist/runtime/node/internal/process/process.mjs
 import { EventEmitter } from "node:events";
 
-// node_modules/unenv/dist/runtime/node/internal/tty/read-stream.mjs
+// ../../../../../node_modules/.pnpm/unenv@2.0.0-rc.24/node_modules/unenv/dist/runtime/node/internal/tty/read-stream.mjs
 var ReadStream = class {
   static {
     __name(this, "ReadStream");
@@ -314,7 +314,7 @@ var ReadStream = class {
   }
 };
 
-// node_modules/unenv/dist/runtime/node/internal/tty/write-stream.mjs
+// ../../../../../node_modules/.pnpm/unenv@2.0.0-rc.24/node_modules/unenv/dist/runtime/node/internal/tty/write-stream.mjs
 var WriteStream = class {
   static {
     __name(this, "WriteStream");
@@ -364,10 +364,10 @@ var WriteStream = class {
   }
 };
 
-// node_modules/unenv/dist/runtime/node/internal/process/node-version.mjs
+// ../../../../../node_modules/.pnpm/unenv@2.0.0-rc.24/node_modules/unenv/dist/runtime/node/internal/process/node-version.mjs
 var NODE_VERSION = "22.14.0";
 
-// node_modules/unenv/dist/runtime/node/internal/process/process.mjs
+// ../../../../../node_modules/.pnpm/unenv@2.0.0-rc.24/node_modules/unenv/dist/runtime/node/internal/process/process.mjs
 var Process = class _Process extends EventEmitter {
   static {
     __name(this, "Process");
@@ -602,7 +602,7 @@ var Process = class _Process extends EventEmitter {
   _linkedBinding = void 0;
 };
 
-// node_modules/@cloudflare/unenv-preset/dist/runtime/node/process.mjs
+// ../../../../../node_modules/.pnpm/@cloudflare+unenv-preset@2.16.1_unenv@2.0.0-rc.24_workerd@1.20260623.1/node_modules/@cloudflare/unenv-preset/dist/runtime/node/process.mjs
 var globalProcess = globalThis["process"];
 var getBuiltinModule = globalProcess.getBuiltinModule;
 var workerdProcess = getBuiltinModule("node:process");
@@ -832,10 +832,10 @@ var _process = {
 };
 var process_default = _process;
 
-// node_modules/wrangler/_virtual_unenv_global_polyfill-@cloudflare-unenv-preset-node-process
+// ../../../../../node_modules/.pnpm/wrangler@4.104.0_@cloudflare+workers-types@4.20260317.1/node_modules/wrangler/_virtual_unenv_global_polyfill-@cloudflare-unenv-preset-node-process
 globalThis.process = process_default;
 
-// node_modules/hono/dist/compose.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/compose.js
 var compose = /* @__PURE__ */ __name((middleware, onError, onNotFound) => {
   return (context, next) => {
     let index = -1;
@@ -880,10 +880,10 @@ var compose = /* @__PURE__ */ __name((middleware, onError, onNotFound) => {
   };
 }, "compose");
 
-// node_modules/hono/dist/request/constants.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/request/constants.js
 var GET_MATCH_RESULT = /* @__PURE__ */ Symbol();
 
-// node_modules/hono/dist/utils/body.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/utils/body.js
 var parseBody = /* @__PURE__ */ __name(async (request, options = /* @__PURE__ */ Object.create(null)) => {
   const { all = false, dot = false } = options;
   const headers = request instanceof HonoRequest ? request.raw.headers : request.headers;
@@ -957,7 +957,7 @@ var handleParsingNestedValues = /* @__PURE__ */ __name((form, key, value) => {
   });
 }, "handleParsingNestedValues");
 
-// node_modules/hono/dist/utils/url.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/utils/url.js
 var splitPath = /* @__PURE__ */ __name((path) => {
   const paths = path.split("/");
   if (paths[0] === "") {
@@ -1161,7 +1161,7 @@ var getQueryParams = /* @__PURE__ */ __name((url, key) => {
 }, "getQueryParams");
 var decodeURIComponent_ = decodeURIComponent;
 
-// node_modules/hono/dist/request.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/request.js
 var tryDecodeURIComponent = /* @__PURE__ */ __name((str) => tryDecode(str, decodeURIComponent_), "tryDecodeURIComponent");
 var HonoRequest = class {
   static {
@@ -1447,7 +1447,7 @@ var HonoRequest = class {
   }
 };
 
-// node_modules/hono/dist/utils/html.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/utils/html.js
 var HtmlEscapedCallbackPhase = {
   Stringify: 1,
   BeforeStream: 2,
@@ -1489,7 +1489,7 @@ var resolveCallback = /* @__PURE__ */ __name(async (str, phase, preserveCallback
   }
 }, "resolveCallback");
 
-// node_modules/hono/dist/context.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/context.js
 var TEXT_PLAIN = "text/plain; charset=UTF-8";
 var setDefaultContentType = /* @__PURE__ */ __name((contentType, headers) => {
   return {
@@ -1899,7 +1899,7 @@ var Context = class {
   }, "notFound");
 };
 
-// node_modules/hono/dist/router.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/router.js
 var METHOD_NAME_ALL = "ALL";
 var METHOD_NAME_ALL_LOWERCASE = "all";
 var METHODS = ["get", "post", "put", "delete", "options", "patch"];
@@ -1910,10 +1910,10 @@ var UnsupportedPathError = class extends Error {
   }
 };
 
-// node_modules/hono/dist/utils/constants.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/utils/constants.js
 var COMPOSED_HANDLER = "__COMPOSED_HANDLER";
 
-// node_modules/hono/dist/hono-base.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/hono-base.js
 var notFoundHandler = /* @__PURE__ */ __name((c) => {
   return c.text("404 Not Found", 404);
 }, "notFoundHandler");
@@ -2292,7 +2292,7 @@ var Hono = class _Hono {
   }, "fire");
 };
 
-// node_modules/hono/dist/router/reg-exp-router/matcher.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/router/reg-exp-router/matcher.js
 var emptyParam = [];
 function match(method, path) {
   const matchers = this.buildAllMatchers();
@@ -2314,7 +2314,7 @@ function match(method, path) {
 }
 __name(match, "match");
 
-// node_modules/hono/dist/router/reg-exp-router/node.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/router/reg-exp-router/node.js
 var LABEL_REG_EXP_STR = "[^/]+";
 var ONLY_WILDCARD_REG_EXP_STR = ".*";
 var TAIL_WILDCARD_REG_EXP_STR = "(?:|/.*)";
@@ -2426,7 +2426,7 @@ var Node = class _Node {
   }
 };
 
-// node_modules/hono/dist/router/reg-exp-router/trie.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/router/reg-exp-router/trie.js
 var Trie = class {
   static {
     __name(this, "Trie");
@@ -2485,7 +2485,7 @@ var Trie = class {
   }
 };
 
-// node_modules/hono/dist/router/reg-exp-router/router.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/router/reg-exp-router/router.js
 var nullMatcher = [/^$/, [], /* @__PURE__ */ Object.create(null)];
 var wildcardRegExpCache = /* @__PURE__ */ Object.create(null);
 function buildWildcardRegExp(path) {
@@ -2671,7 +2671,7 @@ var RegExpRouter = class {
   }
 };
 
-// node_modules/hono/dist/router/smart-router/router.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/router/smart-router/router.js
 var SmartRouter = class {
   static {
     __name(this, "SmartRouter");
@@ -2729,7 +2729,7 @@ var SmartRouter = class {
   }
 };
 
-// node_modules/hono/dist/router/trie-router/node.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/router/trie-router/node.js
 var emptyParams = /* @__PURE__ */ Object.create(null);
 var hasChildren = /* @__PURE__ */ __name((children) => {
   for (const _ in children) {
@@ -2907,7 +2907,7 @@ var Node2 = class _Node2 {
   }
 };
 
-// node_modules/hono/dist/router/trie-router/router.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/router/trie-router/router.js
 var TrieRouter = class {
   static {
     __name(this, "TrieRouter");
@@ -2932,7 +2932,7 @@ var TrieRouter = class {
   }
 };
 
-// node_modules/hono/dist/hono.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/hono.js
 var Hono2 = class extends Hono {
   static {
     __name(this, "Hono");
@@ -2950,7 +2950,7 @@ var Hono2 = class extends Hono {
   }
 };
 
-// node_modules/hono/dist/middleware/cors/index.js
+// ../../../../../node_modules/.pnpm/hono@4.12.27/node_modules/hono/dist/middleware/cors/index.js
 var cors = /* @__PURE__ */ __name((options) => {
   const opts = {
     origin: "*",
@@ -3331,18 +3331,12 @@ data: ${data}
   }
 };
 
-// src/index.ts
-var LIGHTHOUSE_VERSION = "1.0.0";
-var app = new Hono2();
-app.use(
-  "*",
-  cors({
-    origin: /* @__PURE__ */ __name((o) => o || "*", "origin"),
-    allowMethods: ["GET", "POST", "OPTIONS"],
-    allowHeaders: ["Authorization", "Content-Type", "X-Telegram-Init-Data"],
-    maxAge: 86400
-  })
-);
+// src/tenant.ts
+var TENANT_RE = /^[0-9a-f]{64}$/;
+function isTenantId(segment) {
+  return typeof segment === "string" && TENANT_RE.test(segment);
+}
+__name(isTenantId, "isTenantId");
 async function sha256Hex(input) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
   const bytes = new Uint8Array(digest);
@@ -3351,6 +3345,24 @@ async function sha256Hex(input) {
   return out;
 }
 __name(sha256Hex, "sha256Hex");
+
+// src/index.ts
+var LIGHTHOUSE_VERSION = "1.2.0";
+var app = new Hono2();
+app.use(
+  "*",
+  cors({
+    origin: /* @__PURE__ */ __name((o) => o || "*", "origin"),
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowHeaders: [
+      "Authorization",
+      "Content-Type",
+      "X-Telegram-Init-Data",
+      "X-Telegram-User"
+    ],
+    maxAge: 86400
+  })
+);
 function bearer(c) {
   const m = (c.req.header("Authorization") || "").match(/^Bearer\s+(.+)$/i);
   return m ? m[1].trim() : null;
@@ -3360,6 +3372,16 @@ function brainFor(env2, hashHex) {
   return env2.BRAIN.get(env2.BRAIN.idFromName(hashHex));
 }
 __name(brainFor, "brainFor");
+function viaTenantPath(c, tenant) {
+  if (!isTenantId(tenant)) {
+    return new Response(JSON.stringify({ error: "not_found" }), {
+      status: 404,
+      headers: { "content-type": "application/json" }
+    });
+  }
+  return brainFor(c.env, tenant).fetch(c.req.raw);
+}
+__name(viaTenantPath, "viaTenantPath");
 async function viaBearer(c, internalPath) {
   const key = bearer(c);
   if (!key) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
@@ -3382,13 +3404,10 @@ app.post("/tg/:tenant", (c) => {
   if (!c.req.header("X-Telegram-Bot-Api-Secret-Token")) {
     return c.json({ error: "forbidden" }, 403);
   }
-  return brainFor(c.env, c.req.param("tenant")).fetch(c.req.raw);
+  return viaTenantPath(c, c.req.param("tenant"));
 });
-app.post("/sms/:tenant", (c) => brainFor(c.env, c.req.param("tenant")).fetch(c.req.raw));
-app.post(
-  "/ingest/:tenant/:source",
-  (c) => brainFor(c.env, c.req.param("tenant")).fetch(c.req.raw)
-);
+app.post("/sms/:tenant", (c) => viaTenantPath(c, c.req.param("tenant")));
+app.post("/ingest/:tenant/:source", (c) => viaTenantPath(c, c.req.param("tenant")));
 app.get("/", (c) => c.json({ ok: true, service: "navig-lighthouse", version: LIGHTHOUSE_VERSION }));
 app.notFound((c) => c.json({ error: "not_found" }, 404));
 var index_default = app;

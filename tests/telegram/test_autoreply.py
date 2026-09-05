@@ -6,9 +6,15 @@ sending, and the owner/inactive no-op guards.
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import navig.telegram.autoreply as ar
+
+
+async def _drain_autoreply_tasks() -> None:
+    """Await the detached background auto-reply task(s) maybe_autoreply spawns."""
+    await asyncio.gather(*list(ar._bg_tasks))
 
 
 def _channel():
@@ -75,6 +81,10 @@ async def test_maybe_autoreply_generates_and_sends(monkeypatch):
 
     replied = await ar.maybe_autoreply(ch, msg, is_owner=False, owner_id=777)
     assert replied is True
+    # The reply is DETACHED (so the ~34s human-like delay can't block update dispatch):
+    # nothing is sent until the background task runs.
+    assert not ch._api_call.call_args_list, "the send must not happen inline in maybe_autoreply"
+    await _drain_autoreply_tasks()
     # showed a typing indicator and sent AS the business account
     assert any(c.args[0] == "sendChatAction" for c in ch._api_call.call_args_list)
     sent = [c for c in ch._api_call.call_args_list if c.args[0] == "sendMessage"]

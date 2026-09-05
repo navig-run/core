@@ -206,3 +206,126 @@ def test_revoke_no_cred_does_not_raise():
     mgr = _fresh_manager()
     mgr._vault.get.return_value = None
     asyncio.run(mgr.revoke("nonexistent"))  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# _save_to_vault — atomic upsert, never remove-then-add
+# ---------------------------------------------------------------------------
+
+
+def test_save_to_vault_upserts_in_place_without_remove():
+    """The save/refresh path must NOT remove-then-add.
+
+    ``vault.add`` upserts by the unique (provider, profile) label, so removing first only opened a
+    window where a failed ``add`` after a committed ``remove`` lost the refresh token (silent
+    logout) and churned a new credential id every hourly refresh.
+    """
+    mgr = _fresh_manager()
+    existing = MagicMock()
+    existing.id = "old-id"
+    mgr._vault.get.return_value = existing  # a credential already exists in the vault
+
+    mgr._save_to_vault("svc", _valid_creds("tok"))
+
+    mgr._vault.add.assert_called_once()
+    mgr._vault.remove.assert_not_called()  # no destructive remove-before-write
+    _args, kwargs = mgr._vault.add.call_args
+    assert kwargs["provider"] == "svc"
+    assert kwargs["profile_id"] == "connector"  # canonical label → in-place upsert
+
+
+def test_refresh_saves_new_token_without_remove():
+    """End-to-end: an expired token refresh persists via a single upsert, no remove."""
+    ConnectorAuthManager.reset_providers()
+    ConnectorAuthManager.register_provider("svc_r2", _provider_config("svc_r2"))
+    mgr = _fresh_manager()
+
+    cred_obj = MagicMock()
+    from navig.vault import CredentialType
+    cred_obj.credential_type = CredentialType.OAUTH
+    cred_obj.data = {"access": "old", "refresh": "r", "expires": 1}
+    mgr._vault.get.return_value = cred_obj
+
+    with (
+        patch("navig.connectors.auth_manager.OAuthCredentials.from_dict", return_value=_expired_creds()),
+        patch("navig.connectors.auth_manager.refresh_oauth_tokens", AsyncMock(return_value=_valid_creds("fresh"))),
+    ):
+        result = asyncio.run(mgr.get_access_token("svc_r2"))
+
+    assert result == "fresh"
+    mgr._vault.add.assert_called_once()
+    mgr._vault.remove.assert_not_called()
+    ConnectorAuthManager.reset_providers()
+
+
+# ---------------------------------------------------------------------------
+# is_connected — an EXPIRED access token with a refresh token is still connected
+#
+# Regression: `is_connected` was `creds is not None and not creds.is_expired`.
+# OAuth access tokens are short-lived (Google's last 1 hour), so a healthy
+# account reported "not connected" ~55 min after it was linked (is_expired adds
+# a 5-minute buffer). `navig/notify/email.py` gates on this BEFORE calling
+# inject_token() -- the very call that refreshes -- so email notifications died
+# with "Gmail not connected (Settings -> Connectors)", telling the user to
+# reconnect, which fixed it for exactly one more hour.
+# ---------------------------------------------------------------------------
+
+
+def _stub_vault_creds(mgr: ConnectorAuthManager, creds: OAuthCredentials) -> None:
+    """Point the mocked vault at *creds* the way the real OAUTH path returns them."""
+    from navig.vault import CredentialType
+
+    cred_obj = MagicMock()
+    cred_obj.credential_type = CredentialType.OAUTH
+    cred_obj.data = creds.to_dict()
+    mgr._vault.get.return_value = cred_obj
+
+
+def test_is_connected_true_for_valid_token():
+    mgr = _fresh_manager()
+    _stub_vault_creds(mgr, _valid_creds())
+    assert mgr.is_connected("svc_ok") is True
+
+
+def test_is_connected_true_for_expired_token_with_refresh_token():
+    """THE REGRESSION: expired access + valid refresh == still connected."""
+    mgr = _fresh_manager()
+    expired = _expired_creds()
+    assert expired.is_expired, "fixture must actually be expired"
+    assert expired.refresh, "fixture must carry a refresh token"
+    _stub_vault_creds(mgr, expired)
+
+    assert mgr.is_connected("svc_expired") is True, (
+        "an expired access token with a refresh token is still connected -- "
+        "get_access_token() refreshes it transparently on the next call"
+    )
+
+
+def test_is_connected_false_when_expired_and_no_refresh_token():
+    """The one case that genuinely needs the user to re-authenticate."""
+    mgr = _fresh_manager()
+    dead = OAuthCredentials(access="old", refresh="", expires=1)
+    _stub_vault_creds(mgr, dead)
+    assert mgr.is_connected("svc_dead") is False
+
+
+def test_is_connected_false_when_nothing_stored():
+    mgr = _fresh_manager()
+    mgr._vault.get.return_value = None
+    assert mgr.is_connected("svc_absent") is False
+
+
+def test_is_connected_agrees_with_list_connected_accounts():
+    """The two surfaces must not disagree about the same expired credential.
+
+    `list_connected_accounts` documents "Includes expired tokens (still
+    'connected', just needs refresh)" -- `is_connected` said the opposite.
+    """
+    mgr = _fresh_manager()
+    _stub_vault_creds(mgr, _expired_creds())
+    mgr._vault.list.return_value = [
+        MagicMock(provider="svc_expired", metadata={"email": "user@example.com"})
+    ]
+
+    listed = "svc_expired" in mgr.list_connected_accounts()
+    assert listed is mgr.is_connected("svc_expired") is True

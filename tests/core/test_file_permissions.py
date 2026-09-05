@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import stat
 from pathlib import Path
 from unittest.mock import patch
 
@@ -43,7 +42,6 @@ class TestSetOwnerOnlyFilePermissions:
 
     @pytest.mark.skipif(os.name != "nt", reason="Windows-only path")
     def test_windows_calls_icacls(self, tmp_path):
-        import subprocess
 
         f = tmp_path / "win_secret.txt"
         f.write_text("data", encoding="utf-8")

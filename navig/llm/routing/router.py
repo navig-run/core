@@ -25,6 +25,7 @@ import uuid
 from typing import Any
 
 from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
+from navig.core.background import spawn
 from navig.llm.routing.capabilities import (
     MODE_CAPABILITIES,
     MODE_MODEL_PREFERENCE,
@@ -1128,8 +1129,8 @@ def reset_router() -> None:
         try:
             import asyncio
 
-            loop = asyncio.get_running_loop()
-            loop.create_task(_router.close())
+            asyncio.get_running_loop()  # require a running loop; else run to completion
+            spawn(_router.close())
         except RuntimeError:
             asyncio.run(_router.close())
     _router = None

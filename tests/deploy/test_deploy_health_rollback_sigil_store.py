@@ -2,11 +2,8 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from navig.deploy.models import BackupConfig, HealthConfig, SnapshotRecord
 

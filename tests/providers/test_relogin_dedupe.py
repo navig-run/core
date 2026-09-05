@@ -9,8 +9,6 @@ connections — never blindly delete another account's connection.
 
 from __future__ import annotations
 
-import pytest
-
 from navig.providers import claude_oauth
 from navig.providers import connect as c
 from navig.providers.claude_oauth import ClaudeOAuthFlow

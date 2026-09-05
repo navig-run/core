@@ -57,8 +57,23 @@ def docker_ps(
 
     result = remote_ops.execute_command(cmd, host_config, capture_output=False)
 
-    if result.returncode != 0 and filter:
-        ch.dim("No containers matching filter.")
+    if result.returncode != 0:
+        if filter:
+            # AMBIGUOUS ON PURPOSE: the remote command is a pipeline
+            # (`docker ps … | grep -E …`) and the shell reports only the LAST
+            # stage, so grep-found-nothing (exit 1) and docker-failed are
+            # indistinguishable from the status alone. `capture_output=False`
+            # streams straight to the terminal, so there is no stderr to
+            # inspect either. Stay non-fatal rather than exiting 1 on the
+            # common, benign "no matches" case.
+            ch.dim("No containers matching filter.")
+        else:
+            # Unambiguous: no pipeline, so a non-zero status IS the listing
+            # failing (docker missing, daemon down, permission denied). This
+            # used to fall through and exit 0 — a silent failure that reported
+            # "no containers" by printing nothing at all.
+            ch.error(f"Failed to list containers on {host_name}")
+            raise _t.Exit(1)
 
 
 def docker_logs(
@@ -147,6 +162,11 @@ def docker_exec(
     from navig.cli.recovery import require_active_host
     host_name = require_active_host(options, config_manager)
 
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, host_name, f"navig docker exec: {container}")
+
     host_config = config_manager.load_host_config(host_name)
 
     import shlex
@@ -176,6 +196,11 @@ def docker_exec(
 
     if result.returncode != 0:
         ch.warning(f"Command exited with code: {result.returncode}")
+        # Propagate the container command's own status. Exiting 0 here made
+        # `navig docker exec app "npm run migrate" && deploy` proceed after a
+        # FAILED migration — the caller saw a warning scroll past and a success
+        # exit code. Reuse the remote code so `$?` still tells you what happened.
+        raise _t.Exit(result.returncode)
 
 
 def docker_compose(
@@ -206,6 +231,11 @@ def docker_compose(
 
     from navig.cli.recovery import require_active_host
     host_name = require_active_host(options, config_manager)
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, host_name, f"navig docker compose {action}")
 
     host_config = config_manager.load_host_config(host_name)
 
@@ -338,6 +368,11 @@ def docker_restart(
     from navig.cli.recovery import require_active_host
     host_name = require_active_host(options, config_manager)
 
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, host_name, f"navig docker restart: {container}")
+
     host_config = config_manager.load_host_config(host_name)
 
     # Confirm restart
@@ -379,6 +414,11 @@ def docker_stop(container: str, options: dict[str, Any], timeout: int = 10):
     from navig.cli.recovery import require_active_host
     host_name = require_active_host(options, config_manager)
 
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, host_name, f"navig docker stop: {container}")
+
     host_config = config_manager.load_host_config(host_name)
 
     if not ch.confirm_operation(
@@ -414,6 +454,11 @@ def docker_start(container: str, options: dict[str, Any]):
 
     from navig.cli.recovery import require_active_host
     host_name = require_active_host(options, config_manager)
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, host_name, f"navig docker start: {container}")
 
     host_config = config_manager.load_host_config(host_name)
 

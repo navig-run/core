@@ -1,10 +1,8 @@
 """Hermetic unit tests for navig.permissions.rule_parser."""
 from __future__ import annotations
 
-import pytest
-
 from navig.permissions.rule_parser import _normalise_tool, parse_rule_spec
-from navig.permissions.rules import PermissionRule, RuleAction
+from navig.permissions.rules import RuleAction
 
 # ---------------------------------------------------------------------------
 # _normalise_tool

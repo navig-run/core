@@ -8,12 +8,20 @@ import os
 from abc import ABC, abstractmethod
 from typing import Any
 
+from navig.core.aio_subprocess import terminate_process_tree
 from navig.debug_logger import get_debug_logger
 
 logger = get_debug_logger()
 
 # Default timeout (seconds) for a single request round-trip.
 _REQUEST_TIMEOUT = 30.0
+
+# Max bytes for a single inbound message / response. asyncio's default StreamReader limit
+# (stdio) is 64 KiB and the websockets default max_size is 1 MiB; MCP responses are one
+# JSON object each and routinely exceed those (a file's contents, a fetched page, a large
+# tool result). Too small a cap makes the read raise and kills the reader loop, silently
+# bricking the connection — so give every transport a generous cap.
+_MAX_MSG_BYTES = 8 * 1024 * 1024  # 8 MiB
 
 
 class MCPTransport(ABC):
@@ -85,6 +93,7 @@ class StdioTransport(MCPTransport):
                 stderr=asyncio.subprocess.PIPE,
                 env=full_env,
                 cwd=self.cwd,
+                limit=_MAX_MSG_BYTES,
             )
         except FileNotFoundError as exc:
             raise RuntimeError(
@@ -113,12 +122,13 @@ class StdioTransport(MCPTransport):
         if self._process is not None:
             try:
                 if self._process.returncode is None:
-                    self._process.terminate()
-                    try:
-                        await asyncio.wait_for(self._process.wait(), timeout=5.0)
-                    except asyncio.TimeoutError:
-                        self._process.kill()
-                        await self._process.wait()
+                    # Kill the TREE, not just the pid we hold. An MCP server is normally
+                    # launched as `npx …`, which on Windows resolves to npx.CMD and therefore
+                    # runs under cmd.exe — so this pid is a shell and the actual server (node)
+                    # is its child. terminate() reaped the shell and left the server running,
+                    # still holding its stdio pipes; with the registry's health loop
+                    # reconnecting, every reconnect leaked another one.
+                    await terminate_process_tree(self._process, grace=5.0)
             except ProcessLookupError:
                 pass  # Process already gone
             self._process = None
@@ -167,7 +177,17 @@ class StdioTransport(MCPTransport):
             await self._process.stdin.drain()
 
     def is_connected(self) -> bool:
-        return self._process is not None and self._process.returncode is None
+        # The reader task must be alive too: if it died (e.g. a stdout overrun before the
+        # limit bump, or the server closed stdout) the subprocess can still be running with
+        # returncode None, so checking the process alone reports a phantom-connected client
+        # that hangs every call. Requiring a live reader makes the dead state visible so the
+        # manager stops routing to it and can reconnect.
+        return (
+            self._process is not None
+            and self._process.returncode is None
+            and self._reader_task is not None
+            and not self._reader_task.done()
+        )
 
     async def _read_loop(self) -> None:
         """Continuously read stdout and resolve pending request futures."""
@@ -201,6 +221,15 @@ class StdioTransport(MCPTransport):
                     fut.set_result(text)
             else:
                 logger.debug("MCP server notification: %.100s", text)
+
+        # The reader loop has exited (stdout overrun / EOF / error / cancel) and will
+        # resolve no further responses. Fail every in-flight request now so callers get an
+        # immediate error instead of hanging until _REQUEST_TIMEOUT — and, with the
+        # reader-aware is_connected() above, the client reads as disconnected so new calls
+        # aren't routed to a dead reader.
+        for fut in self._pending.values():
+            if not fut.done():
+                fut.set_exception(RuntimeError("MCP stdio reader terminated"))
 
     async def _read_stderr(self) -> None:
         """Read stderr and emit debug log lines."""
@@ -300,6 +329,13 @@ class SSETransport(MCPTransport):
         except Exception as exc:
             if self._session and not self._session.closed:
                 logger.warning("SSE listen loop terminated: %s", exc)
+        finally:
+            # Listener exiting (non-200 / stream drop / error / cancel) — resolve no further
+            # responses. Fail every in-flight request so send() gets an immediate error
+            # instead of hanging to _REQUEST_TIMEOUT. (Mirrors StdioTransport, #692.)
+            for fut in self._pending.values():
+                if not fut.done():
+                    fut.set_exception(RuntimeError("MCP SSE listener terminated"))
 
     async def disconnect(self) -> None:
         """Cancel the SSE listener and close the HTTP session."""
@@ -375,7 +411,16 @@ class SSETransport(MCPTransport):
         await self.send(data)
 
     def is_connected(self) -> bool:
-        return self._session is not None and not self._session.closed
+        # The SSE listener task must be alive too: if it died (non-200, stream drop, error)
+        # the aiohttp session can still be open, so checking it alone reports a phantom-
+        # connected client whose every send() hangs (no listener to resolve the response).
+        # Require a live listener so the manager sees the dead state. (Mirrors #692.)
+        return (
+            self._session is not None
+            and not self._session.closed
+            and self._sse_task is not None
+            and not self._sse_task.done()
+        )
 
 
 class WebSocketTransport(MCPTransport):
@@ -398,7 +443,7 @@ class WebSocketTransport(MCPTransport):
             ) from exc
 
         self._ws = await websockets.connect(
-            self.url, additional_headers=self.headers
+            self.url, additional_headers=self.headers, max_size=_MAX_MSG_BYTES
         )
         self._reader_task = asyncio.create_task(
             self._read_loop(), name="mcp-ws-reader"
@@ -458,8 +503,17 @@ class WebSocketTransport(MCPTransport):
             await self._ws.send(data)
 
     def is_connected(self) -> bool:
+        # The reader task must be alive too: if it died (recv error, an oversized frame,
+        # server close) the ws object can still look open, so checking it alone reports a
+        # phantom-connected client that hangs every call. Require a live reader so the dead
+        # state is visible and the manager can reconnect. (Mirrors StdioTransport, #692.)
         ws = self._ws
-        return ws is not None and not getattr(ws, "closed", True)
+        return (
+            ws is not None
+            and not getattr(ws, "closed", True)
+            and self._reader_task is not None
+            and not self._reader_task.done()
+        )
 
     async def _read_loop(self) -> None:
         while self._ws is not None:
@@ -489,3 +543,10 @@ class WebSocketTransport(MCPTransport):
                     fut.set_result(message)
             else:
                 logger.debug("MCP WebSocket notification: %.100s", str(message))
+
+        # Reader loop exited (recv error, oversized frame, server close, cancel) — resolve
+        # no further responses. Fail every in-flight request so send() gets an immediate
+        # error instead of hanging to _REQUEST_TIMEOUT. (Mirrors StdioTransport, #692.)
+        for fut in self._pending.values():
+            if not fut.done():
+                fut.set_exception(RuntimeError("MCP WebSocket reader terminated"))

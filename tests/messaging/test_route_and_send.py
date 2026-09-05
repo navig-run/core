@@ -110,6 +110,40 @@ async def test_happy_path_resolves_tracks_and_sends(monkeypatch):
     assert tracker.receipts == [("d-1", receipt)]
 
 
+async def test_a_failed_receipt_reaches_the_tracker_and_the_caller(monkeypatch):
+    """The seam must not swallow a failure.
+
+    This is the consumer end of the Telegram adapter's rejection handling: a rejected
+    send now produces `ok=False` instead of a phantom success, and that has to reach
+    BOTH the delivery tracker and the caller (`navig dispatch send`, the deck send
+    route). If the seam dropped it, the delivery log would still show a message that
+    never went out — the phantom would just move one layer up.
+    """
+
+    class _Failed:
+        ok = False
+        message_id = None
+        error = "Telegram rejected the send (rate limit, API error, or timeout)"
+
+    class _FailingAdapter(_Adapter):
+        async def send_message(self, conv_id, message):
+            self.sent.append((conv_id, message))
+            return _Failed()
+
+    adapter = _FailingAdapter()
+    tracker = _Tracker()
+    _wire(monkeypatch, registry=_Registry(adapter), tracker=tracker)
+
+    _decision, receipt = await route_and_send("@alice", "hi", network=None)
+
+    assert receipt.ok is False, "the caller must see the failure"
+    assert adapter.sent == [("conv-1", "hi")]  # it DID attempt the send
+    assert len(tracker.records) == 1
+    assert tracker.receipts == [("d-1", receipt)], (
+        "a rejected send must be applied to the delivery record, not dropped"
+    )
+
+
 async def test_no_route_propagates(monkeypatch):
     from navig.messaging.routing import NoRouteError
 

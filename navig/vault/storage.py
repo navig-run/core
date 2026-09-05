@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from navig.core.file_permissions import set_owner_only_file_permissions
+from navig.core.json_io import safe_json_loads
 
 from .encryption import VaultEncryption
 from .types import Credential, CredentialInfo, CredentialType
@@ -63,6 +64,10 @@ class VaultStorage:
         """
         conn = sqlite3.connect(self.vault_path)
         conn.row_factory = sqlite3.Row
+        # Wait for an inter-process lock rather than erroring instantly with "database
+        # is locked" — same canonical 5s the rest of NAVIG's stores use (the new
+        # VaultStore, store/base.py, storage/pragma_profiles.py).
+        conn.execute("PRAGMA busy_timeout=5000")
         try:
             yield conn
         finally:
@@ -397,6 +402,12 @@ class VaultStorage:
 
         Decrypts the data field.
         """
+        # DELIBERATELY strict — do NOT wrap this in safe_json_loads. This is the SECRET
+        # itself, and degrading an unreadable secret to {} is exactly the phantom-credential
+        # bug fixed in #687: an enabled credential whose data cannot be decrypted came back
+        # as `Credential(enabled=True, data={})`, so a live key read as absent while the
+        # listing still showed it connected. Unreadable is NOT empty on the secrets path;
+        # this must raise so the caller learns the secret is unreadable.
         decrypted_data = json.loads(self.encryption.decrypt(row["data_encrypted"]))
 
         return Credential(
@@ -406,7 +417,10 @@ class VaultStorage:
             credential_type=CredentialType(row["credential_type"]),
             label=row["label"],
             data=decrypted_data,
-            metadata=json.loads(row["metadata_json"]),
+            # Metadata, unlike `data` above, is safe to degrade: it is bookkeeping beside the
+            # secret, nothing writes it back (there is no UPDATE path for metadata_json), and
+            # a bare json.loads here raises on a NULL column as well as a malformed one.
+            metadata=safe_json_loads(row["metadata_json"], {}),
             enabled=bool(row["enabled"]),
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
@@ -432,5 +446,9 @@ class VaultStorage:
             last_used_at=(
                 datetime.fromisoformat(row["last_used_at"]) if row["last_used_at"] else None
             ),
-            metadata=json.loads(row["metadata_json"]),
+            # This one runs inside `[self._row_to_info(row) for row in rows]`, so a single
+            # credential with a malformed (or NULL) metadata blob made list_credentials()
+            # raise — the operator's ENTIRE credential list vanished because of one row's
+            # bookkeeping field.
+            metadata=safe_json_loads(row["metadata_json"], {}),
         )

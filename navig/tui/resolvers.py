@@ -11,7 +11,6 @@ An empty string means no settings panel is available (read-only info).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 from navig.platform.paths import builtin_store_dir, config_dir
 

@@ -1,11 +1,6 @@
 """Tests for navig.tools.domains.system_pack — _system_info, _file_read."""
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-import pytest
-
 from navig.tools.domains.system_pack import _file_read, _system_info
 
 

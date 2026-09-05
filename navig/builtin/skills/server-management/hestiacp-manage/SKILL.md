@@ -288,7 +288,7 @@ commands:
 
 - **HestiaCP not installed**: "This server doesn't have HestiaCP. Install it first or check template configuration."
 - **User not found**: "User '{name}' doesn't exist. Available users: admin, client1, client2"
-- **Permission denied**: "Need root/admin access. Run with: `navig run --sudo 'v-list-users'`"
+- **Permission denied**: "Need root/admin access. Run with: `navig run 'sudo v-list-users'`"
 - **Service down**: "HestiaCP service is not running. Start it with: `navig run 'systemctl start hestia'`"
 
 ## Proactive Suggestions

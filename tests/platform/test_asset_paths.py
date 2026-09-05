@@ -46,6 +46,16 @@ ALLOWED_ESCAPES: dict[str, str] = {
     "update/lifecycle.py": "src_dir — same source-checkout detection as commands/update.py.",
     "update/checker.py": "src_dir — same source-checkout detection as commands/update.py.",
     "commands/migrate.py": "scripts/ — one-off repo migration helpers; source checkout only.",
+    "daemon/supervisor.py": (
+        "src_dir — records the editable root and its `git rev-parse HEAD` in the daemon's boot "
+        "record. Looking outside the package IS the feature: from a wheel there is no checkout, "
+        "so the probe finds nothing and the install is reported as non-git — the right answer."
+    ),
+    "commands/doctor.py": (
+        "src_dir — compares the RUNNING daemon's boot commit against the checkout's HEAD, which "
+        "is how `navig doctor` catches a daemon still serving stale code. Same source-checkout "
+        "detection as daemon/supervisor.py; absent in a wheel means 'not a git install'."
+    ),
     "__init__.py": "pyproject.toml — version fallback when running from source (metadata otherwise).",
     "license/__init__.py": (
         "tools/dev_license.py — detects the DEV licence-override tool, which is excluded from "

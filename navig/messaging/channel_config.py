@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from navig.core.coerce import coerce_bool
+
 
 def configured_channels(raw_config: dict[str, Any] | None = None) -> list[str]:
     """Display names of gateway messaging channels that are configured.
@@ -58,7 +60,15 @@ def configured_channels(raw_config: dict[str, Any] | None = None) -> list[str]:
 
     # WhatsApp (mautrix bridge).
     wa_cfg = raw_config.get("whatsapp") or (raw_config.get("bridges") or {}).get("whatsapp") or {}
-    if isinstance(wa_cfg, dict) and (wa_cfg.get("enabled") or wa_cfg.get("WHATSAPP_ENABLED")):
+    # coerce_bool, not a raw read: `raw_config` is the GLOBAL config dict, where
+    # `navig config set whatsapp.enabled false` has stored the *string* "false" —
+    # and bool("false") is True, so a channel the operator disabled kept reporting
+    # itself as configured. (The env-style WHATSAPP_ENABLED spelling is a string by
+    # definition.)
+    if isinstance(wa_cfg, dict) and (
+        coerce_bool(wa_cfg.get("enabled"), default=False)
+        or coerce_bool(wa_cfg.get("WHATSAPP_ENABLED"), default=False)
+    ):
         names.append("WhatsApp")
 
     # Email / SMTP.

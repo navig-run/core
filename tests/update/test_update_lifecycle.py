@@ -125,6 +125,9 @@ class TestRunSuccess:
         with (
             patch("navig.update.checker.VersionChecker.check_local", return_value=vi),
             patch.object(UpdateEngine, "_install_local", return_value=None),
+            # Mock the post-install daemon reload — this test covers install/verify, and
+            # the reload must never touch the operator's real daemon under pytest.
+            patch.object(UpdateEngine, "_reload_local_daemon", return_value=None),
             patch.object(
                 UpdateEngine,
                 "_verify_version",
@@ -137,6 +140,50 @@ class TestRunSuccess:
         nr = result.node("local")
         assert nr.ok
         assert nr.new_version == "2.5.0"
+
+    def test_local_reload_called_by_default(self):
+        """After a verified local install the daemon is reloaded so the code goes live."""
+        vi = VersionInfo("local", current="2.4.0", latest="2.5.0")
+        reloaded: list[str] = []
+        with (
+            patch("navig.update.checker.VersionChecker.check_local", return_value=vi),
+            patch.object(UpdateEngine, "_install_local", return_value=None),
+            patch.object(
+                UpdateEngine,
+                "_verify_version",
+                side_effect=lambda t, nr: setattr(nr, "new_version", "2.5.0"),
+            ),
+            patch.object(
+                UpdateEngine,
+                "_reload_local_daemon",
+                side_effect=lambda nr, cb: reloaded.append(nr.node_id),
+            ),
+        ):
+            engine = UpdateEngine([_local_target()], source=_make_source())
+            engine.run(force=False)
+        assert reloaded == ["local"]
+
+    def test_no_restart_skips_reload(self):
+        """`--no-restart` (restart=False) leaves the live daemon on the old code."""
+        vi = VersionInfo("local", current="2.4.0", latest="2.5.0")
+        reloaded: list[str] = []
+        with (
+            patch("navig.update.checker.VersionChecker.check_local", return_value=vi),
+            patch.object(UpdateEngine, "_install_local", return_value=None),
+            patch.object(
+                UpdateEngine,
+                "_verify_version",
+                side_effect=lambda t, nr: setattr(nr, "new_version", "2.5.0"),
+            ),
+            patch.object(
+                UpdateEngine,
+                "_reload_local_daemon",
+                side_effect=lambda nr, cb: reloaded.append(nr.node_id),
+            ),
+        ):
+            engine = UpdateEngine([_local_target()], source=_make_source())
+            engine.run(force=False, restart=False)
+        assert reloaded == []
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +249,7 @@ class TestHistoryRecording:
         with (
             patch("navig.update.checker.VersionChecker.check_local", return_value=vi),
             patch.object(UpdateEngine, "_install_local", return_value=None),
+            patch.object(UpdateEngine, "_reload_local_daemon", return_value=None),
             patch.object(
                 UpdateEngine,
                 "_verify_version",

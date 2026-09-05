@@ -4,8 +4,6 @@ Tests for navig.memory.fact_extractor — ExtractionResult and extract_rules().
 
 from __future__ import annotations
 
-import pytest
-
 from navig.memory.fact_extractor import ExtractionResult, extract_rules
 
 # ─── ExtractionResult ─────────────────────────────────────────────────────────

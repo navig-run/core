@@ -48,9 +48,16 @@ def start_proactive_agent(
 def proactive_status():
     """Show proactive agent status and configured sources."""
     from navig.config import get_config_manager
+    from navig.core.coerce import coerce_bool
 
     cm = get_config_manager()
-    config = cm._load_global_config()
+    # `get_global_config()`, NOT `_load_global_config()`: the latter returns the
+    # PYDANTIC-VALIDATED view, which does not declare `proactive` -- so
+    # `proactive_cfg` was ALWAYS {} and this command reported Calendar and Email
+    # as disabled no matter what the operator set. `proactive.calendar.enabled`
+    # and `proactive.email.enabled` are DOCUMENTED toggles; their own status
+    # command could not read them.
+    config = cm.get_global_config() or {}
 
     proactive_cfg = config.get("proactive", {})
 
@@ -59,7 +66,7 @@ def proactive_status():
 
     # Calendar
     calendar_cfg = proactive_cfg.get("calendar", {})
-    if calendar_cfg.get("enabled", False):
+    if coerce_bool(calendar_cfg.get("enabled"), default=False):
         provider = calendar_cfg.get("provider", "mock")
         ch.console.print(f"  [green]✓[/green] Calendar: {provider}")
     else:
@@ -67,7 +74,7 @@ def proactive_status():
 
     # Email
     email_cfg = proactive_cfg.get("email", {})
-    if email_cfg.get("enabled", False):
+    if coerce_bool(email_cfg.get("enabled"), default=False):
         provider = email_cfg.get("provider", "mock")
         ch.console.print(f"  [green]✓[/green] Email: {provider}")
     else:
@@ -180,8 +187,11 @@ def proactive_test(
     """
     from datetime import datetime, timedelta
 
-    async def _test():
+    async def _test() -> list[str]:
+        """Returns the names of the sources that failed — [] when everything passed."""
         from navig.agent.proactive import MockCalendar, MockEmail
+
+        failed: list[str] = []
 
         if source in ["calendar", "all"]:
             ch.info("Testing Calendar...")
@@ -196,6 +206,7 @@ def proactive_test(
                     ch.console.print(f"    • {e.title} @ {e.start.strftime('%Y-%m-%d %H:%M')}")
             except Exception as e:
                 ch.error(f"  Calendar test failed: {e}")
+                failed.append("calendar")
 
         if source in ["email", "all"]:
             ch.info("Testing Email...")
@@ -207,5 +218,14 @@ def proactive_test(
                     ch.console.print(f"    • {m.subject} from {m.sender}")
             except Exception as e:
                 ch.error(f"  Email test failed: {e}")
+                failed.append("email")
 
-    asyncio.run(_test())
+        return failed
+
+    # A test command that says "test failed" and exits 0 is unusable in the one place a
+    # test belongs — a script or a CI step. Each source is still tried (one broken source
+    # must not hide the other's result); the exit code reports the outcome of all of them.
+    failed = asyncio.run(_test())
+    if failed:
+        ch.error(f"{len(failed)} source(s) failed: {', '.join(failed)}")
+        raise typer.Exit(1)

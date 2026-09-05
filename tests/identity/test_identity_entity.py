@@ -6,7 +6,6 @@ always produces the same output.  Zero I/O, zero network, fully hermetic.
 
 from __future__ import annotations
 
-import random
 from dataclasses import fields
 
 import pytest

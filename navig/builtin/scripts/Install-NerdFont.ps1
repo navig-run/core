@@ -1,4 +1,4 @@
-#Requires -Version 7.2
+﻿#Requires -Version 7.2
 <#
 .SYNOPSIS
     Idempotent Nerd Font installer for NAVIG CLI.

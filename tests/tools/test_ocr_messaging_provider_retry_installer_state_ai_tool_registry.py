@@ -11,7 +11,6 @@ Modules covered:
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -115,7 +114,6 @@ class TestIMessagingProvider:
         assert not isinstance(Incomplete(), IMessagingProvider)
 
     def test_is_protocol(self):
-        from typing import get_args
 
         from navig.messaging.provider import IMessagingProvider  # noqa: F401
 

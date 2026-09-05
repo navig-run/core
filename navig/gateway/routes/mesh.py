@@ -2,6 +2,7 @@
 Mesh gateway routes.
 
 GET  /mesh/peers          → returns NodeRegistry.to_api_dict() (self + all known peers)
+GET  /mesh/topology       → redundancy / SPOF report + per-node routing metrics
 POST /mesh/ping           → add/refresh a peer manually (URL in body), for NAT-traversal
 POST /mesh/route          → proxy a ChatRequest to the best available peer
 POST /mesh/discovery/scan → on-demand discovery nudge: HELLO multicast over the LIVE
@@ -43,6 +44,7 @@ logger = get_debug_logger()
 
 def register(app: web.Application, gateway: NavigGateway) -> None:
     app.router.add_get("/mesh/peers", _peers(gateway))
+    app.router.add_get("/mesh/topology", _topology(gateway))
     app.router.add_post("/mesh/ping", _ping(gateway))
     app.router.add_post("/mesh/route", _route(gateway))
     app.router.add_post("/mesh/target", _set_target(gateway))
@@ -180,6 +182,46 @@ def _peers(gw: NavigGateway):
     return h
 
 
+# ───────────────────────── GET /mesh/topology ────────────────────────
+
+
+def _topology(gw: NavigGateway):
+    """
+    Redundancy / SPOF analysis for the LAN mesh.
+
+    ``docs/guides/mesh-multi-machine.md`` has told users to
+    ``curl http://<gateway>/mesh/topology`` for a "topology report with SPOF analysis"
+    for as long as that guide has existed, and listed it next to ``/mesh/peers`` in its
+    API table. **The route was never registered**, so the documented command returned a
+    404. ``mesh/router.get_topology_report()`` — the thing it describes — was complete,
+    tested, and had zero production callers.
+
+    Unauthenticated like its read-only siblings (``/mesh/peers``, ``/mesh/agents``): the
+    same LAN-local, low-sensitivity data, and the documented ``curl`` sends no header.
+    Mutating mesh routes (``/mesh/ping``, ``/mesh/route``, ``/a2a``) keep bearer auth.
+
+    ⚠ ``get_registry()`` is a process-wide singleton whose ``storage_dir`` is honoured
+    only on the FIRST call, and ``get_topology_report()`` passes none. Priming it here
+    with the gateway's own dir — exactly as ``_peers`` does — means this handler cannot
+    report a different registry than ``/mesh/peers`` depending on who called first.
+
+    Degrades gracefully like every mesh route: an analysis failure is a 200 with
+    ``available: false``, never a hard failure.
+    """
+
+    async def h(r: web.Request) -> web.Response:
+        get_registry(gw.storage_dir)  # bind the singleton to OUR storage dir first
+        try:
+            from navig.mesh.router import get_topology_report
+
+            return json_ok(get_topology_report())
+        except Exception as e:  # noqa: BLE001 — mesh ops never hard-fail
+            logger.warning("[mesh.routes] Topology report failed: %s", e)
+            return json_ok({"available": False, "reason": str(e)})
+
+    return h
+
+
 # ─────────────────────────── POST /mesh/ping ─────────────────────────
 
 
@@ -227,12 +269,10 @@ def _is_safe_mesh_url(url: str) -> bool:
     import socket
     from urllib.parse import urlparse
 
-    def _ip_ok(ip_str: str) -> bool:
-        try:
-            ip = ipaddress.ip_address(ip_str)
-        except ValueError:
-            return False
-        return (ip.is_private or ip.is_loopback) and not ip.is_link_local
+    # Shared with the multicast path (mesh/discovery.py) so the two can't drift — that
+    # asymmetry was the bug: this manual path rejected 169.254.169.254 while a UDP packet
+    # carrying the same URL was accepted verbatim.
+    from navig.mesh.url_guard import ip_is_lan as _ip_ok
 
     try:
         parsed = urlparse(url)

@@ -11,8 +11,10 @@ future and stays visible as pending until its new time arrives.
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 
+from navig.store.base import _to_utc_iso, _utcnow
 from navig.store.runtime import RuntimeStore
 
 
@@ -62,3 +64,82 @@ class TestReminderRetryBackoff:
         store.increment_reminder_retry(rid, 60)
         row = store.get_user_reminders(7)[0]
         assert row["retry_count"] == 2
+
+
+# ─── _to_utc_iso: naive datetimes are stored in UTC, not as-if-UTC ──────────────
+# create_reminder used remind_at.isoformat() → a naive local wall-clock time (e.g. the habit
+# reminder's datetime.now(), the /workout HH:MM path before #632) was stored as-if-UTC and,
+# compared lexicographically against a UTC now, fired off by the server's UTC offset. It also
+# wrote aware-UTC as '…+00:00' rather than the canonical '…Z' the rest of the lifecycle uses.
+
+
+class TestToUtcIso:
+    def test_aware_utc_becomes_canonical_z(self):
+        assert (
+            _to_utc_iso(datetime(2026, 7, 27, 13, 0, tzinfo=timezone.utc))
+            == "2026-07-27T13:00:00.000000Z"
+        )
+
+    def test_aware_offset_is_converted_to_utc(self):
+        tz = timezone(timedelta(hours=5, minutes=30))
+        assert (
+            _to_utc_iso(datetime(2026, 7, 27, 13, 0, tzinfo=tz)) == "2026-07-27T07:30:00.000000Z"
+        )
+
+    def test_naive_treated_as_local_and_converted(self):
+        naive = datetime(2026, 7, 27, 13, 0)
+        # Same conversion the code performs — tz-independent (correct on any machine's tz).
+        expected = naive.astimezone().astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        assert _to_utc_iso(naive) == expected
+
+    def test_shape_matches_utcnow(self):
+        # Must be byte-compatible with _utcnow so plain string compares stay homogeneous.
+        assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$", _utcnow())
+        assert re.match(
+            r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$",
+            _to_utc_iso(datetime(2026, 7, 27, 13, 0, tzinfo=timezone.utc)),
+        )
+
+
+class TestReminderTimezoneNormalization:
+    def test_naive_local_future_is_stored_as_correct_utc(self, tmp_path):
+        # THE FIX: a naive local time is converted to UTC + written canonically ('…Z').
+        # Pre-fix the stored value was `naive.isoformat()` ("2030-06-01T15:30:00") — wrong
+        # instant AND wrong shape (no offset, no Z) — so this fails pre-fix on ANY machine.
+        store = RuntimeStore(tmp_path / "runtime.db")
+        naive = datetime(2030, 6, 1, 15, 30, 0)
+        rid = store.create_reminder(1, 1, "x", naive)
+        stored = store.get_user_reminders(1)[0]["remind_at"]
+        assert stored == naive.astimezone().astimezone(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%S.%fZ"
+        )
+        assert stored.endswith("Z")
+        # And it's not due now (it's in the future in every timezone).
+        assert [r["id"] for r in store.get_user_reminders(1)] == [rid]
+        assert store.get_due_reminders() == []
+
+    def test_naive_now_is_due_immediately(self, tmp_path):
+        # The habit-reminder case: a cron fires and queues create_reminder(remind_at=now()).
+        # It must be due right away, not offset hours into the future.
+        store = RuntimeStore(tmp_path / "runtime.db")
+        rid = store.create_reminder(1, 1, "workout", datetime.now())  # naive LOCAL now
+        assert [r["id"] for r in store.get_due_reminders()] == [rid]
+
+    def test_aware_utc_stored_canonically_not_plus_offset(self, tmp_path):
+        # Pre-fix an aware-UTC datetime was stored '…+00:00' (isoformat), not '…Z'.
+        store = RuntimeStore(tmp_path / "runtime.db")
+        store.create_reminder(1, 1, "x", datetime(2030, 1, 1, 12, 0, tzinfo=timezone.utc))
+        stored = store.get_user_reminders(1)[0]["remind_at"]
+        assert stored.endswith("Z") and "+" not in stored
+
+    def test_naive_and_equivalent_aware_store_identically(self, tmp_path):
+        # A naive-local time and the SAME instant expressed as aware-UTC store the same string.
+        store = RuntimeStore(tmp_path / "runtime.db")
+        naive = datetime(2030, 6, 1, 15, 0)
+        aware = naive.astimezone().astimezone(timezone.utc)
+        store.create_reminder(1, 1, "a", naive)
+        store.create_reminder(2, 2, "b", aware)
+        assert (
+            store.get_user_reminders(1)[0]["remind_at"]
+            == store.get_user_reminders(2)[0]["remind_at"]
+        )

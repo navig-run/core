@@ -37,17 +37,54 @@ INSTALL_SH="$REPO_ROOT/install.sh"
 }
 
 # ---------------------------------------------------------------------------
-# 4. Missing python: warns or exits non-zero (does not silently succeed)
+# 4. No system python is NOT an error — install.sh bundles its own runtime.
+#
+# This test used to assert the opposite ("warns or exits non-zero when python3 is
+# absent"), which was true before the installer grew its uv-managed runtime: it now
+# downloads uv and runs `uv python install "$PYTHON_SERIES"` into ~/.navig/runtime,
+# deliberately never touching system Python. So a machine with no python at all is a
+# SUPPORTED case, and demanding a warning asserted a requirement that no longer
+# exists. Nobody ever saw it fail because the file did not parse (see the note below).
+# Re-pointed at the real contract rather than deleted: "you do not need Python
+# installed to install navig" is a product promise worth a guard.
 # ---------------------------------------------------------------------------
-@test "installer warns when python3 is absent from PATH" {
-    # Strip real python from PATH
-    local stripped_path
-    stripped_path=$(echo "$PATH" | tr ':' '\n' \
-        | grep -v -i python | grep -v "homebrew" \
-        | tr '\n' ':' | sed 's/:$//')
+# NOTE: bats test names must be ASCII. bats mangles the name into a shell function
+# identifier, and a non-ASCII byte (an em dash here) produces
+# `bats: unknown test name test_..._\342-80-94_...` — the test is SKIPPED and only the
+# "Executed 4 instead of expected 5 tests" warning says so, below a screen of `ok`s.
+@test "a machine with no python on PATH can still install - runtime is bundled" {
+    # Strip real python from PATH by RESOLVING it, not by matching the directory name.
+    # The old heuristic dropped entries containing "python"/"homebrew", which leaves
+    # python reachable on Windows via ...\AppData\Local\Microsoft\WindowsApps (no
+    # "python" in the path) — so the premise silently did not hold and the assertion
+    # below failed for a reason that had nothing to do with the installer.
+    local stripped_path="$PATH" found dir guard=0
+    while found="$(PATH="$stripped_path" command -v python3 2>/dev/null \
+                   || PATH="$stripped_path" command -v python 2>/dev/null)" \
+          && [ -n "$found" ] && [ "$guard" -lt 32 ]; do
+        dir="$(dirname "$found")"
+        stripped_path="$(printf '%s' "$stripped_path" | tr ':' '\n' \
+            | grep -vxF "$dir" | tr '\n' ':' | sed 's/:$//')"
+        guard=$((guard + 1))
+    done
+    # If python is somehow still reachable, this test cannot assert what it claims —
+    # say so rather than reporting a failure the installer did not cause.
+    if PATH="$stripped_path" command -v python3 >/dev/null 2>&1 \
+       || PATH="$stripped_path" command -v python >/dev/null 2>&1; then
+        skip "could not remove python from PATH on this platform"
+    fi
     run env PATH="$stripped_path" bash "$INSTALL_SH" --dry-run
-    # Acceptable: either non-zero exit OR output contains a warning about python
-    [[ "$status" -ne 0 || "$output" =~ [Pp]ython|[Nn]ot found|[Ww]arn|\[!!\] ]]
+    [ "$status" -eq 0 ]
+    # Reaching the completion marker (not just exiting 0 early) is what makes this
+    # non-vacuous: it fails the moment anyone reintroduces a hard system-python
+    # requirement into the pre-flight path.
+    #
+    # ⚠ A regex written inline after `=~` is parsed by BASH, so a space in the pattern
+    # is a syntax error ("unexpected token `found'") that kills the whole FILE — bats
+    # then reports `not ok 1 bats-gather-tests` and runs none of the 5 tests. That is
+    # exactly what shipped here. Keep any pattern with a space in a variable.
+    local done_pat='[Dd]ry.?run'
+    [[ "$output" =~ $done_pat ]]
 }
 
 # ---------------------------------------------------------------------------

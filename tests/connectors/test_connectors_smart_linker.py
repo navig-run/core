@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 from navig.connectors.smart_linker import _DATE_PATTERN, SmartLinker
 
@@ -134,7 +130,6 @@ class TestSmartLinkerEnrichGmail:
         assert "related_events" not in result.metadata
 
     def test_enrich_gmail_date_match_attaches_events(self):
-        from navig.connectors.types import Resource
         event_res = _make_resource("google_calendar", title="Team Sync", resource_id="e1")
         cal_connector = _mock_connector([event_res])
         linker = self._linker({"google_calendar": cal_connector})
@@ -146,7 +141,6 @@ class TestSmartLinkerEnrichGmail:
         assert len(result.metadata["related_events"]) >= 1
 
     def test_enrich_gmail_no_date_match_uses_sender(self):
-        from navig.connectors.types import Resource
         event_res = _make_resource("google_calendar", title="1:1 with Alice", resource_id="e2")
         cal_connector = _mock_connector([event_res])
         linker = self._linker({"google_calendar": cal_connector})

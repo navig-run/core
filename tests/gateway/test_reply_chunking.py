@@ -37,6 +37,11 @@ class TestChunkTextContract:
         long = " ".join(["word"] * 500)
         for mode in ChunkMode:
             chunks = chunk_text(long, mode=mode, limit=40)
+            # test_empty_returns_empty above proves chunk_text() can return [] -- and with
+            # [] this loop body never runs, so the contract this test exists to enforce
+            # ("all chunks within limit") would be reported as satisfied by a chunker that
+            # emitted nothing at all. Measured: every mode yields 63 chunks for this input.
+            assert chunks, f"mode={mode} produced no chunks; the limit check below never ran"
             for chunk in chunks:
                 assert len(chunk) <= 40, f"mode={mode}, chunk={chunk!r}"
 

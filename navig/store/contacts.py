@@ -20,6 +20,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from navig.core.json_io import safe_json_loads
 from navig.messaging.adapter import Contact, Route
 from navig.store.base import BaseStore, _utcnow
 
@@ -153,11 +154,14 @@ class ContactStore(BaseStore):
                 network=r["network"],
                 address=r["address"],
                 priority=r["priority"],
-                meta=json.loads(r["meta_json"] or "{}"),
+                # safe_json_loads: this mapper runs inside `[_row_to_contact(r) for r
+                # in rows]`, so one corrupt blob would take out the whole contact list
+                # (and here, a corrupt route would drop every OTHER route too).
+                meta=safe_json_loads(r["meta_json"], {}),
             )
             for r in routes_rows
         ]
-        fallbacks_raw = json.loads(row["fallbacks_json"] or "[]")
+        fallbacks_raw = safe_json_loads(row["fallbacks_json"], [])
         return Contact(
             alias=row["alias"],
             display_name=row["display_name"],

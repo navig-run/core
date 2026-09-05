@@ -67,7 +67,11 @@ def make_rate_limit_middleware(
             if path.startswith("/api/deck") or path.startswith("/deck"):
                 headers = {
                     "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                    # Mirrors the preflight list. On THIS response (an error, never a
+                    # preflight) Allow-Methods is advisory, but a divergent copy of a
+                    # hand-maintained allow-list is exactly how the Mini App broke:
+                    # tests/gateway/test_cors_parity.py keeps every copy identical.
+                    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
                     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Telegram-Init-Data, X-Telegram-User",
                 }
             return web.json_response(

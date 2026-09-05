@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "_lib"))
-from common import emit, err  # noqa: E402
+from common import err  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).parent))
 from worker import cmd_copy, cmd_ls, cmd_remotes, cmd_sync  # noqa: E402

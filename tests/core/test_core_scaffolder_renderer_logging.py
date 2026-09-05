@@ -9,12 +9,8 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import sys
 import tarfile
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
@@ -436,7 +432,7 @@ class TestStructuredLogger:
         assert a is b
 
     def test_structured_emits_json_log(self):
-        from navig.core.logging import StructuredLogger, get_logger
+        from navig.core.logging import get_logger
 
         logger = get_logger("struct_test")
         records = []
@@ -509,15 +505,40 @@ class TestConfigureRootLogger:
             nlog._ROOT_CONFIGURED = old
 
     def test_configure_with_log_file(self, tmp_path):
+        """An explicit log_file must actually attach a file handler, writing to THAT path.
+
+        This assertion used to end in `or True` ("just ensure no exception"), so it passed
+        whether or not a handler was ever attached — and it is the only test covering the
+        file-handler path, which `get_logger()` now deliberately skips under pytest (the
+        lazy path opened a log inside the source checkout). A vacuous assertion there would
+        mean the suppression had removed the last real coverage without anyone noticing.
+        """
         from navig.core import logging as nlog
 
         log_file = tmp_path / "test.log"
         nlog._configure_root_logger(log_file=log_file, level=logging.DEBUG)
         root = logging.getLogger("navig")
+
+        file_handlers = [
+            h for h in root.handlers
+            if isinstance(h, logging.handlers.RotatingFileHandler)
+        ]
+        assert file_handlers, f"no RotatingFileHandler attached; got {root.handlers!r}"
         assert any(
-            isinstance(h, logging.handlers.RotatingFileHandler) for h in root.handlers
-            if hasattr(logging, "handlers")
-        ) or True  # file handler added — just ensure no exception
+            Path(h.baseFilename).resolve() == log_file.resolve() for h in file_handlers
+        ), (
+            f"a file handler was attached but not for {log_file}; got "
+            f"{[h.baseFilename for h in file_handlers]!r}"
+        )
+
+        # And it must genuinely write there — an attached handler that never lands on disk
+        # is the same false comfort as the `or True`.
+        nlog.get_logger("cfgtest").info("hello-from-test")
+        for h in file_handlers:
+            h.flush()
+        assert log_file.exists() and log_file.stat().st_size > 0, (
+            f"{log_file} was never written"
+        )
 
 
 # Import needed for handler type check

@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from navig.core.aio_subprocess import STREAM_LIMIT
+
 logger = logging.getLogger(__name__)
 
 # ── Data types ────────────────────────────────────────────────
@@ -104,6 +106,10 @@ class LspClient:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            # _read_loop readline()s the LSP header. Headers are short, but a server that
+            # emits a long non-header line (a stray log) would otherwise raise and kill the
+            # reader; the body already uses readexactly(), which is limit-safe.
+            limit=STREAM_LIMIT,
         )
         self._alive = True
         self._reader_task = asyncio.create_task(self._read_loop(), name="lsp-read")

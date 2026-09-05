@@ -26,4 +26,5 @@ def agents_run(
     """Run a specific agent on a task."""
     from navig import console_helper as ch
 
-    ch.warning("navig agents run is not yet implemented in this build.")
+    ch.warning("`agents run` is not implemented — use: navig agent run <agent_id>")
+    raise typer.Exit(1)

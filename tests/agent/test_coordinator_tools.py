@@ -2,13 +2,11 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from navig.agent.tools.coordinator_tools import CoordinatorRunTool, CoordinatorStatusTool
-from navig.tools.registry import ToolResult
 
 # ── helpers ──────────────────────────────────────────────────
 

@@ -25,17 +25,17 @@ pip install nuitka
 
 ### Build with PyInstaller (recommended for quick builds)
 ```bash
-python scripts/build.py --tool pyinstaller
+python tools/build.py --tool pyinstaller
 ```
 
 ### Build with Nuitka (recommended for production)
 ```bash
-python scripts/build.py --tool nuitka
+python tools/build.py --tool nuitka
 ```
 
 ### Compare both tools
 ```bash
-python scripts/build.py --compare
+python tools/build.py --compare
 ```
 
 ## Build Commands
@@ -70,7 +70,7 @@ NAVIG uses lazy loading to defer heavy imports. To analyze import performance:
 
 ```bash
 # Measure current startup time
-python scripts/build.py --measure-startup
+python tools/build.py --measure-startup
 
 # Detailed import timing
 python -X importtime -c "import navig.cli" 2>&1 | head -50
@@ -88,7 +88,7 @@ For faster imports during development:
 
 ```bash
 # Standard compilation
-python scripts/build.py --compile-bytecode
+python tools/build.py --compile-bytecode
 
 # Or manually:
 python -m compileall navig/
@@ -101,7 +101,7 @@ python -OO -m compileall navig/  # Remove docstrings too
 ### PyInstaller: Missing modules
 If commands fail with import errors, add hidden imports:
 
-1. Edit `scripts/build.py`
+1. Edit `tools/build.py`
 2. Add the missing module to `get_hidden_imports()`
 3. Rebuild
 
@@ -128,7 +128,7 @@ python -X importtime -c "import navig.cli" 2>&1 | sort -t'|' -k2 -rn | head -20
 
 ### Building for Linux on Windows (WSL)
 ```bash
-wsl python scripts/build.py --tool pyinstaller
+wsl python tools/build.py --tool pyinstaller
 ```
 
 ### GitHub Actions Matrix Build

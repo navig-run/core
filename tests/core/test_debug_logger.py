@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from navig.debug_logger import DebugLogger, get_debug_logger
 
 # ──────────────────────────────────────────────────────────────
@@ -264,7 +262,6 @@ class TestGetDebugLogger:
         assert isinstance(result, logging.Logger)
 
     def test_returns_same_logger(self):
-        import logging
         l1 = get_debug_logger()
         l2 = get_debug_logger()
         assert l1.name == l2.name

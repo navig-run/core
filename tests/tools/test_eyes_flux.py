@@ -9,12 +9,8 @@ Coverage targets:
 from __future__ import annotations
 
 import re
-import socket
 from datetime import datetime
-from io import StringIO
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from navig.agent.eyes import Alert, SystemMetrics
 from navig.commands.flux import (

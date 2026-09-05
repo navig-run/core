@@ -34,6 +34,20 @@ def _tool_call(name, args, tc_id=None):
     return tc
 
 
+def _tool_call_forced_id(name, args, forced_id):
+    """Like _tool_call but sets the EXACT id given — including "".
+
+    _tool_call() replaces a falsy id with ``tc-<name>``, so it cannot reproduce
+    the provider-omits-id case (ToolCall.id == "") that this test needs.
+    """
+    from navig.providers.clients import ToolCall
+    tc = ToolCall.__new__(ToolCall)
+    tc.id = forced_id
+    tc.name = name
+    tc.arguments = json.dumps(args)
+    return tc
+
+
 def _apply_common_patches(monkeypatch, registry):
     monkeypatch.setattr("navig.agent.tools.register_all_tools", lambda: None)
     monkeypatch.setattr("navig.agent.agent_tool_registry._AGENT_REGISTRY", registry)
@@ -45,6 +59,15 @@ def _apply_common_patches(monkeypatch, registry):
         def resolve_auth(self, provider):
             return ("fake-key", "default")
 
+    # Patch the PACKAGE name first, then the submodule — order is load-bearing.
+    # `navig.providers.__getattr__` resolves a lazy export and then CACHES it into
+    # the package's globals(). If the submodule were faked first, the package's
+    # first read would resolve to the fake and cache it, monkeypatch would record
+    # the fake as the "original", and teardown would restore the FAKE — permanently,
+    # for the rest of the pytest session. That is exactly what made
+    # tests/quality/test_instance_method_contract.py report 13 false findings
+    # against AuthProfileManager whenever tests/agent ran before it.
+    monkeypatch.setattr("navig.providers.AuthProfileManager", _FakeAuth)
     monkeypatch.setattr("navig.providers.auth.AuthProfileManager", _FakeAuth)
 
 
@@ -184,6 +207,84 @@ class TestParallelToolDispatch:
         # read_file raised but wiki_search still ran — both were dispatched
         assert "read_file" in dispatch_calls
         assert "wiki_search" in dispatch_calls
+
+    @pytest.mark.parametrize(
+        "id_a,id_b",
+        [
+            ("", ""),        # provider omitted ids -> ToolCall.id defaults to ""
+            ("dup", "dup"),  # streamed tool-delta batch reused one id
+        ],
+    )
+    async def test_colliding_tool_call_ids_route_each_result_correctly(
+        self, monkeypatch, id_a, id_b
+    ):
+        """Two tools sharing an id (empty or duplicated) must EACH get their own
+        result routed back to the model.
+
+        Regression: routing keyed on ``tool_call.id`` via ``dict(collected_results)``
+        collapsed on a shared key, so both calls read the one surviving result —
+        the model was handed tool A's live-infra output labeled as tool B's, with
+        no error (the ``[result missing]`` fallback can't fire, the key exists).
+        """
+        from navig.agent.conv import ConversationalAgent as ConvAgent
+
+        class _Registry:
+            def get_openai_schemas(self, toolsets):
+                return []
+
+            def available_names(self, toolsets):
+                return ["read_file", "wiki_search"]
+
+            def dispatch(self, name, args, vault_injector=None):
+                # Distinct per-tool result so a collapse is observable.
+                return f"result-{name}"
+
+        _apply_common_patches(monkeypatch, _Registry())
+
+        responses = iter([
+            SimpleNamespace(
+                content=None,
+                tool_calls=[
+                    _tool_call_forced_id("read_file", {"path": "foo.txt"}, id_a),
+                    _tool_call_forced_id("wiki_search", {"query": "bar"}, id_b),
+                ],
+                usage=_fake_usage(),
+            ),
+            SimpleNamespace(content="done", tool_calls=None, usage=_fake_usage()),
+        ])
+
+        captured_requests = []
+
+        class _FakeClient:
+            async def complete(self, request):
+                captured_requests.append(request)
+                return next(responses)
+
+        monkeypatch.setattr(
+            "navig.providers.create_client",
+            lambda provider_cfg, api_key=None, timeout=120.0, **kwargs: _FakeClient(),
+        )
+
+        agent = ConvAgent()
+        result = await agent.run_agentic(
+            message="colliding ids",
+            max_iterations=5,
+            toolset="research",
+            cost_tracker=None,
+            approval_policy=None,
+        )
+
+        assert result == "done"
+        # The 2nd completion request carries the tool-result messages routed back.
+        assert len(captured_requests) >= 2, "expected a follow-up completion"
+        tool_contents = [
+            m.content
+            for m in captured_requests[1].messages
+            if getattr(m, "role", None) == "tool"
+        ]
+        # Both tools ran, and each result reached the model exactly once — no collapse.
+        assert tool_contents.count("result-read_file") == 1, tool_contents
+        assert tool_contents.count("result-wiki_search") == 1, tool_contents
 
     async def test_sequential_tool_not_in_parallel_batch(self, monkeypatch):
         """A NEVER_PARALLEL tool mixed with a parallel-safe one → gather receives only 1 coroutine."""

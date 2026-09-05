@@ -1,4 +1,24 @@
-"""SoulLoader: async SOUL.md loader, singleton, LRU-cached condensation, live file-watching."""
+"""SoulLoader: identity resolution + system-prompt assembly for the chat path.
+
+Async, singleton, LRU-cached, live file-watching. Two invariants this module is
+responsible for:
+
+**One chain.** Candidate resolution delegates to
+``navig.personas.soul_loader`` — the single ordered chain that also serves the
+gateway and legacy paths. This module used to own a private 3-level chain, which
+is why persona souls, space souls and ``IDENTITY.md`` were dead in production
+despite being implemented and tested.
+
+**A stable prefix.** ``build_system_prompt`` emits only content that is
+byte-identical for the life of a session, in a fixed order, guardrails first.
+Anything volatile — the clock, matched skills, recalled facts — belongs on the
+user turn. The Anthropic cache breakpoint sits on the system message and its
+prefix spans ``tools → system``, so one mutating byte here discards the whole
+tool schema block as well; at the repo's own price table that is a 12.5x swing
+(``cache_write`` 1.25x vs ``cache_read`` 0.1x input). ``## Session Context``
+used to open with ``System time: %H:%M``, which capped the cache lifetime at
+about a minute. ``core/tests/agent/test_prompt_stability.py`` pins this.
+"""
 
 from __future__ import annotations
 
@@ -7,8 +27,9 @@ import functools
 import logging
 import os
 import threading
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from navig.platform.paths import config_dir
 
@@ -26,16 +47,30 @@ def _soul_md_path() -> Path:
     return config_dir() / "workspace" / "SOUL.md"
 
 
-def _soul_candidates() -> list[tuple[Path, str]]:
-    """SOUL.md search candidates in priority order (user → default → context),
-    resolved fresh each call."""
-    return [
-        (_soul_md_path(), "workspace"),
-        (_PKG_ROOT / "resources" / "SOUL.default.md", "resources"),
-        (Path(__file__).parent.parent / "context" / "SOUL.md", "context"),
-    ]
+def _soul_candidates(
+    persona: str = "", space: str = "", cwd: Path | None = None
+) -> list[tuple[Path, str]]:
+    """Identity candidates in priority order, resolved fresh each call.
+
+    Delegates to ``navig.personas.soul_loader.soul_candidates`` — this module no
+    longer owns a chain of its own. Kept as a module-level function (rather than
+    an import alias) because the consuming loop and several tests monkeypatch it.
+    """
+    from navig.personas.soul_loader import soul_candidates  # noqa: PLC0415
+
+    return soul_candidates(persona or None, space or None, cwd)
+
 
 _SOUL_POLL_INTERVAL_SECONDS = 5.0
+
+#: Sources that are an explicit human choice and are injected verbatim (bounded).
+#: A persona, a space, a folder-space, ``IDENTITY.md`` or a workspace ``SOUL.md``
+#: are all things somebody deliberately wrote; replacing any of them with a
+#: hand-tuned constant would make the edit silently do nothing.
+_VERBATIM_SOURCES = frozenset({"persona", "space", "folder-space", "identity", "workspace"})
+
+#: Sources that count as a full-fat identity (verbatim ones + the shipped default).
+_RICH_SOURCES = _VERBATIM_SOURCES | {"resources"}
 
 # ── Identity constants ───────────────────────────────────────────────────────
 
@@ -113,6 +148,16 @@ _CHAT_RULES = (
     "- When someone just says hi or hello, meet them there — no unsolicited status reports, reminders, or chore lists.\n"
 )
 
+#: Persona ``tone`` → one extra chat rule. Kept short: the persona's own
+#: ``soul.md`` already carries the voice, this only nudges the register.
+_TONE_GUIDANCE: dict[str, str] = {
+    "direct": "Be blunt and economical. Lead with the answer; cut throat-clearing.",
+    "warm": "Be warm and encouraging without being saccharine or over-agreeable.",
+    "playful": "Keep it light and quick-witted — never at the cost of being accurate.",
+    "formal": "Keep the register professional and precise; skip slang and contractions.",
+    "philosophical": "Reach for the underlying principle before the tactic, briefly.",
+}
+
 # ── Module-level I/O + condensation (bodies preserved per spec) ──────────────
 
 
@@ -120,25 +165,88 @@ _CHAT_RULES = (
 # while still honoring an explicit customization).
 _MAX_SOUL_CHARS = 4000
 
+#: Combined cap across every identity source injected into one system prompt.
+_TOTAL_IDENTITY_MAX_CHARS = 12_000
 
-def _scan_soul_files() -> tuple[str, bool, str]:
-    """Read SOUL.md candidates in priority order (user → default → context).
+
+@dataclass(frozen=True, slots=True)
+class SoulContext:
+    """One session's resolved identity — everything the prompt builder needs.
+
+    Held on the *agent instance*, never on the process-global loader: two chats
+    in one daemon can run different personas, and the old shared-``soul_content``
+    design made that structurally impossible.
+    """
+
+    condensed: str = ""
+    source: str = ""
+    path: Path | None = None
+    revision: str = ""
+    persona: str = ""
+    tone: str = ""
+    banned_phrases: tuple[str, ...] = ()
+    guardrails: str = ""
+    truncation_note: str = ""
+    shadowed: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+
+    @property
+    def cache_key(self) -> tuple[str, ...]:
+        """Identity-side component of the system-prompt memo key."""
+        return (self.revision, self.source, self.persona, self.tone, self.guardrails)
+
+
+def _scan_soul_files(
+    persona: str = "", space: str = "", cwd: Path | None = None
+) -> tuple[str, bool, str]:
+    """Read identity candidates in priority order (see ``SOURCE_ORDER``).
 
     Returns ``(raw_text, has_rich, source)`` for the HIGHEST-priority source that
-    exists, where *source* is its tag (``workspace`` | ``resources`` | ``context``)
-    and *has_rich* is True for the user (``workspace``) or shipped (``resources``)
-    identity. Returns ``("", False, "")`` when nothing is found.
+    exists, where *source* is its tag (``persona`` | ``space`` | ``folder-space``
+    | ``identity`` | ``workspace`` | ``resources`` | ``context``) and *has_rich*
+    is True for anything except the minimal ``context`` fallback. Returns
+    ``("", False, "")`` when nothing is found.
     """
-    for path, tag in _soul_candidates():
+    for path, tag in _soul_candidates(persona, space, cwd):
         try:
             if path.exists():
                 text = path.read_text(encoding="utf-8").strip()
                 if text:
                     logger.debug("SOUL source loaded: %s (%s)", tag, path)
-                    return text, tag in ("workspace", "resources"), tag
+                    return text, tag in _RICH_SOURCES, tag
         except (OSError, UnicodeDecodeError):
             pass  # best-effort; fall through to the next candidate
     return "", False, ""
+
+
+def _persona_traits(persona: str, cwd: Path | None) -> tuple[str, tuple[str, ...]]:
+    """Return ``(tone, banned_phrases)`` for *persona*, or neutral defaults.
+
+    These were parsed and validated by ``personas/loader.py`` for a long time and
+    reached no prompt whatsoever, because the channel router only ever passed a
+    persona *name*. Best-effort: a broken persona file must degrade to the house
+    voice, never break a turn.
+
+    Traits go through the SAME resolution guard as the soul
+    (``soul_loader._persona_dir``), so the package-shipped ``default`` — which
+    every un-chosen install reports — contributes neither. Skipping its soul but
+    honouring its ``tone: warm`` would apply half a persona nobody selected. A
+    persona that exists but ships no ``soul.md`` still gets its traits: it was
+    chosen deliberately, the soul simply falls through the chain.
+    """
+    if not persona:
+        return "", ()
+    try:
+        from navig.personas.loader import load_persona  # noqa: PLC0415
+        from navig.personas.soul_loader import _persona_dir  # noqa: PLC0415
+
+        if _persona_dir(persona, cwd) is None:
+            return "", ()
+        config, _soul = load_persona(persona, cwd=cwd)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("persona traits unavailable for %r: %s", persona, exc)
+        return "", ()
+    banned = tuple(str(p) for p in (getattr(config, "banned_phrases", None) or []) if str(p).strip())
+    return str(getattr(config, "tone", "") or ""), banned
 
 
 def load_soul_content() -> str:
@@ -150,16 +258,21 @@ def load_soul_content() -> str:
 
 
 def _condense_soul(raw: str, has_rich_soul: bool, source: str = "") -> str:
-    """Turn a SOUL source into the chat identity prompt string.
+    """Turn a resolved identity source into the chat identity prompt string.
 
-    A user-authored soul (``~/.navig/workspace/SOUL.md``) is an explicit
-    customization, so it wins verbatim — bounded to ``_MAX_SOUL_CHARS`` — even in
-    the rich tier; otherwise ``navig agent soul edit`` would silently do nothing.
-    The shipped package default injects the hand-tuned ``_RICH_IDENTITY`` constant
-    (the full SOUL.default.md doc is too long to send every turn). Anything else
-    falls back to the raw text, truncated.
+    A human-authored identity — a persona, a space, a folder-space,
+    ``IDENTITY.md`` or ``~/.navig/workspace/SOUL.md`` — is an explicit
+    customization, so it wins verbatim (bounded to ``_MAX_SOUL_CHARS``) even in
+    the rich tier; otherwise ``navig agent soul edit`` and ``/persona`` would
+    silently do nothing. The shipped package default injects the hand-tuned
+    ``_RICH_IDENTITY`` constant (the full SOUL.default.md doc is too long to send
+    every turn). Anything else falls back to the raw text, truncated.
+
+    Whichever branch wins, only *identity* is produced here — the operating rules
+    come from :mod:`navig.agent.conv.guardrails` and cannot be replaced by any of
+    these sources.
     """
-    if source == "workspace" and raw:
+    if source in _VERBATIM_SOURCES and raw:
         return raw if len(raw) <= _MAX_SOUL_CHARS else raw[:_MAX_SOUL_CHARS].rstrip() + "\n…"
     if has_rich_soul:
         return _RICH_IDENTITY
@@ -204,6 +317,11 @@ class SoulLoader:
         self._stop_poll: threading.Event = threading.Event()  # signals daemon to exit cleanly
         # Per-instance lru_cache so .cache_clear() is reachable on self
         self._build_condensed: Any = functools.lru_cache(maxsize=2)(self._condense_impl)
+        # Per-session identity resolution and assembled prompts. Bounded so a
+        # busy daemon can't grow them without limit; a miss is a recompute, never
+        # a wrong answer. Invalidated by the same file watcher as _build_condensed.
+        self._resolve_ctx: Any = functools.lru_cache(maxsize=32)(self._resolve_impl)
+        self._build_prompt: Any = functools.lru_cache(maxsize=64)(self._build_prompt_impl)
 
     # ── Internals ─────────────────────────────────────────────────────────────
 
@@ -244,8 +362,14 @@ class SoulLoader:
             raw, has_rich, source = await asyncio.to_thread(_scan_soul_files)
             self._raw, self._has_rich, self._source = raw, has_rich, source
             self._loaded = _condense_soul(raw, has_rich, source)
-            self._build_condensed.cache_clear()
+            self._invalidate()
             logger.info("SoulLoader: cache invalidated and soul reloaded.")
+
+    def _invalidate(self) -> None:
+        """Clear every derived cache. One place, so a new cache can't be forgotten."""
+        self._build_condensed.cache_clear()
+        self._resolve_ctx.cache_clear()
+        self._build_prompt.cache_clear()
 
     # ── Primary public API ────────────────────────────────────────────────────
 
@@ -259,13 +383,111 @@ class SoulLoader:
         self._start_watcher_once()
         return self._build_condensed(has_rich_soul)
 
+    def resolve(
+        self, *, persona: str = "", space: str = "", cwd: Path | None = None
+    ) -> SoulContext:
+        """Resolve ONE session's identity: soul + persona traits + guardrails.
+
+        Cached on ``(persona, space, cwd)`` and invalidated by the file watcher,
+        so a long-lived session pays for this once. The result belongs to the
+        caller's agent instance — this loader must never be asked to hold
+        per-session state, or two chats in one daemon share an identity again.
+        """
+        self._start_watcher_once()
+        return self._resolve_ctx(persona or "", space or "", str(cwd) if cwd else "")
+
+    def _resolve_impl(self, persona: str, space: str, cwd_str: str) -> SoulContext:
+        from navig.agent.conv.budget import apply_budget  # noqa: PLC0415
+        from navig.agent.conv.guardrails import guardrail_block, load_guardrails_extra
+        from navig.personas.soul_loader import resolve_soul  # noqa: PLC0415
+
+        cwd = Path(cwd_str) if cwd_str else None
+        res = resolve_soul(persona or None, space or None, cwd)
+
+        # Budget the raw identity BEFORE condensation so an oversized source is
+        # attributed rather than silently clipped. The condensed string keeps its
+        # historical shape; the warning travels separately.
+        _injected, report = apply_budget(
+            [(res.source or "identity", str(res.path or ""), res.raw)],
+            per_file_max=_MAX_SOUL_CHARS,
+            total_max=_TOTAL_IDENTITY_MAX_CHARS,
+        )
+
+        extra, _paths = load_guardrails_extra(cwd)
+        tone, banned = _persona_traits(persona, cwd)
+
+        return SoulContext(
+            condensed=_condense_soul(res.raw, res.source in _RICH_SOURCES, res.source),
+            source=res.source,
+            path=res.path,
+            revision=res.revision,
+            persona=res.persona,
+            tone=tone,
+            banned_phrases=banned,
+            guardrails=guardrail_block(extra),
+            truncation_note=report.prompt_note(),
+            shadowed=tuple((s.tag, str(s.path)) for s in res.shadowed),
+        )
+
+    def build_prompt(
+        self,
+        ctx: SoulContext,
+        *,
+        lang_instruction: str = "",
+        awareness: str = "",
+        capabilities: str = "",
+    ) -> str:
+        """Memoised :meth:`build_system_prompt` for a resolved :class:`SoulContext`.
+
+        Every argument is stable within a session, so the common case is a dict
+        hit and the assembled bytes are provably identical turn over turn.
+        """
+        return self._build_prompt(
+            ctx.cache_key,
+            ctx.condensed,
+            ctx.truncation_note,
+            ctx.banned_phrases,
+            lang_instruction,
+            awareness,
+            capabilities,
+        )
+
+    def _build_prompt_impl(
+        self,
+        cache_key: tuple[str, ...],
+        condensed: str,
+        truncation_note: str,
+        banned_phrases: tuple[str, ...],
+        lang_instruction: str,
+        awareness: str,
+        capabilities: str,
+    ) -> str:
+        _revision, _source, _persona, tone, guardrails = cache_key
+        return self.build_system_prompt(
+            soul=condensed,
+            lang_instruction=lang_instruction,
+            awareness=awareness,
+            capabilities=capabilities,
+            guardrails=guardrails,
+            tone=tone,
+            banned_phrases=banned_phrases,
+            truncation_note=truncation_note,
+        )
+
     # ── Backward-compat surface ───────────────────────────────────────────────
 
     def override(self, content: str) -> None:
-        """Inject pre-loaded condensed content, bypassing disk I/O."""
+        """Inject pre-loaded condensed content, bypassing disk I/O.
+
+        ⚠ This loader is a **process-wide singleton**, so an override is global:
+        it changes the identity of every session in the daemon. It exists for the
+        single-agent CLI path and for tests. A per-session identity must go
+        through :meth:`resolve` and live on the agent instance — routing a chat
+        through here is how every Telegram user ended up sharing one soul.
+        """
         self._loaded = content
         self._raw = content
-        self._build_condensed.cache_clear()
+        self._invalidate()
 
     @property
     def cached_content(self) -> str | None:
@@ -273,38 +495,115 @@ class SoulLoader:
         return self._loaded
 
     def build_system_prompt(
-        self, soul: str, lang_instruction: str, awareness: str, capabilities: str = ""
+        self,
+        soul: str,
+        lang_instruction: str,
+        awareness: str,
+        capabilities: str = "",
+        *,
+        guardrails: str = "",
+        tone: str = "",
+        banned_phrases: Sequence[str] | None = None,
+        truncation_note: str = "",
     ) -> str:
-        """Assemble system prompt with labelled sections so the LLM can parse boundaries cleanly.
+        """Assemble the STABLE system prompt, labelled so the LLM parses boundaries cleanly.
 
-        Section order: language instruction → ## Session Context → ## Who You Are
-        → ## What You Can Do → ## How to Talk
+        Section order — safety first, then identity, and nothing volatile at all::
+
+            ## Operating Rules  →  ## Who You Are  →  ## What You Can Do
+            →  ## How to Talk   →  <language>      →  ## Session Context
+
+        Every section must be byte-identical for the life of a session. The clock,
+        matched skills and recalled facts are query- or time-specific and ride the
+        USER turn instead (see ``ConversationalAgent.run_agentic``) — appending
+        them here would invalidate the tools+system prompt cache every turn.
+
+        *guardrails* is the ``## Operating Rules`` block. Passing ``""`` does not
+        omit it: it falls back to the compiled-in floor, so a caller that forgets
+        the kwarg still gets a guarded agent.
 
         *capabilities* is the live, registry-generated summary of the agent's real
         tools; when present it gives the model an accurate inventory so — when
         asked what it can do — it describes its true breadth instead of
         improvising a narrow list. Blank on the tool-less single-shot path.
+
+        *tone* and *banned_phrases* come from the active persona and extend (never
+        replace) the house chat rules.
         """
+        return "\n\n".join(
+            body
+            for _header, body in self.system_prompt_sections(
+                soul,
+                lang_instruction,
+                awareness,
+                capabilities,
+                guardrails=guardrails,
+                tone=tone,
+                banned_phrases=banned_phrases,
+                truncation_note=truncation_note,
+            )
+        )
+
+    def system_prompt_sections(
+        self,
+        soul: str,
+        lang_instruction: str = "",
+        awareness: str = "",
+        capabilities: str = "",
+        *,
+        guardrails: str = "",
+        tone: str = "",
+        banned_phrases: Sequence[str] | None = None,
+        truncation_note: str = "",
+    ) -> list[tuple[str, str]]:
+        """The system prompt as ``(header, body)`` pairs, in emission order.
+
+        :meth:`build_system_prompt` is just ``"\\n\\n".join`` over the bodies. The
+        structured form exists so ``navig agent context`` can size each section
+        exactly — re-splitting the assembled string on blank lines would cut
+        *inside* an identity body, which itself contains ``##`` sub-headings.
+        """
+        from navig.agent.conv.guardrails import (  # noqa: PLC0415
+            SOUL_DEMOTION_NOTE,
+            guardrail_block,
+        )
+
         identity = soul if soul else _FALLBACK_IDENTITY
-        sections: list[str] = []
-        if lang_instruction:
-            sections.append(lang_instruction)
-        if awareness:
-            sections.append(f"## Session Context\n{awareness}")
+        sections: list[tuple[str, str]] = [
+            ("## Operating Rules", guardrails or guardrail_block())
+        ]
+
         if identity:
-            sections.append(f"## Who You Are\n{identity}")
+            who = f"## Who You Are\n{SOUL_DEMOTION_NOTE}\n\n{identity}"
+            if truncation_note:
+                who = f"{who}\n\n{truncation_note}"
+            sections.append(("## Who You Are", who))
         if capabilities:
             sections.append(
-                "## What You Can Do\n"
-                "These are your REAL, working tools right now — not a wishlist. Use them to "
-                "actually get things done, and when the operator asks what you can do, "
-                "describe this real breadth accurately: don't undersell yourself, and never "
-                "claim abilities that aren't listed here.\n"
-                f"{capabilities}"
+                (
+                    "## What You Can Do",
+                    "## What You Can Do\n"
+                    "These are your REAL, working tools right now — not a wishlist. Use them to "
+                    "actually get things done, and when the operator asks what you can do, "
+                    "describe this real breadth accurately: don't undersell yourself, and never "
+                    "claim abilities that aren't listed here.\n"
+                    f"{capabilities}",
+                )
             )
-        if _CHAT_RULES:
-            sections.append(f"## How to Talk\n{_CHAT_RULES}")
-        return "\n\n".join(sections)
+        talk = _CHAT_RULES
+        if tone_line := _TONE_GUIDANCE.get((tone or "").strip().lower(), ""):
+            talk = f"{talk}- {tone_line}\n"
+        if banned_phrases:
+            joined = ", ".join(f"'{p}'" for p in banned_phrases if str(p).strip())
+            if joined:
+                talk = f"{talk}- NEVER say: {joined}.\n"
+        if talk:
+            sections.append(("## How to Talk", f"## How to Talk\n{talk}"))
+        if lang_instruction:
+            sections.append(("<language>", lang_instruction))
+        if awareness:
+            sections.append(("## Session Context", f"## Session Context\n{awareness}"))
+        return sections
 
     def build_minimal_prompt(self, lang_instruction: str = "", capabilities: str = "") -> str:
         """Slim system prompt for short chat-feel messages.
@@ -321,9 +620,15 @@ class SoulLoader:
         detect the question. It's guarded "only when asked" so greetings stay
         greetings.
 
+        The one-line guardrail floor rides along: this path used to ship
+        completely unguarded, and a short turn is exactly where a jailbreak is
+        cheapest to attempt.
+
         Used when the conv-agent classifies a turn as ``_short_chat``.
         """
-        lines: list[str] = []
+        from navig.agent.conv.guardrails import guardrail_floor_minimal  # noqa: PLC0415
+
+        lines: list[str] = [guardrail_floor_minimal()]
         if lang_instruction:
             lines.append(lang_instruction)
         lines.append(
@@ -403,7 +708,7 @@ class SoulLoader:
                 last_mtime = mtime
                 # Synchronous reload — no event loop required in this daemon thread.
                 self._sync_load()
-                self._build_condensed.cache_clear()
+                self._invalidate()
                 logger.info("SoulLoader: soul reloaded (poll fallback).")
 
 

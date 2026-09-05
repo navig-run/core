@@ -17,6 +17,8 @@ import types
 
 import pytest
 
+from tests.fixtures.module_eviction import evicted_modules
+
 
 def _build_app():
     pytest.importorskip("aiohttp")
@@ -68,22 +70,23 @@ async def test_transcribe_degrades_without_navig_audio(monkeypatch):
             return None
 
     monkeypatch.setattr(sys, "meta_path", [_Blocker(), *sys.meta_path])
-    for mod in list(sys.modules):
-        if mod == "navig.voice" or mod.startswith("navig.voice.") or mod.startswith("navig_audio"):
-            monkeypatch.delitem(sys.modules, mod, raising=False)
+    # Everything the simulated uninstall has to hide. `evicted_modules` restores the
+    # originals AND drops whatever is imported inside, which a hand-rolled
+    # `monkeypatch.delitem` loop cannot do — see its module docstring for the orphaned
+    # module that reddened an unrelated file for four pre-push runs (#1109).
+    with evicted_modules(monkeypatch, ("navig.voice", "navig_audio")):
+        from aiohttp import web
 
-    from aiohttp import web
+        from navig.gateway.routes import voice
 
-    from navig.gateway.routes import voice
+        app = web.Application()
+        gw = types.SimpleNamespace(config=types.SimpleNamespace(auth_token=None))
+        voice.register(app, gw)
 
-    app = web.Application()
-    gw = types.SimpleNamespace(config=types.SimpleNamespace(auth_token=None))
-    voice.register(app, gw)
-
-    async with TestClient(TestServer(app)) as client:
-        form = {"audio": b"\x00\x01", "is_voice": "false"}
-        resp = await client.post("/api/voice/transcribe", data=form)
-        assert resp.status == 503
-        body = await resp.json()
-        assert body.get("error_code") == "plugin_required"
-        assert "navig-audio" in str(body).lower()
+        async with TestClient(TestServer(app)) as client:
+            form = {"audio": b"\x00\x01", "is_voice": "false"}
+            resp = await client.post("/api/voice/transcribe", data=form)
+            assert resp.status == 503
+            body = await resp.json()
+            assert body.get("error_code") == "plugin_required"
+            assert "navig-audio" in str(body).lower()

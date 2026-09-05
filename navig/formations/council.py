@@ -38,6 +38,9 @@ logger = get_debug_logger()
 
 # Timeout per agent AI call (seconds)
 AGENT_TIMEOUT_S = float(os.environ.get("NAVIG_COUNCIL_TIMEOUT", "30"))
+#: Slack added to the per-agent timeout for the whole-round ``as_completed`` budget, so a
+#: straggler gets a little longer than a lone agent before the round gives up on it.
+_ROUND_BUDGET_BUFFER_S = 5.0
 MAX_ROUNDS = 5
 
 # Failure classes that trigger the one-shot default-provider retry (for both
@@ -396,22 +399,28 @@ def run_council(
 
         # ── PARALLEL execution: all agents in a round run simultaneously ──
         if agents_to_call:
-            with ThreadPoolExecutor(max_workers=len(agents_to_call)) as executor:
-                future_map = {
-                    executor.submit(
-                        _call_agent,
-                        agent,
-                        question,
-                        previous_context,
-                        round_num,
-                        other_str,
-                        fallback_warned,
-                    ): agent.id
-                    for agent, other_str in agents_to_call
-                }
+            # NOT a `with` block: ThreadPoolExecutor.__exit__ calls shutdown(wait=True),
+            # which JOINS the workers — so a hung agent that blew the `as_completed` budget
+            # below would wedge the whole round past the budget (and then crash it with the
+            # very TimeoutError as_completed raised). shutdown(wait=False) in the finally
+            # abandons the still-running agent thread instead (Python can't force-kill it).
+            executor = ThreadPoolExecutor(max_workers=len(agents_to_call))
+            future_map = {
+                executor.submit(
+                    _call_agent,
+                    agent,
+                    question,
+                    previous_context,
+                    round_num,
+                    other_str,
+                    fallback_warned,
+                ): agent.id
+                for agent, other_str in agents_to_call
+            }
 
-                results_by_id: dict[str, dict[str, Any]] = {}
-                for future in as_completed(future_map, timeout=timeout + 5):
+            results_by_id: dict[str, dict[str, Any]] = {}
+            try:
+                for future in as_completed(future_map, timeout=timeout + _ROUND_BUDGET_BUFFER_S):
                     agent_id = future_map[future]
                     try:
                         result = future.result(timeout=timeout)
@@ -441,11 +450,35 @@ def run_council(
                     # Live progress: each agent surfaces the moment it lands
                     # (completion order), while the result keeps declared order.
                     _emit_agent_response(round_num, results_by_id[agent_id])
+            except (FuturesTimeout, TimeoutError):
+                # The whole-round budget elapsed with agents still running — mark the
+                # stragglers [TIMEOUT] and finish the round gracefully (the executor is
+                # torn down without waiting in the finally below).
+                for agent_id in future_map.values():
+                    if agent_id in results_by_id:
+                        continue
+                    agent = formation.loaded_agents.get(agent_id)
+                    logger.warning(
+                        "[COUNCIL] Agent '%s' did not finish within the round budget (%ss)",
+                        agent_id,
+                        timeout + _ROUND_BUDGET_BUFFER_S,
+                    )
+                    results_by_id[agent_id] = {
+                        "agent": agent_id,
+                        "name": agent.name if agent else agent_id,
+                        "role": agent.role if agent else "unknown",
+                        "response": "[TIMEOUT]",
+                        "confidence": 0.0,
+                        "duration_ms": int((timeout + _ROUND_BUDGET_BUFFER_S) * 1000),
+                    }
+                    _emit_agent_response(round_num, results_by_id[agent_id])
+            finally:
+                executor.shutdown(wait=False)
 
-                # Preserve original agent ordering
-                for agent, _ in agents_to_call:
-                    if agent.id in results_by_id:
-                        round_responses.append(results_by_id[agent.id])
+            # Preserve original agent ordering
+            for agent, _ in agents_to_call:
+                if agent.id in results_by_id:
+                    round_responses.append(results_by_id[agent.id])
 
         all_rounds.append(
             {
@@ -561,22 +594,29 @@ As {default_agent.name}, wrap this up. Highlight where the team AGREED and where
     def _synthesize(model_spec: str | None = None) -> str:
         if _ask_ai is None:
             raise ImportError("navig.ai.ask_ai_with_context not available")
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            if model_spec:
-                future = executor.submit(
-                    _ask_ai,
-                    synthesis_prompt,
-                    system_prompt=default_agent.system_prompt,
-                    model=model_spec,
-                )
-            else:
-                # Plain seam — no ``model=`` kwarg (backward-compatible fakes).
-                future = executor.submit(
-                    _ask_ai,
-                    synthesis_prompt,
-                    system_prompt=default_agent.system_prompt,
-                )
+        # NOT a `with` block: ThreadPoolExecutor.__exit__ calls shutdown(wait=True), which
+        # JOINS the worker — so a hung synthesis call would wedge the council past the cap
+        # despite the timeout. Shut down without waiting (a Python thread can't be
+        # force-killed) so the timeout is honoured.
+        executor = ThreadPoolExecutor(max_workers=1)
+        if model_spec:
+            future = executor.submit(
+                _ask_ai,
+                synthesis_prompt,
+                system_prompt=default_agent.system_prompt,
+                model=model_spec,
+            )
+        else:
+            # Plain seam — no ``model=`` kwarg (backward-compatible fakes).
+            future = executor.submit(
+                _ask_ai,
+                synthesis_prompt,
+                system_prompt=default_agent.system_prompt,
+            )
+        try:
             return future.result(timeout=timeout) or "[No synthesis generated]"
+        finally:
+            executor.shutdown(wait=False)
 
     try:
         return {"final_decision": _synthesize()}

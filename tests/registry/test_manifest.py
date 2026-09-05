@@ -5,10 +5,12 @@ Tests for navig.registry.manifest — pure helper functions.
 import pytest
 
 from navig.registry.manifest import (
+    _entry_from_command,
     _extract_arguments,
     _extract_options,
     _first_line,
     _prefer_new_entry,
+    build_public_manifest,
     deprecations_report,
     render_markdown,
     topic_index_from_manifest,
@@ -62,6 +64,68 @@ def test_prefer_new_entry_no_explicit_meta_over_explicit_returns_false():
     new = {"_has_explicit_meta": False, "summary": "x" * 100}
     current = {"_has_explicit_meta": True, "summary": "short"}
     assert _prefer_new_entry(new, current) is False
+
+
+# ---------------------------------------------------------------------------
+# `since` is authoritative-or-empty — never the build version
+#
+# Regression: a meta-less command used to be stamped with the current
+# navig.__version__, so `generated/commands.json` churned `since` on ~1300 rows
+# every version bump and the CI freshness gate (git diff --exit-code) was
+# permanently red — it could only pass on a manifest regenerated at the exact
+# committed version. A meta-less command's `since` must be "" and STABLE.
+# ---------------------------------------------------------------------------
+
+
+def _fake_command(handler_name: str, path: str):
+    """A Typer-command dict shaped like _iter_typer_commands yields, with no meta."""
+    def cb():  # a plain callback carries no @command_meta
+        """Does a thing."""
+
+    cb.__name__ = handler_name
+    cb.__qualname__ = f"tests.{handler_name}"
+    cb.__module__ = "tests.registry.fake"
+    return {"path": path, "callback": cb, "help": None}
+
+
+def test_meta_less_command_since_is_empty_not_build_version():
+    entry = _entry_from_command(_fake_command("do_thing", "navig fake do-thing"))
+    assert entry["since"] == "", (
+        "a command with no @command_meta must have since='' — stamping the build "
+        "version is the bug that kept the manifest freshness gate red"
+    )
+
+
+def test_meta_less_since_is_stable_when_navig_version_changes(monkeypatch):
+    """The whole point: the value must not move when __version__ moves."""
+    import navig
+
+    monkeypatch.setattr(navig, "__version__", "9.9.9", raising=False)
+    entry = _entry_from_command(_fake_command("do_thing", "navig fake do-thing"))
+    assert entry["since"] == "", "since must be independent of navig.__version__"
+
+
+def test_real_manifest_carries_no_build_version_in_since():
+    """The committed manifest must never stamp since with the running version."""
+    import navig
+
+    manifest = build_public_manifest(validate=False)
+    polluted = [c["path"] for c in manifest["commands"] if c.get("since") == navig.__version__]
+    assert not polluted, (
+        f"{len(polluted)} command(s) have since == the current version "
+        f"({navig.__version__}) — the __version__ fallback has returned. "
+        f"First few: {polluted[:5]}"
+    )
+
+
+def test_explicit_meta_since_is_preserved():
+    """A declared since (e.g. @command_meta(since='2.4.18')) must survive untouched."""
+    manifest = build_public_manifest(validate=False)
+    by_path = {c["path"]: c for c in manifest["commands"]}
+    # navig db query declares since='2.4.18' in navig/commands/db.py
+    row = by_path.get("navig db query")
+    if row is not None:
+        assert row["since"] == "2.4.18"
 
 
 # ---------------------------------------------------------------------------

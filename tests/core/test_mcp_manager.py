@@ -130,31 +130,35 @@ class TestMCPServerStop:
     def _make_running_server(self) -> MCPServer:
         s = MCPServer("srv", {"command": "echo", "args": [], "env": {}})
         mock_proc = MagicMock()
-        mock_proc.poll.return_value = None  # running
+        # poll() -> None means running. The first call is stop()'s own entry guard; after the
+        # kill the process reports an exit code, because a mock that NEVER dies does not model
+        # a process being stopped — it models one that RESISTED, and stop() must say so (see
+        # TestMCPServerStopIsHonest). The old fixture returned None forever and still asserted
+        # True, which is precisely the phantom-success this class now guards against.
+        mock_proc.poll.side_effect = [None] + [0] * 20
         mock_proc.pid = 42
         s.process = mock_proc
         return s
 
     def test_stop_running_returns_true(self):
         s = self._make_running_server()
-        result = s.stop()
-        assert result is True
-        s.process.terminate.assert_called_once()
+        # The tree kill is patched out on purpose: it resolves proc.pid against the REAL
+        # process table, and pid 42 could belong to something on this machine whose children
+        # a unit test must never kill. Its behaviour is covered against real processes in
+        # tests/core/test_aio_subprocess.py.
+        with patch("navig.mcp_manager.terminate_process_tree_sync"):
+            assert s.stop() is True
 
     def test_stop_not_running_returns_true(self):
         s = MCPServer("s", {})
         result = s.stop()
         assert result is True
 
-    def test_stop_force_kills_on_timeout(self):
-        import subprocess
-
-        s = self._make_running_server()
-        # First call wait(timeout=5) raises; second call wait() (after kill) succeeds
-        s.process.wait.side_effect = [subprocess.TimeoutExpired(cmd="echo", timeout=5), None]
-        result = s.stop()
-        assert result is True
-        s.process.kill.assert_called_once()
+    # NOTE: `test_stop_force_kills_on_timeout` was removed here, not dropped. It asserted that
+    # stop() escalated terminate() -> kill() itself; that escalation now lives inside
+    # aio_subprocess.terminate_process_tree_sync (which also sweeps the descendants first, the
+    # whole point of the change) and is tested there against real processes. That stop() hands
+    # the process to it is asserted by TestMCPServerStopIsHonest.
 
 
 # ─── MCPManager ───────────────────────────────────────────────────────────────
@@ -341,3 +345,49 @@ class TestMCPManagerSearchDirectory:
         mgr = MCPManager(config_dir=tmp_mcp_dir)
         result = mgr.search_directory("zzz_no_match_xyzzy_9999")
         assert isinstance(result, list)
+
+
+class TestMCPServerStopIsHonest:
+    """`stop()` must report what is TRUE, not what it attempted.
+
+    It used to print "stopped" the moment ``wait()`` returned — which on Windows happens as
+    soon as the cmd.exe wrapper dies, whether or not the actual server (node, under `npx`) did.
+    A stop that returns True over a live server then sends ``restart()`` on to start a second
+    one on top of the orphan.
+    """
+
+    def _server_with_process(self, *, alive_after_stop: bool) -> MCPServer:
+        s = MCPServer("s", {"type": "npm", "enabled": True})
+        proc = MagicMock()
+        proc.pid = 4321
+        # poll() -> None means running. Alive before the stop; after it, per the scenario.
+        proc.poll.side_effect = [None] + [None if alive_after_stop else 0] * 20
+        s.process = proc
+        return s
+
+    def test_stop_returns_false_when_the_server_survives(self):
+        s = self._server_with_process(alive_after_stop=True)
+        with patch("navig.mcp_manager.terminate_process_tree_sync"):
+            assert s.stop() is False, "reported a successful stop over a still-running server"
+
+    def test_stop_returns_true_when_the_server_is_really_gone(self):
+        s = self._server_with_process(alive_after_stop=False)
+        with patch("navig.mcp_manager.terminate_process_tree_sync"):
+            assert s.stop() is True
+
+    def test_stop_kills_the_tree_not_just_the_pid(self):
+        """The whole point: an `npx` server's real process is a CHILD of the pid we hold."""
+        s = self._server_with_process(alive_after_stop=False)
+        with patch("navig.mcp_manager.terminate_process_tree_sync") as tree_kill:
+            s.stop()
+        tree_kill.assert_called_once()
+        assert tree_kill.call_args.args[0] is s.process
+
+    def test_restart_does_not_start_a_second_server_when_stop_failed(self):
+        s = self._server_with_process(alive_after_stop=True)
+        with (
+            patch("navig.mcp_manager.terminate_process_tree_sync"),
+            patch.object(MCPServer, "start", autospec=True) as start,
+        ):
+            assert s.restart() is False
+        start.assert_not_called()

@@ -7,7 +7,6 @@ plus the manifest hashing.
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 
@@ -138,3 +137,105 @@ def test_deploy_skips_upload_when_no_buckets(out_dir, monkeypatch):
 def test_deploy_missing_out_dir_raises(tmp_path):
     with pytest.raises(ld.DeployError, match="build output"):
         dd.deploy(tmp_path / "nope", token="tok")
+
+
+# ── `_headers` is applied, not published (regression) ────────────────────────
+# `_headers` is Cloudflare's header-rules format. Uploaded as an ordinary asset it
+# does NOT apply — it just publishes the security policy at `/_headers` as
+# application/octet-stream. That is what this deployment did: the live deck served
+# NO CSP, NO HSTS and NO X-Frame-Options at all (verified with `curl -D -`), while
+# the file sat in the repo looking authoritative. The rules are now compiled into
+# the shim Worker, and the file is kept out of the upload.
+
+import json as _json
+
+from navig.cloud.deck_deploy import (
+    _ASSET_CONFIG_FILES,
+    build_assets_worker,
+    build_manifest,
+    parse_headers_file,
+)
+
+_SAMPLE = """\
+# a comment
+/*
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  Content-Security-Policy: default-src 'self'; connect-src 'self' https://*.workers.dev
+
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/connect
+  Cache-Control: no-store
+  Referrer-Policy: no-referrer
+"""
+
+
+def test_parse_headers_file_reads_patterns_and_headers():
+    rules = parse_headers_file(_SAMPLE)
+    assert [pat for pat, _ in rules] == ["/*", "/_next/static/*", "/connect"]
+    assert rules[0][1]["X-Frame-Options"] == "SAMEORIGIN"
+    # A value containing ':' and ';' must survive intact — a CSP is mostly punctuation.
+    assert rules[0][1]["Content-Security-Policy"].startswith("default-src 'self';")
+    assert "https://*.workers.dev" in rules[0][1]["Content-Security-Policy"]
+    assert rules[2][1] == {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+
+
+def test_parse_headers_file_ignores_junk_rather_than_guessing():
+    assert parse_headers_file("") == []
+    assert parse_headers_file("# only a comment\n") == []
+    # A header line with no pattern above it has nothing to attach to.
+    assert parse_headers_file("  X-Frame-Options: DENY\n") == []
+    # A pattern with no headers is not a rule.
+    assert parse_headers_file("/*\n\n/other\n  A: b\n") == [("/other", {"A": "b"})]
+
+
+def test_headers_file_is_not_uploaded_as_an_asset(tmp_path):
+    (tmp_path / "index.html").write_text("<html></html>", encoding="utf-8")
+    (tmp_path / "_headers").write_text(_SAMPLE, encoding="utf-8")
+    manifest, _files = build_manifest(tmp_path)
+    assert "/index.html" in manifest
+    assert "/_headers" not in manifest, (
+        "uploading _headers publishes the security policy at its own URL without "
+        "applying it — that is the bug this guards"
+    )
+    assert "/_headers" in _ASSET_CONFIG_FILES
+
+
+def test_worker_carries_the_rules_and_a_missing_file_is_not_fatal(tmp_path):
+    (tmp_path / "_headers").write_text(_SAMPLE, encoding="utf-8")
+    script = build_assets_worker(tmp_path).decode("utf-8")
+    assert "X-Frame-Options" in script and "SAMEORIGIN" in script
+    # Rules are embedded as JSON, in file order, so a later rule can override.
+    raw = script.split("const HEADER_RULES = ", 1)[1].split(";\n", 1)[0]
+    rules = _json.loads(raw)
+    assert len(rules) == 3
+    assert rules[0][1]["X-Frame-Options"] == "SAMEORIGIN"
+    assert rules[-1][1]["Referrer-Policy"] == "no-referrer"
+
+    # No _headers at all: still a valid Worker, just with no rules.
+    empty = build_assets_worker(tmp_path / "nope")
+    assert b"const HEADER_RULES = []" in empty
+    assert b"env.ASSETS.fetch" in empty
+
+
+def test_patterns_compile_to_anchored_regexes_that_do_not_over_match(tmp_path):
+    """A wildcard must not turn into 'matches everything' — the unsafe direction."""
+    (tmp_path / "_headers").write_text(_SAMPLE, encoding="utf-8")
+    script = build_assets_worker(tmp_path).decode("utf-8")
+    raw = script.split("const HEADER_RULES = ", 1)[1].split(";\n", 1)[0]
+    rules = _json.loads(raw)
+    patterns = {r[0] for r in rules}
+    assert all(p.startswith("^") and p.endswith("$") for p in patterns)
+
+    import re as _re
+
+    static = next(p for p, h in rules if "Cache-Control" in h and "immutable" in h["Cache-Control"])
+    assert _re.match(static, "/_next/static/chunks/a.js")
+    assert not _re.match(static, "/connect")
+    assert not _re.match(static, "/_next/other/a.js")
+
+    exact = next(p for p, h in rules if h.get("Referrer-Policy") == "no-referrer")
+    assert _re.match(exact, "/connect")
+    assert not _re.match(exact, "/connect/extra"), "an exact pattern must not match a prefix"

@@ -642,11 +642,11 @@ def quick_remove(
         actions = load_yaml_for_update(quick_file)
     except ConfigReadError as exc:
         ch.error(f"quick_actions.yaml is unreadable — refusing to modify it: {exc}")
-        return
+        raise typer.Exit(1) from exc
 
     if name not in actions:
         ch.error(f"Quick action '{name}' not found.")
-        return
+        raise typer.Exit(2)
 
     del actions[name]
     atomic_write_yaml(actions, quick_file)

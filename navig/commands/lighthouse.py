@@ -280,12 +280,20 @@ def run_lighthouse_deploy(
 
     Returns ``(DeployResult, webhook_url_or_None, webhook_error_or_None)``.
     """
+    from navig import console_helper as ch
     from navig.cloud import lighthouse_deploy as ld
 
     # The token must live in the vault — persist before the network call so a
     # later `redeploy` / restart runs unattended even if this deploy fails.
-    if persist_token:
-        persist_cf_token(token)
+    if persist_token and not persist_cf_token(token):
+        # The comment above is a PROMISE: the token is vaulted so a later redeploy or a
+        # restart runs unattended. persist_cf_token() is best-effort and says so, but a
+        # silent False breaks that promise quietly — the operator finds out weeks later,
+        # when the unattended path asks for a token it was told it already had.
+        ch.warning(
+            "Could not store the Cloudflare token in the vault — this deploy continues, "
+            "but a later `navig lighthouse redeploy` will need --token again."
+        )
 
     result = ld.deploy(
         token=token, account_id=account_id, worker_name=worker_name, fresh=fresh
@@ -513,12 +521,33 @@ def _bundled_worker_version() -> str:
 
 
 def _deployed_worker_version(url: str) -> str:
-    """The version the live edge reports at ``GET /`` (ground truth), or ""."""
+    """The version the live edge reports at ``GET /`` (ground truth), or "".
+
+    ⚠ The User-Agent is LOAD-BEARING. urllib sends ``Python-urllib/3.x`` by
+    default, and Cloudflare answers that with **403 Forbidden** in front of a
+    workers.dev edge — measured 2026-09-04, 0.09s, while curl against the same
+    URL returned 200 and the correct version. Because every caller treats "" as
+    "unknown", one 403 silently disabled THREE surfaces at once:
+
+      * ``navig lighthouse status``  -> always "edge v?"
+      * ``navig lighthouse version`` -> always "?"
+      * ``navig update``             -> ``if latest and deployed and ...`` can
+        never be true, so it NEVER offers to redeploy the edge.
+
+    That is the whole delivery path for an edge fix. ``LIGHTHOUSE_VERSION`` is
+    documented as "load-bearing, not cosmetic" precisely so users are told to
+    redeploy — and the comparison it feeds could not run at all, so no user
+    would ever have been told, whatever the version said.
+    """
     import json as _json
     import urllib.request as _ur
 
     try:
-        with _ur.urlopen(url.rstrip("/") + "/", timeout=5) as r:
+        req = _ur.Request(
+            url.rstrip("/") + "/",
+            headers={"User-Agent": "navig-lighthouse-version-check"},
+        )
+        with _ur.urlopen(req, timeout=5) as r:
             return str((_json.loads(r.read().decode("utf-8")) or {}).get("version") or "").strip()
     except Exception:  # noqa: BLE001
         return ""
@@ -608,6 +637,7 @@ def lighthouse_status() -> None:
     # addresses the tenant of a ROTATED deck.api_key, Telegram POSTs to a Durable
     # Object the brain never attached to; the edge queues every update and acks 202,
     # and the bot is 100% deaf while this command reports green. Say so, loudly.
+    stale_tenant = False
     try:
         from navig.telegram.updates import corrected_webhook_url
 
@@ -619,8 +649,24 @@ def lighthouse_status() -> None:
                 "cannot reply to anything."
             )
             ch.dim("            fix: restart the gateway (it self-heals), or `navig lighthouse redeploy`")
-    except Exception:  # noqa: BLE001 — status must never crash on a best-effort check
-        pass
+            stale_tenant = True
+    except Exception as exc:  # noqa: BLE001 — status must never crash on a best-effort check
+        # ...but "could not check" must never render as "checked and fine". This block
+        # exists because the bot can be 100% deaf while every other line above reads green;
+        # swallowing its failure silently restores exactly that condition. `navig doctor`'s
+        # copy of this same check already reports `COULD NOT VERIFY (...)` as a warn row —
+        # the two surfaces must not disagree about whether an unanswerable question is good
+        # news. Exit stays 0: nothing was proven broken, only unverified.
+        ch.warning(
+            f"Telegram:   could NOT verify the webhook tenant ({exc}) — if it is stale, the "
+            "bot is deaf and every line above still reads green."
+        )
+
+    # "Not configured" / "offline" are verified ANSWERS and stay at exit 0, but a stale
+    # tenant is a fault: the bot is deaf while every other line here reads green. Exiting
+    # non-zero is what lets `navig lighthouse status || navig lighthouse redeploy` work.
+    if stale_tenant:
+        raise typer.Exit(1)
 
 
 @app.command("disable")
@@ -650,3 +696,4 @@ def lighthouse_disable(
             ch.success("Worker deleted from Cloudflare." if existed else "Worker already gone.")
         except DeployError as exc:
             ch.error(f"Delete failed: {exc}")
+            raise typer.Exit(1) from exc

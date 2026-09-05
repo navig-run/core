@@ -11,8 +11,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -37,7 +35,6 @@ class TestTelegramPlan:
 
     def test_skip_action_when_no_token(self, tmp_path: Path) -> None:
         import navig.installer.modules.telegram as m
-        from navig.installer.contracts import ModuleState
         ctx = _ctx(tmp_path)
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("NAVIG_TELEGRAM_BOT_TOKEN", None)

@@ -7,7 +7,6 @@ group names, hidden flag, and deprecation_warning calls.
 
 from unittest.mock import patch
 
-import pytest
 import typer
 from typer.testing import CliRunner
 

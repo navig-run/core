@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -26,29 +27,110 @@ def _make_store(facts=None, stats_data=None, delete_ok=True):
 # ---------------------------------------------------------------------------
 
 
+def _ranked(fact_id: str, content: str, score: float = 0.9):
+    """A RankedFact-shaped stub — the retriever returns wrappers, not raw facts."""
+    fact = SimpleNamespace(
+        id=fact_id,
+        content=content,
+        category="preference",
+        tags=["ui"],
+        confidence=0.8,
+        created_at="2026-07-28T00:00:00Z",
+    )
+    return SimpleNamespace(fact=fact, combined_score=score)
+
+
+def _result(*ranked):
+    """A FactRetrievalResult-shaped stub: facts live on `.facts`, it is NOT iterable."""
+    return SimpleNamespace(facts=list(ranked), formatted="", token_estimate=0)
+
+
 class TestMemoryRetrieve:
     async def test_returns_empty_list_when_no_facts(self):
         with (
             patch("navig.mcp_server._memory_store", return_value=_make_store()),
             patch("navig.memory.fact_retriever.FactRetriever") as MockRetriever,
         ):
-            MockRetriever.return_value.retrieve.return_value = []
+            MockRetriever.return_value.retrieve.return_value = _result()
             from navig.mcp_server import memory_retrieve
 
             result = await memory_retrieve(query="anything")
         assert result == {"facts": []}
 
-    async def test_passes_limit_and_token_budget(self):
+    async def test_calls_retrieve_with_its_real_signature(self):
+        """`retrieve(query, category=None, max_tokens=None, config_override=None)`.
+
+        This assertion used to read
+        ``assert_called_once_with(query="q", limit=5, token_budget=500)`` — neither
+        `limit` nor `token_budget` is a parameter of `retrieve`, so it pinned a call
+        that raises TypeError against the real object. A plain MagicMock accepts any
+        keyword, so the test passed and certified a dead tool.
+        """
         with (
             patch("navig.mcp_server._memory_store", return_value=_make_store()),
             patch("navig.memory.fact_retriever.FactRetriever") as MockRetriever,
         ):
             instance = MockRetriever.return_value
-            instance.retrieve.return_value = []
+            instance.retrieve.return_value = _result()
             from navig.mcp_server import memory_retrieve
 
             await memory_retrieve(query="q", limit=5, token_budget=500)
-            instance.retrieve.assert_called_once_with(query="q", limit=5, token_budget=500)
+
+        instance.retrieve.assert_called_once_with("q", max_tokens=500)
+
+    async def test_the_asserted_call_is_accepted_by_the_real_retriever(self):
+        """Bind the assertion above to the real signature, so a rename fails here."""
+        import inspect
+
+        from navig.memory.fact_retriever import FactRetriever
+
+        inspect.signature(FactRetriever.retrieve).bind(
+            object(), "q", max_tokens=500
+        )  # raises TypeError if the call shape is wrong
+
+    async def test_limit_caps_the_returned_facts(self):
+        with (
+            patch("navig.mcp_server._memory_store", return_value=_make_store()),
+            patch("navig.memory.fact_retriever.FactRetriever") as MockRetriever,
+        ):
+            MockRetriever.return_value.retrieve.return_value = _result(
+                _ranked("a", "one"), _ranked("b", "two"), _ranked("c", "three")
+            )
+            from navig.mcp_server import memory_retrieve
+
+            result = await memory_retrieve(query="q", limit=2)
+
+        assert [f["id"] for f in result["facts"]] == ["a", "b"]
+
+    async def test_facts_are_serialised_from_the_wrapped_fact(self):
+        """`vars(RankedFact)` nests a dataclass and is not JSON-serialisable."""
+        import json
+
+        with (
+            patch("navig.mcp_server._memory_store", return_value=_make_store()),
+            patch("navig.memory.fact_retriever.FactRetriever") as MockRetriever,
+        ):
+            MockRetriever.return_value.retrieve.return_value = _result(
+                _ranked("a", "prefers dark mode")
+            )
+            from navig.mcp_server import memory_retrieve
+
+            result = await memory_retrieve(query="q")
+
+        assert result["facts"][0]["content"] == "prefers dark mode"
+        assert result["facts"][0]["score"] == 0.9
+        json.dumps(result)  # must be serialisable — an MCP tool returns JSON
+
+    async def test_a_result_without_facts_does_not_crash(self):
+        """An empty retrieval returns a result whose `.facts` may be falsy."""
+        with (
+            patch("navig.mcp_server._memory_store", return_value=_make_store()),
+            patch("navig.memory.fact_retriever.FactRetriever") as MockRetriever,
+        ):
+            MockRetriever.return_value.retrieve.return_value = SimpleNamespace(facts=None)
+            from navig.mcp_server import memory_retrieve
+
+            assert await memory_retrieve(query="q") == {"facts": []}
 
 
 # ---------------------------------------------------------------------------

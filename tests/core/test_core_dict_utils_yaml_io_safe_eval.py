@@ -4,8 +4,6 @@ Batch 78: navig/core/dict_utils.py, navig/core/yaml_io.py,
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -83,7 +81,6 @@ class TestTruncateOutput:
 
 class TestUtcNow:
     def test_returns_aware_datetime(self):
-        from datetime import timezone
         dt = utc_now()
         assert dt.tzinfo is not None
         assert dt.utcoffset().total_seconds() == 0

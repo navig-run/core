@@ -1,8 +1,6 @@
 """Hermetic unit tests for navig.core.model_routing."""
 from __future__ import annotations
 
-import pytest
-
 from navig.core.model_routing import (
     _coerce_bool,
     _coerce_int,

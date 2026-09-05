@@ -31,6 +31,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import random
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -46,6 +47,10 @@ SnapshotProvider = Callable[[], Awaitable[Optional[dict[str, Any]]]]
 
 _BACKOFF_INITIAL_S = 1.0
 _BACKOFF_MAX_S = 30.0
+# A connection must have stayed up at least this long to count as "stable" and reset
+# the backoff. A shorter one (a half-open edge that accepts the handshake then
+# immediately CLOSEs) keeps the backoff growing, so it can't cause a ~1/sec storm.
+_BACKOFF_STABLE_S = 10.0
 _CONNECT_TIMEOUT_S = 15.0
 # Keep the loopback dispatch comfortably under the edge's 30s reply timeout.
 _DISPATCH_TIMEOUT_S = 25.0
@@ -234,7 +239,14 @@ class UplinkClient:
         while not self._stop:
             try:
                 await self._connect_and_serve()
-                backoff = _BACKOFF_INITIAL_S
+                # Reset the backoff ONLY if the connection was actually stable. A
+                # half-open edge that accepts the handshake then immediately CLOSEs
+                # returns here "normally" too — resetting on that produced a ~1/sec
+                # reconnect storm. connected_at is set once the WS is up, so its age
+                # is how long we were online.
+                connected_at = self.state.connected_at
+                if connected_at is not None and (_now() - connected_at) >= _BACKOFF_STABLE_S:
+                    backoff = _BACKOFF_INITIAL_S
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
@@ -242,11 +254,24 @@ class UplinkClient:
                 logger.warning("lighthouse uplink dropped: %r", exc)
             if self._stop:
                 break
+            # The connection is down (clean close or error) and we're about to back
+            # off and retry. Reflect that honestly: `_connect_and_serve` leaves
+            # status pinned "online" and connected_at set after a CLEAN close (the
+            # `async for` just ends on a CLOSE frame), so snapshot() and — via #649 —
+            # CloudManager.status would report a live uplink over a dead socket for
+            # the whole backoff window (which #660 can grow to 30s). Downgrade a
+            # still-"online" status to "connecting" (the except path already set
+            # "error") and clear connected_at now that the #660 stability check above
+            # has consumed it, so "connected since" isn't stale while offline.
+            if self.state.status == "online":
+                self.state.status = "connecting"
+            self.state.connected_at = None
             # Dropped (clean close or error) and about to retry — report the
             # transition; the reporter debounces so brief blips don't notify.
             self._fire_connectivity("offline")
             self.state.reconnects += 1
-            await asyncio.sleep(backoff)
+            # Jitter the wait so many brains don't reconnect in lockstep (thundering herd).
+            await asyncio.sleep(backoff * random.uniform(0.5, 1.5))
             backoff = min(backoff * 2, _BACKOFF_MAX_S)
 
     async def _connect_and_serve(self) -> None:
@@ -303,7 +328,11 @@ class UplinkClient:
             self._inflight.add(task)
             task.add_done_callback(self._inflight.discard)
         elif t == "ping":
-            asyncio.create_task(self._send({"t": "pong"}))
+            # GC-safe like the req branch: a dropped pong is a missed keepalive,
+            # which the broker can read as a dead uplink and tear down.
+            task = asyncio.create_task(self._send({"t": "pong"}))
+            self._inflight.add(task)
+            task.add_done_callback(self._inflight.discard)
 
     async def _dispatch(self, frame: dict[str, Any]) -> None:
         rid = frame.get("id", "")

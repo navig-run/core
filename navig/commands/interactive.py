@@ -329,9 +329,6 @@ def show_webserver_menu(state: MenuState, standalone: bool = False) -> bool:
             ("1", "List Virtual Hosts"),
             ("2", "Test Configuration"),
             ("3", "Reload Webserver"),
-            ("4", "Restart Webserver"),
-            ("5", "View Access Logs"),
-            ("6", "View Error Logs"),
             ("0", "Back"),
         ]
 
@@ -347,12 +344,6 @@ def show_webserver_menu(state: MenuState, standalone: bool = False) -> bool:
                 execute_webserver_test_config(state)
             elif selection == "Reload Webserver":
                 execute_webserver_reload(state)
-            elif selection == "Restart Webserver":
-                execute_webserver_restart(state)
-            elif selection == "View Access Logs":
-                execute_webserver_access_logs(state)
-            elif selection == "View Error Logs":
-                execute_webserver_error_logs(state)
             else:
                 continue
 
@@ -415,83 +406,12 @@ def execute_webserver_reload(state: MenuState):
             f"[{COLORS['accent']}]Reloading webserver...[/{COLORS['accent']}]",
             spinner="dots",
         ):
-            webserver.reload_webserver({"host": state.active_host, "app": state.active_app})
+            webserver.reload_server({"host": state.active_host, "app": state.active_app})
         show_status("Webserver reloaded.", "success")
         state.history.add("navig webserver reload", "Reload webserver", True)
     except Exception as e:
         show_status(f"Failed to reload: {e}", "error")
         state.history.add("navig webserver reload", "Reload webserver", False)
-        raise
-
-
-def execute_webserver_restart(state: MenuState):
-    """Restart webserver."""
-    if not Confirm.ask(
-        f"[{COLORS['error']}]Restart webserver? (may cause brief downtime)[/{COLORS['error']}]",
-        default=False,
-    ):
-        show_status("Restart cancelled.", "info")
-        return
-
-    try:
-        with console.status(
-            f"[{COLORS['accent']}]Restarting webserver...[/{COLORS['accent']}]",
-            spinner="dots",
-        ):
-            webserver.restart_webserver({"host": state.active_host, "app": state.active_app})
-        show_status("Webserver restarted.", "success")
-        state.history.add("navig webserver restart", "Restart webserver", True)
-    except Exception as e:
-        show_status(f"Failed to restart: {e}", "error")
-        state.history.add("navig webserver restart", "Restart webserver", False)
-        raise
-
-
-def execute_webserver_access_logs(state: MenuState):
-    """View webserver access logs."""
-    lines = Prompt.ask(f"[{COLORS['action']}]Number of lines[/{COLORS['action']}]", default="50")
-
-    try:
-        webserver.view_logs(
-            {
-                "host": state.active_host,
-                "app": state.active_app,
-                "type": "access",
-                "lines": int(lines),
-            }
-        )
-        state.history.add(
-            f"navig webserver logs --type access --lines {lines}",
-            "View access logs",
-            True,
-        )
-    except Exception as e:
-        show_status(f"Failed to view logs: {e}", "error")
-        state.history.add("navig webserver logs --type access", "View access logs", False)
-        raise
-
-
-def execute_webserver_error_logs(state: MenuState):
-    """View webserver error logs."""
-    lines = Prompt.ask(f"[{COLORS['action']}]Number of lines[/{COLORS['action']}]", default="50")
-
-    try:
-        webserver.view_logs(
-            {
-                "host": state.active_host,
-                "app": state.active_app,
-                "type": "error",
-                "lines": int(lines),
-            }
-        )
-        state.history.add(
-            f"navig webserver logs --type error --lines {lines}",
-            "View error logs",
-            True,
-        )
-    except Exception as e:
-        show_status(f"Failed to view logs: {e}", "error")
-        state.history.add("navig webserver logs --type error", "View error logs", False)
         raise
 
 
@@ -558,10 +478,7 @@ def show_hestia_menu(state: MenuState, standalone: bool = False) -> bool:
 
         options = [
             ("1", "List users"),
-            ("2", "Show user details"),
-            ("3", "List domains"),
-            ("4", "Show domain details"),
-            ("5", "Show system info"),
+            ("2", "List domains"),
             ("0", "Back"),
         ]
 
@@ -574,24 +491,11 @@ def show_hestia_menu(state: MenuState, standalone: bool = False) -> bool:
                 return not standalone  # True for submenu, False for standalone
 
             if selection == "List users":
-                hestia.list_users({})
+                hestia.list_users_cmd({})
                 state.history.add("navig hestia users", "List HestiaCP users", True)
-            elif selection == "Show user details":
-                username = Prompt.ask(f"[{COLORS['action']}]Username[/{COLORS['action']}]")
-                if username:
-                    hestia.show_user({"username": username})
-                    state.history.add("navig hestia user", "Show HestiaCP user", True)
             elif selection == "List domains":
-                hestia.list_domains({})
+                hestia.list_domains_cmd(None, {})
                 state.history.add("navig hestia domains", "List HestiaCP domains", True)
-            elif selection == "Show domain details":
-                domain = Prompt.ask(f"[{COLORS['action']}]Domain[/{COLORS['action']}]")
-                if domain:
-                    hestia.show_domain({"domain": domain})
-                    state.history.add("navig hestia domain", "Show HestiaCP domain", True)
-            elif selection == "Show system info":
-                hestia.system_info({})
-                state.history.add("navig hestia info", "HestiaCP system info", True)
 
             console.print()
             Prompt.ask(
@@ -628,7 +532,6 @@ def show_template_menu(state: MenuState, standalone: bool = False) -> bool:
             ("2", "Enable template"),
             ("3", "Disable template"),
             ("4", "Show template info"),
-            ("5", "Run template"),
             ("0", "Back"),
         ]
 
@@ -656,13 +559,8 @@ def show_template_menu(state: MenuState, standalone: bool = False) -> bool:
             elif selection == "Show template info":
                 name = Prompt.ask(f"[{COLORS['action']}]Template name[/{COLORS['action']}]")
                 if name:
-                    template.info_template_cmd(name, {})
+                    template.show_template_cmd(name, {})
                     state.history.add("navig template info", "Template info", True)
-            elif selection == "Run template":
-                name = Prompt.ask(f"[{COLORS['action']}]Template name[/{COLORS['action']}]")
-                if name:
-                    template.run_template_cmd(name, {})
-                    state.history.add("navig template run", "Run template", True)
 
             console.print()
             Prompt.ask(
@@ -697,12 +595,9 @@ def show_assistant_menu(state: MenuState, standalone: bool = False) -> bool:
         options = [
             ("1", "Show status"),
             ("2", "Analyze system"),
-            ("3", "View insights"),
-            ("4", "Get recommendations"),
-            ("5", "Apply recommendation"),
-            ("6", "Generate AI context"),
-            ("7", "Configure assistant"),
-            ("8", "Reset learning data"),
+            ("3", "Generate AI context"),
+            ("4", "Configure assistant"),
+            ("5", "Reset learning data"),
             ("0", "Back"),
         ]
 
@@ -724,17 +619,6 @@ def show_assistant_menu(state: MenuState, standalone: bool = False) -> bool:
                 ):
                     assistant.analyze_cmd({})
                 state.history.add("navig assistant analyze", "System analysis", True)
-            elif selection == "View insights":
-                assistant.insights_cmd({})
-                state.history.add("navig assistant insights", "View insights", True)
-            elif selection == "Get recommendations":
-                assistant.recommendations_cmd({})
-                state.history.add("navig assistant recommend", "Get recommendations", True)
-            elif selection == "Apply recommendation":
-                rec_id = Prompt.ask(f"[{COLORS['action']}]Recommendation ID[/{COLORS['action']}]")
-                if rec_id:
-                    assistant.apply_cmd(rec_id, {})
-                    state.history.add("navig assistant apply", "Apply recommendation", True)
             elif selection == "Generate AI context":
                 assistant.context_cmd({}, False, None)
                 state.history.add("navig assistant context", "Generate AI context", True)

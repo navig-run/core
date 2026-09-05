@@ -248,11 +248,54 @@ def new(app: str = "chrome", port: int | None = None, profile: str | None = None
     return result
 
 
+def _default_session_port() -> int | None:
+    """Which browser do `stop`/`detach` mean when the caller names no port?
+
+    A literal 9222 was fine while `find_free_port()` almost always handed out 9222. It
+    no longer does: on a machine whose 9222+ window is RESERVED by Windows the session
+    lives on an OS-assigned port, so the old default addressed a browser that was never
+    launched — `navig cdp stop` reported "unknown port" for the only session running.
+
+    So consult the registry of what NAVIG actually launched. Exactly one entry is
+    unambiguous. With several, keep 9222 when it is one of them (unchanged behaviour)
+    and otherwise return None so the caller can list them instead of guessing — closing
+    someone's browser is not a recoverable mistake.
+    """
+    from navig.browser import targets as t  # noqa: PLC0415 — lazy, like every caller here
+
+    launched = {int(p) for p in t.get_launched()}
+    if len(launched) == 1:
+        return next(iter(launched))
+    if not launched or 9222 in launched:
+        return 9222
+    return None
+
+
+def _ambiguous_session_error(verb: str) -> dict:
+    from navig.browser import targets as t  # noqa: PLC0415
+
+    ports = sorted(int(p) for p in t.get_launched())
+    return {
+        "ok": False,
+        "error": (
+            f"several debug browsers are running ({', '.join(map(str, ports))}) — "
+            f"name one with --port, or use --all to {verb} every one"
+        ),
+        "ports": ports,
+    }
+
+
 def stop(port: int | None = None, all_ports: bool = False) -> dict:
     """Close a NAVIG-launched debug browser (disables the debug port).
 
-    Releases the live CDP session first, then terminates exactly the browser
-    process NAVIG started (by tracked PID) — it never kills unrelated browsers.
+    Releases the live CDP session first, then terminates exactly the browser NAVIG
+    started — it never kills unrelated browsers.
+
+    Two attributed signals keep that promise, and neither is "the tracked PID" on its
+    own: the recorded PID is killed only if it is still the process we recorded (it is
+    usually a dead launcher whose number may have been recycled), and the sweep of
+    processes serving the port selects only those matching our profile dir or the
+    executable we launched. Closure is then proven by probing the port.
     """
     from navig.browser import targets as t
     from navig.browser.cdp_runtime import run as _rt
@@ -262,7 +305,9 @@ def stop(port: int | None = None, all_ports: bool = False) -> dict:
     if all_ports:
         _rt(mgr.release_all())
         return t.stop_all_launched()
-    target_port = port or 9222
+    target_port = port or _default_session_port()
+    if target_port is None:
+        return _ambiguous_session_error("stop")
     _rt(mgr.release(target_port))
     return t.stop_launched(target_port)
 
@@ -276,7 +321,9 @@ def detach(port: int | None = None, all_ports: bool = False) -> dict:
     if all_ports:
         _rt(mgr.release_all())
         return {"ok": True, "detached": "all"}
-    target_port = port or 9222
+    target_port = port or _default_session_port()
+    if target_port is None:
+        return _ambiguous_session_error("detach")
     _rt(mgr.release(target_port))
     return {"ok": True, "detached": target_port}
 
@@ -492,6 +539,134 @@ async def snapshot(port: int = 9222, tab: int | None = None, url: str | None = N
         for rid, node in ref_map.items()
     ]
     return {"ok": True, "active_url": b._page.url if b._page else None, "snapshot": text, "refs": refs}
+
+
+async def record(port: int = 9222, out: str | None = None, secs: float = 5.0,
+                 width: int | None = None, height: int | None = None,
+                 fps: int = 30, quality: int = 90,
+                 tab: int | None = None, url: str | None = None) -> dict:
+    """Record the attached page to an mp4 — the moving-picture sibling of `screenshot`.
+
+    Uses CDP's screencast, which pushes a frame whenever the page paints. That means the
+    frames arrive at a *variable* rate (a burst during an animation, almost nothing while
+    static), so their real timestamps are carried through to the encoder rather than
+    assumed — see :func:`navig.media.video_edit.from_frames`.
+
+    ⚠ Every frame must be acknowledged. Chrome stops after a couple of unacknowledged
+    frames, which looks exactly like "the page had nothing to draw" rather than a
+    protocol mistake.
+    """
+    import asyncio
+    import base64 as _b64
+    import tempfile
+    from pathlib import Path
+
+    from navig.core.background import spawn
+    from navig.media.video_edit import VideoEditError, from_frames
+    from navig.platform.paths import media_dir
+
+    if secs <= 0:
+        return {"ok": False, "error": "--secs must be greater than 0"}
+
+    bridge = await _try_bridge(port)
+    if bridge is None:
+        return {
+            "ok": False,
+            "error": f"no CDP target on port {port} — start one with `navig cdp new`",
+        }
+    await _select(bridge, tab, url)
+    page = getattr(bridge, "page", None)
+    if page is None:
+        return {"ok": False, "error": "the CDP bridge has no live page to record"}
+
+    captured: list[tuple[float, bytes]] = []
+    session = await page.context.new_cdp_session(page)
+
+    async def _ack(session_id) -> None:
+        try:
+            await session.send("Page.screencastFrameAck", {"sessionId": session_id})
+        except Exception:  # noqa: BLE001 — the stream is ending; a lost ack is harmless
+            pass
+
+    def _on_frame(params: dict) -> None:
+        try:
+            captured.append((
+                float(params["metadata"]["timestamp"]),
+                _b64.b64decode(params["data"]),
+            ))
+        except (KeyError, TypeError, ValueError):
+            return
+        finally:
+            # Ack even a frame we failed to decode, or the stream stalls entirely.
+            #
+            # `spawn`, not `loop.create_task`: asyncio holds only a WEAK reference to a
+            # task, so a bare create_task can be garbage-collected before it runs. Losing
+            # an ack is not a cosmetic loss — it is exactly the stall this ack exists to
+            # prevent, and it would present as "the page stopped painting".
+            session_id = params.get("sessionId")
+            if session_id is not None:
+                spawn(_ack(session_id), name="cdp-screencast-ack")
+
+    options: dict = {"format": "jpeg", "quality": quality, "everyNthFrame": 1}
+    if width:
+        options["maxWidth"] = int(width)
+    if height:
+        options["maxHeight"] = int(height)
+
+    session.on("Page.screencastFrame", _on_frame)
+    try:
+        await session.send("Page.startScreencast", options)
+        await asyncio.sleep(secs)
+        await session.send("Page.stopScreencast")
+        # Frames already in flight land after stopScreencast returns.
+        await asyncio.sleep(0.25)
+    finally:
+        try:
+            await session.detach()
+        except Exception:  # noqa: BLE001 — the page may already be gone
+            pass
+
+    if not captured:
+        return {
+            "ok": False,
+            "error": "the page produced no frames — it may be backgrounded or blank "
+                     "(a minimised or occluded window stops painting)",
+        }
+
+    captured.sort(key=lambda item: item[0])
+    target = Path(out) if out else media_dir("videos") / "cdp_record.mp4"
+    if target.suffix.lower() != ".mp4":
+        target = target.with_suffix(".mp4")
+
+    with tempfile.TemporaryDirectory(prefix="navig-cast-") as tmp:
+        work = Path(tmp)
+        pairs: list[tuple[Path, float]] = []
+        spanned = 0.0
+        for i, (stamp, blob) in enumerate(captured):
+            frame_path = work / f"f{i:06d}.jpg"
+            frame_path.write_bytes(blob)
+            if i + 1 < len(captured):
+                gap = max(captured[i + 1][0] - stamp, 0.0)
+                spanned += gap
+                pairs.append((frame_path, gap))
+            else:
+                # The last frame is HELD to the end of the requested window rather than
+                # given a single tick. A page only emits a frame when it paints, so a
+                # static one goes quiet after its first burst — and measuring only the
+                # span between frames would then return a fraction of a second of video
+                # for a multi-second request. That silently desynchronises anything cut
+                # against it (measured: 0.27s of picture for 6.69s of narration).
+                pairs.append((frame_path, max(secs - spanned, 1.0 / fps)))
+        try:
+            result = from_frames(pairs, target, fps=fps, width=width, height=height)
+        except (VideoEditError, ValueError) as exc:
+            return {"ok": False, "error": str(exc)}
+
+    return {
+        "ok": True, "via": "cdp-screencast", "path": str(result.path),
+        "frames": len(captured), "seconds": round(result.duration_s, 3),
+        "width": result.width, "height": result.height,
+    }
 
 
 async def screenshot(port: int = 9222, out: str | None = None,

@@ -15,17 +15,13 @@ _MANGLED_REMOTE_RE = re.compile(r"^[A-Za-z]:[\\/]")
 
 
 def _looks_mangled(remote: str | None) -> bool:
-    return bool(remote) and (
-        _MANGLED_REMOTE_RE.match(remote) is not None or "\\" in remote
-    )
+    return bool(remote) and (_MANGLED_REMOTE_RE.match(remote) is not None or "\\" in remote)
 
 
 def _reject_mangled_remote(remote: str) -> None:
     ch.error(f"Remote path looks Windows-mangled: {remote}")
     ch.info("")
-    ch.info(
-        "Remote paths are POSIX. git-bash/MSYS rewrites a Unix argument like"
-    )
+    ch.info("Remote paths are POSIX. git-bash/MSYS rewrites a Unix argument like")
     ch.info("/tmp/x into a Windows path before navig receives it. Fixes:")
     ch.info("  • set MSYS_NO_PATHCONV=1 (e.g. MSYS_NO_PATHCONV=1 navig file …)")
     ch.info("  • double the leading slash: //tmp/x")
@@ -44,6 +40,11 @@ def upload_file_cmd(local: Path, remote: str | None, options: dict[str, Any]):
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
 
     server_name = require_active_server(options, config_manager)
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, f"navig file add: {remote}")
 
     if not local.exists():
         ch.error(f"Local file not found: {local}")
@@ -180,6 +181,12 @@ file_app = typer.Typer(
 @file_app.callback()
 def file_callback(ctx: typer.Context):
     """File operations - run without subcommand for help."""
+    # Nine sibling modules already do this. The root `navig` callback ensures the dict,
+    # so through the real CLI this is a no-op; it matters when the sub-app is reached
+    # directly (a test, a programmatic invoke), where `ctx.obj[...]` would otherwise
+    # die with "'NoneType' object does not support item assignment" — a crash that is
+    # also non-zero, so an exit-code assertion can pass for entirely the wrong reason.
+    ctx.ensure_object(dict)
     if ctx.invoked_subcommand is None:
         import os as _os  # noqa: PLC0415
 
@@ -277,7 +284,9 @@ def file_edit(
     if content or stdin or from_file:
         from navig.commands.files_advanced import write_file_cmd
 
-        write_file_cmd(
+        # A remote write that failed must not report success — `navig file edit … && …`
+        # would otherwise proceed against the OLD file contents.
+        if not write_file_cmd(
             remote,
             content,
             ctx.obj,
@@ -286,7 +295,8 @@ def file_edit(
             append=append,
             mode=mode,
             owner=owner,
-        )
+        ):
+            raise typer.Exit(1)
     elif mode:
         from navig.commands.files_advanced import chmod_cmd
 
@@ -328,7 +338,10 @@ def file_remove(
 
     ctx.obj["recursive"] = recursive
     ctx.obj["force"] = force
-    delete_file_cmd(remote, ctx.obj)
+    # A remote delete that failed must not report success: the operator moves on believing
+    # the path is gone, and the ledger records the run as a working recipe step.
+    if not delete_file_cmd(remote, ctx.obj):
+        raise typer.Exit(1)
 
 
 # ============================================================================

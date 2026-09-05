@@ -51,12 +51,14 @@ def test_inbox_db_respects_data_env(tmp_path, monkeypatch):
 
     import navig.inbox.store as store_mod
 
-    # Reset the singleton so the function re-evaluates the env
-    store_mod._DEFAULT_DB = None
+    # Reset the singleton so the function re-evaluates the env. monkeypatch restores it on
+    # teardown — the old reset at the bottom ran only when the assert passed, so a failure
+    # pinned this test's tmp_path DB into every later test in the worker, and tmp_path is
+    # deleted afterwards.
+    monkeypatch.setattr(store_mod, "_DEFAULT_DB", None)
+
     result = store_mod._inbox_db()
     assert result == data_root / "inbox.db"
-    # Restore the singleton reset so subsequent tests aren't affected
-    store_mod._DEFAULT_DB = None
 
 
 # ── telegram_sessions ─────────────────────────────────────────────────────────

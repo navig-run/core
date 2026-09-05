@@ -860,6 +860,11 @@ class TestConvRunAgenticCompatibility:
             def resolve_auth(self, provider):
                 return ("fake-key", "default")
 
+        # Package name first, then the submodule — see the note in
+        # tests/agent/test_agent_parallel_tool_dispatch.py: `navig.providers`
+        # caches lazy exports into its globals(), so patching the submodule alone
+        # poisons the package for the whole session and monkeypatch cannot undo it.
+        monkeypatch.setattr("navig.providers.AuthProfileManager", _FakeAuthProfileManager)
         monkeypatch.setattr("navig.providers.auth.AuthProfileManager", _FakeAuthProfileManager)
 
         class _FakeResponse:

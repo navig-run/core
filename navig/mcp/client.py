@@ -37,6 +37,11 @@ class MCPClientConfig:
 
     @classmethod
     def from_dict(cls, id: str, data: dict[str, Any]) -> MCPClientConfig:
+        # `navig config set mcp.clients.<id>.enabled false` stores the STRING
+        # "false" (truthy) — coerce the booleans so a config-set toggle actually
+        # takes effect, instead of a raw `data.get("enabled", True)` reading it as ON.
+        from navig.core.coerce import coerce_bool
+
         return cls(
             id=id,
             command=data.get("command"),
@@ -45,9 +50,25 @@ class MCPClientConfig:
             transport=data.get("transport", "stdio"),
             url=data.get("url"),
             cwd=data.get("cwd"),
-            auto_connect=data.get("auto_connect", True),
-            enabled=data.get("enabled", True),
+            auto_connect=coerce_bool(data.get("auto_connect"), default=True),
+            enabled=coerce_bool(data.get("enabled"), default=True),
         )
+
+
+def _error_text_from_content(content: Any) -> str:
+    """Join the text parts of an MCP content array into a readable error message."""
+    if isinstance(content, list):
+        parts = [
+            c.get("text", "")
+            for c in content
+            if isinstance(c, dict) and c.get("type") == "text"
+        ]
+        joined = " ".join(p for p in parts if p)
+        if joined:
+            return joined
+    if isinstance(content, str) and content:
+        return content
+    return "remote tool reported an error"
 
 
 class MCPClient:
@@ -86,6 +107,9 @@ class MCPClient:
         self._request_id = 0
         self._tools: dict[str, MCPTool] = {}
         self._resources: dict[str, MCPResource] = {}
+        #: Fingerprint of the tool claims a trust decision was made against, so a
+        #: server changing them under us is visible. See `_note_catalog_revision`.
+        self._catalog_revision: str | None = None
         self._prompts: dict[str, MCPPrompt] = {}
         self._capabilities: MCPCapabilities | None = None
         self._initialized = False
@@ -210,6 +234,17 @@ class MCPClient:
             )
 
         result = response.result
+        # A tool-level failure rides on a SUCCESSFUL JSON-RPC response as
+        # ``result.isError == true`` (MCP tool errors are result-level, not
+        # protocol errors, so ``response.is_error`` above is False). Surface it
+        # like the JSON-RPC error — otherwise the error text is returned as a
+        # normal value and the caller treats a failed remote tool as a success.
+        # (Mirror of the server-side isError fix.)
+        if isinstance(result, dict) and result.get("isError"):
+            raise RuntimeError(
+                f"Tool call {name!r} failed: "
+                f"{_error_text_from_content(result.get('content'))}"
+            )
         if isinstance(result, dict) and "content" in result:
             content = result["content"]
             # Unwrap single-item text content for ergonomic calling.
@@ -326,9 +361,75 @@ class MCPClient:
         if response.is_error:
             logger.warning("Failed to list tools: %s", response.get_error_message())
             return
-        for tool_data in (response.result or {}).get("tools", []):
-            tool = MCPTool.from_dict(tool_data, server_id=self.id)
-            self._tools[tool.name] = tool
+        raw_tools = (response.result or {}).get("tools", [])
+        raw_tools = self._cap_tools(raw_tools)
+        for tool_data in raw_tools:
+            # Guard each item: a single malformed entry (e.g. missing "name") from an
+            # external server must not abort discovery — connect() catches any raise,
+            # disconnects, and fails the WHOLE client, losing every other tool.
+            try:
+                tool = MCPTool.from_dict(tool_data, server_id=self.id)
+                self._tools[tool.name] = tool
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("MCP %s: skipping malformed tool entry: %s", self.id, exc)
+
+        self._note_catalog_revision(raw_tools)
+
+    def _cap_tools(self, raw_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Bound how many tools one server may contribute.
+
+        Every discovered tool becomes an entry in the agent's tool schema, which is sent
+        to the model on **every** request. A server advertising thousands of tools
+        therefore inflates the prompt — and the bill — without ever being called, and
+        nothing in the protocol stops it from doing so. The cap makes an untrusted
+        endpoint's footprint bounded rather than whatever it decides.
+
+        Never a silent truncation: a catalog that was cut says so, and names the
+        numbers, because "200 tools" and "200 of 4000 tools" are different situations.
+        """
+        from navig.mcp.trust import MAX_TOOLS_PER_SERVER
+
+        if len(raw_tools) <= MAX_TOOLS_PER_SERVER:
+            return raw_tools
+        logger.warning(
+            "MCP %s: advertised %d tools; using the first %d. The rest are ignored — "
+            "scope this server to the tools you need with "
+            "`navig config set mcp.trust.servers.%s.tools \"a,b\"`.",
+            self.id,
+            len(raw_tools),
+            MAX_TOOLS_PER_SERVER,
+            self.id,
+        )
+        return raw_tools[:MAX_TOOLS_PER_SERVER]
+
+    def _note_catalog_revision(self, raw_tools: list[dict[str, Any]]) -> None:
+        """Record — and report — a change to the claims this server's grant rests on.
+
+        Trusting a server is a statement about the tools it offered when the operator
+        vouched for it. A server that later adds a tool, or flips ``readOnlyHint`` on an
+        existing one, silently widens what runs without asking. The fingerprint covers
+        exactly the claims a decision was made against and excludes descriptions, so a
+        copy edit stays quiet.
+
+        Best-effort and non-fatal: this is a notice, not a gate. Nothing here may
+        prevent a server from connecting.
+        """
+        try:
+            from navig.mcp.trust import catalog_revision
+
+            revision = catalog_revision(raw_tools)
+            previous = self._catalog_revision
+            self._catalog_revision = revision
+            if previous is not None and previous != revision:
+                logger.warning(
+                    "MCP %s: tool catalog changed (%s -> %s). Re-check what this server "
+                    "offers before relying on an existing trust setting.",
+                    self.id,
+                    previous,
+                    revision,
+                )
+        except Exception as exc:  # noqa: BLE001 — a notice must never break discovery
+            logger.debug("MCP %s: could not fingerprint tool catalog: %s", self.id, exc)
 
     async def _discover_resources(self) -> None:
         response = await self._send_request(MCPMethod.RESOURCES_LIST, {})
@@ -338,8 +439,11 @@ class MCPClient:
             )
             return
         for res_data in (response.result or {}).get("resources", []):
-            resource = MCPResource.from_dict(res_data, server_id=self.id)
-            self._resources[resource.uri] = resource
+            try:
+                resource = MCPResource.from_dict(res_data, server_id=self.id)
+                self._resources[resource.uri] = resource
+            except Exception as exc:  # noqa: BLE001 - one bad resource must not drop the rest
+                logger.warning("MCP %s: skipping malformed resource entry: %s", self.id, exc)
 
     async def _discover_prompts(self) -> None:
         response = await self._send_request(MCPMethod.PROMPTS_LIST, {})
@@ -349,13 +453,16 @@ class MCPClient:
             )
             return
         for prompt_data in (response.result or {}).get("prompts", []):
-            prompt = MCPPrompt(
-                name=prompt_data["name"],
-                description=prompt_data.get("description"),
-                arguments=prompt_data.get("arguments", []),
-                server_id=self.id,
-            )
-            self._prompts[prompt.name] = prompt
+            try:
+                prompt = MCPPrompt(
+                    name=prompt_data["name"],
+                    description=prompt_data.get("description"),
+                    arguments=prompt_data.get("arguments", []),
+                    server_id=self.id,
+                )
+                self._prompts[prompt.name] = prompt
+            except Exception as exc:  # noqa: BLE001 - one bad prompt must not drop the rest
+                logger.warning("MCP %s: skipping malformed prompt entry: %s", self.id, exc)
 
     async def _send_request(
         self, method: MCPMethod, params: dict[str, Any]

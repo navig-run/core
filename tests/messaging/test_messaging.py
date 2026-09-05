@@ -574,3 +574,67 @@ class TestAdapterTypes:
 
         t = Thread(id=1, adapter="sms", remote_conversation_id="+1", status="open")
         assert t.adapter == "sms"
+
+
+class TestRouteRemovalIsHonest:
+    """`contacts route <alias> remove <route>` reported success for a route that was
+    never there.
+
+    `ContactStore.remove_route()` returns False when the contact has no such route, and
+    the command discarded it, then printed the success line unconditionally. The alias
+    pre-check above it cannot catch this: the alias is fine, it is the ROUTE that is
+    absent. Measured before the fix, against a contact whose only route was telegram:111:
+
+        navig contacts route alice remove telegram:999999
+        -> "OK Route telegram:999999 removed from @alice."   exit 0
+
+    with alice's routes unchanged. A messaging address the operator believes they deleted
+    is exactly the kind of thing they do not re-check.
+    """
+
+    def _store(self, tmp_path):
+        from navig.store.contacts import ContactStore
+
+        return ContactStore(db_path=tmp_path / "contacts.db")
+
+    def test_remove_route_reports_false_for_a_route_that_is_not_there(self, tmp_path):
+        store = self._store(tmp_path)
+        store.add_contact(alias="alice")
+        store.add_route("alice", "telegram:111")
+
+        assert store.remove_route("alice", "telegram:999999") is False, (
+            "removing a route the contact does not have must report False — the CLI "
+            "turns this into its success line"
+        )
+        assert store.remove_route("alice", "telegram:111") is True, (
+            "removing a route that IS there must report True, or the fix above turns "
+            "every real removal into an error"
+        )
+        store.close()
+
+    def test_the_cli_does_not_announce_a_removal_it_did_not_make(self, tmp_path, monkeypatch):
+        from typer.testing import CliRunner
+
+        from navig.commands.dispatch import contacts_app
+        from navig.store import contacts as contacts_mod
+
+        store = self._store(tmp_path)
+        store.add_contact(alias="alice")
+        store.add_route("alice", "telegram:111")
+        monkeypatch.setattr(contacts_mod, "get_contact_store", lambda: store)
+
+        runner = CliRunner()
+        result = runner.invoke(contacts_app, ["route", "alice", "remove", "telegram:999999"])
+
+        assert result.exit_code != 0, (
+            f"removing a non-existent route exited 0:\n{result.output}"
+        )
+        assert "removed from" not in result.output, (
+            f"the CLI announced a removal it did not make:\n{result.output}"
+        )
+
+        # The honest path must still work, or the guard above is bought with a broken feature.
+        ok = runner.invoke(contacts_app, ["route", "alice", "remove", "telegram:111"])
+        assert ok.exit_code == 0, f"a real removal now fails:\n{ok.output}"
+        assert "removed from" in ok.output
+        store.close()

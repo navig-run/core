@@ -10,14 +10,9 @@ Batch 45 — hermetic unit tests for:
 
 from __future__ import annotations
 
-import json
 import sqlite3
-import tempfile
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # navig/core/models.py
@@ -280,49 +275,43 @@ class TestExtractOcrText:
             result = extract_ocr_text_from_image_bytes(b"image")
         assert result is None
 
-    def test_returns_text_when_ocr_succeeds(self):
-        mock_img = MagicMock()
-        mock_pytesseract = MagicMock()
-        mock_pytesseract.image_to_string.return_value = "Hello World"
-        mock_pil_image = MagicMock()
-        mock_pil_image.Image.open.return_value = mock_img
-
+    # Extraction reads `image_to_data` — per-word confidence is the only thing
+    # that separates real text from the glyphs tesseract invents for textureless
+    # input. A mock of `image_to_string` would go on passing having set nothing
+    # the code reads.
+    def _run(self, words):
         import sys
 
+        mock_pytesseract = MagicMock()
+        mock_pytesseract.image_to_data.return_value = {
+            "text": [w for w, _ in words],
+            "conf": [c for _, c in words],
+            "block_num": [0] * len(words),
+            "par_num": [0] * len(words),
+            "line_num": [0] * len(words),
+        }
+        mock_pil_image = MagicMock()
+        mock_pil_image.Image.open.return_value = MagicMock()
         fake_modules = {
             "pytesseract": mock_pytesseract,
             "PIL": mock_pil_image,
             "PIL.Image": mock_pil_image.Image,
         }
-
         with patch.dict(sys.modules, fake_modules):
-            result = extract_ocr_text_from_image_bytes(self._fake_image_bytes())
+            return extract_ocr_text_from_image_bytes(self._fake_image_bytes())
 
-        assert result == "Hello World"
+    def test_returns_text_when_ocr_succeeds(self):
+        assert self._run([("Hello", 95), ("World", 92)]) == "Hello World"
 
     def test_returns_none_when_text_too_short(self):
-        mock_img = MagicMock()
-        mock_pytesseract = MagicMock()
-        mock_pytesseract.image_to_string.return_value = "ab"  # < 3 chars
-        mock_pil_image = MagicMock()
-        mock_pil_image.Image.open.return_value = mock_img
+        assert self._run([("ab", 95)]) is None
 
-        import sys
-
-        fake_modules = {
-            "pytesseract": mock_pytesseract,
-            "PIL": mock_pil_image,
-            "PIL.Image": mock_pil_image.Image,
-        }
-
-        with patch.dict(sys.modules, fake_modules):
-            result = extract_ocr_text_from_image_bytes(self._fake_image_bytes())
-
-        assert result is None
+    def test_returns_none_when_confidence_is_low(self):
+        assert self._run([("Hello", 25), ("World", 31)]) is None
 
     def test_returns_none_on_ocr_exception(self):
         mock_pytesseract = MagicMock()
-        mock_pytesseract.image_to_string.side_effect = RuntimeError("OCR failed")
+        mock_pytesseract.image_to_data.side_effect = RuntimeError("OCR failed")
         mock_pil_image = MagicMock()
         mock_pil_image.Image.open.return_value = MagicMock()
 
@@ -341,7 +330,7 @@ class TestExtractOcrText:
 
     def test_returns_none_when_empty_bytes(self):
         mock_pytesseract = MagicMock()
-        mock_pytesseract.image_to_string.side_effect = Exception("invalid image")
+        mock_pytesseract.image_to_data.side_effect = Exception("invalid image")
         mock_pil_image = MagicMock()
         mock_pil_image.Image.open.side_effect = Exception("bad bytes")
 
@@ -359,44 +348,11 @@ class TestExtractOcrText:
         assert result is None
 
     def test_returns_text_exactly_three_chars(self):
-        mock_img = MagicMock()
-        mock_pytesseract = MagicMock()
-        mock_pytesseract.image_to_string.return_value = "abc"  # exactly 3
-        mock_pil_image = MagicMock()
-        mock_pil_image.Image.open.return_value = mock_img
-
-        import sys
-
-        fake_modules = {
-            "pytesseract": mock_pytesseract,
-            "PIL": mock_pil_image,
-            "PIL.Image": mock_pil_image.Image,
-        }
-
-        with patch.dict(sys.modules, fake_modules):
-            result = extract_ocr_text_from_image_bytes(self._fake_image_bytes())
-
-        assert result == "abc"
+        """Three alphanumerics is the floor for "word-shaped"."""
+        assert self._run([("abc", 95)]) == "abc"
 
     def test_strips_whitespace_from_result(self):
-        mock_img = MagicMock()
-        mock_pytesseract = MagicMock()
-        mock_pytesseract.image_to_string.return_value = "  hello there  \n"
-        mock_pil_image = MagicMock()
-        mock_pil_image.Image.open.return_value = mock_img
-
-        import sys
-
-        fake_modules = {
-            "pytesseract": mock_pytesseract,
-            "PIL": mock_pil_image,
-            "PIL.Image": mock_pil_image.Image,
-        }
-
-        with patch.dict(sys.modules, fake_modules):
-            result = extract_ocr_text_from_image_bytes(self._fake_image_bytes())
-
-        assert result == "hello there"
+        assert self._run([("  hello ", 95), (" there  ", 92)]) == "hello there"
 
 
 # ---------------------------------------------------------------------------

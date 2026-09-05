@@ -76,12 +76,10 @@ class TestSetNoCache:
 
     def test_import_error_silently_suppressed(self):
         # If config module import fails, set_no_cache should not raise
+        # `except Exception: pass` made every outcome acceptable, so the test could not
+        # detect the suppression it is named for. Calling it plainly is the assertion.
         with patch.dict("sys.modules", {"navig.config": None}):
-            try:
-                set_no_cache(True)
-            except Exception:
-                pass  # may raise due to None module, that's acceptable — just not an unhandled crash
-        # Key: no unhandled exception propagates as TypeError/etc in normal usage
+            set_no_cache(True)
 
     def test_accepts_truthy_value(self):
         with patch("navig.config.set_config_cache_bypass"):

@@ -1,8 +1,6 @@
 """Tests for navig.core.evolution.failure_summary — summarize_check_failure."""
 from __future__ import annotations
 
-import pytest
-
 from navig.core.evolution.failure_summary import summarize_check_failure
 
 

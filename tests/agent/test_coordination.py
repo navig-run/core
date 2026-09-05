@@ -9,6 +9,7 @@ Covers:
 - AgentRegistry register / unregister / find / update_heartbeat
 """
 
+import asyncio
 from datetime import datetime
 from unittest.mock import patch
 
@@ -21,6 +22,7 @@ with patch("navig.debug_logger.get_debug_logger"):
         AgentMessage,
         AgentRegistry,
         AgentRole,
+        MessageBus,
         MessageType,
         TaskRequest,
         TaskResult,
@@ -320,3 +322,38 @@ class TestAgentRegistry:
         registry.register(_agent("a1", caps=["docker"]))
         registry.unregister("a1")
         assert registry.find_by_capability("docker") == []
+
+
+# ─────────────────────────────────────────────────────────────
+# MessageBus lifecycle — the processor task must be held (not GC-droppable)
+# and cancelled on stop, not merely flagged off.
+# ─────────────────────────────────────────────────────────────
+class TestMessageBusLifecycle:
+    async def test_start_holds_processor_task(self):
+        bus = MessageBus(AgentRegistry())
+        await bus.start()
+        try:
+            # start() must keep a strong reference on self — a discarded
+            # create_task() result is only weakly held and can be collected
+            # before the loop runs, silently killing the bus.
+            assert isinstance(bus._task, asyncio.Task)
+            assert not bus._task.done()
+        finally:
+            await bus.stop()
+
+    async def test_stop_cancels_and_clears_the_task(self):
+        bus = MessageBus(AgentRegistry())
+        await bus.start()
+        task = bus._task
+        await bus.stop()
+        # stop() cancels the loop for immediate teardown and releases the ref.
+        assert task is not None
+        assert task.done()
+        assert bus._task is None
+        assert bus._running is False
+
+    async def test_stop_is_safe_without_start(self):
+        # Never started → no task to cancel; stop() must not raise.
+        bus = MessageBus(AgentRegistry())
+        await bus.stop()
+        assert bus._task is None

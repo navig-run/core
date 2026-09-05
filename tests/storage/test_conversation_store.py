@@ -42,6 +42,49 @@ class TestConversationStore:
         assert store.db_path.exists()
         store.close()
 
+    def test_loads_metadata_tolerates_corruption(self):
+        """The metadata parser degrades any unreadable/NULL/non-object blob to {} and
+        never raises — so one bad row can't poison a whole fetch."""
+        from navig.memory.conversation import _loads_metadata
+
+        assert _loads_metadata('{"a": 1}') == {"a": 1}
+        assert _loads_metadata({"a": 1}) == {"a": 1}   # already a dict → passthrough
+        assert _loads_metadata(None) == {}             # NULL column
+        assert _loads_metadata("") == {}               # empty string
+        assert _loads_metadata("{ not json") == {}     # malformed JSON
+        assert _loads_metadata("[1, 2, 3]") == {}      # valid JSON but not an object
+        assert _loads_metadata("42") == {}
+
+    def test_corrupt_message_metadata_does_not_poison_history(self, tmp_path):
+        """A single message row with NULL / malformed metadata must degrade to {} and
+        still return, not raise and lose the ENTIRE history (the content lives in other
+        columns). Pre-fix json.loads(None)/json.loads('{bad') raised in the row loop."""
+        store = self._make_store(tmp_path)
+        store.add_message(Message(session_key="s", role="user", content="first", metadata={"k": "v"}))
+        store.add_message(Message(session_key="s", role="assistant", content="second"))
+
+        # Simulate external / partial-write corruption of the metadata column.
+        store._write("UPDATE messages SET metadata = NULL WHERE content = ?", ("first",))
+        store._write("UPDATE messages SET metadata = ? WHERE content = ?", ("{bad json", "second"))
+
+        history = store.get_history("s", limit=50)
+        assert [m.content for m in history] == ["first", "second"]  # nothing lost
+        assert all(isinstance(m.metadata, dict) for m in history)   # never None, always a dict
+        store.close()
+
+    def test_corrupt_session_metadata_does_not_break_listing(self, tmp_path):
+        """get_session / list_sessions must survive a corrupt session-metadata blob."""
+        store = self._make_store(tmp_path)
+        store.add_message(Message(session_key="s", role="user", content="hi"))
+        store._write("UPDATE sessions SET metadata = ? WHERE session_key = ?", ("not json", "s"))
+
+        info = store.get_session("s")
+        assert info is not None and isinstance(info.metadata, dict)
+        sessions = store.list_sessions()
+        assert any(s.session_key == "s" for s in sessions)
+        assert all(isinstance(s.metadata, dict) for s in sessions)
+        store.close()
+
     def test_schema_version_is_2(self, tmp_path):
         """Verify SCHEMA_VERSION is 2 for FTS5 support."""
         store = self._make_store(tmp_path)

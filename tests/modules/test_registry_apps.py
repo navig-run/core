@@ -46,8 +46,12 @@ def test_deck_only_apps_have_no_os_tile():
 
 def test_desktop_apps_have_os_tile():
     """The migrated desktop set is renderable: each declares an os-tile surface."""
+    # NB: "social" (the compose/schedule/publish app) is NOT here — it's a PLUGIN
+    # app (navig-social, os-tile:social), like games/mobile/generate/email, so it
+    # isn't in BUILTIN_MODULES. It used to be a duplicate builtin `studio` tile;
+    # consolidated into the plugin module 2026-07-20.
     desktop_set = {
-        "finance", "projects", "messages", "studio", "tasks", "system", "remote",
+        "finance", "projects", "messages", "tasks", "system", "remote",
         "database", "nettools", "connections", "context", "inbox", "spaces",
         "knowledge", "passport", "vault", "life", "goals", "devops",
     }

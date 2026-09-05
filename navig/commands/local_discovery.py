@@ -15,25 +15,17 @@ from typing import Any
 from navig import console_helper as ch
 from navig.config import get_config_manager
 from navig.console_helper import get_console
+from navig.core.proc_text import decode_console_output
 
 
 def _decode_subprocess_output(data: bytes) -> str:
-    """Decode subprocess bytes output robustly.
+    """Decode console output. Delegates to the one canonical implementation.
 
-    Tries UTF-8 first; on failure falls back to the system's preferred encoding
-    with ``errors='replace'`` so non-decodable bytes never raise an exception.
-    This prevents UnicodeDecodeError crashes on Windows systems whose locale
-    uses a code page other than UTF-8 (e.g. cp850/cp1252 with accented paths).
+    The fallback here used to be the system's preferred encoding — the **ANSI** code page
+    on Windows, while these commands run through ``cmd.exe`` and come back in the **OEM**
+    one. See ``navig.core.proc_text``.
     """
-    if not data:
-        return ""
-    try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError:
-        import locale
-
-        enc = locale.getpreferredencoding(False) or "cp1252"
-        return data.decode(enc, errors="replace")
+    return decode_console_output(data)
 
 
 def run_local_command(command: str, timeout: int = 10) -> tuple[bool, str, str]:
@@ -97,18 +89,21 @@ class LocalDiscovery:
         self.is_windows = platform.system() == "Windows"
 
     def _log(self, message: str, style: str = "info"):
-        """Log a message if progress is enabled."""
-        if self.progress:
-            if style == "success":
-                ch.success(message)
-            elif style == "warning":
-                ch.warning(message)
-            elif style == "error":
-                ch.error(message)
-            elif style == "dim":
-                ch.dim(message)
-            else:
-                ch.info(message)
+        """Log a message at `style` if progress is enabled.
+
+        A dispatch table rather than an if/elif chain: the chain ended in a bare
+        `ch.error(...)` branch, which reads exactly like a command announcing a failure
+        and then exiting 0. This is a display sink — the caller decides the exit code.
+        """
+        if not self.progress:
+            return
+        sink = {
+            "success": ch.success,
+            "warning": ch.warning,
+            "error": ch.error,
+            "dim": ch.dim,
+        }.get(style, ch.info)
+        sink(message)
 
     def discover_os(self) -> dict[str, Any]:
         """Discover operating system information."""

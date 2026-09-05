@@ -6,11 +6,10 @@ to trigger compaction without sleeping.
 """
 
 import time
-from pathlib import Path
 
 import pytest
 
-from navig.memory.chat_store import ChatMemoryStore, ConversationTurn
+from navig.memory.chat_store import ConversationTurn
 from navig.memory.compactor import (
     CompactionResult,
     KeywordCompactor,

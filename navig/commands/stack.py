@@ -19,6 +19,7 @@ from pathlib import Path
 
 import typer
 
+from navig.core.proc_text import decode_console_result
 from navig.lazy_loader import lazy_import
 
 ch = lazy_import("navig.console_helper")
@@ -65,7 +66,7 @@ def _check_prerequisites(stack_path: Path) -> bool:
     compose_file = stack_path / "docker-compose.yml"
     if not compose_file.exists():
         ch.error(f"No docker-compose.yml found in {stack_path}")
-        ch.info("Run the bootstrap script first: navig-core/scripts/bootstrap_navig_linux.sh")
+        ch.info("Run the bootstrap script first: core/installers/bootstrap_navig_linux.sh")
         return False
 
     return True
@@ -284,7 +285,7 @@ def stack_info():
         ch.header("Stack Services")
         try:
             cmd = _compose_cmd(stack_path) + ["config", "--services"]
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = decode_console_result(subprocess.run(cmd, capture_output=True))
             if result.returncode == 0:
                 for svc in result.stdout.strip().split("\n"):
                     if svc.strip():

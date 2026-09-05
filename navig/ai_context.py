@@ -4,12 +4,12 @@ Provides context gathering and error aggregation for AI assistants.
 Helps AI understand system state, recent failures, and suggest fixes.
 """
 
-import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
+from navig.core.json_io import JsonReadError, atomic_write_json, load_json_for_update
 from navig.platform import paths
 
 
@@ -80,19 +80,37 @@ class AIContextManager:
 
         self.error_log_file = self.config_dir / "error_log.json"
         self.error_logs: list[ErrorLog] = []
+        # True when error_log.json existed but was transiently UNREADABLE at load (a Windows
+        # AV/backup lock). While set, _save_error_logs REFUSES to write — the in-memory list
+        # is empty because the file couldn't be read, not because there are no errors, and
+        # overwriting would wipe the recorded history. A later successful load clears it.
+        self._load_failed = False
 
         self._load_error_logs()
 
     def _load_error_logs(self):
-        """Load error logs from file."""
+        """Load error logs from file.
+
+        Reads through ``load_json_for_update``, which retries transient OS locks and RAISES
+        ``JsonReadError`` when an existing-with-content file stays unreadable — so a transient
+        lock sets ``_load_failed`` (which makes :meth:`_save_error_logs` refuse) instead of an
+        empty list that the next ``log_error`` save would persist over the recorded history.
+        """
         if not self.error_log_file.exists():
             self.error_logs = []
+            self._load_failed = False
             return
 
         try:
-            with open(self.error_log_file, encoding='utf-8') as f:
-                data = json.load(f)
+            data = load_json_for_update(self.error_log_file, default=[])
+        except JsonReadError as e:
+            ch.dim(f"Error log temporarily unreadable ({e}) — keeping history, saves paused")
+            self._load_failed = True
+            self.error_logs = []
+            return
 
+        self._load_failed = False
+        try:
             self.error_logs = [ErrorLog.from_dict(entry) for entry in data]
 
             # Trim to max size
@@ -101,17 +119,19 @@ class AIContextManager:
                 self._save_error_logs()
 
         except Exception as e:
-            ch.dim(f"Could not load error logs: {e}")
+            ch.dim(f"Could not parse error logs: {e}")
             self.error_logs = []
 
     def _save_error_logs(self):
         """Save error logs to file."""
+        if self._load_failed:
+            # The log was unreadable at load, so error_logs is empty by accident, not because
+            # there are no errors. Writing it would wipe the recorded history — refuse.
+            ch.dim("Error log was unreadable at load — not overwriting to avoid data loss")
+            return
         try:
             data = [log.to_dict() for log in self.error_logs]
-
-            with open(self.error_log_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-
+            atomic_write_json(data, self.error_log_file)
         except Exception as e:
             ch.dim(f"Could not save error logs: {e}")
 
@@ -132,6 +152,11 @@ class AIContextManager:
         """
         if context is None:
             context = {}
+
+        # If a prior load hit a transient lock, re-attempt it now so this append lands on the
+        # real history rather than an empty list (self-healing for the cached singleton).
+        if self._load_failed:
+            self._load_error_logs()
 
         error_log = ErrorLog(
             timestamp=datetime.now(),

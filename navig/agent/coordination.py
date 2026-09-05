@@ -226,6 +226,7 @@ class MessageBus:
         self._pending_responses: dict[str, asyncio.Future] = {}
         self._message_queue: asyncio.Queue = asyncio.Queue()
         self._running = False
+        self._task: asyncio.Task | None = None
 
     def register_handler(
         self,
@@ -333,12 +334,22 @@ class MessageBus:
     async def start(self):
         """Start the message bus."""
         self._running = True
-        asyncio.create_task(self._process_messages())
+        # Hold the handle on self: a discarded create_task can be GC-collected
+        # before the loop starts (asyncio keeps only a weak ref), silently killing
+        # the bus. stop() cancels it for immediate teardown.
+        self._task = asyncio.create_task(self._process_messages())
         logger.info("Message bus started")
 
     async def stop(self):
         """Stop the message bus."""
         self._running = False
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
         logger.info("Message bus stopped")
 
 

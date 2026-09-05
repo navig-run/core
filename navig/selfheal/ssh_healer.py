@@ -14,12 +14,13 @@ their own error handling.
 from __future__ import annotations
 
 import asyncio
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from loguru import logger
+
+from navig.core.aio_subprocess import communicate_or_kill
 
 # ---------------------------------------------------------------------------
 # Types (shared with telegram_autoheal — import that module for the canonical
@@ -39,6 +40,11 @@ class HealResult:
     message: str  # sanitized, safe to display to end users
     should_retry: bool = False  # True iff the original command can now be retried
     detail: str = ""  # developer-facing extra info (not shown to user)
+    # Set when the Hive Mind opened a GitHub PR for this failure. Both sides already assumed this
+    # field existed: the producer passed `pr_url=` (TypeError) and the reply builder reads
+    # `result.pr_url` for EVERY "partial" heal (AttributeError) — including the five partial
+    # results this module itself returns, which never go near a PR.
+    pr_url: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -118,11 +124,6 @@ class SSHHealer:
 
         logger.info("ssh_healer: keyscan {}", host)
         try:
-            # Write scanned keys to a temp file first so we can inspect
-            # before appending — avoids corrupting known_hosts on error.
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".keyscan", delete=False) as tmp:
-                tmp_path = tmp.name  # noqa: F841 — reserved for future inspection before appending
-
             proc = await asyncio.create_subprocess_exec(
                 "ssh-keyscan",
                 "-H",
@@ -132,9 +133,7 @@ class SSHHealer:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=_KEYSCAN_TIMEOUT + 5
-            )
+            stdout, stderr = await communicate_or_kill(proc, _KEYSCAN_TIMEOUT + 5)
 
             if proc.returncode != 0 or not stdout.strip():
                 detail = stderr.decode(errors="replace").strip()
@@ -231,7 +230,7 @@ class SSHHealer:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+            _, stderr = await communicate_or_kill(proc, 15)
 
             if proc.returncode != 0:
                 detail = stderr.decode(errors="replace").strip()
@@ -333,7 +332,7 @@ class SSHHealer:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=20)
+            stdout, stderr = await communicate_or_kill(proc, 20)
             verbose_output = stderr.decode(errors="replace").strip()
 
             # Exit code 255 is expected here (auth will fail with probe@host),

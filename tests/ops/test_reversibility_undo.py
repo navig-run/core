@@ -31,6 +31,14 @@ def _ledger(tmp_path: Path) -> Path:
     return tmp_path / "operations.jsonl"
 
 
+def _flat(text: str) -> str:
+    """Collapse Rich's line wrapping before matching prose — see the same helper in
+    test_ledger_chain.py. These views print the ledger path, so the wrap point moves
+    with tmp_path length (xdist appends a worker id), splitting a phrase mid-sentence
+    and failing a plain substring match on output that is perfectly correct."""
+    return " ".join(text.split()).lower()
+
+
 def _entries(path: Path) -> list[dict]:
     return [
         json.loads(ln)
@@ -301,6 +309,70 @@ class TestUndoEngine:
         entries = _entries(_ledger(tmp_path))
         assert entries[-1]["args"]["undo_of"] == target.id
         assert entries[-1]["reversibility"] == "yellow"  # undo tag caps the label
+
+    def test_execute_undo_records_a_chained_tagged_entry(self, tmp_path):
+        """The ONE write path: execute_undo performs AND records the undo as a
+        chained, `undo`-tagged entry carrying the swapped redo material."""
+        from navig.ledger_chain import verify_ledger
+        from navig.undo import (
+            check_drift,
+            collect_undone,
+            ensure_undoable,
+            execute_undo,
+            recent_records,
+        )
+
+        rec = _make_recorder(tmp_path)
+        target = _record_config_change(rec)
+        stub = _StubConfigManager({"log_level": "DEBUG"})
+
+        with patch("navig.config.get_config_manager", return_value=stub):
+            records = recent_records(rec)
+            ensure_undoable(records[0], collect_undone(records))
+            check_drift(records[0])
+            undo_id = execute_undo(rec, records[0])
+
+        assert undo_id
+        assert stub.cfg["log_level"] == "INFO"  # actually restored
+
+        entries = _entries(_ledger(tmp_path))
+        assert len(entries) == 2
+        undo_entry = entries[-1]
+        assert undo_entry["id"] == undo_id
+        assert undo_entry["args"]["undo_of"] == target.id
+        assert "undo" in undo_entry["tags"]
+        assert undo_entry["operation_type"] == target.operation_type.value
+        assert undo_entry["status"] == "success"
+        assert undo_entry["reversibility"] == "yellow"  # undo tag caps the label
+        assert undo_entry["undo_data"]["new_value"] == "INFO"  # swapped redo material
+
+        result = verify_ledger(_ledger(tmp_path))
+        assert result.ok and result.status == "intact"
+
+    def test_execute_undo_of_the_same_target_twice_is_refused(self, tmp_path):
+        """After execute_undo records the undo, the target is undone forever."""
+        from navig.undo import (
+            UndoRefused,
+            collect_undone,
+            ensure_undoable,
+            execute_undo,
+            recent_records,
+        )
+
+        rec = _make_recorder(tmp_path)
+        target = _record_config_change(rec)
+        stub = _StubConfigManager({"log_level": "DEBUG"})
+
+        with patch("navig.config.get_config_manager", return_value=stub):
+            first = recent_records(rec)
+            ensure_undoable(first[0], collect_undone(first))
+            execute_undo(rec, first[0])
+
+            records = recent_records(rec)
+            undone = collect_undone(records)
+            target_rec = next(r for r in records if r.id == target.id)
+            with pytest.raises(UndoRefused, match="already undone"):
+                ensure_undoable(target_rec, undone)
 
     def test_drift_refusal_when_value_changed_since(self, tmp_path):
         from navig.undo import UndoRefused, check_drift, recent_records
@@ -793,7 +865,7 @@ class TestLedgerShowCli:
     def test_missing_ledger_is_honest(self, tmp_path):
         result = self._invoke(["show", "--path", str(tmp_path / "nope.jsonl")])
         assert result.exit_code == 0
-        assert "nothing recorded" in result.output.lower()
+        assert "nothing recorded" in _flat(result.output)
 
     def test_show_redacts_secret_material_in_commands(self, tmp_path):
         """Legacy middleware lines may carry raw argv secrets — never re-print them."""

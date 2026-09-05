@@ -2,10 +2,7 @@
 from __future__ import annotations
 
 import hashlib
-import uuid
 from unittest.mock import patch
-
-import pytest
 
 from navig.identity.seed import _get_username, generate_seed
 

@@ -15,7 +15,6 @@ Modules covered:
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -596,6 +595,7 @@ class TestDiffLinesFromText:
 
         fn = self._import()
         lines = fn("a", "b")
+        assert lines, "lines was empty, so the loop below asserted nothing"
         for line in lines:
             assert isinstance(line, DiffLine)
 
@@ -607,6 +607,7 @@ class TestDiffLinesFromText:
     def test_content_stripped_of_leading_marker(self):
         fn = self._import()
         lines = fn("before", "after")
+        assert lines, "lines was empty, so the loop below asserted nothing"
         for line in lines:
             if line.op == "add":
                 assert not line.content.startswith("+")

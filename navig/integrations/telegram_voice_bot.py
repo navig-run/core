@@ -37,7 +37,28 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from navig.telegram.updates import ALLOWED_UPDATES
+
 logger = logging.getLogger("navig.integrations.telegram_voice_bot")
+
+
+def _action_message(action_id: str, info: dict) -> str:
+    """Render a start-menu entry using the keys it actually carries.
+
+    ``ACTION_COMMANDS`` entries hold ``cmd``/``type`` and optionally ``prompt``; none
+    has ever held ``description``. Rendering is driven by ``type`` so a new entry shape
+    degrades to naming the action rather than raising inside a callback handler.
+    """
+    prompt = info.get("prompt")
+    if prompt:
+        return prompt
+    cmd = info.get("cmd")
+    if cmd:
+        kind = info.get("type")
+        shown = cmd if kind == "slash" else f"navig {cmd}"
+        return f"<code>{shown}</code>"
+    return f"⚙️ Action: <code>{action_id}</code>"
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -181,8 +202,15 @@ class TelegramVoiceBot:
         async with self._app:
             await self._app.start()
             await self._app.updater.start_polling(
-                allowed_updates=["message", "callback_query"],
-                drop_pending_updates=True,
+                # ONE list, shared with the gateway channel and `lighthouse deploy`.
+                # `allowed_updates` is STICKY server-side: whatever the last getUpdates
+                # declared is what the bot keeps receiving, so retyping a narrower list
+                # here silently switched business_*, edited_message, channel_post and
+                # inline_query OFF for the MAIN bot — this polls the same vault token.
+                allowed_updates=ALLOWED_UPDATES,
+                # Not `True`: this shares the operator's bot, so the pending queue is
+                # not ours to discard — dropping it destroys unread inbound messages.
+                drop_pending_updates=False,
             )
             logger.info("🤖 NAVIG Telegram bot is running (polling). Press Ctrl+C to stop.")
             # Run until cancelled
@@ -392,7 +420,7 @@ class TelegramVoiceBot:
 
                 if NLP_AVAILABLE and IntentParser is not None:
                     parser = IntentParser()
-                    intent = await parser.parse(transcript)
+                    intent = await parser.parse_intent(transcript)
                     if intent and intent.command:
                         # Execute the parsed command
                         from navig.bot import COMMAND_HANDLER_MAP
@@ -465,7 +493,7 @@ class TelegramVoiceBot:
 
             if NLP_AVAILABLE and IntentParser is not None:
                 parser = IntentParser()
-                intent = await parser.parse(text)
+                intent = await parser.parse_intent(text)
                 if intent and intent.command:
                     # Execute the parsed command
                     from navig.bot import COMMAND_HANDLER_MAP
@@ -505,16 +533,23 @@ class TelegramVoiceBot:
                 _bridge_instance.resolve_callback(data)
                 return
 
-        # Menu action routing
+        # Menu action routing.
+        # This read used to be info["description"], a key NO entry in ACTION_COMMANDS has
+        # ever carried (they hold cmd/type/prompt) — so every one of the 98 buttons raised
+        # KeyError, the broad handler below swallowed it, and the user got the generic
+        # "Action: <id>" stub instead. A missing key is a wiring bug, not a runtime
+        # hazard, so it is read with .get and the handler no longer hides it.
         try:
             from navig.bot.start_menu import get_action_info
 
             info = get_action_info(data)
-            if info:
-                await query.edit_message_text(info["description"], parse_mode="HTML")
-                return
         except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+            logger.warning("menu action %s could not be resolved", data, exc_info=True)
+            info = None
+        if info:
+            text = _action_message(data, info)
+            await query.edit_message_text(text, parse_mode="HTML")
+            return
 
         await query.edit_message_text(f"⚙️ Action: <code>{data}</code>", parse_mode="HTML")
 
@@ -549,6 +584,21 @@ class TelegramVoiceBot:
         )
         return None
 
+    def _system_prompt(self) -> str:
+        """The voice turn's system prompt: guardrail floor first, then the persona.
+
+        This is a full user-facing chat surface — a spoken reply is still the
+        agent speaking with the operator's authority — but it shipped a single
+        hardcoded line and no boundaries at all. The one-line floor is used
+        rather than the full block because a voice reply is capped at 1–3
+        sentences and the round-trip is latency-sensitive; it still carries the
+        rules a voice answer can actually violate (fabricating a fact, acting
+        without consent, giving medical or financial advice).
+        """
+        from navig.agent.conv.guardrails import guardrail_floor_minimal  # noqa: PLC0415
+
+        return f"{guardrail_floor_minimal()}\n\n{self.config.system_prompt}"
+
     async def _call_llm(self, text: str) -> str | None:
         """Route text through navig-core's UnifiedRouter."""
         try:
@@ -556,7 +606,7 @@ class TelegramVoiceBot:
 
             router = get_router()
             messages = [
-                {"role": "system", "content": self.config.system_prompt},
+                {"role": "system", "content": self._system_prompt()},
                 {"role": "user", "content": text},
             ]
             request = RouteRequest(messages=messages, entrypoint="telegram_voice_bot")

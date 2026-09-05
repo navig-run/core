@@ -129,6 +129,12 @@ def test_task_scheduler_install_and_uninstall(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _set_paths(monkeypatch, tmp_path)
+    # This test deliberately drives the mutating Task Scheduler path, and does it
+    # safely: paths are redirected into tmp_path and subprocess is stubbed, so no
+    # schtasks ever runs. The opt-in says so explicitly -- the guard's default is to
+    # refuse, because a mutating call that DOES escape would change the autostart of
+    # whoever is running the suite (see test_task_mutation_blocked_under_pytest.py).
+    monkeypatch.setenv("NAVIG_ALLOW_TASK_MUTATION", "1")
     calls: list[list[str]] = []
 
     def _run(cmd, **kwargs):
@@ -149,14 +155,28 @@ def test_task_scheduler_install_and_uninstall(
 
 
 def test_task_scheduler_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An ENABLED task reads as active.
+
+    This used to assert against ``stdout="Status: Running"`` -- a string real
+    ``schtasks`` never emits -- while the implementation substring-matched
+    "running" over the verbose dump, which always contains the field label
+    "Repeat: Stop If Still Running:". The fake agreed with the bug, so a DISABLED
+    task reported "Active" on the operator's machine for as long as the check
+    existed. The full case set lives in test_task_scheduler_honesty.py.
+    """
+    task_xml = (
+        '<?xml version="1.0" encoding="UTF-16"?>'
+        '<Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">'
+        "<Settings><Enabled>true</Enabled></Settings></Task>"
+    )
     monkeypatch.setattr(
         sm.subprocess,
         "run",
-        lambda *_args, **_kwargs: SimpleNamespace(stdout="Status: Running", returncode=0),
+        lambda *_args, **_kwargs: SimpleNamespace(stdout=task_xml, stderr="", returncode=0),
     )
     running, detail = sm.task_scheduler_status()
     assert running is True
-    assert "Running" in detail
+    assert "enabled" in detail.lower()
 
 
 def test_systemd_unit_path_and_content(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -410,6 +430,17 @@ def test_status_normalizes_backend_detail_lines(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(sm, "has_nssm", lambda: True)
     monkeypatch.setattr(sm, "nssm_status", lambda: (False, "\n\nSTATE   :   STOPPED\nextra"))
     monkeypatch.setattr(sm, "task_scheduler_status", lambda: (False, "\n"))
+    # status() now also consults task_scheduler_health(), which shells out to
+    # PowerShell. Stub it, or this unit test reads the REAL machine's task and
+    # its outcome depends on who ran it.
+    monkeypatch.setattr(
+        sm,
+        "task_scheduler_health",
+        lambda: {
+            "installed": False, "last_result": None, "next_run": None,
+            "can_recover": None, "problems": ["not installed"],
+        },
+    )
 
     import navig.daemon.supervisor as supervisor
 
@@ -432,7 +463,10 @@ def test_status_normalizes_backend_detail_lines(monkeypatch: pytest.MonkeyPatch)
     assert "\n\n" not in detail
     assert "NSSM service: Inactive" in detail
     assert "  Detail: STATE : STOPPED" in detail
-    assert "Task Scheduler: Inactive" in detail
+    # The line now states what the task can DO, not merely that it exists:
+    # "Inactive" was also what a task printed whose last run had FAILED and which
+    # would never fire again, which is how a dead daemon looked fine for two days.
+    assert "Task Scheduler: Not installed" in detail
 
 
 # ── the service must export the CANONICAL config-dir var, not just legacy NAVIG_HOME ──
@@ -468,3 +502,70 @@ def test_service_env_keeps_config_and_memory_on_one_home(monkeypatch: pytest.Mon
     monkeypatch.delenv("NAVIG_CONFIG_DIR", raising=False)
     assert plat_paths.config_dir() != mem_paths.navig_home()
     assert mem_paths.navig_home() == Path(custom)
+
+
+# ── the Windows Task Scheduler fallback must bake in NAVIG_CONFIG_DIR too (#302 follow-up) ──
+
+def test_task_scheduler_xml_bakes_config_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A Task Scheduler <Exec> has NO env mechanism, so the task inherits only the user's
+    persistent env — a shell-set NAVIG_CONFIG_DIR is lost. The launch now bakes it into a
+    `pythonw -c` bootstrap; without this the Windows-fallback daemon split-brained (#302)."""
+    import xml.etree.ElementTree as ET
+
+    custom = tmp_path / "custom & home"   # '&' also exercises XML escaping
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(custom))
+
+    xml = sm._schtasks_xml()
+    # well-formed even with '&' in the home (WorkingDirectory/Command/Arguments all escaped).
+    # Our own generated XML — S314 (untrusted-XML) does not apply.
+    root = ET.fromstring(xml.replace('<?xml version="1.0" encoding="UTF-16"?>\n', ""))  # noqa: S314
+    ns = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
+    args = root.find(".//t:Exec/t:Arguments", ns).text
+    assert "NAVIG_CONFIG_DIR" in args and "NAVIG_HOME" in args
+    assert str(custom).replace("\\", "/") in args
+    assert "navig.daemon.entry" in args
+
+
+def test_task_bootstrap_puts_config_and_memory_on_one_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Running the baked bootstrap's env-setup makes config_dir() == memory.navig_home() —
+    the property the systemd/NSSM env already guarantees, now for the task too."""
+    from navig.memory import paths as mem_paths
+    from navig.platform import paths as plat_paths
+
+    custom = tmp_path / "svc-home"
+    env_setup = sm._task_env_setup(custom)
+    assert env_setup in sm._task_bootstrap_args(custom), "the task must run these assignments"
+
+    # The exec writes os.environ DIRECTLY, bypassing monkeypatch, so hand it the keys
+    # first. `setenv` records the pre-existing state (here: absent) and its undo deletes
+    # whatever the value became; `delenv` immediately after keeps the var absent for the
+    # duration, which `_task_env_setup`'s `setdefault('NAVIG_HOME', …)` needs in order to
+    # take effect at all. Both halves are load-bearing.
+    #
+    # `delenv` alone was not enough and is why this leaked: on a var that was ABSENT it
+    # records nothing to restore, so the exec's write survived teardown. NAVIG_SERVICE was
+    # not registered at all. `navig/memory/paths.py` honours NAVIG_HOME as its FIRST
+    # precedence rule, so every later test in the same xdist worker resolved memory paths
+    # to this `tmp_path` — which pytest then deletes. Found by auditing os.environ across a
+    # full run; same class as the teardowns that popped NAVIG_CONFIG_DIR (#1125).
+    for _key in ("NAVIG_SERVICE", "NAVIG_CONFIG_DIR", "NAVIG_HOME"):
+        monkeypatch.setenv(_key, "")
+        monkeypatch.delenv(_key, raising=False)
+    exec("import os; " + env_setup)  # noqa: S102 — only the os.environ[...] assignments
+    assert plat_paths.config_dir() == mem_paths.navig_home() == custom
+
+
+def test_task_bootstrap_gives_a_silent_boot_somewhere_to_speak(tmp_path: Path) -> None:
+    """THE REGRESSION: `pythonw` has no console, so a failed boot left no evidence at all.
+
+    The task reported `Last Result: 1` and wrote nothing — no log, no pid file, no
+    traceback — while the owner's reminders silently stopped arriving. Pointing the
+    boot's stdout/stderr at a file is what makes the next failure diagnosable.
+    """
+    args = sm._task_bootstrap_args(tmp_path / "home")
+
+    assert "boot.log" in args
+    assert "sys.stdout=sys.stderr=" in args
+    # Redirection must be in place BEFORE the daemon is handed control, or a boot-time
+    # traceback still goes to the void it came from.
+    assert args.index("sys.stdout=sys.stderr=") < args.index("runpy.run_module")

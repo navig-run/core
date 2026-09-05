@@ -78,7 +78,6 @@ async def handle_api_events(request: "web.Request") -> "web.Response":
     )
     await response.prepare(request)
 
-    loop = asyncio.get_event_loop()
     queue: asyncio.Queue = asyncio.Queue(maxsize=256)
 
     # Subscribe to all system events if available

@@ -1,12 +1,9 @@
 """Tests for navig/core/evolution/fix.py — FixEvolver."""
 from __future__ import annotations
 
-import os
 import textwrap
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from navig.core.evolution.fix import FixEvolver
 
@@ -161,7 +158,6 @@ class TestValidate:
     def test_check_command_exception_returns_error(self, tmp_path):
         f = tmp_path / "mod.py"
         ev = FixEvolver(target_file=f, check_command="some_command_that_fails")
-        import subprocess
         with patch("subprocess.run", side_effect=OSError("not found")):
             with patch("navig.core.evolution.fix.info"):
                 result = ev._validate(f"```python\n{_VALID_PYTHON}\n```", None)

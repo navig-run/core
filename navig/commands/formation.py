@@ -299,3 +299,4 @@ def formation_run(
         ch.console.print()
     except Exception as e:  # noqa: BLE001
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e

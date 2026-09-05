@@ -32,6 +32,8 @@ from typing import Any
 
 import typer
 
+from navig.core.json_io import JsonReadError, load_json_for_update, load_json_safe
+from navig.core.proc_text import console_encoding
 from navig.platform.paths import config_dir, scripts_dir
 
 mount_app = typer.Typer(
@@ -73,13 +75,28 @@ def _scripts_dir() -> Path:
 
 
 def _load_registry() -> dict[str, Any]:
-    path = _registry_path()
-    if not path.is_file():
-        return {"drives": {}}
+    # Read-only view (cmd_list, verify_on_startup): degrade to an empty registry on any
+    # failure so a status read never crashes. A read-modify-write MUST use
+    # _load_registry_for_update instead, or a transient lock here would return {} and the
+    # subsequent _save_registry would wipe every other drive record.
+    return load_json_safe(_registry_path(), default={"drives": {}})
+
+
+def _load_registry_for_update() -> dict[str, Any]:
+    """Load the registry for a read-modify-write (add/remove/verify/sync).
+
+    Unlike :func:`_load_registry`, a file that exists-with-content but is transiently
+    unreadable (a Windows AV/backup lock) ABORTS the command — otherwise the empty dict it
+    would otherwise return, written back by _save_registry, wipes every other mount record.
+    """
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {"drives": {}}
+        return load_json_for_update(_registry_path(), default={"drives": {}})
+    except JsonReadError as exc:
+        typer.echo(
+            f"✗ The drives registry is temporarily unreadable ({exc}); not modifying it to "
+            "avoid wiping your other mounts. Retry in a moment."
+        )
+        raise typer.Exit(1) from exc
 
 
 def _save_registry(data: dict[str, Any]) -> None:
@@ -124,11 +141,16 @@ def _create_junction(source: Path, target: Path) -> str | None:
 
     if _is_windows():
         try:
+            # Console code page: the CalledProcessError handler below returns
+            # `exc.stderr` verbatim as the user-facing error, and cmd.exe's messages are
+            # localized. Text mode would also leave `exc.stderr` None under Python's UTF-8
+            # mode, turning the error path into an AttributeError inside the handler.
             subprocess.run(
                 ["cmd", "/c", "mklink", "/J", str(target), str(source)],
                 check=True,
                 capture_output=True,
-                text=True,
+                encoding=console_encoding(),
+                errors="replace",
             )
         except subprocess.CalledProcessError as exc:
             return exc.stderr.strip() or str(exc)
@@ -155,7 +177,8 @@ def _remove_junction(target: Path) -> str | None:
                 ["cmd", "/c", "rmdir", str(target)],
                 check=True,
                 capture_output=True,
-                text=True,
+                encoding=console_encoding(),
+                errors="replace",
             )
         except subprocess.CalledProcessError as exc:
             return exc.stderr.strip() or str(exc)
@@ -204,7 +227,7 @@ def cmd_add(
         mnt_root = Path.home() / "mnt"
         target_path = mnt_root / label
 
-    data = _load_registry()
+    data = _load_registry_for_update()
     drives = data.setdefault("drives", {})
 
     if label in drives:
@@ -272,7 +295,7 @@ def cmd_remove(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ) -> None:
     """Remove a registered drive junction."""
-    data = _load_registry()
+    data = _load_registry_for_update()
     drives = data.get("drives", {})
 
     if label not in drives:
@@ -305,7 +328,7 @@ def cmd_verify(
     json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Verify all registered junctions are alive and update registry status."""
-    data = _load_registry()
+    data = _load_registry_for_update()
     drives = data.get("drives", {})
 
     if not drives:
@@ -356,7 +379,7 @@ def cmd_sync(
     # First verify
     typer.echo("Verifying junctions…")
     # Run verify inline (without invoking subprocess)
-    data = _load_registry()
+    data = _load_registry_for_update()
     drives = data.get("drives", {})
     dead: list[str] = []
 

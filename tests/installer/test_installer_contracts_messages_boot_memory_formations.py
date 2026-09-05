@@ -329,7 +329,6 @@ class TestMemoryStoreCompat:
         mock_store.upsert.assert_called_once()
 
     def test_add_feedback_maps_to_preference(self):
-        from navig.memory.key_facts import KeyFact
         from navig.memory.store import get_memory_store
 
         captured = []

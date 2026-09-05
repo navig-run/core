@@ -30,6 +30,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from navig.core.background import spawn
 from navig.engine.hooks import ExecutionEvent, HookPhase, global_hooks
 from navig.tools.hooks import ToolEvent, ToolExecutionEvent, get_hook_registry
 
@@ -41,8 +42,8 @@ _WIRED: bool = False
 def _fire_engine_event(event: ExecutionEvent) -> None:
     """Schedule an async engine hook emission from a sync tool hook callback."""
     try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(global_hooks.emit(event))
+        asyncio.get_running_loop()  # require a running loop; else run directly below
+        spawn(global_hooks.emit(event))
     except RuntimeError:
         # No running event loop (sync context) — run directly
         try:
@@ -69,6 +70,9 @@ def _make_after_handler():
             args=ev.parameters,
             success=True,
             output=ev.output,
+            # keyword-only with no default on ExecutionEvent.after — omitting it raised.
+            # This is the success handler (failures go through _make_error_handler).
+            error=None,
             elapsed_ms=ev.elapsed_ms,
         )
         _fire_engine_event(engine_event)

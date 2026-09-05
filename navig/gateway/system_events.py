@@ -113,6 +113,9 @@ class SystemEventQueue:
 
         # Event counter for ID generation
         self._event_counter = 0
+        # Set when the queue file exists but could not be read/parsed;
+        # `_save_events` refuses while it stands so pending events survive.
+        self._load_failed = False
 
         # Load persisted events
         self._load_events()
@@ -126,28 +129,66 @@ class SystemEventQueue:
         return self.storage_path / "events.json"
 
     def _load_events(self) -> None:
-        """Load pending events from disk."""
+        """Load pending events from disk.
+
+        A failed READ must never become a destructive WRITE. This left `_pending`
+        empty on any failure, and every mutation ends in `_save_events()`, whose
+        atomic write then replaced the queue file with that empty set — silently
+        dropping every event the operator had not yet seen. `_event_counter` reset
+        to 0 with it, so `_generate_id` began re-issuing `evt_1_…` (the embedded
+        timestamp makes an actual collision unlikely, but the counter is no longer
+        monotonic across a failed load).
+
+        `load_json_for_update` rides out transient locks and distinguishes "absent
+        or genuinely empty" (safe to overwrite) from "has content but could not be
+        read" (never overwrite); the failure is remembered so `_save_events` refuses.
+        """
+        from navig.core.json_io import JsonReadError, load_json_for_update
+
+        self._load_failed = False
         events_path = self._get_events_path()
 
-        if events_path.exists():
+        try:
+            data = load_json_for_update(events_path, default={})
+        except JsonReadError as e:
+            self._load_failed = True
+            logger.error("Failed to load events: %s", e)
+            return
+
+        for event_data in data.get("pending", []):
             try:
-                data = json.loads(events_path.read_text(encoding="utf-8"))
+                event = SystemEvent.from_dict(event_data)
+            except Exception as e:  # noqa: BLE001 — one bad row must not drop the rest
+                self._load_failed = True
+                logger.error("Failed to load a pending event: %s", e)
+                return
+            self._pending[event.id] = event
 
-                # Load pending events
-                for event_data in data.get("pending", []):
-                    event = SystemEvent.from_dict(event_data)
-                    self._pending[event.id] = event
-
-                # Load counter
-                self._event_counter = data.get("counter", 0)
-
-                logger.info("Loaded %s pending events", len(self._pending))
-
-            except Exception as e:
-                logger.error("Failed to load events: %s", e)
+        self._event_counter = data.get("counter", 0)
+        if data:
+            logger.info("Loaded %s pending events", len(self._pending))
 
     def _save_events(self) -> None:
-        """Save pending events to disk."""
+        """Save pending events to disk. Refuses after a failed load.
+
+        Recorded rather than silent — a queue that quietly stops persisting looks
+        exactly like a queue that is empty. Runs on the gateway, so it must not raise.
+        """
+        if getattr(self, "_load_failed", False):
+            from navig.core import incidents
+
+            incidents.record(
+                incidents.STORE_WRITE_REFUSED,
+                store="system_events",
+                path=str(self._get_events_path()),
+            )
+            logger.warning(
+                "Refusing to persist events: %s could not be read, so writing now "
+                "would drop every pending event it still holds.",
+                self._get_events_path(),
+            )
+            return
+
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
         data = {

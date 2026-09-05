@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import typer
@@ -21,10 +22,11 @@ def _table() -> object:
     return Table(title="Import Results")
 
 
-def _persist_bookmarks(results: dict[str, list]) -> tuple[int, int]:
+def _persist_bookmarks(results: dict[str, list]) -> tuple[int, int, int]:
     db = links_db_mod.get_links_db()
     added = 0
     skipped = 0
+    repaired = 0
 
     for item in _flatten(results):
         if item.get("type") != "bookmark":
@@ -32,8 +34,19 @@ def _persist_bookmarks(results: dict[str, list]) -> tuple[int, int]:
         url = str(item.get("value") or "").strip()
         if not url:
             continue
-        if db.get_by_url(url):
-            skipped += 1
+        existing = db.get_by_url(url)
+        if existing is not None:
+            # Dedupe-on-url means a re-import can never repair a bad title, so a bookmark
+            # stored by the pre-fix Safari parser (which labelled every leaf with its own
+            # URL) would stay broken forever. Repair exactly that signature — a stored
+            # title identical to the stored url — when we now have a real one. Anything
+            # else is still just a duplicate.
+            new_title = str(item.get("label") or "").strip()
+            if new_title and new_title != url and existing.title == url:
+                db.update(existing.id, title=new_title)
+                repaired += 1
+            else:
+                skipped += 1
             continue
 
         meta = item.get("meta") or {}
@@ -50,7 +63,7 @@ def _persist_bookmarks(results: dict[str, list]) -> tuple[int, int]:
         )
         added += 1
 
-    return added, skipped
+    return added, skipped, repaired
 
 
 @import_app.command("list-sources")
@@ -111,15 +124,35 @@ def _run_import(
         ch.success(f"Wrote import output: {output}")
 
     if persist_bookmarks:
-        added, skipped = _persist_bookmarks(results)
-        ch.info(f"Bookmark persistence: {added} added, {skipped} duplicates skipped")
+        added, skipped, repaired = _persist_bookmarks(results)
+        summary = f"Bookmark persistence: {added} added, {skipped} duplicates skipped"
+        if repaired:
+            summary += f", {repaired} title(s) repaired"
+        ch.info(summary)
 
     if json_output:
         print(payload)
+        # stdout stays exactly one JSON document (the machine contract), so a failed
+        # source is reported on stderr — and the exit code still tells a script that the
+        # empty result it just parsed is a failure, not an empty browser.
+        if engine.errors:
+            for src, reason in sorted(engine.errors.items()):
+                sys.stderr.write(f"{src}: could not read source — {reason}\n")
+            if not _flatten(results):
+                raise typer.Exit(1)
         return
 
     rows = _flatten(results)
     if not rows:
+        # "Could not read the source" is NOT "the source is empty". Reporting a locked
+        # places.sqlite (Firefox simply being open), a corrupt export or a permission
+        # error as a cheerful empty success — and exiting 0 — is the phantom-success
+        # trap: the operator retries nothing and a script sees the import as done.
+        if engine.errors:
+            for src, reason in sorted(engine.errors.items()):
+                ch.error(f"{src}: could not read source — {reason}")
+            ch.info("Nothing was imported. Close the app holding the file, or pass --path.")
+            raise typer.Exit(1)
         ch.warning("No items imported.")
         return
 
@@ -139,6 +172,11 @@ def _run_import(
             )
 
         get_console().print(table)
+        # Partial failure under `--source all`: some sources DID import, so this is not a
+        # failed run (exit stays 0) — but staying silent would hide that e.g. Firefox was
+        # locked and contributed nothing.
+        for src, reason in sorted(engine.errors.items()):
+            ch.warning(f"{src}: skipped — could not read source ({reason})")
     except Exception:
         for row in rows:
             print(

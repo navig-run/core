@@ -1,10 +1,7 @@
 """Tests for navig.memory.sync — _as_chunk, import_chunks."""
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from navig.memory.sync import _as_chunk, import_chunks
 

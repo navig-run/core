@@ -159,15 +159,19 @@ def reject(root: Path, media_id: str) -> Path:
 
 
 def _update_sidecar(root: Path, media_id: str, **fields: Any) -> None:
+    from navig.core.json_io import JsonReadError, atomic_write_json, load_json_for_update
+
     path = _sidecar_path(root, media_id)
-    meta: dict[str, Any] = {}
-    if path.exists():
-        try:
-            meta = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001
-            meta = {}
+    try:
+        meta: dict[str, Any] = load_json_for_update(path, default={})
+    except JsonReadError:
+        # Sidecar present but transiently unreadable (a lock / a half-written read).
+        # Updating now would DROP the media item's other stored metadata — skip this
+        # update; it will be re-applied on a later call when the file reads cleanly.
+        logger.warning("sidecar %s is locked; skipping metadata update to avoid dropping prior fields", path)
+        return
     meta.update(fields)
-    path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write_json(meta, path)
 
 
 def read_sidecar(root: Path, media_id: str) -> dict[str, Any] | None:

@@ -1,7 +1,6 @@
 """Batch 63 — commands/debug_cmd, installer/core_cli, installer/migrate_legacy."""
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

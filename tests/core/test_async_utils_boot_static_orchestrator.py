@@ -70,13 +70,15 @@ class TestBootCmdShow:
     def test_boot_show_runs(self):
         with patch("navig.console_helper.warning") as mock_warn:
             # boot_cmd calls ch.warn which doesn't exist — patch it on the module
-            import navig.commands.boot_cmd as _mod
             import navig.console_helper as _ch
             orig = getattr(_ch, "warn", None)
             _ch.warn = MagicMock()
             try:
                 result = _runner.invoke(boot_app, ["show"])
-                assert result.exit_code == 0 or isinstance(result.exception, AttributeError)
+                # `navig boot show` is not implemented, so it must report failure
+                # (#1030). The old assertion also accepted an AttributeError, which
+                # made it pass for almost any outcome.
+                assert result.exit_code != 0
             finally:
                 if orig is None:
                     delattr(_ch, "warn")
@@ -89,7 +91,7 @@ class TestBootCmdShow:
         _ch.warn = MagicMock()
         try:
             result = _runner.invoke(boot_app, ["show"])
-            assert result.exit_code == 0
+            assert result.exit_code != 0, "an unimplemented command must not report success"
         finally:
             if orig is None:
                 delattr(_ch, "warn")
@@ -108,7 +110,7 @@ class TestBootCmdRun:
         _ch.warn = MagicMock()
         try:
             result = _runner.invoke(boot_app, ["run"])
-            assert result.exit_code == 0
+            assert result.exit_code != 0, "an unimplemented command must not report success"
         finally:
             if orig is None:
                 delattr(_ch, "warn")
@@ -121,7 +123,7 @@ class TestBootCmdRun:
         _ch.warn = MagicMock()
         try:
             result = _runner.invoke(boot_app, ["run", "--dry-run"])
-            assert result.exit_code == 0
+            assert result.exit_code != 0, "an unimplemented command must not report success"
         finally:
             if orig is None:
                 delattr(_ch, "warn")

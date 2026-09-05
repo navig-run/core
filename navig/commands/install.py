@@ -341,8 +341,12 @@ def install_asset(
                 ch.info(f"✓ Installed skill '{skill.name}' → {dest}")
             else:
                 ch.warning(f"Installed to {dest}, but SKILL.md did not parse — check the asset.")
-        except Exception:  # noqa: BLE001
-            ch.info(f"✓ Installed → {dest}")
+        except Exception as exc:  # noqa: BLE001
+            # This branch used to print "✓ Installed" and drop the exception. Parsing
+            # SKILL.md is the ONLY validation this install does, so the one case where
+            # it blew up was also the one case that claimed success — while the branch
+            # right above it, for the milder "returned nothing", correctly warned.
+            ch.warning(f"Installed to {dest}, but SKILL.md could not be read — {exc}")
     elif info["type"] == "block":
         _finalize_block_install(dest, info["id"])
     else:
@@ -367,6 +371,11 @@ def _finalize_block_install(dest: Path, asset_id: str) -> None:
         ch.warning(f"Installed to {dest}, but no BLOCK.md was found.")
         return
 
+    # Parts of the install that can fail WITHOUT the files failing to land. Collected
+    # rather than printed inline so the final line can say whether it was complete —
+    # every one of these used to be followed by an unqualified green ✓.
+    degraded: list[str] = []
+
     # Pin the digest into the project lockfile (tamper evidence on re-apply).
     try:
         from datetime import datetime, timezone
@@ -382,14 +391,28 @@ def _finalize_block_install(dest: Path, asset_id: str) -> None:
                 installed_at=datetime.now(timezone.utc).isoformat(),
             )
     except Exception as exc:  # noqa: BLE001
-        ch.dim(f"  (lockfile not updated: {exc})")
+        # ch.dim is the quietest sink there is, and what is lost here is the block's
+        # TAMPER EVIDENCE: without the pinned digest, a later `navig apply` cannot tell
+        # that the block on disk is the one that was installed. For the paid tier the
+        # verified receipt is the entire product claim, so this is a warning.
+        degraded.append(f"digest not pinned in the lockfile ({exc}) — no tamper "
+                        "evidence when this block is re-applied")
 
     try:
         write_skill_shim(dest)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        # Silent `pass` before. The shim is what makes an installed block show up in
+        # the skill surfaces (and under .claude/ in a wired project) — without it the
+        # block is installed and invisible, which reads exactly like a failed install.
+        degraded.append(f"skill shim not written ({exc}) — this block will not appear "
+                        "in skill surfaces")
 
-    ch.info(f"✓ Installed block '{block.name}' ({block.id} v{block.version}) → {dest}")
+    if degraded:
+        ch.warning(f"Installed block '{block.name}' ({block.id} v{block.version}) → {dest}")
+        for item in degraded:
+            ch.warning(f"  ✗ {item}")
+    else:
+        ch.info(f"✓ Installed block '{block.name}' ({block.id} v{block.version}) → {dest}")
     ch.dim(f"  apply: navig apply {block.id}")
 
 

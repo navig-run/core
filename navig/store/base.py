@@ -45,6 +45,21 @@ def _utcnow() -> str:
     """ISO-8601 UTC timestamp."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
+
+def _to_utc_iso(dt: datetime) -> str:
+    """Canonical UTC ISO-8601 string (``…Z``, microseconds) for an ARBITRARY datetime — the
+    exact shape :func:`_utcnow` produces, so columns written by both stay homogeneous under the
+    plain lexicographic string comparisons the stores use.
+
+    A tz-aware datetime is converted to UTC. A **naive** datetime is assumed to be in the
+    server's LOCAL timezone (every naive caller passes a wall-clock local time) and converted
+    to UTC — storing a naive local time AS-IF-UTC is the bug this prevents: the value would then
+    sort against a UTC ``now`` and fire off by the server's UTC offset.
+    """
+    if dt.tzinfo is None:
+        dt = dt.astimezone()  # interpret the naive wall-clock as server-local, make it aware
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
 def _get_engine():
     """Lazy import to avoid circular dependency at module level."""
     from navig.storage import get_engine

@@ -60,27 +60,48 @@ def parse_markdown_with_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     """
     Parse markdown with YAML frontmatter.
 
+    Inverse of :func:`format_markdown_with_frontmatter` — the body is returned EXACTLY as
+    written. It used to be ``.strip()``ed, which made the pair lossy: ``ContextFile`` loads,
+    mutates frontmatter and saves, so a single ``update_frontmatter()`` rewrote the user's
+    SOUL.md/USER.md without its trailing newline, and turned a leading indented code block into
+    an ordinary paragraph.
+
+    A block is only frontmatter when it parses to a MAPPING. Without that check, a plain
+    markdown document that opens with a ``---`` horizontal rule and contains a later ``---``
+    had everything between them swallowed as "frontmatter": the text was lost, and the caller
+    got a ``str`` where this signature promises a dict (``update_frontmatter`` then died on
+    ``'str' object has no attribute 'update'``).
+
     Returns:
         Tuple of (frontmatter_dict, body_content)
     """
     if not content.startswith("---"):
         return {}, content
 
-    # Find end of frontmatter
-    end_match = re.search(r"\n---\s*\n", content[3:])
+    # Find the closing delimiter. `[ \t]*` (not `\s*`) so a BLANK LINE that opens the body is
+    # not swallowed as part of the delimiter — with `\s*` the match ran one newline long while
+    # the slice below used a hardcoded -4 offset, so the frontmatter was cut mid-token and a
+    # body starting with a blank line lost both its blank line and its frontmatter.
+    end_match = re.search(r"\n---[ \t]*\r?\n", content[3:])
     if not end_match:
         return {}, content
 
-    frontmatter_end = end_match.end() + 3
-    frontmatter_text = content[3 : frontmatter_end - 4]
-    body = content[frontmatter_end:]
+    # Offsets derived from the match itself — never from a magic constant.
+    frontmatter_text = content[3 : 3 + end_match.start()]
+    body = content[3 + end_match.end() :]
 
     try:
-        frontmatter = yaml.safe_load(frontmatter_text) or {}
+        parsed = yaml.safe_load(frontmatter_text)
     except yaml.YAMLError:
-        frontmatter = {}
+        return {}, content  # not frontmatter — hand the document back untouched
 
-    return frontmatter, body.strip()
+    if parsed is None:
+        return {}, body  # an empty but well-formed block ("---\n---\n")
+    if not isinstance(parsed, dict):
+        # A scalar/list means those dashes were content (a horizontal rule), not a delimiter.
+        return {}, content
+
+    return parsed, body
 
 
 def format_markdown_with_frontmatter(frontmatter: dict[str, Any], body: str) -> str:

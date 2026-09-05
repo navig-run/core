@@ -38,6 +38,8 @@ from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 from uuid import uuid4
 
+from navig.core.background import spawn
+
 logger = logging.getLogger("navig.event_bridge")
 
 # ---------------------------------------------------------------------------
@@ -480,7 +482,7 @@ class EventBridge:
 
         # Fast-path: offload to Go daemon via IPC
         if self.enable_ipc_offload:
-            asyncio.create_task(self._forward_to_ipc(payload_str))
+            spawn(self._forward_to_ipc(payload_str))
 
         # Truncate oversized payloads
         if len(payload_str.encode("utf-8", errors="replace")) > self.max_payload_bytes:

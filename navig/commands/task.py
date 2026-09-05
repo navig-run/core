@@ -75,7 +75,7 @@ def task_run(
         ]
         renderer.render_fleet_table(
             rows,
-            title=f"[dry-run] Routing: {instruction[:50]}",
+            title=f"DRY RUN: Routing: {instruction[:50]}",
             columns=["Provider", "Score", "Would handle"],
         )
         return

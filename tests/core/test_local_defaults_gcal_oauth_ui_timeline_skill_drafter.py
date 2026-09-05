@@ -9,11 +9,7 @@ Batch 46 — hermetic unit tests for:
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
 # navig/providers/_local_defaults.py

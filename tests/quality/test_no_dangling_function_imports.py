@@ -37,10 +37,12 @@ NAVIG = CORE / "navig"
 ALLOWLIST: dict[tuple[str, str, str], str] = {
     ("navig/commands/agents.py", "navig.agents", "list_agents"):
         "intentional: `navig agents` is not built yet; the except prints 'not implemented'",
-    ("navig/commands/matrix.py", "navig.vault.core", "CredentialsVault"):
-        "api-drift: CredentialsVault moved to the navig.vault package AND Vault.get is now (provider, profile_id)-based, not id-based — auth-lookup rewrite",
     ("navig/gateway/channels/telegram_autoheal.py", "navig.proactive.error_resolution", "analyze_error"):
-        "api-drift: error_resolution exposes ErrorResolution class, not an analyze_error function",
+        "api-drift: error_resolution exposes ErrorResolution class, not an analyze_error function. "
+        "NOT a mechanical fix: analyze_error is a METHOD on ErrorResolution(assistant), whose "
+        "__init__ reads assistant.ai_context_dir / .assistant_config, and it WRITES an error log — "
+        "so wiring it into this notification path adds a ProactiveAssistant dependency and a side "
+        "effect to an error report. (_get_ai_solutions is a stub returning [] anyway.)",
 }
 
 _CATCH = {"ImportError", "ModuleNotFoundError", "Exception", "BaseException"}

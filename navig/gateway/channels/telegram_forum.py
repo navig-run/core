@@ -28,6 +28,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from navig.core.coerce import coerce_bool
+
 if TYPE_CHECKING:
     pass
 
@@ -109,7 +111,7 @@ class TelegramForumMixin:
         any send API call.
         """
         cfg = self._get_forum_config()
-        if not cfg.get("forum_routing_enabled", False):
+        if not coerce_bool(cfg.get("forum_routing_enabled", False), default=False):
             return None
 
         if not await self._is_forum_group(chat_id):
@@ -222,9 +224,23 @@ class TelegramForumMixin:
         """Return forum routing config (best-effort)."""
         try:
             from navig.config import get_config_manager
+            from navig.core.coerce import coerce_bool
 
             cm = get_config_manager()
             tg = cm.get("telegram") or {}
-            return {"forum_routing_enabled": tg.get("forum_routing_enabled", False)}
+            # coerce_bool: `navig config set telegram.forum_routing_enabled true/false`
+            # stores a raw string; without coercion "false" reads truthy and a raw
+            # "true" the operator set would still gate on the wrong type.
+            # AND with the Groups & forums extension: the per-feature key keeps
+            # meaning exactly what it meant before, so a feature that is off
+            # today stays off for two independent reasons.
+            from navig.gateway.channels.telegram_extensions import is_enabled
+
+            return {
+                "forum_routing_enabled": coerce_bool(
+                    tg.get("forum_routing_enabled", False), default=False
+                )
+                and is_enabled("groups")
+            }
         except Exception:  # noqa: BLE001
             return {"forum_routing_enabled": False}

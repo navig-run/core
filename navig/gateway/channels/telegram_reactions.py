@@ -13,9 +13,21 @@ Module-level constants are the single source of truth for all emoji→action
 mappings.  Only emojis from the Telegram-approved reaction set are used here.
 ⭐ and 🔁 are NOT in Telegram's allowed reaction set and must never be added.
 
-Integration points:
-- ``TelegramChannel._process_update`` calls ``self._on_message_reaction(upd)``
-- ``TelegramChannel._send_response`` calls ``self._record_bot_reply(…)`` after
+⚠ NOT WIRED. Both integration points below were removed when reactions stopped being
+an action trigger — ``_process_update`` now does ``if update.get("message_reaction"):
+return`` with the comment "replaced by reply keywords (see navig.telegram.reply_actions)".
+Nothing in ``core/navig`` calls into this module, so none of the mappings above happen.
+
+The header used to assert those calls as fact, which is how a reader concludes the
+feature works: a docstring describing a caller is a CLAIM about another file, and this
+one outlived the caller it described. Kept (rather than deleted) because the emoji→action
+mapping is the reference for whatever replaces it, and because deleting a subsystem is a
+product decision, not a cleanup. Listed in
+``tests/quality/test_no_unreachable_channel_handlers.py::KNOWN_UNWIRED``.
+
+Former integration points, for whoever revives it:
+- ``TelegramChannel._process_update`` would call ``self._on_message_reaction(upd)``
+- ``TelegramChannel._send_response`` would call ``self._record_bot_reply(…)`` after
   every AI response so the ring buffer can resolve reactions to their queries.
 """
 
@@ -24,6 +36,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import TYPE_CHECKING
+
+from navig.core.coerce import coerce_bool
 
 if TYPE_CHECKING:
     pass
@@ -98,7 +112,7 @@ class TelegramReactionsMixin:
     async def _on_message_reaction(self, reaction_update: dict) -> None:
         """Dispatch a ``message_reaction`` event to the appropriate handler."""
         cfg = self._get_reactions_config()
-        if not cfg.get("reactions_enabled", True):
+        if not coerce_bool(cfg.get("reactions_enabled", True), default=True):
             return
 
         new_reactions: list[dict] = reaction_update.get("new_reaction") or []
@@ -246,9 +260,16 @@ class TelegramReactionsMixin:
         """
         from navig.telegram import tiktok_actions
 
-        await tiktok_actions.handle_reaction(self, chat_id, msg_id, user_id, emoji)
-
-        await self._safe_set_reaction(chat_id, msg_id, _REACTION_ACKS["👍"])
+        # handle_reaction returns whether it actually briefed anything — it is
+        # False when the link can't be resolved or the `download` policy denies
+        # this user. Discarding it and acking anyway put a "done" mark on a
+        # reaction that did nothing, which reads as success and is the one signal
+        # the operator has. Ack only what happened.
+        handled = await tiktok_actions.handle_reaction(
+            self, chat_id, msg_id, user_id, emoji
+        )
+        if handled:
+            await self._safe_set_reaction(chat_id, msg_id, _REACTION_ACKS["👍"])
 
     async def _reaction_request_refine(
         self, chat_id: int, msg_id: int, user_id: int, emoji: str
@@ -477,11 +498,21 @@ class TelegramReactionsMixin:
         """Return the reactions sub-config from the config manager (best-effort)."""
         try:
             from navig.config import get_config_manager
+            from navig.core.coerce import coerce_bool
 
             cm = get_config_manager()
             tg = cm.get("telegram") or {}
+            # coerce_bool: `navig config set telegram.reactions_enabled false` stores
+            # the string "false" (bool("false") is True), so a raw read would leave
+            # reactions ON after the operator disabled them.
+            # AND with the Groups & forums extension: the per-feature key keeps
+            # meaning exactly what it meant before, so a feature that is off
+            # today stays off for two independent reasons.
+            from navig.gateway.channels.telegram_extensions import is_enabled
+
             return {
-                "reactions_enabled": tg.get("reactions_enabled", True),
+                "reactions_enabled": coerce_bool(tg.get("reactions_enabled", True), default=True)
+                and is_enabled("groups"),
             }
         except Exception:  # noqa: BLE001
             return {"reactions_enabled": True}

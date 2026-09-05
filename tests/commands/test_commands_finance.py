@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from navig.commands.finance import finance_app
@@ -14,7 +13,7 @@ runner = CliRunner()
 # App structure
 # ---------------------------------------------------------------------------
 
-def test_help_exits_0():
+def test_help_exits_nonzero():
     result = runner.invoke(finance_app, ["--help"])
     assert result.exit_code == 0
 
@@ -84,7 +83,7 @@ def test_status_mentions_not_installed_when_missing():
             sys.modules["beancount"] = orig
 
 
-def test_status_help_exits_0():
+def test_status_help_exits_nonzero():
     result = runner.invoke(finance_app, ["status", "--help"])
     assert result.exit_code == 0
 
@@ -93,10 +92,10 @@ def test_status_help_exits_0():
 # finance balance
 # ---------------------------------------------------------------------------
 
-def test_balance_exits_0():
+def test_balance_exits_nonzero():
     with patch("navig.console_helper.warning"):
         result = runner.invoke(finance_app, ["balance", "ledger.beancount"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
 def test_balance_calls_warn():
@@ -115,9 +114,9 @@ def test_balance_warn_says_not_implemented():
 def test_balance_no_ledger_still_runs():
     with patch("navig.console_helper.warning"):
         result = runner.invoke(finance_app, ["balance"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
-def test_balance_help_exits_0():
+def test_balance_help_exits_nonzero():
     result = runner.invoke(finance_app, ["balance", "--help"])
     assert result.exit_code == 0

@@ -1,11 +1,8 @@
 """Tests for navig.installer.runner — apply() and rollback()."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
 from navig.installer.runner import apply, rollback

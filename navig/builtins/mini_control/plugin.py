@@ -6,12 +6,12 @@ Registers:  navig mini status / run / deploy / logs / restart / list
 Config (set via navig config set, or env vars):
     mini.url        http://DEVICE_IP:9191          default agent URL
     mini.secret     <hmac_secret>                  HMAC-SHA256 signing key
-    mini.ssh_host   wd-cloud-nas                   NAVIG host alias for SSH ops
+    mini.ssh_host   navig-mini                     NAVIG host alias for SSH ops
     mini.agents     [{"name":"nas","url":"..."}]   JSON list for multi-agent
 
 Quick-start:
-    navig config set mini.url    http://10.0.0.34:9191
-    navig config set mini.secret ce3648def9fb81a42be35b50987a83f6b1b9c97c4bbdb07...
+    navig config set mini.url    http://navig-mini.local:9191
+    navig config set mini.secret <the secret printed by the mini installer>
     navig mini status
 """
 
@@ -56,12 +56,12 @@ def _navig_get(key: str, default: str = "") -> str:
 
 def _cfg() -> dict:
     return {
-        "url": _navig_get("mini.url", os.environ.get("MINI_AGENT_URL", "http://10.0.0.34:9191")),
+        "url": _navig_get("mini.url", os.environ.get("MINI_AGENT_URL", "http://navig-mini.local:9191")),
         "secret": _navig_get(
             "mini.secret",
             os.environ.get("MINI_AGENT_SECRET", os.environ.get("AGENT_SECRET", "")),
         ),
-        "ssh_host": _navig_get("mini.ssh_host", os.environ.get("MINI_SSH_HOST", "wd-cloud-nas")),
+        "ssh_host": _navig_get("mini.ssh_host", os.environ.get("MINI_SSH_HOST", "navig-mini")),
     }
 
 
@@ -134,7 +134,7 @@ def cmd_status(
     t.add_row("RAM", f"{s.get('ram_free_mb', '?')} MB free / {s.get('ram_total_mb', '?')} MB")
     t.add_row(
         "Disk",
-        f"{s.get('disk_pct', '?')} used — {s.get('disk_free', '?')} free  [{s.get('disk_path', '?')}]",
+        f"{s.get('disk_pct', '?')} used — {s.get('disk_free', '?')} free  \\[{s.get('disk_path', '?')}]",
     )
     t.add_row("Load", str(s.get("load", "?")))
     t.add_row("Python", str(s.get("python", "?")))

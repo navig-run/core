@@ -18,11 +18,10 @@ either ``owner/repo/skill`` (public agent-skill repos, installed as
 
 from __future__ import annotations
 
-import fnmatch
 import json
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 # The curated FLAT skills registry that resolves a skill *name* → files

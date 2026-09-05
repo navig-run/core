@@ -91,6 +91,34 @@ async def test_router_quiet_hours_mutes_non_deck(notify):
     assert tg["ok"] is False  # not configured in tests
 
 
+async def test_router_reports_channel_rejection_not_phantom_success(notify, monkeypatch):
+    """A CONFIGURED Telegram/Matrix channel that rejects an immediate send must be
+    reported as failed, not a phantom 'sent'. The router used to hardcode
+    True after send_alert; it now returns send_alert's real delivery result."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    prefs, _feed, router = notify
+    prefs.set_cell("reminder", "telegram", True)
+
+    channel = MagicMock()
+    channel.send_alert = AsyncMock(return_value=False)  # channel rejected the send
+    nm = MagicMock()
+    nm.get_channel = MagicMock(return_value=channel)
+    monkeypatch.setattr("navig.gateway.notifications.get_notification_manager", lambda: nm)
+
+    r = await router.dispatch("reminder", "loud", "now", priority="critical")
+    tg = next(c for c in r["channels"] if c["channel"] == "telegram")
+    assert tg["ok"] is False, "a rejected send must not be reported as delivered"
+    assert "reject" in tg["detail"].lower()
+
+    # A channel that accepts the send is reported as sent.
+    channel.send_alert = AsyncMock(return_value=True)
+    r2 = await router.dispatch("reminder", "loud", "now", priority="critical")
+    tg2 = next(c for c in r2["channels"] if c["channel"] == "telegram")
+    assert tg2["ok"] is True
+    assert tg2["detail"] == "sent"
+
+
 async def test_router_settings_targets_roundtrip(notify):
     prefs, _feed, _router = notify
     prefs.set_setting("target_sms", "+15551234567")
@@ -182,15 +210,15 @@ def test_the_deletion_alert_dispatches_a_registered_type():
 # ── router fail-safe: an unregistered type is delivered + warned, never dropped ─
 
 
-async def test_unregistered_type_falls_back_to_deck_and_warns(notify, caplog):
+async def test_unregistered_type_falls_back_to_deck_and_warns(notify, navig_log_capture):
+    # navig_log_capture (not caplog): the router logs via navig.notify.router, and navig's
+    # loggers set propagate=False, so caplog never sees the WARNING (tests/conftest.py).
     _prefs, _feed, router = notify
-    import logging
 
-    with caplog.at_level(logging.WARNING, logger="navig.notify.router"):
-        res = await router.dispatch("some_unregistered_type", "T", "b")
+    res = await router.dispatch("some_unregistered_type", "T", "b")
 
     assert [c["channel"] for c in res["channels"]] == ["deck"], "must not be silently dropped"
-    assert any("UNREGISTERED" in r.message for r in caplog.records), "the drop must be LOUD"
+    assert any("UNREGISTERED" in m for m in navig_log_capture), "the drop must be LOUD"
 
 
 async def test_registered_but_fully_muted_type_stays_silent(notify):
@@ -206,3 +234,21 @@ async def test_registered_but_fully_muted_type_stays_silent(notify):
     res = await router.dispatch("reminder", "T", "b")
 
     assert res["channels"] == [], "a user-muted registered type must not be fallback-delivered"
+
+
+def test_feed_prune_caps_rows(notify):
+    """The append-only deck feed must be prunable so it can't grow on disk forever (the
+    daemon auto-emits notifications with no user action)."""
+    _prefs, feed, _router = notify
+    for i in range(20):
+        feed.append("test", f"title {i}")
+    assert len(feed.list_items(limit=200)) == 20  # all present before prune
+
+    deleted = feed.prune(max_rows=5)
+    assert deleted == 15
+
+    items = feed.list_items(limit=200)
+    assert len(items) == 5  # capped to the newest 5
+    titles = {it["title"] for it in items}
+    assert "title 19" in titles  # newest kept
+    assert "title 0" not in titles  # oldest evicted

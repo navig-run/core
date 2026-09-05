@@ -6,8 +6,7 @@ This checklist is for NAVIG maintainers preparing an official release.
 
 - [ ] **Update version number** — the bump scripts handle this automatically:
   - `pyproject.toml` (bumped by `version_bump.py`)
-  - `latest.json` (root — canonical, auto-synced by `scripts/_version_sync.py`)
-  - `config/latest.json` (mirror, auto-synced)
+  - `latest.json` (root — canonical, auto-synced by `tools/_version_sync.py`)
   - `navig-www/public/latest.json` (auto-synced when `NAVIG_DEV_SYNC=1` or sibling dir detected)
 - [ ] **Update CHANGELOG.md** with release notes:
   - New features
@@ -74,9 +73,9 @@ This checklist is for NAVIG maintainers preparing an official release.
 Use the helper script to bump `pyproject.toml` and create/push a tag in one command:
 
 ```bash
-python scripts/version_bump.py bump patch --commit --tag --push
-python scripts/version_bump.py bump minor --commit --tag --push
-python scripts/version_bump.py bump major --commit --tag --push
+python tools/version_bump.py bump patch --commit --tag --push
+python tools/version_bump.py bump minor --commit --tag --push
+python tools/version_bump.py bump major --commit --tag --push
 ```
 
 Optional npm-style shortcuts are available at repo root:
@@ -99,7 +98,7 @@ Command mapping:
 To sync manifests manually without bumping (e.g. after a manual pyproject edit):
 
 ```bash
-python scripts/_version_sync.py
+python tools/_version_sync.py
 # or
 npm run version:sync
 ```

@@ -15,6 +15,7 @@ from typing import Any
 from navig import console_helper as ch
 from navig.assistant_utils import ensure_navig_directory
 from navig.config import ConfigManager
+from navig.core.coerce import coerce_bool
 
 
 class ProactiveAssistant:
@@ -120,19 +121,38 @@ class ProactiveAssistant:
 
     def is_enabled(self) -> bool:
         """Check if assistant is enabled."""
-        return self.assistant_config.get("enabled", True)
+        return coerce_bool(self.assistant_config.get("enabled", True), default=True)
 
     def get_suggestion_level(self) -> str:
         """Get current suggestion level (minimal/normal/verbose)."""
         return self.assistant_config.get("suggestion_level", "normal")
 
     def should_auto_analyze(self) -> bool:
-        """Check if automatic analysis is enabled."""
-        return self.assistant_config.get("auto_analysis", True)
+        """Whether a failed command is analysed automatically.
+
+        Set it with ``navig config set proactive_assistant.auto_analysis false``.
+
+        coerce_bool, not a raw read: `navig config set` stores its argument as a
+        STRING, and ``bool("false")`` is True — so this returned True for every value
+        an operator could type, and the setting could not be turned off. Gates the
+        auto-analysis in ``assistant_hooks`` and ``proactive/auto_detection``.
+        """
+        return coerce_bool(self.assistant_config.get("auto_analysis", True), default=True)
 
     def requires_confirmation(self) -> bool:
-        """Check if high-risk operations require confirmation."""
-        return self.assistant_config.get("confirmation_required", True)
+        """Whether a destructive operation must be confirmed.
+
+        Set it with ``navig config set proactive_assistant.confirmation_required false``.
+
+        Same string-vs-bool trap as above. The polarity here is fail-SAFE — an
+        uncoerced ``"false"`` kept the confirmation ON — so nothing was ever
+        unguarded; the setting was simply inert, and an operator who turned it off
+        kept being prompted with no way to tell why. Gates the destructive-operation
+        prompt in ``proactive/proactive_display.check_pre_execution_warnings``.
+        """
+        return coerce_bool(
+            self.assistant_config.get("confirmation_required", True), default=True
+        )
 
     def log_audit(self, action: str, details: dict[str, Any]):
         """
@@ -152,4 +172,11 @@ class ProactiveAssistant:
                 f.write(log_entry)
 
         except Exception as e:
-            ch.dim(f"Could not write to audit log: {e}")
+            # ch.dim before — the quietest sink there is, for the loss of an AUDIT
+            # line. An audit trail whose gaps are invisible is worse than no trail:
+            # it reads as a complete record of what the assistant did.
+            ch.warning(
+                f"Assistant audit log NOT written ({action}): {e}\n"
+                f"  This action is missing from {audit_file} — the trail has a gap, "
+                "not a record."
+            )

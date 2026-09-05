@@ -20,10 +20,13 @@ Usage::
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -197,6 +200,57 @@ class SessionCost:
 # ─────────────────────────────────────────────────────────────
 
 
+def _last_turn_path() -> "Path":
+    from navig.platform.paths import config_dir  # noqa: PLC0415
+
+    return config_dir() / "perf" / "last_turn.json"
+
+
+def record_last_turn(event: UsageEvent) -> None:
+    """Snapshot the most recent LLM call to ``<config_dir>/perf/last_turn.json``.
+
+    ``CostTracker`` is per-``run_agentic``-call and in-memory, so the CLI can
+    never see what the *daemon* just did — which is exactly the number an
+    operator needs to answer "is my prompt actually being cached?".
+    ``navig agent context`` reads this back.
+
+    Best-effort in every direction (mirrors the ``perf/config_incidents.jsonl``
+    precedent): a telemetry note must never raise into a live turn.
+    """
+    try:
+        path = _last_turn_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "turn": event.turn,
+            "model": event.model,
+            "provider": event.provider,
+            "prompt_tokens": event.prompt_tokens,
+            "completion_tokens": event.completion_tokens,
+            "cache_read_tokens": event.cache_read_tokens,
+            "cache_write_tokens": event.cache_write_tokens,
+            "cost_usd": round(event.cost_usd(), 6),
+            "at": event.timestamp.isoformat(),
+        }
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+    except Exception as exc:  # noqa: BLE001 — never break a turn for telemetry
+        logger.debug("record_last_turn skipped: %s", exc)
+
+
+def read_last_turn() -> dict[str, Any] | None:
+    """Read back the last recorded turn, or ``None`` when absent/unreadable."""
+    try:
+        path = _last_turn_path()
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("read_last_turn skipped: %s", exc)
+        return None
+
+
 class CostTracker:
     """Thread-safe accumulator of :class:`UsageEvent` records for one session.
 
@@ -231,6 +285,14 @@ class CostTracker:
                 event.completion_tokens,
                 event.cost_usd(),
             )
+        # Defence in depth: record_last_turn() already swallows its own failures,
+        # but this call sits on the agentic hot path, so the *call* must be safe
+        # too — a replaced sink, an import-time failure or a future refactor must
+        # not be able to turn a telemetry note into a dead turn.
+        try:
+            record_last_turn(event)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("last-turn snapshot skipped: %s", exc)
 
     def session_cost(self) -> SessionCost:
         """Return accumulated cost and token statistics for the session.

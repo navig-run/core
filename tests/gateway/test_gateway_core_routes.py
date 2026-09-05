@@ -34,6 +34,9 @@ def _build_gateway(*, auth_token: str | None = None):
     gateway.system_events = MagicMock()
     gateway.system_events.enqueue = AsyncMock()
     gateway.stop = AsyncMock()
+    # The live route handlers gate on this before acting; the deleted _handle_* twins
+    # did not, which is one more way they were the less safe copy. None == allowed.
+    gateway.policy_check = AsyncMock(return_value=None)
     return gateway
 
 
@@ -428,3 +431,102 @@ async def test_deck_auth_middleware_forbidden_user():
         assert forbidden.status == 403
         body = await forbidden.json()
         assert body["error"] == "forbidden"
+
+
+# ---------------------------------------------------------------------------
+# The routes that only had coverage through a DEAD twin
+#
+# `NavigGateway` carried `_handle_shutdown`, `_handle_heartbeat_trigger`,
+# `_handle_proactive_*`, `_handle_engagement_*` and `_handle_approval_pending` — copies
+# of these endpoints, registered nowhere, with **no auth check**. The only tests for
+# these behaviours drove those copies, so the live authenticated handlers ran untested
+# and the untested copies were one `add_get` away from being live.
+#
+# These exercise the registered routes over real HTTP, and assert the thing the dead
+# twins could never have caught: that a configured token is actually required.
+# ---------------------------------------------------------------------------
+
+AUTHED_ENDPOINTS = [
+    ("GET", "/proactive/status"),
+    ("POST", "/proactive/start"),
+    ("POST", "/proactive/stop"),
+    ("POST", "/proactive/check"),
+    ("GET", "/engagement/status"),
+    ("POST", "/engagement/tick"),
+    ("POST", "/heartbeat/trigger"),
+    ("GET", "/approval/pending"),
+    ("POST", "/shutdown"),
+]
+
+
+def _build_app_with(register_modules, gateway):
+    pytest.importorskip("aiohttp")
+    from aiohttp import web
+
+    app = web.Application()
+    for module in register_modules:
+        module.register(app, gateway)
+    return app
+
+
+def _all_route_modules():
+    from navig.gateway.routes import approval, core, heartbeat, proactive
+
+    return [core, heartbeat, proactive, approval]
+
+
+@pytest.mark.parametrize("method,path", AUTHED_ENDPOINTS)
+async def test_endpoint_requires_the_configured_token(method, path):
+    """With a token configured, an unauthenticated call must be refused.
+
+    The deleted `_handle_*` twins answered these same paths with no auth check at all,
+    so this is the assertion that never existed.
+    """
+    pytest.importorskip("aiohttp")
+    from aiohttp.test_utils import TestClient, TestServer
+
+    gateway = _build_gateway(auth_token="s3cret")
+    app = _build_app_with(_all_route_modules(), gateway)
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.request(method, path)
+        assert resp.status == 401, f"{method} {path} answered {resp.status} without a token"
+
+
+async def test_shutdown_is_accepted_with_the_token():
+    pytest.importorskip("aiohttp")
+    from aiohttp.test_utils import TestClient, TestServer
+
+    gateway = _build_gateway(auth_token="s3cret")
+    app = _build_app_with(_all_route_modules(), gateway)
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.post("/shutdown", headers={"Authorization": "Bearer s3cret"})
+        assert resp.status == 200
+        assert (await resp.json())["data"]["status"] == "shutting_down"
+
+
+async def test_proactive_status_reports_the_engine_with_the_token(monkeypatch):
+    pytest.importorskip("aiohttp")
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from navig.gateway.routes import proactive as proactive_routes
+
+    engine = SimpleNamespace(
+        running=True,
+        last_check=None,
+        last_check_status="ok",
+        last_error=None,
+        provider_status={"email": "ready"},
+    )
+    monkeypatch.setattr(proactive_routes, "get_proactive_engine", lambda: engine)
+
+    gateway = _build_gateway(auth_token="s3cret")
+    app = _build_app_with(_all_route_modules(), gateway)
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.get("/proactive/status", headers={"Authorization": "Bearer s3cret"})
+        assert resp.status == 200
+        payload = (await resp.json())["data"]
+        assert payload["started"] is True
+        assert payload["providers"] == {"email": "ready"}

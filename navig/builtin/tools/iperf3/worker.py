@@ -6,7 +6,6 @@ CLI path: net iperf3 client | net iperf3 server
 from __future__ import annotations
 
 import json
-import shutil
 import sys
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).parents[1] / "_lib"))

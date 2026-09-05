@@ -8,7 +8,7 @@ Batch 59: hermetic unit tests for
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -37,7 +37,6 @@ class TestAuditTailLogic:
 
     @pytest.mark.asyncio
     async def test_returns_all_events_when_no_filters(self) -> None:
-        import json
 
         from navig.gateway.routes.audit import _tail
 

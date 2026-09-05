@@ -42,24 +42,15 @@ INSTALL_SCRIPT = PROJECT_ROOT / "scripts" / "install-tray.ps1"
 
 def _is_tray_running() -> tuple[bool, int | None]:
     """Check if tray app is already running."""
-    if not _lock_file().exists():
-        return False, None
-    try:
-        pid = int(_lock_file().read_text(encoding="utf-8").strip())
-        if sys.platform == "win32":
-            import ctypes
+    # "Does *something* hold this number?" is not the question. The lock file outlives the
+    # process that wrote it, and the OS reissues PIDs — so an existence check reported the tray
+    # as running whenever a stranger inherited the number, which both wedged `tray start`
+    # ("already running", unfixable without deleting the file by hand) and pointed `tray stop`'s
+    # taskkill /F at that stranger. Ask whether it is still OUR process.
+    from navig.daemon.single_instance import pid_from_pidfile  # noqa: PLC0415
 
-            kernel32 = ctypes.windll.kernel32
-            handle = kernel32.OpenProcess(0x1000, False, pid)
-            if handle:
-                kernel32.CloseHandle(handle)
-                return True, pid
-        else:
-            os.kill(pid, 0)
-            return True, pid
-    except (ValueError, OSError, ProcessLookupError):
-        return False, None
-    return False, None
+    pid = pid_from_pidfile(_lock_file(), cmdline_contains="navig_tray")
+    return (pid is not None), pid
 
 
 @tray_app.command("start")
@@ -239,25 +230,36 @@ def tray_uninstall():
     if running:
         tray_stop()
 
-    # Remove auto-start from registry
+    # Remove auto-start from the registry.
+    #
+    # This called `winreg.OpenSubKey`, which is not a function — the real name is
+    # `OpenKey`. So it raised AttributeError on EVERY run, the handler below turned
+    # that into a warning, and the command then printed "NAVIG Tray uninstalled".
+    # The Run entry that `desktop/install-tray.ps1` writes was therefore never once
+    # removed: the tray kept launching at boot after the user uninstalled it.
+    #
+    # The key path and value name come from `desktop/tray_constants.py`, which owns
+    # them (install-tray.ps1 writes the same pair). They were re-typed as literals
+    # here, so renaming either would have silently orphaned this removal a second
+    # time. They are NOT imported from `tray_app`, which replaces sys.stdout at
+    # import time — a CLI command must not inherit that.
+    from navig.desktop.tray_constants import REGISTRY_KEY, REGISTRY_VALUE
+
+    autostart_removed = True
     try:
         import winreg
 
-        key = winreg.OpenSubKey(
-            winreg.HKEY_CURRENT_USER,
-            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
-            0,
-            winreg.KEY_WRITE,
-        )
-        if key:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, REGISTRY_KEY, 0, winreg.KEY_WRITE
+        ) as key:
             try:
-                winreg.DeleteValue(key, "NavigTray")
+                winreg.DeleteValue(key, REGISTRY_VALUE)
                 ch.success("Auto-start removed from registry")
             except FileNotFoundError:
                 ch.info("Auto-start was not configured")
-            winreg.CloseKey(key)
     except Exception as e:
-        ch.warning(f"Could not modify registry: {e}")
+        autostart_removed = False
+        ch.error(f"Could not remove auto-start from the registry: {e}")
 
     # Remove desktop shortcut
     shortcut = Path(os.environ.get("USERPROFILE", "")) / "Desktop" / "NAVIG Tray.lnk"
@@ -270,5 +272,17 @@ def tray_uninstall():
     if settings_file.exists():
         settings_file.unlink()
         ch.info("Settings file removed")
+
+    if not autostart_removed:
+        # Unlike a partial backup — which still leaves a usable file — a partial
+        # uninstall leaves the software RUNNING, and at the next boot it comes back.
+        # That is the one thing the user ran this command to stop, so it is a failure
+        # and it must say what to do by hand.
+        ch.error("NAVIG Tray is NOT fully uninstalled — it will still start at login")
+        ch.info(
+            f"  Remove it manually: reg delete "
+            f'"HKCU\\{REGISTRY_KEY}" /v {REGISTRY_VALUE} /f'
+        )
+        raise typer.Exit(1)
 
     ch.success("NAVIG Tray uninstalled")

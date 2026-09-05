@@ -4,8 +4,6 @@ Tests for navig.memory.user_profile — pure dataclass round-trips and logic.
 
 from __future__ import annotations
 
-import pytest
-
 from navig.memory.user_profile import (
     InteractionStats,
     MemoryNote,

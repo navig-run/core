@@ -52,8 +52,18 @@ def _cfg():
 
 
 def business_enabled() -> bool:
+    """Master switch for the whole business layer.
+
+    ⚠ `navig config set telegram.business.enabled false` stores the string
+    `"false"`, and `bool("false")` is **True** — so a raw read left the business
+    layer running after the operator turned it off, and the key is documented in
+    `TELEGRAM_MANAGER.md` as one to set. `coerce_bool` is the canonical read; the
+    default stays False, so an unreadable config keeps the layer off.
+    """
+    from navig.core.coerce import coerce_bool
+
     try:
-        return bool(_cfg().get(CFG_MASTER, False))
+        return coerce_bool(_cfg().get(CFG_MASTER, False), False)
     except Exception:  # noqa: BLE001
         return False
 
@@ -70,10 +80,16 @@ def arming_blocked_reason() -> str | None:
 
     Mirrors the bot channel's owner gate: require_auth ON + allowed_users non-empty.
     """
+    from navig.core.coerce import coerce_bool
+
     try:
         cfg = _cfg()
         tg = cfg.get("telegram", {}) or {}
-        require_auth = bool(tg.get("require_auth", True))
+        # `bool("false")` is True, so a raw read made this guard report "auth is
+        # enforced" for an operator who had explicitly turned it OFF — and then
+        # arm the business layer on an unauthenticated bot. Coercing here only
+        # ever TIGHTENS the guard: a genuine "off" now blocks arming.
+        require_auth = coerce_bool(tg.get("require_auth", True), True)
         allowed = tg.get("allowed_users") or []
         if not require_auth:
             return "telegram.require_auth is OFF — anyone could control the bot. Enable it first."

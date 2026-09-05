@@ -3,11 +3,9 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-import yaml
 
 # ---------------------------------------------------------------------------
 # navig.core.config_loader
@@ -16,7 +14,6 @@ from navig.core.config_loader import (
     MAX_INCLUDE_DEPTH,
     CircularDependencyError,
     ConfigLoaderError,
-    _load_yaml_recursive,
     _process_includes,
     load_config,
 )

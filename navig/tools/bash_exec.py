@@ -22,11 +22,10 @@ import logging
 import os
 import shlex
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from navig.tools.registry import BaseTool, ToolResult
+from navig.tools.registry import BaseTool, StatusCallback, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +104,7 @@ class BashExecTool(BaseTool):
     async def run(
         self,
         args: dict[str, Any],
-        on_status: Callable[[str], None] | None = None,
+        on_status: StatusCallback | None = None,
     ) -> ToolResult:
         t0 = time.monotonic()
 
@@ -170,12 +169,16 @@ class BashExecTool(BaseTool):
 
         status_events: list[str] = []
 
-        def _emit(msg: str) -> None:
+        async def _status(msg: str) -> None:
+            # `on_status` is a StatusCallback — a THREE-argument coroutine function. This
+            # used to declare it as `Callable[[str], None]` and call `on_status(msg)`
+            # without awaiting, so under the Telegram path (which supplies a real async
+            # callback) every status event became a coroutine that was created, dropped,
+            # and never ran: the live progress line simply never updated.
             status_events.append(msg)
-            if on_status:
-                on_status(msg)
+            await self._emit(on_status, msg)
 
-        _emit(f"exec: {argv[0]} (args={len(argv) - 1})")
+        await _status(f"exec: {argv[0]} (args={len(argv) - 1})")
 
         # --- Execute ---
         try:
@@ -211,7 +214,7 @@ class BashExecTool(BaseTool):
             returncode = proc.returncode or 0
             success = returncode == 0
 
-            _emit(f"exit_code={returncode}")
+            await _status(f"exit_code={returncode}")
 
             return ToolResult(
                 name=self.name,

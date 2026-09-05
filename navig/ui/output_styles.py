@@ -72,7 +72,7 @@ else:
 
 
 # ---------------------------------------------------------------------------
-# Example / built-in styles shipped in config/output-styles/
+# Example / built-in styles shipped in navig/builtin/output-styles/
 # ---------------------------------------------------------------------------
 
 _BUILTIN_STYLES_DIR_NAME = "output-styles"
@@ -150,7 +150,7 @@ def load_output_styles(cwd: Path | None = None) -> list[OutputStyleConfig]:
     Resolution order (project wins on name collision):
     1. ``.navig/output-styles/`` relative to *cwd*
     2. ``~/.navig/output-styles/`` (user-global)
-    3. ``config/output-styles/`` bundled with navig (built-in examples)
+    3. ``navig/builtin/output-styles/`` shipped with navig (built-in examples)
 
     Args:
         cwd: Project root.  Defaults to ``Path.cwd()``.
@@ -255,11 +255,23 @@ def _load_styles_config() -> dict[str, Any]:
 
 
 def _get_builtin_styles_dir() -> Path | None:
-    """Return the path to the bundled config/output-styles/ directory."""
+    """Return the path to the shipped ``navig/builtin/output-styles/`` directory.
+
+    This used to resolve ``Path(__file__).parent.parent / "config" / "output-styles"``
+    with a comment claiming ``here`` was ``navig/``. It was not: this module lives at
+    ``navig/ui/output_styles.py``, so ``here`` is ``navig/ui`` and the candidate was
+    ``navig/config/output-styles`` — a directory that has never existed. The function
+    therefore always returned ``None`` and the three shipped example styles were dead
+    everywhere, source checkout included.
+
+    Fixing only the off-by-one would have moved the bug rather than removed it: the old
+    target, ``core/config/``, is NOT in the wheel ([tool.setuptools.package-data] covers
+    only ``navig``), so builtin styles would have worked in a checkout and silently
+    vanished for every installed user. They now live inside the package, next to every
+    other builtin asset, which is the one location that reaches both.
+    """
     try:
-        # Walk up from this file to the project root.
-        here = Path(__file__).parent  # navig/
-        candidate = here.parent / "config" / _BUILTIN_STYLES_DIR_NAME
+        candidate = Path(__file__).resolve().parent.parent / "builtin" / _BUILTIN_STYLES_DIR_NAME
         if candidate.is_dir():
             return candidate
     except Exception:  # noqa: BLE001

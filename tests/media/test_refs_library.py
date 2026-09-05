@@ -101,3 +101,26 @@ def test_rebuild_index_with_empty_category_dirs(tmp_path):
     root = rl.ensure_layout(rl.resolve_refs_root(tmp_path))
     index = rl.rebuild_index(root)
     assert "nothing kept yet" in index.read_text(encoding="utf-8")
+
+
+def test_update_sidecar_refuses_to_wipe_on_a_transient_lock(tmp_path, monkeypatch):
+    """A transient read lock on the sidecar must NOT drop the item's other metadata:
+    `_update_sidecar` skips the write instead of rewriting `{}` + the new field."""
+    from navig.core.json_io import JsonReadError
+
+    root = rl.resolve_refs_root(tmp_path)
+    root.mkdir(parents=True, exist_ok=True)
+    sidecar = rl._sidecar_path(root, "m1")
+    original = {"status": "generated", "provider": "gemini", "prompt": "octopus"}
+    sidecar.write_text(json.dumps(original, indent=2), encoding="utf-8")
+
+    def _boom(*_a, **_k):
+        raise JsonReadError("sidecar is locked (simulated sharing violation)")
+
+    monkeypatch.setattr("navig.core.json_io.load_json_for_update", _boom)
+
+    rl._update_sidecar(root, "m1", status="kept", path="images/m1.png")
+
+    # THE INVARIANT: the file is byte-for-byte the original — the update was skipped, not
+    # applied over an empty dict (which would have dropped provider/prompt).
+    assert json.loads(sidecar.read_text(encoding="utf-8")) == original

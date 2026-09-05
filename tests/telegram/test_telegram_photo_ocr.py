@@ -50,9 +50,14 @@ async def test_handle_photo_vision_appends_ocr_snippet(monkeypatch):
     channel._session = _FakeSession(b"fake-image-bytes")
 
     monkeypatch.setattr(
+        "navig.providers.resolve_vision_model",
+        lambda _overrides: ("openai", "gpt-4o", "cfg"),
+    )
+    monkeypatch.setattr(
         "navig.providers.discovery.resolve_vision_model",
         lambda _overrides: ("openai", "gpt-4o", "cfg"),
     )
+    monkeypatch.setattr("navig.providers.get_vision_api_format", lambda _pid: "openai")
     monkeypatch.setattr("navig.providers.discovery.get_vision_api_format", lambda _pid: "openai")
     monkeypatch.setattr(channel, "_extract_photo_ocr_text", lambda _b: "Invoice #123")
 
@@ -91,9 +96,14 @@ async def test_handle_photo_vision_sends_ocr_when_vision_empty(monkeypatch):
     channel._session = _FakeSession(b"fake-image-bytes")
 
     monkeypatch.setattr(
+        "navig.providers.resolve_vision_model",
+        lambda _overrides: ("openai", "gpt-4o", "cfg"),
+    )
+    monkeypatch.setattr(
         "navig.providers.discovery.resolve_vision_model",
         lambda _overrides: ("openai", "gpt-4o", "cfg"),
     )
+    monkeypatch.setattr("navig.providers.get_vision_api_format", lambda _pid: "openai")
     monkeypatch.setattr("navig.providers.discovery.get_vision_api_format", lambda _pid: "openai")
     monkeypatch.setattr(channel, "_extract_photo_ocr_text", lambda _b: "Only OCR text")
 

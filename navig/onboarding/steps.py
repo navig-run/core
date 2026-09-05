@@ -200,11 +200,13 @@ def _step_deck(navig_dir: Path) -> OnboardingStep:
         """
         try:
             from navig.core import Config
+            from navig.core.coerce import coerce_bool
             cfg = Config()
             return bool(
                 (cfg.get("cloud.lighthouse_url") or "").strip()
                 or (cfg.get("cloud.public_url") or "").strip()
-                or cfg.get("cloud.enabled")
+                # coerce_bool: stored "false" string must not read as enabled.
+                or coerce_bool(cfg.get("cloud.enabled"))
             )
         except Exception:  # noqa: BLE001
             return False
@@ -862,7 +864,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             ready_tag = f"  (already configured: {'/'.join(sources)})" if sources else ""
             env_tag = "  [✓ env var]" if p.id in env_detected else ""
             active_tag = "  ← current" if p.id == current_provider else ""
-            ch.dim(f"    [{i}] {p.display_name}{local_tag}{env_tag}{ready_tag}{active_tag}")
+            ch.dim(f"    \\[{i}] {p.display_name}{local_tag}{env_tag}{ready_tag}{active_tag}")
         skip_hint = " (keep existing)" if current_provider else " for now"
         ch.dim(f"    [s] Skip{skip_hint}")
 
@@ -983,7 +985,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             fallback_providers = [p for p in providers if p.id != pid]
             for i, p in enumerate(fallback_providers, start=1):
                 local_tag = "" if getattr(p, "requires_key", True) else "  (local)"
-                ch.dim(f"    [{i}] {p.display_name}{local_tag}")
+                ch.dim(f"    \\[{i}] {p.display_name}{local_tag}")
             ch.dim("    [s] Skip")
             fb_raw = typer.prompt("  Fallback provider", default="s").strip().lower()
             if fb_raw not in ("s", "skip", ""):
@@ -1290,14 +1292,24 @@ def _step_voice_provider(navig_dir: Path) -> OnboardingStep:
             from navig.vault.types import Credential, CredentialType  # type: ignore[import]
             from navig.vault.validators import get_validator  # type: ignore[import]
 
+            # `id`, `profile_id` and `label` are REQUIRED on Credential — omitting them raised
+            # TypeError, which the except below swallowed into `return False`, so onboarding
+            # reported EVERY api key as invalid. Validators read only .data/.metadata, so these
+            # are inert placeholders for a credential that is never stored.
             cred = Credential(
+                id="",  # transient — this credential is validated, never persisted
                 provider=provider_id,
+                profile_id="default",
                 credential_type=CredentialType.API_KEY,
+                label=f"{provider_id} (onboarding validation)",
                 data={"api_key": api_key},
             )
             result = get_validator(provider_id).validate(cred)
             return result.success
         except Exception:  # noqa: BLE001
+            # Treating "couldn't validate" as "invalid" is intentional here, but log it — a
+            # silent swallow is what hid the TypeError above for as long as it existed.
+            _log.debug("onboarding key validation failed for %s", provider_id, exc_info=True)
             return False
 
     def run() -> StepResult:  # noqa: C901
@@ -1617,7 +1629,7 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
         ch.info("Search provider")
         for idx, (pid, label, _) in enumerate(_WEB_SEARCH_PROVIDER_CATALOG, start=1):
             current_tag = "  ← current" if pid == current_search_provider else ""
-            ch.dim(f"    [{idx}] {label}{current_tag}")
+            ch.dim(f"    \\[{idx}] {label}{current_tag}")
         skip_hint = " (keep existing)" if current_search_provider else " for now"
         ch.dim(f"    [s] Skip{skip_hint}")
 
@@ -1761,12 +1773,14 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
         # reachability that was just configured for this machine.
         try:
             from navig.core import Config
+            from navig.core.coerce import coerce_bool
 
             _cfg = Config()
             _is_brain = bool(
                 (_cfg.get("cloud.lighthouse_url") or "").strip()
                 or (_cfg.get("cloud.public_url") or "").strip()
-                or _cfg.get("cloud.enabled")
+                # coerce_bool: stored "false" string must not read as enabled.
+                or coerce_bool(_cfg.get("cloud.enabled"))
             )
         except Exception:  # noqa: BLE001
             _is_brain = False
@@ -1926,7 +1940,7 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
 
         ch.info("Available skill packs:")
         for i, pack in enumerate(available, start=1):
-            ch.dim(f"    [{i}] {pack}")
+            ch.dim(f"    \\[{i}] {pack}")
 
         try:
             selection = typer.prompt(

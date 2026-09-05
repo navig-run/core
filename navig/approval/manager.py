@@ -11,8 +11,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from navig.core import incidents as _incidents
 from navig.debug_logger import get_debug_logger
 
+from . import journal as _journal
+from . import resume as _resume
+from .journal import RecentlyResolved as _RecentlyResolved
 from .policies import ApprovalLevel, ApprovalPolicy, ApprovalStatus
 
 if TYPE_CHECKING:
@@ -51,6 +55,14 @@ class ApprovalRequest:
         }
 
 
+def _record_incident(event: str, **data: object) -> None:
+    """Best-effort incident write — an observation must never break an approval."""
+    try:
+        _incidents.record(event, **data)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 class ApprovalManager:
     """
     Manages approval flows for dangerous operations.
@@ -74,6 +86,9 @@ class ApprovalManager:
 
         # Approval futures for async waiting
         self._futures: dict[str, asyncio.Future] = {}
+        #: Ids the turn has already given up on. Without this, a human who answers late is
+        #: reported as "request not found" and their tap does nothing, silently.
+        self._recently_resolved = _RecentlyResolved()
 
         # Cleanup task
         self._cleanup_task: asyncio.Task | None = None
@@ -235,6 +250,23 @@ class ApprovalManager:
         )
 
         self._pending[request_id] = request
+        _journal.record_pending(
+            request_id,
+            command=command,
+            channel=channel,
+            user_id=user_id,
+            level=getattr(level, "name", str(level)),
+            expires_at=getattr(expires_at, "timestamp", lambda: None)(),
+        )
+        # Enough to RE-ENTER a turn if this is answered after we stop waiting. Recorded
+        # up-front because the answer may arrive when this frame is long gone.
+        _resume.record(
+            request_id,
+            session_key=session_key,
+            channel=channel,
+            user_id=user_id,
+            tool_name=command,
+        )
 
         # Operator-side narrator: approval requests are high-signal moments
         # (a human needs to look at this). Show a styled block with command +
@@ -297,6 +329,18 @@ class ApprovalManager:
                 request_id,
                 "approved" if default_approve else "denied",
             )
+            # The narrator block below prints to a TERMINAL. Under the daemon there is
+            # none, so the operator who was pinged on Telegram would otherwise learn
+            # nothing at all. An incident reaches `navig doctor` and the notify path.
+            _record_incident(
+                _incidents.APPROVAL_EXPIRED,
+                request_id=request_id,
+                command=command[:200],
+                channel=channel,
+                user_id=user_id,
+                auto="approved" if default_approve else "denied",
+                timeout_s=self.policy.timeout_seconds,
+            )
             try:
                 from navig.core import narrator
                 narrator.verdict(
@@ -317,9 +361,61 @@ class ApprovalManager:
             return False
 
         finally:
-            # Cleanup
-            self._pending.pop(request_id, None)
+            # Cleanup. The id is remembered (bounded) so a late answer can be named rather
+            # than reported as "not found", and the durable record is dropped so a restart
+            # does not resurrect a request nobody is waiting on any more.
+            pending = self._pending.pop(request_id, None)
             self._futures.pop(request_id, None)
+            outcome = getattr(getattr(pending, "status", None), "name", "resolved")
+            self._recently_resolved.remember(
+                request_id, outcome=outcome, command=command
+            )
+            _journal.clear_pending(request_id)
+            # The resume record exists for the case where nobody answered in time. A turn
+            # that reached a decision has already acted on it, so keeping the record would
+            # let a stray late tap run the tool a SECOND time.
+            if outcome != "EXPIRED":
+                _resume.discard(request_id)
+
+    def _answer_arrived_late(
+        self,
+        request_id: str,
+        approved: bool,
+        *,
+        command: str,
+        already: str,
+        note: str,
+    ) -> None:
+        """An answer arrived for a request nothing is waiting on any more.
+
+        Two ways in, one behaviour: the turn timed out while the daemon stayed up
+        (`_recently_resolved`), or the daemon restarted and only the on-disk record is left.
+        Either way the inline decision is gone, so an approval must RE-ENTER rather than be
+        applied — and a denial must consume the record so a later tap cannot run the tool.
+
+        Kept as one helper deliberately: when these were two copies, a fix to the resume
+        path could land on one branch and silently leave the other on the old behaviour.
+        """
+        logger.warning("Approval %s %s", request_id, note)
+        _record_incident(
+            _incidents.APPROVAL_ANSWERED_TOO_LATE,
+            request_id=request_id,
+            command=command[:200],
+            already=already,
+            answered="approved" if approved else "denied",
+        )
+        if not approved:
+            _resume.discard(request_id)
+            return
+        # Re-enter in the background: `respond` is called from a channel callback (a
+        # Telegram tap), and a turn can take minutes. `spawn` is the GC-safe
+        # fire-and-forget helper — a bare create_task can be collected mid-flight.
+        try:
+            from navig.core.background import spawn
+
+            spawn(_resume.resume_after_approval(request_id))
+        except Exception:  # noqa: BLE001 — never break the callback
+            logger.exception("Approval %s: could not start resume", request_id)
 
     async def respond(self, request_id: str, approved: bool, reason: str | None = None) -> bool:
         """
@@ -335,7 +431,39 @@ class ApprovalManager:
         """
         request = self._pending.get(request_id)
         if not request:
-            logger.warning("Approval request not found: %s", request_id)
+            # Tell "never heard of it" apart from "you answered too late". The second is a
+            # human whose tap did nothing; saying so is the whole point.
+            late = self._recently_resolved.get(request_id)
+            if late is not None:
+                self._answer_arrived_late(
+                    request_id,
+                    approved,
+                    command=str(late.get("command", "")),
+                    already=str(late.get("outcome", "resolved")),
+                    note=(
+                        f"answered too late (already {late.get('outcome', 'resolved')}) "
+                        "— the inline decision was NOT applied"
+                    ),
+                )
+            else:
+                # Nothing in memory — but `_recently_resolved` is in-memory too, so after a
+                # DAEMON RESTART every id looks unknown while `resumable.json` on disk still
+                # holds what was asked. Consulting it here is what makes the durable record
+                # actually survive the restart it exists for; without this the operator taps
+                # Approve after a restart and gets "request not found".
+                durable = _resume.peek(request_id)
+                if durable is not None:
+                    self._answer_arrived_late(
+                        request_id,
+                        approved,
+                        command=str(durable.get("tool_name", "")),
+                        already="lost_to_restart",
+                        note=(
+                            "answered after a restart — resolving from the durable record"
+                        ),
+                    )
+                else:
+                    logger.warning("Approval request not found: %s", request_id)
             return False
 
         request.status = ApprovalStatus.APPROVED if approved else ApprovalStatus.DENIED

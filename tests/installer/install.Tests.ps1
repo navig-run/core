@@ -95,23 +95,12 @@ Describe "Add-NavigBinToPath" {
     }
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Get-PythonScriptsDir
-# ─────────────────────────────────────────────────────────────────────────────
-Describe "Get-PythonScriptsDir" {
-    It "falls back to parent-dir/Scripts when sysconfig returns a nonexistent path" {
-        $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName())
-        New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
-        $scriptsDir = Join-Path $tmpDir "Scripts"
-        New-Item -ItemType Directory -Path $scriptsDir -Force | Out-Null
-        try {
-            $result = Get-PythonScriptsDir -PythonExe (Join-Path $tmpDir "python.exe")
-            $result | Should -Be $scriptsDir
-        } finally {
-            Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
+# NOTE: the `Get-PythonScriptsDir` block was removed here. That function located the
+# Scripts/ dir of a SYSTEM Python so the installer could find the console script — a
+# need that disappeared when install.ps1 moved to a self-contained uv runtime plus a
+# fixed launcher shim (New-NavigShim). The function no longer exists, so the test could
+# only ever throw CommandNotFoundException; there is no successor behaviour to re-point
+# it at. Deleted rather than kept green.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test-NavigCommand  (source-level checks — does not exec navig)
@@ -140,23 +129,45 @@ Describe "Test-NavigCommand — source checks" {
 # Install-Navig — source checks
 # ─────────────────────────────────────────────────────────────────────────────
 Describe "Install-Navig — source checks" {
-    It "uses --quiet and --disable-pip-version-check" {
+    # ⚠ The pattern MUST pin the end of the function name. `function Install-Navig.*?`
+    # matches the FIRST declaration whose name merely STARTS with it — Install-NavigUv,
+    # 100 lines earlier — so all three assertions here were reading the wrong function.
+    # Two failed for that reason and the third PASSED VACUOUSLY (Install-NavigUv also
+    # contains `return $false`). `function Install-Navig \{` matches only the real one.
+    BeforeAll {
         $src = Get-Content $Script:InstallerPath -Raw
-        $fn  = [regex]::Match($src, '(?s)function Install-Navig.*?\n\}')
-        $fn.Value | Should -Match '--quiet'
-        $fn.Value | Should -Match '--disable-pip-version-check'
+        $Script:InstallNavigFn = [regex]::Match($src, '(?s)function Install-Navig \{.*?\n\}').Value
+        $Script:InvokeUvFn     = [regex]::Match($src, '(?s)function Invoke-NavigUv \{.*?\n\}').Value
     }
 
-    It "redirects stderr to a temp file (does not swallow errors)" {
-        $src = Get-Content $Script:InstallerPath -Raw
-        $fn  = [regex]::Match($src, '(?s)function Install-Navig.*?\n\}')
-        $fn.Value | Should -Match 'RedirectStandardError'
+    It "targets the real function, not Install-NavigUv" {
+        # Guards the regex above: without it the rest of this block asserts nothing.
+        $Script:InstallNavigFn | Should -Not -BeNullOrEmpty
+        $Script:InstallNavigFn | Should -Not -Match 'Get-NavigUvUrl'
     }
 
-    It "returns false on pip failure (does not call exit directly)" {
-        $src = Get-Content $Script:InstallerPath -Raw
-        $fn  = [regex]::Match($src, '(?s)function Install-Navig.*?\n\}')
-        $fn.Value | Should -Match 'return \$false'
+    It "installs into the ISOLATED venv via uv, never system pip" {
+        # Replaces an assertion on `--quiet` / `--disable-pip-version-check`: those are
+        # pip flags, and the installer no longer shells out to pip. It runs
+        # `uv pip install --python <runtime venv>`, which is what keeps system Python
+        # untouched — the property actually worth pinning.
+        $Script:InstallNavigFn | Should -Match 'Invoke-NavigUv'
+        $Script:InstallNavigFn | Should -Match '--python'
+        $Script:InstallNavigFn | Should -Match 'RUNTIME_VENV_PY'
+    }
+
+    It "surfaces the failure output instead of swallowing it" {
+        # The stderr capture moved into Invoke-NavigUv (which redirects it to a temp
+        # file and returns the last lines as .Tail); Install-Navig's half of the
+        # contract is to PRINT that tail rather than discard it.
+        $Script:InstallNavigFn | Should -Match '\$r\.Tail'
+        $Script:InstallNavigFn | Should -Match 'Write-NavHint'
+        $Script:InvokeUvFn     | Should -Match 'RedirectStandardError'
+    }
+
+    It "returns false on failure (does not call exit directly)" {
+        $Script:InstallNavigFn | Should -Match 'return \$false'
+        $Script:InstallNavigFn | Should -Not -Match '\bexit \d'
     }
 }
 
@@ -168,6 +179,56 @@ Describe "Reinstall path — uninstall is called" {
         $src = Get-Content $Script:InstallerPath -Raw
         $fn  = [regex]::Match($src, '(?s)function Main \{.*?\n\}')
         $fn.Value | Should -Match 'Invoke-NavigUninstall.*ForReinstall'
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stop-NavigBackgroundArtifacts — the daemon must actually be stopped
+#
+# Source checks, deliberately: running the real function would stop the daemon and
+# delete the scheduled task on whatever machine executes the suite.
+# ─────────────────────────────────────────────────────────────────────────────
+Describe "Stop-NavigBackgroundArtifacts — source checks" {
+    BeforeAll {
+        $src = Get-Content $Script:InstallerPath -Raw
+        $Script:StopFn = [regex]::Match(
+            $src, '(?s)function Stop-NavigBackgroundArtifacts \{.*?\n\}').Value
+        $Script:UninstallFn = [regex]::Match(
+            $src, '(?s)function Invoke-NavigUninstall \{.*?\n\}').Value
+    }
+
+    It "targets the real function" {
+        $Script:StopFn | Should -Not -BeNullOrEmpty
+    }
+
+    It "asks the runtime to stop its own daemon, not just Get-Process navig" {
+        # The daemon runs as pythonw.exe with "navig" deliberately absent from its command
+        # line, so `Get-Process navig` matches nothing live. Without this the interpreter
+        # keeps ~/.navig/runtime/venv open and the runtime removal can fail on a file lock.
+        $Script:StopFn | Should -Match 'service.*uninstall'
+        $Script:StopFn | Should -Match 'RUNTIME_VENV'
+    }
+
+    It "bounds the stop so a hung daemon cannot hang the uninstall" {
+        # Register-NavigDaemon uses `Start-Process -Wait`, which waits forever. The
+        # uninstall path must not: it waits with a timeout and then kills the child.
+        $Script:StopFn | Should -Match 'WaitForExit'
+        $Script:StopFn | Should -Match '\$p\.Kill\(\)'
+    }
+
+    It "keeps the blunt fallbacks, so a failed stop is no worse than before" {
+        $Script:StopFn | Should -Match 'Get-Process navig'
+        $Script:StopFn | Should -Match 'Stop-Service'
+    }
+
+    It "runs before the files are removed" {
+        # Ordering is load-bearing: the venv must still exist for the runtime to be
+        # able to stop itself.
+        $stopAt   = $Script:UninstallFn.IndexOf('Stop-NavigBackgroundArtifacts')
+        $removeAt = $Script:UninstallFn.IndexOf('Remove-NavigFiles')
+        $stopAt   | Should -BeGreaterThan -1
+        $removeAt | Should -BeGreaterThan -1
+        $stopAt   | Should -BeLessThan $removeAt
     }
 }
 
@@ -344,12 +405,16 @@ Describe "Layout constants" {
 # ─────────────────────────────────────────────────────────────────────────────
 Describe "Main — phased structure" {
     It "calls Print-Section for each phase" {
+        # "Requirements" was the pip-era phase that probed for a system Python; the uv
+        # rewrite replaced it with "Runtime" (build the isolated interpreter + venv) and
+        # added "Daemon". Asserting the phases the installer ACTUALLY prints keeps this
+        # honest — and asserting all five means dropping one from the user-visible
+        # progress output fails the build.
         $src = Get-Content $Script:InstallerPath -Raw
         $fn  = [regex]::Match($src, '(?s)function Main \{.*?\n\}')
-        $fn.Value | Should -Match "Print-Section.*Environment"
-        $fn.Value | Should -Match "Print-Section.*Requirements"
-        $fn.Value | Should -Match "Print-Section.*Install"
-        $fn.Value | Should -Match "Print-Section.*Verify"
+        foreach ($phase in @("Environment", "Runtime", "Install", "Verify", "Daemon")) {
+            $fn.Value | Should -Match "Print-Section.*$phase"
+        }
     }
 
     It "calls Print-Done after successful install" {

@@ -12,6 +12,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from navig.core.background import spawn
 from navig.core.yaml_io import atomic_write_text as _atomic_write_text
 from navig.debug_logger import get_debug_logger
 
@@ -337,7 +338,7 @@ class TaskQueue:
 
             if retry and task.retry_count <= task.max_retries:
                 task.status = TaskStatus.QUEUED
-                asyncio.create_task(
+                spawn(
                     self._delayed_requeue(task),
                     name=f"task-retry-{task_id}",
                 )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import typer
 from typer.testing import CliRunner
@@ -203,3 +203,68 @@ class TestPromptsRemove:
         with _patch_dir(tmp_path):
             result = runner.invoke(prompts_app, ["remove", "never-created"])
         assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# the empty state must not report an absence it did not verify
+# ---------------------------------------------------------------------------
+
+class TestEmptyStateHonesty:
+    """"No prompts found" is only true when nothing was FOUND.
+
+    NAVIG ships 34 builtin prompts, and `list` hides the `builtin` scope unless
+    `--all`. On a stock install that made the default view print "No prompts found"
+    over 34 real, discoverable prompts — and it never mentioned `--all`, the one
+    thing that would have shown them. Measured on a real install: `navig prompts list`
+    said none, `navig prompts list --all` printed 34. Same rule as `navig doctor`:
+    never report an absence you did not verify.
+    """
+
+    @staticmethod
+    def _only_builtins(tmp_path: Path):
+        from navig.prompts.registry import Prompt
+
+        return [
+            Prompt(
+                id=f"builtin/p{i}",
+                name=f"p{i}",
+                description="",
+                body="x",
+                source_path=tmp_path / f"p{i}.md",
+                scope="builtin",
+            )
+            for i in range(3)
+        ]
+
+    def test_filtered_builtins_are_reported_not_erased(self, tmp_path):
+        with patch(
+            "navig.prompts.registry.load_all_prompts",
+            return_value=self._only_builtins(tmp_path),
+        ):
+            result = runner.invoke(prompts_app, ["list"])
+        assert result.exit_code == 0
+        assert "3 builtin" in result.output, (
+            f"the hidden prompts were not reported: {result.output.strip()!r}"
+        )
+        assert "--all" in result.output, "the empty state does not name the flag that shows them"
+        assert "No prompts found" not in result.output, (
+            "reported 'no prompts found' while 3 were found and filtered"
+        )
+
+    def test_genuinely_empty_still_says_so(self, tmp_path):
+        """The other half: with nothing discovered anywhere, say that plainly."""
+        with patch("navig.prompts.registry.load_all_prompts", return_value=[]):
+            result = runner.invoke(prompts_app, ["list"])
+        assert result.exit_code == 0
+        assert "No prompts found" in result.output
+        assert "builtin" not in result.output
+
+    def test_all_flag_is_a_real_option(self):
+        """The message names `--all`; it has to exist, or the fix is a new dead end."""
+        opts = set()
+        for command in prompts_app.registered_commands:
+            if (command.name or "") == "list":
+                import inspect
+
+                opts = set(inspect.signature(command.callback).parameters)
+        assert "all_scopes" in opts

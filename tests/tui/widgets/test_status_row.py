@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 
 def _badge(**kw):
     d = dict(status="ok", label="Svc", detail="up", deep_link=None, color="green", symbol="\u2713")

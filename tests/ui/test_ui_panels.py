@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 import navig.ui.panels as panels_mod
 from navig.ui.models import CauseScore, Metric
 from navig.ui.panels import render_explanation, render_metrics_panel, render_primary_state

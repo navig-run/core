@@ -7,7 +7,6 @@ Batch 62: hermetic unit tests for
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -40,6 +39,7 @@ class TestInstallerPlan:
         from navig.installer.profiles import VALID_PROFILES
         ctx = self._make_ctx(profile=VALID_PROFILES[0])
         result = plan(ctx)
+        assert result, "result was empty, so the loop below asserted nothing"
         for item in result:
             assert isinstance(item, Action)
 

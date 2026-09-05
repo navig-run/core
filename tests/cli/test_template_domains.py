@@ -1,9 +1,8 @@
 """
 Tests for navig.cli.template_domains — deprecated addon and server-template command groups.
 """
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 import typer
 from typer.testing import CliRunner
 

@@ -13,6 +13,24 @@ evolution_app = typer.Typer(
 )
 
 
+def _report_attempts(result) -> None:
+    """Say how the artifact was produced — retries are the interesting part.
+
+    Replaces a `# Could print path` comment that had never been implemented. The
+    path is genuinely not available here: `BaseEvolver._save()` computes it
+    locally and returns nothing, so surfacing it means changing that contract
+    across six evolvers whose signatures have already diverged (`ahk.py` calls
+    `evolve(goal, dry_run=...)`). That is its own change, not a rider on this one.
+    `attempts` and the cache hit ARE on the result, and answer the question a
+    caller actually asks next: did this take retries, or was it already there?
+    """
+    attempts = getattr(result, "attempts", None)
+    if attempts == 0:
+        ch.dim("  Reused an existing artifact from the library (no generation needed)")
+    elif isinstance(attempts, int) and attempts > 1:
+        ch.dim(f"  Took {attempts} attempts")
+
+
 @evolution_app.command("skill")
 def evolve_skill(
     goal: str = typer.Argument(..., help="Description of the skill to create"),
@@ -32,11 +50,12 @@ def evolve_skill(
     ch.info(f"Evolving skill for: {goal}")
     result = evolver.evolve(goal)
 
-    if result.success:
-        ch.success("Skill evolution successful!")
-        # Could print path
-    else:
+    if not result.success:
         ch.error(f"Skill evolution failed: {result.error}")
+        raise typer.Exit(1)
+
+    ch.success("Skill evolution successful!")
+    _report_attempts(result)
 
 
 @evolution_app.command("workflow")
@@ -53,10 +72,12 @@ def evolve_workflow(
     ch.info(f"Evolving workflow for: {goal}")
     result = evolver.evolve(goal)
 
-    if result.success:
-        ch.success("Workflow evolution successful!")
-    else:
+    if not result.success:
         ch.error(f"Workflow evolution failed: {result.error}")
+        raise typer.Exit(1)
+
+    ch.success("Workflow evolution successful!")
+    _report_attempts(result)
 
 
 @evolution_app.command("pack")
@@ -73,10 +94,12 @@ def evolve_pack(
     ch.info(f"Evolving pack for: {goal}")
     result = evolver.evolve(goal)
 
-    if result.success:
-        ch.success("Pack evolution successful!")
-    else:
+    if not result.success:
         ch.error(f"Pack evolution failed: {result.error}")
+        raise typer.Exit(1)
+
+    ch.success("Pack evolution successful!")
+    _report_attempts(result)
 
 
 @evolution_app.command("script")
@@ -93,10 +116,12 @@ def evolve_script(
     ch.info(f"Evolving script for: {goal}")
     result = evolver.evolve(goal)
 
-    if result.success:
-        ch.success("Script evolution successful!")
-    else:
+    if not result.success:
         ch.error(f"Script evolution failed: {result.error}")
+        raise typer.Exit(1)
+
+    ch.success("Script evolution successful!")
+    _report_attempts(result)
 
 
 @evolution_app.command("fix")
@@ -122,10 +147,12 @@ def evolve_fix(
     ch.info(f"Analyzing {file_path.name} for fix: {instruction}")
     result = evolver.evolve(instruction)
 
-    if result.success:
-        ch.success("File update successful!")
-    else:
+    if not result.success:
         ch.error(f"Fix failed: {result.error}")
+        raise typer.Exit(1)
+
+    ch.success("File update successful!")
+    _report_attempts(result)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

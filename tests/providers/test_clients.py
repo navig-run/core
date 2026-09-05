@@ -11,7 +11,6 @@ Covers:
 - ToolCall dataclass fields
 """
 
-import pytest
 
 from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
 from navig.providers.clients import (

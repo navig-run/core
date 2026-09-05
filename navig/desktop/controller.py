@@ -1,10 +1,12 @@
 """Desktop automation controller using pyautogui."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from navig.core.coerce import coerce_bool
 from navig.debug_logger import get_debug_logger
+from navig.platform.paths import screenshot_dir as _screenshot_dir
 
 logger = get_debug_logger()
 
@@ -46,7 +48,7 @@ class DesktopConfig:
     """Desktop automation configuration."""
 
     enabled: bool = False  # Disabled by default for security
-    screenshot_dir: str = "~/.navig/screenshots"
+    screenshot_dir: str = field(default_factory=lambda: str(_screenshot_dir()))
     failsafe: bool = True
     default_pause: float = 0.1
 
@@ -56,8 +58,8 @@ class DesktopConfig:
         desktop_cfg = config.get("desktop", {})
 
         return cls(
-            enabled=desktop_cfg.get("enabled", False),
-            screenshot_dir=desktop_cfg.get("screenshot_dir", "~/.navig/screenshots"),
+            enabled=coerce_bool(desktop_cfg.get("enabled", False), default=False),
+            screenshot_dir=desktop_cfg.get("screenshot_dir") or str(_screenshot_dir()),
             failsafe=desktop_cfg.get("failsafe", True),
             default_pause=desktop_cfg.get("default_pause", 0.1),
         )

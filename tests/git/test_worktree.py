@@ -813,18 +813,24 @@ class TestToolRegistration:
         assert "worktree_remove" in names
 
     def test_register_worktree_tools_function(self):
+        """The contract is "these tools ARE registered", not "these were ABSENT".
+
+        This used to assert against `after - before`, which silently required
+        nothing to have registered them earlier in the process. The registry is
+        process-global, so any earlier test that calls `register_all_tools()`
+        (`tests/agent/test_toolset_registry_parity.py` does, and `tests/agent`
+        sorts before `tests/git`) makes the difference set EMPTY and the assertion
+        fails with `'worktree_create' in set()` — a red build for test ordering
+        rather than for anything the registrar did. Registration is idempotent, so
+        asserting presence is both correct and order-independent.
+        """
         from navig.agent.agent_tool_registry import _AGENT_REGISTRY
         from navig.agent.tools import register_worktree_tools
 
-        # Save existing names
-        before = set(_AGENT_REGISTRY.available_names())
         register_worktree_tools()
-        after = set(_AGENT_REGISTRY.available_names())
-        new_tools = after - before
-        assert "worktree_create" in new_tools
-        assert "worktree_list" in new_tools
-        assert "worktree_merge" in new_tools
-        assert "worktree_remove" in new_tools
+        names = set(_AGENT_REGISTRY.available_names())
+        for tool in ("worktree_create", "worktree_list", "worktree_merge", "worktree_remove"):
+            assert tool in names, f"{tool} not registered"
 
     def test_tools_have_get_entry(self):
         from navig.agent.agent_tool_registry import AgentToolRegistry

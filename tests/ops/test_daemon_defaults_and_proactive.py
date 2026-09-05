@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from navig._daemon_defaults import _DAEMON_PORT, _OAUTH_REDIRECT_PORT
 
 # ---------------------------------------------------------------------------

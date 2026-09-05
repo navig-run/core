@@ -12,6 +12,14 @@ from typing import Any
 
 from navig.notify import store
 
+# The deck feed is append-only (the daemon auto-emits notifications — config-incidents,
+# heartbeat, resource, connectivity, briefings, /api/ingest signals — with NO user action),
+# so cap its on-disk growth. A rowid-based cap is deterministic and side-steps the ISO-T/Z
+# vs SQL datetime() string-compare trap; list_items only ever shows the newest 200 anyway.
+_MAX_FEED_ROWS = 2000
+_PRUNE_EVERY = 100
+_appends_since_prune = 0
+
 
 def _row(r) -> dict[str, Any]:
     d = dict(r)
@@ -41,7 +49,36 @@ def append(
             "VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
             (fid, type_key, title, body or "", priority, json.dumps(data or {}), store.now_iso()),
         )
-    return _row(c.execute("SELECT * FROM notify_feed WHERE id = ?", (fid,)).fetchone())
+    result = _row(c.execute("SELECT * FROM notify_feed WHERE id = ?", (fid,)).fetchone())
+    _maybe_prune()
+    return result
+
+
+def prune(max_rows: int = _MAX_FEED_ROWS) -> int:
+    """Trim the feed to its newest *max_rows* rows so it can't grow on disk forever.
+    Returns the number of rows deleted. rowid ordering matches insertion order."""
+    store.init_db()
+    c = store.conn()
+    with c:
+        cur = c.execute(
+            "DELETE FROM notify_feed WHERE rowid NOT IN "
+            "(SELECT rowid FROM notify_feed ORDER BY rowid DESC LIMIT ?)",
+            (int(max_rows),),
+        )
+    return cur.rowcount or 0
+
+
+def _maybe_prune() -> None:
+    """Amortised retention: prune once every _PRUNE_EVERY appends. Best-effort — retention
+    must never break a notification append."""
+    global _appends_since_prune
+    _appends_since_prune += 1
+    if _appends_since_prune >= _PRUNE_EVERY:
+        _appends_since_prune = 0
+        try:
+            prune()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def list_items(limit: int = 50, unread_only: bool = False) -> list[dict[str, Any]]:

@@ -3,11 +3,8 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # CrashHandler
@@ -16,8 +13,19 @@ from navig.core.crash_handler import _MAX_CRASH_LOGS, CrashHandler
 
 
 class TestCrashHandlerDebugMode:
+    # setup_method mutated NAVIG_DEBUG with no teardown, so whatever the last test in
+    # this class set survived into every later test in the same xdist worker -- the
+    # same shape as the teardowns that popped NAVIG_CONFIG_DIR (#1125). Save and
+    # restore, rather than popping unconditionally.
     def setup_method(self):
+        self._prev_debug = os.environ.get("NAVIG_DEBUG")
         os.environ.pop("NAVIG_DEBUG", None)
+
+    def teardown_method(self):
+        if self._prev_debug is None:
+            os.environ.pop("NAVIG_DEBUG", None)
+        else:
+            os.environ["NAVIG_DEBUG"] = self._prev_debug
 
     def test_debug_off_by_default(self):
         os.environ["NAVIG_DEBUG"] = "0"

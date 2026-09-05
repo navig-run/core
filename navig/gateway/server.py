@@ -58,8 +58,8 @@ def _noop_deco(fn):  # pragma: no cover
 _web_middleware = web.middleware if AIOHTTP_AVAILABLE else _noop_deco
 
 from navig._daemon_defaults import _GATEWAY_PORT
-from navig.agent.proactive.engine import get_proactive_engine
 from navig.config import get_config_manager
+from navig.core.background import spawn
 from navig.debug_logger import get_debug_logger
 from navig.gateway.audit_log import AuditLog
 from navig.gateway.billing_emitter import BillingEmitter
@@ -90,6 +90,15 @@ def _bind_candidates(preferred: int, last_bound: int | None) -> list[int]:
     restarts when the whole preferred range is OS-reserved), and finally
     ``0`` (let the OS pick any free port).
     """
+    # 0 means "any free port the OS hands out" — it is not a preference to heal away
+    # from, so it must not be expanded. Expanding it produced [0, 1, 2, 3, 4, 5,
+    # <last_bound>, 0]: ports 1-5 are privileged and meaningless, and `last_bound` is read
+    # from the discovery file, which on a developer's machine is THEIR LIVE GATEWAY. A
+    # caller asking for an ephemeral port must never be handed the operator's daemon as a
+    # fallback — `tests/e2e/test_gateway_api.py` asks for exactly that, and its own
+    # docstring warns that a foreign gateway answering is "a silent false PASS".
+    if preferred == 0:
+        return [0]
     candidates = [preferred, *range(preferred + 1, preferred + 6)]
     if (
         last_bound is not None
@@ -107,8 +116,12 @@ class GatewayConfig:
     def __init__(self, raw_config: dict[str, Any] = None):
         raw_config = raw_config or {}
         gateway_cfg = raw_config.get("gateway", {})
+        #: The raw ``gateway:`` section, kept so a later minted credential can be written
+        #: back into the same dict the rest of the boot path reads (see
+        #: :func:`_ensure_auth_token`).
+        self.raw_gateway_cfg = gateway_cfg
 
-        self.enabled = gateway_cfg.get("enabled", True)
+        self.enabled = _section_enabled(gateway_cfg, True)
         # Gateway HTTP port. Default is the canonical _GATEWAY_PORT (8789) — NOT
         # _DAEMON_PORT (8765), which belongs to the IPC/MCP WebSocket daemon. A
         # stale 8765 fallback here made the gateway squat the daemon's port and
@@ -116,15 +129,31 @@ class GatewayConfig:
         # reach it.
         self.port = gateway_cfg.get("port", _GATEWAY_PORT)
         self.host = gateway_cfg.get("host", "127.0.0.1")
+        # Parsed, never minted here. Constructing a GatewayConfig is cheap and tests do
+        # it freely; minting at parse time gave a pure constructor a **disk write**, so
+        # merely reading the config wrote a token into the operator's real
+        # `~/.navig/config.yaml`. The mint belongs to `NavigGateway.start()`, which is
+        # the moment the routes actually become reachable.
         self.auth_token = gateway_cfg.get("auth", {}).get("token")
 
-        # Storage directory
-        storage = gateway_cfg.get("storage_dir", "~/.navig")
+        # Storage directory. The default is the RESOLVED config dir, not a literal
+        # "~/.navig": `paths.config_dir()` honours NAVIG_CONFIG_DIR and falls back to
+        # ~/.navig, so a normal install is byte-identical while an install that moved its
+        # config no longer gets a split brain — config in one place, the gateway's
+        # events/task-queue/mesh state in another. It is the same class as the comment
+        # directly above (a constructor touching the operator's REAL ~/.navig), which was
+        # fixed for the token mint and left standing here: constructing a GatewayConfig in
+        # a test read the operator's live events.json, and NavigGateway.__init__ mkdir'd
+        # into their home. Measured with an audit of every real-home read during the
+        # suite — 22 of them came through this one line.
+        from navig.platform.paths import config_dir
+
+        storage = gateway_cfg.get("storage_dir") or str(config_dir())
         self.storage_dir = Path(storage).expanduser()
 
         # Heartbeat defaults
         heartbeat_cfg = raw_config.get("heartbeat", {})
-        self.heartbeat_enabled = heartbeat_cfg.get("enabled", True)
+        self.heartbeat_enabled = _section_enabled(heartbeat_cfg, True)
         self.heartbeat_interval = heartbeat_cfg.get("interval", "30m")
 
         # Agent config
@@ -144,6 +173,110 @@ def _monitor_enabled_truthy(v: object) -> bool:
     from navig.core.coerce import coerce_bool
 
     return coerce_bool(v)
+
+
+def _ensure_auth_token(gateway_cfg: dict) -> str | None:
+    """Mint and persist ``gateway.auth.token`` when the install has none.
+
+    ``require_bearer_auth`` opens with ``if not token: return None`` — **no token means
+    open access** — and this key had no default. Seventeen route modules sit behind it,
+    including ``POST /approval/{id}/respond``: on a default install any local process
+    could answer the agent's pending approvals. An approval endpoint anyone can call is
+    not an approval endpoint, and it silently defeats the whole gate.
+
+    Minting rather than refusing, because refusing breaks the one consumer that exists.
+    ``navig gateway approve`` is the only caller of those routes and it reads this same
+    config key (``gateway_client.gateway_request_headers``), so a minted token is picked
+    up transparently. The deck and the desktop authenticate with ``deck.api_key`` — a
+    separate credential, on separate routes — so they are untouched. Same shape as
+    ``deck.api_key``, which this gateway has always auto-generated and persisted.
+
+    Nothing is derived from this token (unlike ``deck.api_key``, whose hash is the
+    lighthouse tenant), so minting one carries no identity or rotation consequences.
+
+    **Enforce only what was persisted.** If the write fails, an in-memory token would be
+    a token no client can read — the CLI would send no header and be locked out of its
+    own gateway on the next call. So a failed persist returns ``None`` and leaves the
+    previous open behaviour in place, loudly. Fail-open is wrong here in general; it is
+    the lesser wrong than an operator locked out by a credential that exists nowhere.
+    """
+    import secrets
+
+    token = secrets.token_urlsafe(32)
+    try:
+        from navig.config import get_config_manager
+
+        get_config_manager().set_global("gateway.auth.token", token)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "gateway: could not persist an auth token (%s) — the gateway stays "
+            "UNAUTHENTICATED. Every local process can reach the admin routes, "
+            "including approval responses. Set one by hand: "
+            "navig config set gateway.auth.token <secret>",
+            exc,
+        )
+        return None
+
+    # Keep the in-memory section consistent with what was written, so anything else
+    # reading this dict during boot sees the same value.
+    try:
+        gateway_cfg.setdefault("auth", {})["token"] = token
+    except Exception:  # noqa: BLE001 — cosmetic; the persisted value is authoritative
+        pass
+
+    logger.warning(
+        "gateway: no auth token was configured, so one was generated and saved to "
+        "gateway.auth.token. The NAVIG CLI reads it automatically; any other client "
+        "calling the gateway's admin routes now needs it "
+        "(navig config get gateway.auth.token)."
+    )
+    return token
+
+
+def _section_enabled(section_cfg: object, default: bool) -> bool:
+    """Read a config section's ``enabled`` toggle through the canonical coercion.
+
+    ``navig config set <section>.enabled false`` stores the *string* ``"false"``,
+    which is truthy — so a raw ``section_cfg.get("enabled", True)`` would leave the
+    feature ON (the config-boolean footgun). :func:`coerce_bool` handles the
+    string/number/bool forms; a missing key or non-mapping section → *default*.
+    """
+    from navig.core.coerce import coerce_bool
+
+    if not isinstance(section_cfg, dict):
+        return default
+    return coerce_bool(section_cfg.get("enabled"), default=default)
+
+
+#: ``path -> (mtime_ns, size, text)``. The deep-agent path re-read 5-6 workspace
+#: markdown files from disk on EVERY turn with no cache at all. Bounded by the
+#: fixed filename set, so no eviction policy is needed.
+_WORKSPACE_FILE_CACHE: dict[Path, tuple[int, int, str]] = {}
+
+
+def _read_workspace_file(path: Path) -> str | None:
+    """Read *path*, serving an unchanged file from cache. ``None`` when absent.
+
+    Freshness is ``(st_mtime_ns, st_size)``: nanosecond mtime makes a
+    same-size-same-timestamp edit unreachable in practice, and a stat is orders
+    of magnitude cheaper than a read of a multi-KB identity document.
+    """
+    try:
+        stat = path.stat()
+    except OSError:
+        _WORKSPACE_FILE_CACHE.pop(path, None)
+        return None
+    key = (stat.st_mtime_ns, stat.st_size)
+    cached = _WORKSPACE_FILE_CACHE.get(path)
+    if cached is not None and cached[:2] == key:
+        return cached[2]
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        logger.warning("Failed to read %s: %s", path.name, exc)
+        return None
+    _WORKSPACE_FILE_CACHE[path] = (*key, text)
+    return text
 
 
 class NavigGateway:
@@ -328,6 +461,15 @@ class NavigGateway:
         if self.running:
             logger.warning("Gateway already running")
             return
+
+        # Before anything becomes reachable: make sure the admin routes are actually
+        # guarded. `require_bearer_auth` treats "no token" as open access, and
+        # `POST /approval/{id}/respond` sits behind it — an unauthenticated gateway lets
+        # any local process answer the agent's pending approvals.
+        if not self.config.auth_token:
+            self.config.auth_token = _ensure_auth_token(
+                self.config.raw_gateway_cfg
+            )
 
         self.running = True
         self.start_time = datetime.now()
@@ -806,7 +948,7 @@ class NavigGateway:
             # auth, webhook, bot menu button, the polling channel) stays gated on
             # the bot token, which may be empty here. This lets a fresh install
             # drive setup from the OS UI before any Telegram token exists.
-            if deck_cfg.get("enabled", True):
+            if _section_enabled(deck_cfg, True):
                 register_deck_routes(
                     self._app,
                     bot_token=bot_token,
@@ -945,10 +1087,17 @@ class NavigGateway:
     def _missions_autonomous_enabled(self) -> bool:
         """Master kill-switch for SYSTEM-initiated missions (default False)."""
         try:
-            return bool(
+            from navig.core.coerce import coerce_bool  # noqa: PLC0415
+
+            # coerce_bool, not bool(): `navig config set missions.autonomous_enabled false`
+            # stores the STRING "false" (truthy), so a raw bool() would leave autonomous
+            # missions RUNNING when the operator meant to shut them off — a control-safety
+            # footgun on the master kill-switch.
+            return coerce_bool(
                 (self.config_manager.global_config or {})
                 .get("missions", {})
-                .get("autonomous_enabled", False)
+                .get("autonomous_enabled", False),
+                default=False,
             )
         except Exception:  # noqa: BLE001
             return False
@@ -1087,7 +1236,7 @@ class NavigGateway:
         # Default to ON: a fresh install with no cloud: block in user config
         # should still wire the broker so the hosted Deck + Telegram Mini App
         # work out of the box. Set cloud.enabled: false explicitly to opt out.
-        if not cloud_cfg.get("enabled", True):
+        if not _section_enabled(cloud_cfg, True):
             return
         deck_cfg = raw.get("deck", {}) if isinstance(raw, dict) else {}
         api_key = (deck_cfg.get("api_key") or "").strip()
@@ -1248,7 +1397,7 @@ class NavigGateway:
         manager_alive = cm is not None and getattr(cm, "status", "off") in (
             "online", "starting"
         )
-        cloud_on = manager_alive or bool(cloud_cfg.get("enabled", True))
+        cloud_on = manager_alive or _section_enabled(cloud_cfg, True)
 
         if not cloud_on:
             print("", flush=True)
@@ -1615,6 +1764,7 @@ class NavigGateway:
         # inside the gateway where real approval consumers exist. With a live
         # manager, dangerous agent tool calls prompt the operator (deck Inbox /
         # Telegram); with none, they are DENIED and audited — never silently run.
+        # A FAILED bind is handled the same way: deny-all, not the default (below).
         try:
             from navig.tools.approval import bind_approval_manager
 
@@ -1624,7 +1774,26 @@ class NavigGateway:
                 "" if self.approval_manager is not None else ", no manager: deny-all",
             )
         except Exception as e:  # noqa: BLE001 — never block boot on this
-            logger.warning("ApprovalGate binding failed: %s", e)
+            # Leaving the gate untouched here restores the single-operator default —
+            # approve-dangerous-with-a-warning — which is exactly the fail-OPEN state
+            # this bind exists to remove, inside the one process where real approval
+            # consumers exist. So install deny-all instead: still no raise (boot is
+            # never blocked), but an unbindable gate refuses rather than waves through.
+            logger.error("ApprovalGate binding failed — installing deny-all: %s", e)
+            try:
+                from navig.tools.approval import bind_approval_manager as _bind_deny
+
+                _bind_deny(None, self.audit_log)
+            except Exception as inner:  # noqa: BLE001
+                # The approval module itself is unusable. Both consumers already fail
+                # closed on their own in that case (MCP `_gate_tool` raises
+                # PermissionError, the agent loop returns a denial), so this is loud
+                # rather than fatal.
+                logger.error(
+                    "ApprovalGate deny-all fallback also failed — consumers fail "
+                    "closed independently: %s",
+                    inner,
+                )
 
         # Request registry — user-facing questions / route confirmations /
         # operator proposals. Sibling to approval_manager; the deck merges both
@@ -1748,21 +1917,17 @@ class NavigGateway:
             logger.warning("MCP module not available: %s", e)
 
         try:
-            # Initialize webhook receiver
-            from navig.webhooks import WebhookReceiver, WebhookSourceConfig
+            # Initialize webhook receiver. Pass the global config so it loads the operator's
+            # configured `webhooks:` sources (with their secrets, signature settings, and
+            # enabled/verify_signature toggles) via WebhookReceiver._load_sources — reading
+            # config["webhooks"]. The previous code built the receiver with NO config (so the
+            # operator's `webhooks:` config was ignored) and then tried to re-add sources via
+            # a `configure_source` method that does not exist, passing a `provider` field
+            # WebhookSourceConfig does not have — an AttributeError/TypeError for anyone who
+            # actually configured a source.
+            from navig.webhooks import WebhookReceiver
 
-            self.webhook_receiver = WebhookReceiver()
-
-            # Configure webhook sources
-            webhook_cfg = self.config_manager.global_config.get("webhooks", {})
-            for source_name, source_cfg in webhook_cfg.get("sources", {}).items():
-                self.webhook_receiver.configure_source(
-                    WebhookSourceConfig(
-                        name=source_name,
-                        secret=source_cfg.get("secret", ""),
-                        provider=source_cfg.get("provider", "generic"),
-                    )
-                )
+            self.webhook_receiver = WebhookReceiver(self.config_manager.global_config)
 
             logger.info("Webhook receiver initialized")
         except ImportError as e:
@@ -1787,7 +1952,7 @@ class NavigGateway:
         # ── Flux Mesh: LAN-local peer discovery ──────────────────────
         try:
             mesh_cfg = self.config_manager.global_config.get("mesh", {})
-            if mesh_cfg.get("enabled", True):
+            if _section_enabled(mesh_cfg, True):
                 from navig.mesh.auth import load_secret as _load_mesh_secret
                 from navig.mesh.discovery import MeshDiscovery
                 from navig.mesh.registry import get_registry
@@ -1906,24 +2071,24 @@ class NavigGateway:
             if tg_channel is not None:
                 telegram_notifier = getattr(tg_channel, "_notifier", None)
             if telegram_notifier is None:
-                # Fallback: try ChannelRegistry (e.g. if channel was started externally)
-                try:
-                    from navig.gateway.channels.registry import ChannelRegistry
-
-                    registry = (
-                        ChannelRegistry.instance() if hasattr(ChannelRegistry, "instance") else None
-                    )
-                    if registry:
-                        tg = registry.get_adapter("telegram")
-                        telegram_notifier = getattr(tg, "_notifier", None) if tg else None
-                except Exception:  # noqa: BLE001
-                    pass  # best-effort; failure is non-critical
+                # There is no second place to look. This used to "fall back" to
+                # `ChannelRegistry.instance()`, a classmethod that does not exist, so the
+                # branch was unreachable and the comment described a recovery that never
+                # happened. The notifier is absent for exactly two reasons and neither is
+                # fixable from a registry: the telegram channel is not running, or it has
+                # no `allowed_users` (the notifier needs a default chat id — see
+                # TelegramChannel._start_notifier). Say which, instead of pretending.
+                logger.warning(
+                    "Comms dispatcher has NO Telegram notifier (channel running: %s) — "
+                    "Telegram-routed comms will not be delivered.",
+                    tg_channel is not None,
+                )
 
             # Optional Matrix bot
             matrix_bot = None
             comms_cfg = self.config_manager.global_config.get("comms", {})
             matrix_cfg = comms_cfg.get("matrix", {})
-            if matrix_cfg.get("enabled", False):
+            if _section_enabled(matrix_cfg, False):
                 try:
                     from navig.comms.matrix import NavigMatrixBot
 
@@ -2003,24 +2168,35 @@ class NavigGateway:
 
             # ── Telegram adapter — inject the live bot instance ──
             tg_cfg = adapters_cfg.get("telegram", {})
-            if tg_cfg.get("enabled", True):
+            if _section_enabled(tg_cfg, True):
                 try:
-                    from navig.gateway.channels.registry import ChannelRegistry
                     from navig.messaging.adapters.telegram_adapter import TelegramMessagingAdapter
 
-                    chan_registry = (
-                        ChannelRegistry.instance()
-                        if hasattr(ChannelRegistry, "instance")
-                        else None
-                    )
                     tg_adapter = TelegramMessagingAdapter()
-                    if chan_registry:
-                        tg_channel = chan_registry.get_adapter("telegram")
-                        bot = getattr(tg_channel, "_bot", None) or getattr(
-                            tg_channel, "bot", None
+                    # The LIVE channel is the adapter's bot. This used to go through
+                    # `ChannelRegistry.instance()` — a classmethod that does not exist
+                    # (the registry only ever exposed the module-level
+                    # `get_channel_registry()`), so `hasattr(...)` was permanently False,
+                    # the branch never ran, and `set_bot` was never called ONCE. Every
+                    # send through this adapter returned
+                    # `DeliveryReceipt.failure("Telegram bot not initialised")`.
+                    #
+                    # `TelegramChannel` satisfies the whole interface the adapter calls —
+                    # `send_message(chat_id=, text=, parse_mode=)`, `send_photo` /
+                    # `send_video` / `send_animation` / `send_voice` / `send_document`,
+                    # and `_session` for URL attachments — and `_msg_id` documents that it
+                    # accepts "a dict (channel) or object (PTB Message)", the dict being
+                    # exactly what this channel returns. `_init_channels()` runs before
+                    # this, so it is already populated.
+                    tg_channel = self.channels.get("telegram")
+                    if tg_channel is not None:
+                        tg_adapter.set_bot(tg_channel)
+                    else:
+                        logger.warning(
+                            "Telegram messaging adapter registered WITHOUT a bot — the "
+                            "telegram channel is not running, so every send through it "
+                            "will fail. Check the telegram channel's own startup log."
                         )
-                        if bot:
-                            tg_adapter.set_bot(bot)
                     registry.register(tg_adapter)
                     logger.debug("Messaging adapter registered: telegram")
                 except Exception as exc:  # noqa: BLE001
@@ -2028,7 +2204,7 @@ class NavigGateway:
 
             # ── SMS adapter ──
             sms_cfg = adapters_cfg.get("sms", {})
-            if sms_cfg.get("enabled", False):
+            if _section_enabled(sms_cfg, False):
                 try:
                     from navig.messaging.adapters.sms import SmsAdapter
 
@@ -2040,7 +2216,7 @@ class NavigGateway:
 
             # ── WhatsApp Cloud adapter ──
             wa_cfg = adapters_cfg.get("whatsapp", {})
-            if wa_cfg.get("enabled", False):
+            if _section_enabled(wa_cfg, False):
                 try:
                     from navig.messaging.adapters.whatsapp_cloud import WhatsAppCloudAdapter
 
@@ -2052,7 +2228,7 @@ class NavigGateway:
 
             # ── Discord adapter ──
             discord_cfg = adapters_cfg.get("discord", {})
-            if discord_cfg.get("enabled", False):
+            if _section_enabled(discord_cfg, False):
                 try:
                     from navig.messaging.adapters.discord_adapter import DiscordMessagingAdapter
 
@@ -2152,6 +2328,11 @@ class NavigGateway:
 
         return response
 
+    @staticmethod
+    def _workspace_file_cache() -> dict:
+        """Process-wide ``path -> (mtime_ns, size, text)`` cache for workspace files."""
+        return _WORKSPACE_FILE_CACHE
+
     async def _build_agent_context(
         self,
         agent_id: str,
@@ -2170,8 +2351,25 @@ class NavigGateway:
             "files": {},
         }
 
-        # Load workspace files
-        files_to_load = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md"]
+        # Identity resolves through the SAME chain as the chat path, so a persona,
+        # a space SOUL.md or IDENTITY.md applies here too. This path used to probe
+        # a bare "SOUL.md" filename and therefore ignored all three.
+        try:
+            from navig.personas.soul_loader import resolve_soul
+
+            resolution = resolve_soul()
+            if resolution.raw:
+                context["files"]["SOUL.md"] = resolution.raw
+            context["identity_source"] = resolution.source
+            context["identity_shadowed"] = [s.tag for s in resolution.shadowed]
+        except Exception as exc:  # noqa: BLE001 — never block a turn on identity
+            logger.warning("identity resolution failed on deep path: %s", exc)
+
+        # Load workspace files. GUARDRAILS.md is operator-supplied and only ever
+        # ADDS rules — the floor itself is compiled in (see _build_system_prompt).
+        files_to_load = ["GUARDRAILS.md", "AGENTS.md", "USER.md", "TOOLS.md"]
+        if "SOUL.md" not in context["files"]:
+            files_to_load.append("SOUL.md")
 
         if is_heartbeat:
             files_to_load.append("HEARTBEAT.md")
@@ -2180,13 +2378,10 @@ class NavigGateway:
 
         for filename in files_to_load:
             for base_dir in workspace_candidates:
-                filepath = base_dir / filename
-                if filepath.exists():
-                    try:
-                        context["files"][filename] = filepath.read_text(encoding="utf-8")
-                        break
-                    except Exception as e:
-                        logger.warning("Failed to read %s: %s", filename, e)
+                text = _read_workspace_file(base_dir / filename)
+                if text is not None:
+                    context["files"][filename] = text
+                    break
 
         # Load today's memory log
         today = datetime.now().strftime("%Y-%m-%d")
@@ -2260,41 +2455,49 @@ class NavigGateway:
             return f"Error: {e}"
 
     def _build_system_prompt(self, context: dict[str, Any]) -> str:
-        """Build system prompt from context files."""
-        parts = []
+        """Build the deep-agent system prompt from context files.
 
-        # Add SOUL.md (personality)
-        if "SOUL.md" in context.get("files", {}):
-            parts.append(f"# Your Personality\n{context['files']['SOUL.md']}")
+        Ordered stable-first, volatile-last, for the same prompt-cache reason as
+        the chat path: identity and instructions hold for a session, while the
+        memory blocks change every turn. Guardrails lead, and they come from code
+        — an operator ``GUARDRAILS.md`` can only append to them.
+        """
+        from navig.agent.conv.guardrails import SOUL_DEMOTION_NOTE, guardrail_block
 
-        # Add USER.md (user info)
-        if "USER.md" in context.get("files", {}):
-            parts.append(f"# About Your Human\n{context['files']['USER.md']}")
+        files = context.get("files", {})
+        parts: list[str] = [guardrail_block(files.get("GUARDRAILS.md", ""))]
 
-        # Add AGENTS.md (instructions)
-        if "AGENTS.md" in context.get("files", {}):
-            parts.append(f"# Instructions\n{context['files']['AGENTS.md']}")
+        # ── Stable: identity and standing instructions ──────────────────────
+        if "SOUL.md" in files:
+            parts.append(f"# Your Personality\n{SOUL_DEMOTION_NOTE}\n\n{files['SOUL.md']}")
 
-        # Add TOOLS.md (config)
-        if "TOOLS.md" in context.get("files", {}):
-            parts.append(f"# Available Tools & Config\n{context['files']['TOOLS.md']}")
+        if "AGENTS.md" in files:
+            parts.append(f"# Instructions\n{files['AGENTS.md']}")
 
-        # Add HEARTBEAT.md for heartbeat runs
-        if context.get("is_heartbeat") and "HEARTBEAT.md" in context.get("files", {}):
-            parts.append(f"# Heartbeat Checklist\n{context['files']['HEARTBEAT.md']}")
+        if "TOOLS.md" in files:
+            parts.append(f"# Available Tools & Config\n{files['TOOLS.md']}")
 
-        # Add today's memory
-        for key, value in context.get("files", {}).items():
+        if "USER.md" in files:
+            parts.append(f"# About Your Human\n{files['USER.md']}")
+
+        # ── Volatile: memory, logs, per-turn search results ─────────────────
+        # MEMORY.md was loaded into context and then silently dropped here — the
+        # long-term memory file the agent is told to keep never reached a prompt.
+        if "MEMORY.md" in files:
+            parts.append(f"# Long-Term Memory\n{files['MEMORY.md']}")
+
+        for key, value in files.items():
             if key.startswith("memory/"):
                 parts.append(f"# Today's Log\n{value}")
 
-        # Add persistent memory context (knowledge base search results)
         if context.get("memory_context"):
             parts.append(f"# Relevant Memory\n{context['memory_context']}")
 
-        # Add user profile
         if context.get("user_profile"):
             parts.append(f"# User Profile\n{context['user_profile']}")
+
+        if context.get("is_heartbeat") and "HEARTBEAT.md" in files:
+            parts.append(f"# Heartbeat Checklist\n{files['HEARTBEAT.md']}")
 
         return "\n\n---\n\n".join(parts)
 
@@ -2432,152 +2635,14 @@ class NavigGateway:
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
-    async def _handle_shutdown(self, request) -> web.Response:
-        """Handle POST /shutdown — custom method that avoids aiohttp-specific r.remote."""
-        import asyncio as _asyncio
 
-        from aiohttp import web
 
-        actor = request.headers.get("X-Actor", "unknown")
-        block = await self.policy_check("system.shutdown", actor)
-        if block is not None:
-            return block
-        resp = web.json_response(
-            {
-                "success": True,
-                "status": "shutting_down",
-                "message": "Gateway shutdown initiated",
-            }
-        )
 
-        async def _delayed():
-            await _asyncio.sleep(0.5)
-            await self.stop()
-            sys.exit(0)
 
-        self._spawn_background_task(_delayed())
-        return resp
 
-    async def _handle_approval_request(self, request) -> web.Response:
-        """Route an approval request (API variant: uses 'action' field).
 
-        ``request_approval`` takes ``command=`` and returns a bool — the old
-        ``action=`` kwarg raised TypeError against the real manager, and the
-        old ``{"request_id": ...}`` body was derived from that bool (always
-        None). Blocks until the approval resolves or times out.
-        """
-        from aiohttp import web
 
-        try:
-            data = await request.json()
-        except Exception:
-            return web.Response(status=400, text="Invalid JSON")
-        approved = await self.approval_manager.request_approval(
-            command=data.get("action") or "",
-            description=data.get("description", ""),
-        )
-        return web.json_response({"approved": bool(approved)})
 
-    async def _handle_ws_message(self, ws, data: dict) -> None:
-        """Dispatch an incoming WebSocket message dict to the WS handler."""
-        from navig.gateway.routes.core import _ws_dispatch
-
-        await _ws_dispatch(ws, data, self)
-
-    async def _handle_proactive_status(self, request) -> web.Response:
-        """Return proactive engine status using the server module engine getter."""
-        from aiohttp import web
-
-        engine = get_proactive_engine()
-        return web.json_response(
-            {
-                "success": True,
-                "started": engine.running,
-                "last_check": (engine.last_check.isoformat() if engine.last_check else None),
-                "last_check_status": engine.last_check_status,
-                "last_error": engine.last_error,
-                "providers": engine.provider_status,
-            }
-        )
-
-    async def _handle_proactive_start(self, request) -> web.Response:
-        """Start proactive engine using the server module engine getter."""
-        from aiohttp import web
-
-        engine = get_proactive_engine()
-        if not engine.running:
-            self._spawn_background_task(engine.start())
-            return web.json_response({"success": True, "status": "started"})
-        return web.json_response({"success": True, "status": "already_running"})
-
-    async def _handle_proactive_stop(self, request) -> web.Response:
-        """Stop proactive engine using the server module engine getter."""
-        from aiohttp import web
-
-        engine = get_proactive_engine()
-        if engine.running:
-            await engine.stop()
-            return web.json_response({"success": True, "status": "stopped"})
-        return web.json_response({"success": True, "status": "not_running"})
-
-    async def _handle_proactive_check(self, request) -> web.Response:
-        """Trigger a proactive check using the server module engine getter."""
-        from aiohttp import web
-
-        engine = get_proactive_engine()
-        if engine.is_checking:
-            return web.json_response({"error": "Proactive engine busy"}, status=409)
-        self._spawn_background_task(engine.run_checks(None))
-        return web.json_response({"success": True, "status": "triggered"})
-
-    async def _handle_engagement_status(self, request) -> web.Response:
-        """Return engagement coordinator status."""
-        from aiohttp import web
-
-        engine = get_proactive_engine()
-        coordinator = engine._get_engagement_coordinator()
-        state = coordinator.state
-        return web.json_response(
-            {
-                "success": True,
-                "enabled": coordinator.config.enabled,
-                "operator_state": state.get_operator_state().value,
-                "time_of_day": state.get_time_of_day().value,
-                "within_active_hours": state.is_within_active_hours(),
-                "stats": {
-                    "total_messages": state.stats.total_messages,
-                    "total_commands": state.stats.total_commands,
-                    "features_used": len(state.stats.features_used),
-                    "last_greeting": state.stats.last_greeting,
-                    "last_checkin": state.stats.last_checkin,
-                    "last_capability_promo": state.stats.last_capability_promo,
-                    "last_feedback_ask": state.stats.last_feedback_ask,
-                },
-                "daily_sends": len(coordinator._daily_sends),
-                "max_daily": coordinator.config.max_proactive_per_day,
-            }
-        )
-
-    async def _handle_engagement_tick(self, request) -> web.Response:
-        """Run one engagement tick and deliver a message if appropriate."""
-        from aiohttp import web
-
-        engine = get_proactive_engine()
-        coordinator = engine._get_engagement_coordinator()
-        result = coordinator.engagement_tick()
-        if result:
-            if "telegram" in self.channels:
-                await self.deliver_message(channel="telegram", to=None, content=result.message)
-            return web.json_response(
-                {
-                    "success": True,
-                    "status": "sent",
-                    "action": result.action.value,
-                    "message": result.message,
-                    "priority": result.priority,
-                }
-            )
-        return web.json_response({"success": True, "status": "no_action"})
 
     async def _cors_middleware(self, request, handler):
         """CORS middleware — handle OPTIONS preflight and add CORS headers."""
@@ -2619,63 +2684,42 @@ class NavigGateway:
         )
         return web.json_response({"success": True})
 
-    async def _handle_heartbeat_trigger(self, request):
-        """Manually trigger a heartbeat run."""
-        from aiohttp import web
 
-        if not self.heartbeat_runner:
-            return web.Response(status=503, text="Heartbeat runner not available")
-        result = await self.heartbeat_runner.trigger_now()
-        return web.json_response(
-            {
-                "success": result.success,
-                "suppressed": getattr(result, "suppressed", False),
-                "response": getattr(result, "response", None),
-                "issues_found": getattr(result, "issues_found", []),
-                "timestamp": (
-                    result.timestamp.isoformat() if getattr(result, "timestamp", None) else None
-                ),
-            }
-        )
-
-    async def _handle_approval_pending(self, request):
-        """Return pending approval requests."""
-        from aiohttp import web
-
-        if not getattr(self, "approval_manager", None):
-            return web.json_response({"pending": []})
-        pending = self.approval_manager.list_pending()
-        result = []
-        for req in pending:
-            status_val = getattr(req, "status", None)
-            if hasattr(status_val, "value"):
-                status_val = status_val.value
-            created = getattr(req, "created_at", None)
-            if hasattr(created, "isoformat"):
-                created = created.isoformat()
-            result.append(
-                {
-                    "id": getattr(req, "id", None),
-                    "action": getattr(req, "action", None),
-                    "description": getattr(req, "description", None),
-                    "agent_id": getattr(req, "agent_id", None),
-                    "created_at": created,
-                    "status": status_val,
-                }
-            )
-        return web.json_response({"pending": result})
 
     def get_queue_size(self) -> int:
         """Get current message queue size."""
         return self._message_queue.qsize()
 
-    def _spawn_background_task(self, coro: Any) -> Any:
-        """Create a tracked background task that is cancelled on shutdown."""
+    def _spawn_background_task(self, coro: Any, *, name: str | None = None) -> Any:
+        """Create a tracked background task that is cancelled on shutdown.
+
+        An escaping exception is LOGGED, not silently swallowed: a bare
+        ``create_task`` only emits an unhelpful "Task exception was never retrieved"
+        at GC time (if ever), so a monitor or producer loop that dies would vanish
+        with every light green — exactly the silent failure this daemon keeps
+        hardening against. Mirrors :func:`navig.core.background.spawn`'s callback.
+        """
         task = asyncio.create_task(coro)
+        if name and hasattr(task, "set_name"):
+            try:
+                task.set_name(name)
+            except Exception:  # pragma: no cover — set_name is best-effort
+                pass
         if hasattr(task, "add_done_callback"):
             self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
+            task.add_done_callback(self._on_background_task_done)
         return task
+
+    def _on_background_task_done(self, task: Any) -> None:
+        """Discard a finished tracked task and surface any exception it raised."""
+        self._background_tasks.discard(task)
+        if task.cancelled():
+            return  # cancellation is the normal shutdown path, not a failure
+        exc = task.exception()
+        if exc is not None:
+            logger.warning(
+                "background task %r failed: %r", task.get_name(), exc, exc_info=exc
+            )
 
     # ── Notification monitors / producers ──────────────────────────────────────
 
@@ -2719,14 +2763,14 @@ class NavigGateway:
         if name == "webcam":
             from navig.notify.monitors.webcam import run_webcam_monitor
 
-            self._monitor_tasks[name] = self._spawn_background_task(run_webcam_monitor())
+            self._spawn_monitor_task(name, run_webcam_monitor())
         elif name == "resources":
             from navig.notify.monitors.resources import run_resource_monitor
 
             rcfg = ((self.config_manager.global_config or {}).get("monitors", {}) or {}).get(
                 "resources", {}
             ) or {}
-            self._monitor_tasks[name] = self._spawn_background_task(run_resource_monitor(rcfg))
+            self._spawn_monitor_task(name, run_resource_monitor(rcfg))
         elif name == "self_errors":
             from navig.notify.producers.self_errors import install_self_error_reporter
 
@@ -2745,6 +2789,53 @@ class NavigGateway:
         else:
             return
         logger.info("monitor enabled: %s", name)
+
+    def _spawn_monitor_task(self, name: str, coro: Any) -> Any:
+        """Spawn a monitor loop and keep its tracked handle HONEST.
+
+        If the loop ever exits — a crash, or a clean self-stop — the handle in
+        ``_monitor_tasks`` is cleared so a dead monitor is not reported as running
+        (``_start_monitor`` early-returns while the name is present, so a stale
+        handle would make a re-enable silently no-op). The monitors' inner loops
+        already survive a single bad poll, so a death here is unexpected and logged.
+        """
+        task = self._spawn_background_task(coro, name=f"monitor:{name}")
+        self._monitor_tasks[name] = task
+        if hasattr(task, "add_done_callback"):
+            task.add_done_callback(lambda t, n=name: self._on_monitor_task_done(n, t))
+        return task
+
+    def _on_monitor_task_done(self, name: str, task: Any) -> None:
+        """Clear a finished monitor's tracked handle so its state stays truthful."""
+        if self._monitor_tasks.get(name) is not task:
+            return  # a newer task already replaced it (stop→start); leave it alone
+        self._monitor_tasks.pop(name, None)
+        if task.cancelled():
+            return  # normal disable/shutdown
+        exc = task.exception()
+        if exc is not None:
+            # The generic done-callback already dumped the traceback; add the
+            # monitor identity + the honest state change (it is no longer running).
+            logger.error("monitor %s crashed and was cleared from tracking: %r", name, exc)
+        else:
+            logger.info("monitor %s loop exited on its own; cleared from tracking", name)
+
+    def is_monitor_running(self, name: str) -> bool:
+        """Whether a monitor is actually LIVE right now — not merely enabled in config.
+
+        A monitor can be enabled (config) and available (host-capable) yet not running,
+        because its loop crashed and ``_on_monitor_task_done`` cleared the handle. A
+        status surface that reports config intent alone would show that as a green
+        "on" — the "green light over a dead monitor" lie. This reads the real handle:
+        a live task (not done), or an installed producer / live marker, is running.
+        """
+        handle = getattr(self, "_monitor_tasks", {}).get(name)
+        if handle is None:
+            return False
+        done = getattr(handle, "done", None)
+        if callable(done):  # an asyncio Task (webcam / resources)
+            return not handle.done()
+        return True  # a string marker ("installed" / "live") == an active producer
 
     def _stop_monitor(self, name: str) -> None:
         self._monitor_tasks = getattr(self, "_monitor_tasks", {})
@@ -2800,7 +2891,7 @@ def run_gateway():
         loop.set_exception_handler(_silence_proactor_resets)
 
     def signal_handler():
-        loop.create_task(gateway.stop())
+        spawn(gateway.stop())
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:

@@ -3,12 +3,9 @@ Tests for navig.tools.bash_exec — BashExecTool safe shell execution.
 """
 import asyncio
 import os
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
-import pytest
-
-from navig.tools.bash_exec import _DEFAULT_TIMEOUT, ApprovalRequiredError, BashExecTool
+from navig.tools.bash_exec import BashExecTool
 
 
 def _run(coro):
@@ -160,13 +157,33 @@ class TestBashExecRunExecution:
         assert len(result.status_events) >= 1
 
     def test_on_status_callback_called(self):
-        events = []
+        """`on_status` is a StatusCallback: THREE arguments, and a coroutine that is awaited.
+
+        This used to pass `events.append` — sync, one argument — which matched bash_exec's
+        own (wrong) annotation and so locked the broken contract in place. Production
+        supplies a 3-arg coroutine function, and bash_exec called it un-awaited with one
+        argument, so every status event became a coroutine that was created, dropped and
+        never run: the live Telegram progress line simply never updated.
+
+        Recording inside the coroutine body is what makes this a real check — an un-awaited
+        coroutine never reaches the append, so a regression shows up as zero events rather
+        than as a passing test.
+        """
+        events: list[tuple[str, str, int]] = []
+
+        async def on_status(step: str, detail: str = "", progress: int = 0) -> None:
+            events.append((step, detail, progress))
+
         if os.name == "nt":
             cmd = "cmd /c echo hi"
         else:
             cmd = "echo hi"
-        _run(tool.run({"command": cmd}, on_status=events.append))
-        assert len(events) >= 1
+        _run(tool.run({"command": cmd}, on_status=on_status))
+
+        assert len(events) >= 1, (
+            "no status event arrived — bash_exec is not awaiting its StatusCallback"
+        )
+        assert all(isinstance(step, str) for step, _, _ in events)
 
     def test_env_extra_passed_to_subprocess(self):
         if os.name == "nt":

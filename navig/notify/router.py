@@ -146,8 +146,11 @@ class NotificationRouter:
             ch_obj = nm.get_channel(channel) if hasattr(nm, "get_channel") else nm._channels.get(channel)
             if ch_obj is None:
                 return False, f"{channel} not configured"
-            await ch_obj.send_alert(title, body, _priority_enum(priority))
-            return True, "sent"
+            # Use the real result: send_alert now returns False when an immediate
+            # (CRITICAL) send is rejected, so a must-deliver alert that Telegram/
+            # Matrix refused is reported as failed instead of a phantom "sent".
+            ok = await ch_obj.send_alert(title, body, _priority_enum(priority))
+            return bool(ok), ("sent" if ok else f"{channel} rejected the send")
 
         if channel == "email":
             from navig.notify.email import send_email
@@ -167,9 +170,20 @@ class NotificationRouter:
                 return False, f"{channel} adapter not enabled"
             msg = f"{emoji_for_type(type_key)} {title}" + (f"\n\n{body}" if body else "")
             receipt = await adapter.send_message(target, msg)
+            if receipt is None:
+                # Nothing was delivered, so do not report "sent": every getattr below
+                # would fall back to its default and yield a phantom success.
+                return False, f"{channel} adapter returned no receipt"
             status = getattr(getattr(receipt, "status", None), "value", "sent")
             err = getattr(receipt, "error", None)
-            return (not err), (err or status)
+            # DeliveryReceipt carries an explicit `ok` — read it rather than
+            # re-deriving success from the absence of an error string. Today every
+            # adapter builds receipts via DeliveryReceipt.failure(), which always sets
+            # `error`, so the two agree; a receipt constructed as
+            # DeliveryReceipt(ok=False, status=FAILED) with no message is perfectly
+            # legal and would otherwise be reported as delivered.
+            ok = bool(getattr(receipt, "ok", not err))
+            return ok, (err or status)
 
         return False, "unknown channel"
 

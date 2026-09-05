@@ -9,11 +9,6 @@ All tests are hermetic — filesystem access uses tmp_path / monkeypatching.
 from __future__ import annotations
 
 import sys
-import threading
-from pathlib import Path
-from unittest.mock import patch
-
-import pytest
 
 import navig.ipc_pipe as ipc
 from navig.ipc_pipe import (

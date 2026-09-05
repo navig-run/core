@@ -4,8 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 import navig.installer.modules.mcp as mcp_module
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
 

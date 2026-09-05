@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import abc
 import logging
+import shlex
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ class SystemdAdapter(ServiceAdapter):
         self._service = service
 
     def restart_commands(self) -> list[str]:
-        return [f"systemctl restart {self._service}"]
+        return [f"systemctl restart {shlex.quote(self._service)}"]
 
 
 class DockerComposeAdapter(ServiceAdapter):
@@ -84,9 +85,9 @@ class DockerComposeAdapter(ServiceAdapter):
         self._compose_file = compose_file
 
     def restart_commands(self) -> list[str]:
-        return [
-            f"cd {self._app_root} && docker compose -f {self._compose_file} up -d --remove-orphans"
-        ]
+        root = shlex.quote(self._app_root)
+        compose = shlex.quote(self._compose_file)
+        return [f"cd {root} && docker compose -f {compose} up -d --remove-orphans"]
 
 
 class Pm2Adapter(ServiceAdapter):
@@ -99,7 +100,7 @@ class Pm2Adapter(ServiceAdapter):
         self._service = service
 
     def restart_commands(self) -> list[str]:
-        return [f"pm2 restart {self._service} --update-env"]
+        return [f"pm2 restart {shlex.quote(self._service)} --update-env"]
 
 
 class CommandAdapter(ServiceAdapter):

@@ -6,10 +6,9 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
 from typing import Any
 
-from navig.tools.registry import BaseTool, ToolResult
+from navig.tools.registry import BaseTool, StatusCallback, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +36,7 @@ class PdfTool(BaseTool):
     async def run(
         self,
         args: dict[str, Any],
-        on_status: Callable[[str], None] | None = None,
+        on_status: StatusCallback | None = None,
     ) -> ToolResult:
         t0 = time.monotonic()
         path = args.get("path", "")

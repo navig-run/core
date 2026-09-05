@@ -101,7 +101,7 @@ jobs:
           LATEST_VER=$(python -c "import json; print(json.load(open('latest.json'))['version'])")
           if [ "$PYPROJECT_VER" != "$LATEST_VER" ]; then
             echo "ERROR: version drift — pyproject.toml=$PYPROJECT_VER but latest.json=$LATEST_VER"
-            echo "       Run: python scripts/_version_sync.py"
+            echo "       Run: python tools/_version_sync.py"
             exit 1
           fi
           echo "Version OK: $PYPROJECT_VER"

@@ -428,6 +428,37 @@ class TestMaintenance:
         row = bconn.execute("SELECT val FROM t WHERE id=1").fetchone()
         assert row[0] == "hello"
         bconn.close()
+        # The atomic backup leaves no temp file behind on success.
+        assert not (dest.parent / (dest.name + ".tmp")).exists()
+        engine.close_all()
+
+    def test_backup_failure_preserves_prior_backup_and_leaves_no_temp(self, tmp_path, monkeypatch):
+        """A failed/interrupted backup must NOT clobber a prior good backup nor leave a
+        partial file at dest (which a later restore would trust). The backup writes to a
+        temp then os.replace()s it in; a failure discards the temp and leaves dest as-is."""
+        import navig.storage.engine as engine_mod
+
+        engine = engine_mod.Engine()
+        db = _make_db(tmp_path, "source.db")
+        conn = engine.connect(db)
+        conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT)")
+        conn.execute("INSERT INTO t VALUES (1, 'new')")
+        conn.commit()
+
+        dest = tmp_path / "prev_backup.db"
+        dest.write_bytes(b"PRIOR-GOOD-BACKUP")  # a previous good backup at the target path
+
+        # Simulate a failure at the final move (stands in for any mid-backup failure —
+        # the cleanup path is shared): dest must be untouched, temp must be gone.
+        def _boom(*_a, **_k):
+            raise OSError("simulated replace failure")
+
+        monkeypatch.setattr(engine_mod.os, "replace", _boom)
+        with pytest.raises(OSError):
+            engine.backup(db, dest)
+
+        assert dest.read_bytes() == b"PRIOR-GOOD-BACKUP"  # prior backup intact
+        assert not (dest.parent / (dest.name + ".tmp")).exists()  # no partial temp left
         engine.close_all()
 
 
@@ -725,6 +756,26 @@ class TestStmtCache:
         cache.clear()
         conn.close()
 
+    def test_eviction_closes_the_evicted_cursor(self, tmp_path):
+        """A cursor dropped by FIFO eviction must be CLOSED, not just unlinked and
+        leaked until GC — a closed cursor raises when re-used, an open one doesn't."""
+        from navig.storage.engine import _StmtCache
+
+        db = _make_db(tmp_path)
+        conn = sqlite3.connect(str(db))
+        conn.execute("CREATE TABLE t (id INTEGER)")
+        conn.commit()
+
+        cache = _StmtCache(conn, max_size=1)
+        evicted = cache.execute("SELECT 1", ())  # the soon-to-be-evicted cursor
+        cache.execute("SELECT 2", ())            # max_size=1 → evicts the "SELECT 1" cursor
+
+        with pytest.raises(sqlite3.ProgrammingError):
+            evicted.execute("SELECT 1")  # closed cursor → raises (pre-fix: still open)
+
+        cache.clear()
+        conn.close()
+
 
 # ═══════════════════════════════════════════════════════════════
 # Module Singleton
@@ -732,20 +783,26 @@ class TestStmtCache:
 
 
 class TestModuleSingleton:
-    def test_get_engine_returns_same_instance(self):
-        import navig.storage as storage_mod
+    def test_get_engine_returns_same_instance(self, monkeypatch):
+        # The singleton lives in navig.storage.ENGINE, not in the navig.storage package.
+        # This test used to assign `navig.storage._engine = None`, which created an
+        # attribute nothing reads: the reset never happened, `e1 is e2` passed on whatever
+        # engine an earlier test had already built, and the `close_all()` at the bottom
+        # shut that SHARED engine's connections for every test that came after.
+        import navig.storage.engine as engine_mod
         from navig.storage import get_engine
 
-        # Reset the module-level singleton for test isolation
-        storage_mod._engine = None
+        # monkeypatch restores the previous engine whatever the outcome — a bare
+        # assignment with a reset at the bottom only runs when the assert passes.
+        monkeypatch.setattr(engine_mod, "_engine", None)
 
         e1 = get_engine()
-        e2 = get_engine()
-        assert e1 is e2
-
-        # Cleanup
-        e1.close_all()
-        storage_mod._engine = None
+        try:
+            e2 = get_engine()
+            assert e1 is e2
+            assert engine_mod._engine is e1, "get_engine must publish the instance it cached"
+        finally:
+            e1.close_all()      # ours to close now, and closed even if the assert fails
 
 
 # ═══════════════════════════════════════════════════════════════

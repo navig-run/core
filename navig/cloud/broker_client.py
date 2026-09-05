@@ -16,7 +16,6 @@ convenience, not an auth gateway.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -136,17 +135,3 @@ class BrokerClient:
             return True
         except Exception:
             return False
-
-
-async def _close_silently(client: BrokerClient | None) -> None:
-    """Shutdown helper -- never re-raises so callers can use it in ``finally``."""
-    if client is None:
-        return
-    try:
-        await client.close()
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("BrokerClient.close raised: %r", exc)
-
-
-async def gather_with_log(*coros: Any) -> list[Any]:
-    return await asyncio.gather(*coros, return_exceptions=True)

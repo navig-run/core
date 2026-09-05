@@ -32,6 +32,31 @@ class AIMessage:
         return {"role": self.role, "content": self.content}
 
 
+# Provider wordings for "your prompt does not fit". There is no shared error type across
+# OpenAI / Anthropic / Ollama / LM Studio / the local bridge — each raises its own class
+# with its own sentence — so the text is the only portable signal. Deliberately narrow:
+# a false positive silently drops conversation history, which is worse than one more
+# failed call, so only phrasings that unambiguously mean "too long" are listed.
+_CONTEXT_OVERFLOW_MARKERS = (
+    "context length",
+    "context_length",
+    "context window",
+    "context_window",
+    "maximum context",
+    "too many tokens",
+    "prompt is too long",
+    "reduce the length of the messages",
+    "input is too long",
+    "exceeds the maximum",
+)
+
+
+def is_context_overflow(exc: BaseException) -> bool:
+    """Does this failure mean the prompt was too big to send?"""
+    text = f"{exc}".lower()
+    return any(marker in text for marker in _CONTEXT_OVERFLOW_MARKERS)
+
+
 class AIClient:
     """
     AI client for NAVIG that uses the existing providers system.
@@ -385,9 +410,14 @@ class AIClient:
             from navig.vault import get_vault
 
             vault = get_vault()
-            secret = vault.get_secret("github_models", "token", caller="ai_client")
-            if secret:
-                val = secret.reveal().strip() if hasattr(secret, "reveal") else str(secret).strip()
+            # `Vault.get_secret(label)` takes ONE argument. This passed three plus a
+            # `caller=` it has never defined, so it raised TypeError into the handler
+            # below and the vault was never actually consulted. `Vault.get(provider,
+            # profile_id=None, caller=…)` is the reader with this shape; the field name
+            # is a key inside the credential's data, not a positional argument.
+            cred = vault.get("github_models", caller="ai_client")
+            if cred is not None:
+                val = str(cred.data.get("token") or "").strip()
                 if val:
                     return val
         except Exception:  # noqa: BLE001
@@ -581,6 +611,23 @@ class AIClient:
         try:
             response_text = await self._execute_routed(messages, decision, temperature)
         except Exception as exc:
+            # A context-window overflow is the one failure the plain retry below CANNOT
+            # recover from: it re-sends the identical oversized payload and gets the
+            # identical rejection. `_trim_messages_for_retry` existed for exactly this and
+            # was called by nothing, so every over-long conversation failed twice and
+            # reported the second failure. Trim only here — the quality fallback further
+            # down is not a size problem, and dropping history there would silently
+            # discard context the model needs to answer better.
+            if is_context_overflow(exc):
+                trimmed = self._trim_messages_for_retry(messages)
+                logger.warning(
+                    "Routed call exceeded the context window (%s) — retrying with %d of "
+                    "%d messages",
+                    exc,
+                    len(trimmed),
+                    len(messages),
+                )
+                return await self.chat(trimmed, temperature, max_tokens)
             logger.error("Routed call failed (%s), falling back to default chat", exc)
             return await self.chat(messages, temperature, max_tokens)
 
@@ -808,7 +855,7 @@ class AIClient:
         """Use AirLLM for local inference."""
         try:
             from navig.providers import CompletionRequest, Message
-            from navig.providers.airllm import AirLLMClient, AirLLMConfig
+            from navig.providers.airllm import AirLLMConfig, create_airllm_client
 
             # Create config from NAVIG settings
             config = AirLLMConfig(
@@ -816,7 +863,11 @@ class AIClient:
                 compression=self._airllm_config.get("compression"),
             )
 
-            client = AirLLMClient(airllm_config=config)
+            # `AirLLMClient` inherits `BaseProviderClient.__init__(config: ProviderConfig, …)`,
+            # so `config` is required — this call omitted it and could only raise. The
+            # factory builds the ProviderConfig (falling back to a minimal one) and is the
+            # construction path the rest of the tree uses.
+            client = create_airllm_client(airllm_config=config)
 
             # Convert messages
             provider_messages = [Message(role=m["role"], content=m["content"]) for m in messages]

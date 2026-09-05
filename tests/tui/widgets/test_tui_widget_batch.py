@@ -5,8 +5,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 
 def _badge(**kw):
     d = dict(status="ok", label="Service", detail="running", deep_link=None,

@@ -9,9 +9,22 @@ hooks:         HookEvent, HookRegistry, trigger_hook, register_hook, unregister_
 
 from __future__ import annotations
 
-import asyncio
 import warnings
 from datetime import datetime
+
+import pytest
+
+from navig.core.config_schema import PYDANTIC_AVAILABLE
+
+# pydantic is a REQUIRED dependency (core/pyproject.toml). Every test below used to carry
+# `if result is None: return`, on the theory that pydantic might be missing -- but `return`
+# reports PASS, so the guard's only real effect was that a regression making validation
+# return None would turn 15 tests green instead of red. One skipif states the premise once
+# and makes its absence VISIBLE in the summary; the assertions below now run unconditionally.
+pytestmark = pytest.mark.skipif(
+    not PYDANTIC_AVAILABLE,
+    reason="config_schema validation needs pydantic (a required core dependency)",
+)
 
 # =============================================================================
 # config_schema — Enums
@@ -103,48 +116,35 @@ class TestValidateGlobalConfig:
         assert result is None
 
     def test_raises_on_bad_field_strict_mode(self):
+        # Was try/except with no assertion on the non-raising path, so it passed whether or
+        # not the raise it is named for happened. Verified: this really does raise.
         from navig.core.config_schema import ConfigValidationError, validate_global_config
-        try:
-            result = validate_global_config({"log_level": "BAD_VALUE"}, strict=True)
-            # If pydantic not available, result could be None — skip
-            if result is None:
-                return
-        except ConfigValidationError:
-            pass  # expected path
+        with pytest.raises(ConfigValidationError):
+            validate_global_config({"log_level": "BAD_VALUE"}, strict=True)
 
     def test_default_log_level_is_info(self):
         from navig.core.config_schema import LogLevel, validate_global_config
         result = validate_global_config({})
-        if result is None:
-            return
         assert result.log_level == LogLevel.INFO
 
     def test_custom_log_level_debug(self):
         from navig.core.config_schema import LogLevel, validate_global_config
         result = validate_global_config({"log_level": "DEBUG"})
-        if result is None:
-            return
         assert result.log_level == LogLevel.DEBUG
 
     def test_default_version(self):
         from navig.core.config_schema import validate_global_config
         result = validate_global_config({})
-        if result is None:
-            return
         assert isinstance(result.version, str)
 
     def test_debug_mode_default_false(self):
         from navig.core.config_schema import validate_global_config
         result = validate_global_config({})
-        if result is None:
-            return
         assert result.debug_mode is False
 
     def test_custom_debug_mode_true(self):
         from navig.core.config_schema import validate_global_config
         result = validate_global_config({"debug_mode": True})
-        if result is None:
-            return
         assert result.debug_mode is True
 
     def test_inline_api_key_triggers_warning(self):
@@ -152,8 +152,6 @@ class TestValidateGlobalConfig:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             result = validate_global_config({"openrouter_api_key": "sk-or-v1-thisisalongkeyvalue"})
-        if result is None:
-            return
         # key starts with sk-or- so no warning
         assert result.openrouter_api_key == "sk-or-v1-thisisalongkeyvalue"
 
@@ -162,8 +160,6 @@ class TestValidateGlobalConfig:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             result = validate_global_config({"openrouter_api_key": "${OPENROUTER_API_KEY}"})
-        if result is None:
-            return
         assert result.openrouter_api_key == "${OPENROUTER_API_KEY}"
 
 
@@ -176,8 +172,6 @@ class TestValidateHostConfig:
     def test_minimal_valid_host(self):
         from navig.core.config_schema import HostConfig, validate_host_config
         result = validate_host_config({"hostname": "192.168.1.1", "username": "root"})
-        if result is None:
-            return
         assert isinstance(result, HostConfig)
         assert result.hostname == "192.168.1.1"
         assert result.username == "root"
@@ -185,35 +179,28 @@ class TestValidateHostConfig:
     def test_default_port_22(self):
         from navig.core.config_schema import validate_host_config
         result = validate_host_config({"hostname": "myhost", "username": "user"})
-        if result is None:
-            return
         assert result.port == 22
 
     def test_custom_port(self):
         from navig.core.config_schema import validate_host_config
         result = validate_host_config({"hostname": "myhost", "username": "user", "port": 2222})
-        if result is None:
-            return
         assert result.port == 2222
 
     def test_default_auth_method_key(self):
         from navig.core.config_schema import AuthMethod, validate_host_config
         result = validate_host_config({"hostname": "myhost", "username": "user"})
-        if result is None:
-            return
         assert result.auth_method == AuthMethod.KEY
 
     def test_password_auth_without_password_raises(self):
+        # `except (ConfigValidationError, Exception)` caught everything and the try-path had
+        # no assertion, so this passed if it raised, if it raised something unrelated, and if
+        # it did not raise at all. Verified: it raises ConfigValidationError.
         from navig.core.config_schema import ConfigValidationError, validate_host_config
-        try:
-            result = validate_host_config(
+        with pytest.raises(ConfigValidationError):
+            validate_host_config(
                 {"hostname": "myhost", "username": "user", "auth_method": "password"},
                 strict=True,
             )
-            if result is None:
-                return
-        except (ConfigValidationError, Exception):
-            pass  # expected: password auth without password raises
 
     def test_returns_none_without_required_fields(self):
         from navig.core.config_schema import validate_host_config
@@ -226,13 +213,10 @@ class TestValidateHostConfig:
         assert result is None
 
     def test_strict_raises_config_validation_error(self):
+        # Fell through the try when nothing raised, so it could not fail.
         from navig.core.config_schema import ConfigValidationError, validate_host_config
-        try:
+        with pytest.raises(ConfigValidationError):
             validate_host_config({}, strict=True)
-        except ConfigValidationError:
-            pass  # expected
-        except Exception:
-            pass  # acceptable: other error during strict validation
 
     def test_display_name_optional(self):
         from navig.core.config_schema import validate_host_config
@@ -240,8 +224,6 @@ class TestValidateHostConfig:
             "hostname": "myhost", "username": "user",
             "display_name": "My Server"
         })
-        if result is None:
-            return
         assert result.display_name == "My Server"
 
 
@@ -254,22 +236,16 @@ class TestGetConfigSchema:
     def test_global_returns_dict(self):
         from navig.core.config_schema import get_config_schema
         result = get_config_schema("global")
-        if result is None:
-            return
         assert isinstance(result, dict)
 
     def test_host_returns_dict(self):
         from navig.core.config_schema import get_config_schema
         result = get_config_schema("host")
-        if result is None:
-            return
         assert isinstance(result, dict)
 
     def test_global_schema_has_title_or_properties(self):
         from navig.core.config_schema import get_config_schema
         result = get_config_schema("global")
-        if result is None:
-            return
         assert "properties" in result or "title" in result
 
     def test_unknown_type_raises_value_error(self):

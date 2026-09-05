@@ -131,6 +131,25 @@ async def _run_one(sess: Any, cmd: ParsedCommand) -> _CmdResult:
         url = cmd.argv[0]
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
+        # SSRF guard: refuse internal / link-local / private targets before the
+        # browser ever connects. The agent can be steered here by injected page
+        # content ("open http://169.254.169.254/…" / the local gateway), and
+        # extract/evaluate would read the response back to the model. DNS resolution
+        # is blocking, so run the check off the browser loop (as browser_fetch does).
+        import asyncio  # noqa: PLC0415
+
+        from navig.net.ssrf import (  # noqa: PLC0415
+            SsrfBlockedError,
+            check_url,
+            policy_from_config,
+        )
+
+        try:
+            await asyncio.to_thread(check_url, url, policy_from_config())
+        except SsrfBlockedError as exc:
+            return _CmdResult(f"navigate blocked by SSRF policy: {exc}")
+        except ValueError as exc:
+            return _CmdResult(f"navigate: invalid url — {exc}")
         info = await ctrl.navigate(url)
         return _CmdResult(
             f"navigated → {info.get('url')} · {info.get('title')!r} (HTTP {info.get('status')})",
@@ -310,6 +329,8 @@ async def _execute(key: str, parsed: list[ParsedCommand]) -> dict:
 class BrowserTool(BaseTool):
     name = "browser_tool"
     owner_only = True
+    #: One persistent browser per chat — see `_execute(key, …)` / `get_or_open(key)`.
+    needs_session = True
     description = (
         "Drive a real headless browser to read/act on live websites. ONE `command` "
         "arg — a string (batch with `;`) or array. Commands:\n"

@@ -12,6 +12,7 @@ from typing import Any
 import typer
 
 from navig import console_helper as ch
+from navig.cli.options import is_dry_run
 from navig.config import get_config_manager
 
 
@@ -154,20 +155,20 @@ def set_context(
 
     if not host and not app:
         ch.error("Please specify --host and/or --app to set context")
-        return
+        raise typer.Exit(2)  # malformed invocation, not a lookup failure
 
     # Validate host exists
     if host and not config.host_exists(host):
         ch.error(f"Host '{host}' not found")
         ch.info("Available hosts:", ", ".join(config.list_hosts()))
-        return
+        raise typer.Exit(1)
 
     # Validate app exists on host
     if app:
         target_host = host or config.get_active_host()
         if not target_host:
             ch.error("Cannot set app without a host. Specify --host or set an active host first.")
-            return
+            raise typer.Exit(2)
         if not config.app_exists(target_host, app):
             ch.error(f"App '{app}' not found on host '{target_host}'")
             apps = config.list_apps(target_host)
@@ -175,12 +176,21 @@ def set_context(
                 ch.info("Available apps:", ", ".join(apps))
             return
 
-    # Create .navig directory
     navig_dir = Path.cwd() / ".navig"
+    config_file = navig_dir / "config.yaml"
+
+    # `--dry-run` is a GLOBAL flag and arrives here in `opts` — this used to create
+    # .navig/ and write config.yaml regardless, then report success.
+    if is_dry_run(opts):
+        parts = ", ".join(p for p in (f"host {host}" if host else "", f"app {app}" if app else "") if p)
+        ch.info(f"[yellow]DRY RUN:[/yellow] Would set project context ({parts}) in {config_file}")
+        ch.dim("Nothing was written.")
+        return
+
+    # Create .navig directory
     navig_dir.mkdir(parents=True, exist_ok=True)
 
     # Load or create config.yaml
-    config_file = navig_dir / "config.yaml"
     local_config = config.get_local_config()
 
     # Update config
@@ -227,6 +237,13 @@ def clear_context(opts: dict[str, Any] = None) -> None:
         ch.info("No project context was set")
         return
 
+    # Same global `--dry-run`: this used to unlink config.yaml and report success.
+    if is_dry_run(opts):
+        what = "rewrite" if local_config else "remove"
+        ch.info(f"[yellow]DRY RUN:[/yellow] Would {what} {config_file} to clear project context")
+        ch.dim("Nothing was changed.")
+        return
+
     # Save updated config (or delete if empty)
     if local_config:
         config.set_local_config(local_config)
@@ -239,6 +256,56 @@ def clear_context(opts: dict[str, Any] = None) -> None:
     config = get_config_manager(force_new=True)
     host, source = config.get_active_host(return_source=True)
     ch.dim(f"Context will now resolve from: {source}")
+
+
+def _git_toplevel(path: Path) -> Path | None:
+    """The git work-tree root containing *path*, or None when it isn't inside a repo.
+
+    Uses ``git rev-parse --show-toplevel`` (which walks UP), NOT ``(path/".git").exists()``
+    — the latter is False whenever `navig context init` runs from a repo SUBDIRECTORY, and
+    then `.navig/` never got added to `.gitignore` (it could be committed by accident).
+    """
+    import subprocess
+
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=5, encoding="utf-8", errors="replace",
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return Path(r.stdout.strip())
+    except Exception:  # noqa: BLE001 — git missing/timeout → treat as "not a repo"
+        pass
+    return None
+
+
+def _ensure_navig_gitignored(cwd: Path) -> Path | None:
+    """Add ``.navig/`` to the repo's ROOT ``.gitignore`` when *cwd* is inside a git work
+    tree and it isn't already ignored. Returns the ``.gitignore`` path written, or None
+    (not a repo, already present, or the write failed).
+
+    Writes to the repo ROOT — the ``.navig/`` pattern (no leading slash) matches a ``.navig``
+    dir at ANY depth, so one entry covers a ``.navig`` created in a subdirectory too.
+    """
+    repo_root = _git_toplevel(cwd)
+    if repo_root is None:
+        return None
+    gitignore = repo_root / ".gitignore"
+    if gitignore.exists():
+        try:
+            content = gitignore.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        if ".navig" in content or ".navig/" in content:
+            return None
+    try:
+        with open(gitignore, "a", encoding="utf-8") as f:
+            f.write("\n# NAVIG project context\n.navig/\n")
+    except OSError:
+        return None  # read-only / permission — best-effort, never crash `context init`
+    return gitignore
 
 
 def init_context(opts: dict[str, Any] = None) -> None:
@@ -314,19 +381,12 @@ def init_context(opts: dict[str, Any] = None) -> None:
 
     ch.success(f"Initialized project context at {navig_dir}")
 
-    # Add .navig to .gitignore if git repo exists
-    gitignore = Path.cwd() / ".gitignore"
-    if (Path.cwd() / ".git").exists():
-        should_add = True
-        if gitignore.exists():
-            content = gitignore.read_text(encoding="utf-8")
-            if ".navig" in content or ".navig/" in content:
-                should_add = False
-
-        if should_add:
-            with open(gitignore, "a", encoding="utf-8") as f:
-                f.write("\n# NAVIG project context\n.navig/\n")
-            ch.dim("Added .navig/ to .gitignore")
+    # Add .navig/ to the repo's .gitignore. Detects the repo via `git rev-parse` so it also
+    # works when `navig context init` is run from a SUBDIRECTORY (the old `(cwd/".git")`
+    # check silently skipped there, leaving `.navig/` un-ignored).
+    written = _ensure_navig_gitignored(Path.cwd())
+    if written is not None:
+        ch.dim(f"Added .navig/ to {written}")
 
 
 context_app = typer.Typer(
@@ -339,6 +399,12 @@ context_app = typer.Typer(
 @context_app.callback()
 def context_callback(ctx: typer.Context):
     """Context management - shows current context if no subcommand."""
+    # Nine sibling modules already do this. The root `navig` callback ensures the dict,
+    # so through the real CLI this is a no-op; it matters when the sub-app is reached
+    # directly (a test, a programmatic invoke), where `ctx.obj[...]` would otherwise
+    # die with "'NoneType' object does not support item assignment" — a crash that is
+    # also non-zero, so an exit-code assertion can pass for entirely the wrong reason.
+    ctx.ensure_object(dict)
     if ctx.invoked_subcommand is None:
         show_context(ctx.obj)
         raise typer.Exit()

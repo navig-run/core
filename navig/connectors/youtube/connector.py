@@ -67,6 +67,25 @@ def _iso8601_to_seconds(duration: str) -> int:
     return h * 3600 + m * 60 + s
 
 
+def _payload_result(label: str, payload: dict, *, success: bool = True) -> ActionResult:
+    """Wrap an API payload in a VALID ``ActionResult``.
+
+    ``ActionResult`` has no ``data`` field — the previous code passed ``data=`` and raised
+    ``TypeError`` on every ``act()`` call. The payload now rides in ``resource.metadata``.
+    """
+    return ActionResult(
+        success=success,
+        resource=Resource(
+            id=label,
+            source="youtube",
+            title=label,
+            preview=str(payload)[:400],
+            resource_type=ResourceType.DOCUMENT,
+            metadata=payload,
+        ),
+    )
+
+
 class YouTubeConnector(BaseConnector):
     """Connector for YouTube Data API v3 — video/channel search and details.
 
@@ -124,6 +143,19 @@ class YouTubeConnector(BaseConnector):
         self._api_key = None
         self._status = ConnectorStatus.DISCONNECTED
 
+    def _require_connected(self) -> None:
+        """Guard called at the top of every request path.
+
+        It was referenced but never defined, so every call raised ``AttributeError`` before doing
+        anything. Now it fails with a clear, catchable error when ``connect()`` was never called
+        (no API key) instead of sending ``key=None`` to the Data API.
+        """
+        if not self._api_key:
+            raise ConnectorAuthError(
+                self.manifest.id,
+                "Not connected — call connect() first (needs YOUTUBE_API_KEY).",
+            )
+
     # ── Search ───────────────────────────────────────────────────────────────
 
     async def search(
@@ -177,8 +209,9 @@ class YouTubeConnector(BaseConnector):
             resources.append(
                 Resource(
                     id=video_id or item.get("id", {}).get("channelId", ""),
+                    source="youtube",
                     title=snippet.get("title", ""),
-                    body=(
+                    preview=(
                         f"{snippet.get('description', '')[:300]}\n"
                         f"Channel: {snippet.get('channelTitle', '')}\n"
                         f"Published: {snippet.get('publishedAt', '')[:10]}"
@@ -200,14 +233,18 @@ class YouTubeConnector(BaseConnector):
 
     # ── Fetch: video details ─────────────────────────────────────────────────
 
-    async def fetch(self, video_id: str, **kwargs: Any) -> Resource | None:
+    async def fetch(self, resource_id: str, **kwargs: Any) -> Resource | None:
         """Fetch detailed metadata for a video_id.
 
         Args:
-            video_id: YouTube video identifier (11-char string).
+            resource_id: YouTube video identifier (11-char string).
             kwargs:
                 parts (list[str]): API parts to request (default: snippet+statistics+contentDetails).
         """
+        # `resource_id` is the base-class parameter name (BaseConnector.fetch);
+        # 9 of 12 connectors already use it. Bound to the domain name here so the
+        # body, its log lines and its `metadata` keys stay unchanged.
+        video_id = resource_id
         self._require_connected()
         parts = ",".join(kwargs.get("parts", ["snippet", "statistics", "contentDetails"]))
         data = _yt_get(
@@ -224,8 +261,9 @@ class YouTubeConnector(BaseConnector):
         duration_s = _iso8601_to_seconds(content.get("duration", ""))
         return Resource(
             id=video_id,
+            source="youtube",
             title=snippet.get("title", ""),
-            body=(
+            preview=(
                 f"{snippet.get('description', '')[:500]}\n\n"
                 f"Duration: {duration_s // 60}m {duration_s % 60}s\n"
                 f"Views: {int(stats.get('viewCount', 0)):,}\n"
@@ -255,12 +293,17 @@ class YouTubeConnector(BaseConnector):
     async def act(self, action: Action) -> ActionResult:
         """Supported actions:
 
-        trending: {"region_code": "US", "limit": 10} → list of trending video dicts
-        comments: {"video_id": "<id>", "limit": 20} → list of top comment dicts
-        channel:  {"channel_id": "<id>"} → channel metadata dict
+        The op name comes from ``action.params['op']`` — these read-ops don't map onto the
+        generic ``ActionType`` enum, and ``Action`` has no ``name`` field (the previous code read
+        ``action.name`` and raised ``AttributeError`` on every call).
+
+        trending: {"op": "trending", "region_code": "US", "limit": 10} → trending video dicts
+        comments: {"op": "comments", "video_id": "<id>", "limit": 20} → top comment dicts
+        channel:  {"op": "channel", "channel_id": "<id>"} → channel metadata dict
         """
         self._require_connected()
-        if action.name == "trending":
+        op = action.params.get("op", "")
+        if op == "trending":
             region = action.params.get("region_code", "US")
             limit = min(int(action.params.get("limit", 10)), 50)
             data = _yt_get(
@@ -273,11 +316,8 @@ class YouTubeConnector(BaseConnector):
                     "key": self._api_key,
                 },
             )
-            return ActionResult(
-                success=True,
-                data={"videos": data.get("items", [])},
-            )
-        if action.name == "comments":
+            return _payload_result("trending", {"videos": data.get("items", [])})
+        if op == "comments":
             video_id = action.params.get("video_id", "")
             limit = min(int(action.params.get("limit", 20)), 100)
             data = _yt_get(
@@ -290,11 +330,8 @@ class YouTubeConnector(BaseConnector):
                     "key": self._api_key,
                 },
             )
-            return ActionResult(
-                success=True,
-                data={"comments": data.get("items", [])},
-            )
-        if action.name == "channel":
+            return _payload_result("comments", {"comments": data.get("items", [])})
+        if op == "channel":
             channel_id = action.params.get("channel_id", "")
             data = _yt_get(
                 "channels",
@@ -305,18 +342,17 @@ class YouTubeConnector(BaseConnector):
                 },
             )
             items = data.get("items", [])
-            return ActionResult(
-                success=bool(items),
-                data={"channel": items[0] if items else {}},
+            return _payload_result(
+                "channel", {"channel": items[0] if items else {}}, success=bool(items)
             )
-        return ActionResult(success=False, error=f"Unknown action: {action.name}")
+        return ActionResult(success=False, error=f"Unknown action: {op}")
 
     # ── Health ───────────────────────────────────────────────────────────────
 
     async def health_check(self) -> HealthStatus:
         """Ping videos.list with a known stable video (costs 1 quota unit)."""
         if not self._api_key:
-            return HealthStatus(healthy=False, message="Not connected", latency_ms=0)
+            return HealthStatus(ok=False, message="Not connected", latency_ms=0)
         t0 = time.monotonic()
         try:
             # Rick Astley "Never Gonna Give You Up" — stable forever
@@ -329,11 +365,11 @@ class YouTubeConnector(BaseConnector):
             items = data.get("items", [])
             if items:
                 return HealthStatus(
-                    healthy=True,
+                    ok=True,
                     message=f"YouTube API OK — found '{items[0]['snippet']['title']}'",
                     latency_ms=latency_ms,
                 )
-            return HealthStatus(healthy=False, message="No items returned", latency_ms=latency_ms)
+            return HealthStatus(ok=False, message="No items returned", latency_ms=latency_ms)
         except Exception as exc:  # noqa: BLE001
             latency_ms = int((time.monotonic() - t0) * 1000)
-            return HealthStatus(healthy=False, message=str(exc), latency_ms=latency_ms)
+            return HealthStatus(ok=False, message=str(exc), latency_ms=latency_ms)

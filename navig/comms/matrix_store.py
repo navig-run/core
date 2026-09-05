@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.core.json_io import safe_json_loads
 from navig.platform.paths import config_dir
 from navig.store.base import BaseStore
 
@@ -29,6 +30,12 @@ SCHEMA_VERSION = 3
 # ── Data classes ──────────────────────────────────────────────
 
 
+#: What a room is FOR, as classified by NAVIG — the homeserver has no such concept, so a sync
+#: never supplies it (see MatrixStore.sync_room_from_server). `navig matrix store rooms
+#: --purpose <x>` filters on it. Defined once here, beside the column it describes.
+ROOM_PURPOSES: tuple[str, ...] = ("general", "notifications", "alerts", "bridge")
+
+
 @dataclass
 class MatrixRoom:
     """A known Matrix room."""
@@ -37,7 +44,7 @@ class MatrixRoom:
     alias: str = ""
     name: str = ""
     topic: str = ""
-    purpose: str = "general"  # general | notifications | alerts | bridge
+    purpose: str = "general"  # one of ROOM_PURPOSES
     encrypted: bool = False
     joined_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -64,7 +71,10 @@ class MatrixRoom:
             purpose=row["purpose"] or "general",
             encrypted=bool(row["encrypted"]),
             joined_at=row["joined_at"] or "",
-            metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+            # safe_json_loads, not `json.loads(x) if x else {}`: that guard covers NULL and
+            # empty but NOT a malformed blob, and this runs inside `[from_row(r) for r in
+            # rows]` — so one corrupt row raised and the caller lost EVERY room, not one.
+            metadata=safe_json_loads(row["metadata"], {}),
         )
 
 
@@ -97,7 +107,7 @@ class MatrixEvent:
             room_id=row["room_id"],
             sender=row["sender"],
             event_type=row["event_type"],
-            content=json.loads(row["content"]) if row["content"] else {},
+            content=safe_json_loads(row["content"], {}),
             origin_ts=row["origin_ts"] or 0,
             created_at=row["created_at"] or "",
         )
@@ -129,7 +139,7 @@ class MatrixBridge:
             id=row["id"],
             room_id=row["room_id"],
             bridge_type=row["bridge_type"],
-            config=json.loads(row["config"]) if row["config"] else {},
+            config=safe_json_loads(row["config"], {}),
             active=bool(row["active"]),
             created_at=row["created_at"] or "",
         )
@@ -239,6 +249,13 @@ class MatrixStore(BaseStore):
     # ── Rooms ─────────────────────────────────────────────────
 
     def upsert_room(self, room: MatrixRoom) -> None:
+        """Write every column from *room*, INCLUDING NAVIG's own annotations.
+
+        Only for a caller that owns the whole record. A caller that just learned what the
+        SERVER knows (a join, a room sync) must use :meth:`sync_room_from_server` — passing a
+        freshly built MatrixRoom here sends the dataclass DEFAULTS for purpose/encrypted/
+        metadata/alias straight into the ON CONFLICT clause and overwrites the stored ones.
+        """
         conn = self._get_conn()
         with self._lock:
             conn.execute(
@@ -265,6 +282,48 @@ class MatrixStore(BaseStore):
             )
             conn.commit()
 
+    def sync_room_from_server(
+        self,
+        room_id: str,
+        *,
+        name: str = "",
+        topic: str = "",
+        alias: str = "",
+    ) -> None:
+        """Record what the SERVER knows about a room, leaving NAVIG's annotations alone.
+
+        `purpose` (general | notifications | alerts | bridge), `encrypted` and `metadata` are
+        NAVIG-side classifications — the homeserver does not supply them, so a sync has no
+        value for them. It used to send a whole MatrixRoom built from a room listing, and the
+        dataclass defaults it carried went into the ON CONFLICT clause: every sync silently
+        reset purpose to "general", encrypted to False, and metadata to {} for every known
+        room. Nothing sets those to anything else *yet*, which is exactly why this needed
+        fixing before something does.
+
+        Empty strings are treated as "the listing did not say", not as "clear it" — an
+        unnamed room in a sync response must not erase a name we already have.
+        """
+        conn = self._get_conn()
+        with self._lock:
+            conn.execute(
+                """INSERT INTO rooms (room_id, alias, name, topic, purpose, encrypted,
+                                      joined_at, metadata)
+                   VALUES (?, ?, ?, ?, 'general', 0, ?, '{}')
+                   ON CONFLICT(room_id) DO UPDATE SET
+                       alias = COALESCE(NULLIF(excluded.alias, ''), rooms.alias),
+                       name  = COALESCE(NULLIF(excluded.name,  ''), rooms.name),
+                       topic = COALESCE(NULLIF(excluded.topic, ''), rooms.topic)
+                """,
+                (
+                    room_id,
+                    alias or "",
+                    name or "",
+                    topic or "",
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            conn.commit()
+
     def get_room(self, room_id: str) -> MatrixRoom | None:
         conn = self._get_conn()
         row = conn.execute("SELECT * FROM rooms WHERE room_id = ?", (room_id,)).fetchone()
@@ -280,6 +339,29 @@ class MatrixStore(BaseStore):
         else:
             rows = conn.execute("SELECT * FROM rooms ORDER BY joined_at DESC").fetchall()
         return [MatrixRoom.from_row(r) for r in rows]
+
+    def set_room_purpose(self, room_id: str, purpose: str) -> bool:
+        """Classify a known room. Returns False if the room is not in the store.
+
+        The counterpart to the `--purpose` filter and the Purpose column, which had no writer:
+        every room read "general" because that is the dataclass default, so the filter could
+        never match anything but the default and the classification was decorative. (Until
+        9f4d7fea7 a value set here would not have survived either — every room sync reset it.)
+
+        Raises ValueError for a purpose outside ROOM_PURPOSES rather than storing a value the
+        filter and the table would then render as an unexplained one-off.
+        """
+        if purpose not in ROOM_PURPOSES:
+            raise ValueError(
+                f"unknown purpose {purpose!r} — expected one of {', '.join(ROOM_PURPOSES)}"
+            )
+        conn = self._get_conn()
+        with self._lock:
+            cur = conn.execute(
+                "UPDATE rooms SET purpose = ? WHERE room_id = ?", (purpose, room_id)
+            )
+            conn.commit()
+        return cur.rowcount > 0
 
     def remove_room(self, room_id: str) -> bool:
         conn = self._get_conn()

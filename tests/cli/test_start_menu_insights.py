@@ -125,7 +125,6 @@ class TestGetActionInfo:
 # ---------------------------------------------------------------------------
 
 from navig.commands.insights import (
-    AnalyticsReport,
     CommandStats,
     HostScore,
     Insight,

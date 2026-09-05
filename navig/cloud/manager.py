@@ -28,6 +28,8 @@ from typing import Any, Literal
 
 from navig.cloud.broker_client import BrokerClient, BrokerError
 from navig.cloud.installer import InstallerError, ensure_cloudflared
+from navig.core.aio_subprocess import STREAM_LIMIT
+from navig.core.background import spawn
 
 logger = logging.getLogger(__name__)
 
@@ -126,9 +128,22 @@ class CloudManager:
 
     # ── Public API ───────────────────────────────────────────────────────────
 
+    def _effective_status(self) -> CloudStatus:
+        """The manager's real status.
+
+        In lighthouse mode it comes from the uplink — NOT ``state.status``, which
+        ``_start_lighthouse`` pins to ``"online"`` before the WS handshake and never
+        reconciles. Trusting ``state.status`` there reports a phantom ``"online"``
+        over a dead uplink, so the deck refuses to re-establish it and the boot hint
+        shows green while the bot is unreachable ("green light over a dead uplink").
+        """
+        if self._uplink is not None:
+            return _UPLINK_STATUS_MAP.get(self._uplink.status, self.state.status)
+        return self.state.status
+
     @property
     def status(self) -> CloudStatus:
-        return self.state.status
+        return self._effective_status()
 
     @property
     def current_url(self) -> str | None:
@@ -149,11 +164,19 @@ class CloudManager:
         }
         if self._uplink is not None:
             snap["lighthouse"] = self._uplink.snapshot()
-            snap["status"] = _UPLINK_STATUS_MAP.get(self._uplink.status, self.state.status)
+        snap["status"] = self._effective_status()
         return snap
 
     async def start(self) -> None:
-        if self._proc is not None or self._heartbeat_task is not None:
+        # `_uplink` is lighthouse mode's "running" marker — it sets neither `_proc`
+        # nor `_heartbeat_task`, so without it a second start() would overwrite a
+        # live uplink and orphan its reconnect task + session. A FAILED start leaves
+        # `_uplink` None (see `_start_lighthouse`), so a retry is still allowed.
+        if (
+            self._proc is not None
+            or self._heartbeat_task is not None
+            or self._uplink is not None
+        ):
             logger.debug("CloudManager.start() called while already running")
             return
         if not self.api_key:
@@ -209,6 +232,17 @@ class CloudManager:
             logger.info("Cloud online (lighthouse mode): %s", self.lighthouse_url)
         except Exception as exc:  # noqa: BLE001
             self._mark_error(str(exc))
+            # Don't leave a half-started uplink referenced: a failed start must look
+            # like "not running" so start() can be retried (and stop() has nothing
+            # stale to tear down). Stop it best-effort in case a future change spawns
+            # the reconnect task before raising.
+            failed = self._uplink
+            self._uplink = None
+            if failed is not None:
+                try:
+                    await failed.stop()
+                except Exception:  # noqa: BLE001
+                    pass
             raise
 
         # Publish the STABLE lighthouse URL to the broker + bind Telegram users so
@@ -366,6 +400,10 @@ class CloudManager:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             env=env,
+            # _scrape_loop readline()s this pipe to find the tunnel URL. Without an explicit
+            # limit one long cloudflared log line (64 KiB default) would raise and kill the
+            # scraper — the URL would then never be found and the tunnel never come up.
+            limit=STREAM_LIMIT,
         )
         self.state.pid = self._proc.pid
         self._url_event.clear()
@@ -410,7 +448,7 @@ class CloudManager:
                                 pass
                             # Push the rotation to the broker immediately so
                             # the open Deck re-resolves within one round-trip.
-                            asyncio.create_task(self._register_current_url())
+                            spawn(self._register_current_url())
                         self._url_event.set()
         except asyncio.CancelledError:
             raise
@@ -425,32 +463,71 @@ class CloudManager:
                 f"cloudflared did not print a trycloudflare.com URL within {timeout:.0f}s"
             ) from exc
 
-    async def _register_current_url(self) -> None:
+    async def _register_current_url(self, *, attempts: int = 4) -> None:
+        """Publish our address to the broker, then bind Telegram users.
+
+        Retried with backoff, and a permanent failure is RECORDED rather than
+        only logged. This used to be one-shot, and in lighthouse mode the failure
+        was deliberately swallowed on the grounds that the uplink — not the broker
+        — is the data path. That reasoning is right about severity and wrong about
+        visibility: the Mini App resolves through the broker, so a failed register
+        leaves it pointing at whatever was registered LAST, typically a dead
+        cloudflared URL from a previous session. That state is invisible from the
+        daemon (every light green, uplink online) and indistinguishable from a
+        broken deck to the operator. It persisted for weeks on a real install.
+
+        Note the bind is inside the same flow on purpose — it needs our row to
+        exist — but a register failure must not make it look like the binds were
+        merely skipped, so the two are reported separately.
+        """
         if self._broker is None or self.state.tunnel_url is None:
             return
+
+        url = self.state.tunnel_url
+        delay = 1.0
+        last: Exception | None = None
+        for n in range(max(1, attempts)):
+            try:
+                await self._broker.register(url, self.tunnel_label or None)
+                self.state.last_heartbeat_at = _now()
+                if n:
+                    logger.info("broker.register succeeded on attempt %d", n + 1)
+                # Now that the daemon's broker row exists, bind allowed Telegram
+                # users. Doing it HERE (right after register) eliminates the race
+                # where the Telegram channel tried to bind before the tunnel was
+                # registered → broker 404 → Mini App "not bound".
+                await self._bind_telegram_users()
+                return
+            except BrokerError as exc:
+                last = exc
+                # A rejected URL is a verdict, not a blip — retrying cannot change it.
+                if 400 <= exc.status < 500 and exc.status not in (408, 429):
+                    break
+            except Exception as exc:  # noqa: BLE001
+                last = exc
+            if n < attempts - 1:
+                await asyncio.sleep(delay)
+                delay *= 2
+
+        logger.warning("broker.register failed after %d attempt(s): %r", attempts, last)
+        # In lighthouse mode the OUTBOUND UPLINK is the data path, so this is not a
+        # system error on an otherwise-healthy brain and does not become last_error —
+        # that trained the operator to distrust a green status. It IS recorded, so
+        # `navig doctor` and the config-incidents monitor can surface it.
+        if self.mode != "lighthouse":
+            self.state.last_error = f"register: {last}"
         try:
-            await self._broker.register(self.state.tunnel_url, self.tunnel_label or None)
-            self.state.last_heartbeat_at = _now()
-            # Now that the daemon's broker row exists, bind allowed Telegram
-            # users. Doing it HERE (right after register) eliminates the race
-            # where the Telegram channel tried to bind before the tunnel was
-            # registered → broker 404 → Mini App "not bound".
-            await self._bind_telegram_users()
-        except BrokerError as exc:
-            logger.warning("broker.register failed: %s", exc)
-            # In lighthouse mode the OUTBOUND UPLINK is the data path; the broker
-            # register is only a Mini-App-resolve convenience. A failure here (e.g.
-            # a broker that predates *.workers.dev URLs → bad_tunnel_url) is NOT a
-            # system error on an otherwise-healthy brain, so don't surface it as
-            # last_error — that trained the operator to distrust a green status.
-            # It stays in the log for debugging. Tunnel/direct modes DO depend on
-            # the broker, so there it remains a real error.
-            if self.mode != "lighthouse":
-                self.state.last_error = f"register: {exc}"
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("broker.register errored: %r", exc)
-            if self.mode != "lighthouse":
-                self.state.last_error = f"register: {exc!r}"
+            from navig.core.incidents import BROKER_REGISTER_FAILED, record
+
+            record(
+                BROKER_REGISTER_FAILED,
+                url=url,
+                mode=self.mode,
+                attempts=attempts,
+                error=f"{last!r}"[:200],
+            )
+        except Exception:  # noqa: BLE001 — an observation must never break the daemon
+            pass
 
     async def _bind_telegram_users(self) -> None:
         """Bind configured Telegram allowed_users to this daemon on the broker.
@@ -538,30 +615,41 @@ class CloudManager:
                 return
 
     async def _watchdog_loop(self) -> None:
-        """Restart cloudflared if it exits unexpectedly."""
+        """Restart cloudflared if it exits unexpectedly, retrying with a capped backoff.
+
+        A single failed restart must NOT kill the watchdog: cloudflared exits on a
+        machine wake / network blip, the immediate respawn fails because connectivity
+        hasn't returned yet, and the old code marked "error" and returned — so nothing
+        ever restarted the tunnel again even once the network came back. Now a failed
+        restart bumps the backoff and loops; a recovered restart resets it.
+        """
+        backoff = 5.0
         while not self._stop_requested:
             try:
                 proc = self._proc
-                if proc is None:
-                    return
-                exit_code = await proc.wait()
-                if self._stop_requested:
-                    return
-                logger.warning(
-                    "cloudflared exited unexpectedly (code=%s); restarting in 5s", exit_code
-                )
+                if proc is not None:
+                    # No proc means the previous restart failed and was cleaned up —
+                    # skip straight to respawning instead of giving up.
+                    exit_code = await proc.wait()
+                    if self._stop_requested:
+                        return
+                    logger.warning("cloudflared exited unexpectedly (code=%s)", exit_code)
                 self.state.status = "starting"
                 self.state.tunnel_url = None
-                await asyncio.sleep(5.0)
+                await asyncio.sleep(backoff)
                 try:
                     await self._spawn_cloudflared()
                     await self._wait_for_url(timeout=_URL_TIMEOUT_S)
                     await self._register_current_url()
                     self.state.status = "online"
                     self.state.rotations += 1
-                except Exception as exc:  # noqa: BLE001
+                    backoff = 5.0  # recovered — reset the backoff
+                except Exception as exc:  # noqa: BLE001 - keep retrying, never give up
                     self._mark_error(f"restart_failed: {exc}")
-                    return
+                    # Drop the half-spawned proc so the next iteration respawns cleanly
+                    # (and doesn't leak a cloudflared process per failed attempt).
+                    await self._kill_proc()
+                    backoff = min(backoff * 2, 300.0)
             except asyncio.CancelledError:
                 return
 
@@ -594,10 +682,32 @@ def _now() -> float:
 
 
 def _connectivity_enabled() -> bool:
-    """Live read of monitors.connectivity.enabled (tolerant of raw-string config)."""
-    try:
-        from navig.core import Config
+    """Live read of ``monitors.connectivity.enabled``.
 
-        return Config().get("monitors.connectivity.enabled") in (True, "1", "true", "yes", "True")
-    except Exception:  # noqa: BLE001
+    This is the gate ``ConnectivityReporter`` consults before every send, so getting
+    it wrong silences the "brain offline" alert entirely. It was wrong twice:
+
+    * **Not actually live.** ``Config()`` (and the cached ConfigManager) serve the
+      snapshot loaded at process start — freshness is an opt-in, so toggling this
+      monitor took a daemon restart. Read through a refreshed manager instead; this
+      runs once per connectivity transition, so the ~1.5 ms is irrelevant.
+    * **A hand-rolled truth table.** ``in (True, "1", "true", "yes", "True")`` missed
+      ``"on"``, ``"ON"``, ``"TRUE"``, ``"y"`` and the int ``1`` — and
+      ``navig config set`` stores a raw STRING, so the documented
+      ``config set monitors.connectivity.enabled on`` left the monitor OFF. The deck
+      (``deck/routes/notify._truthy``) and the gateway
+      (``server._monitor_enabled_truthy``) both already use ``coerce_bool`` and have a
+      test pinning them to each other; this was a third reader agreeing with neither.
+
+    Default OFF when unset, unchanged — connectivity is opt-in (only
+    ``config_incidents`` is in ``MONITORS_DEFAULT_ON``).
+    """
+    try:
+        from navig.config import get_config_manager
+        from navig.core.coerce import coerce_bool
+
+        cm = get_config_manager()
+        cm.refresh_global_config()
+        return coerce_bool(cm.get("monitors.connectivity.enabled"), default=False)
+    except Exception:  # noqa: BLE001 — a gate read must never take the uplink down
         return False

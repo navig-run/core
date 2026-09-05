@@ -1,7 +1,6 @@
 """Tests for installer/core_cli, gateway/routes/router_status, gateway/routes/audit — batch 47."""
 from __future__ import annotations
 
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

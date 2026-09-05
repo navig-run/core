@@ -7,6 +7,7 @@ get_active_persona(user_id) → str
 list_personas(cwd) → list[PersonaConfig]
 load_persona(name, cwd) → (PersonaConfig, soul_md)
 load_soul(persona_name, active_space, cwd) → str
+resolve_soul(persona_name, active_space, cwd) → SoulResolution
 """
 from __future__ import annotations
 
@@ -24,7 +25,15 @@ from navig.personas.manager import (
     switch_persona,
 )
 from navig.personas.resolver import discover_persona_paths, resolve_persona
-from navig.personas.soul_loader import load_soul
+from navig.personas.soul_loader import (
+    SOURCE_LABELS,
+    SOURCE_ORDER,
+    ShadowedSource,
+    SoulResolution,
+    load_soul,
+    resolve_soul,
+    soul_candidates,
+)
 from navig.personas.store import get_active_persona, set_active_persona
 
 __all__ = [
@@ -35,6 +44,12 @@ __all__ = [
     "validate_persona_name",
     "load_persona",
     "load_soul",
+    "resolve_soul",
+    "soul_candidates",
+    "SoulResolution",
+    "ShadowedSource",
+    "SOURCE_ORDER",
+    "SOURCE_LABELS",
     "resolve_persona",
     "discover_persona_paths",
     "get_active_persona",

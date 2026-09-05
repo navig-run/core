@@ -46,22 +46,78 @@ repo_app = typer.Typer(
 
 LOCK_TTL_MINUTES = 60  # keep in sync with .claude/hooks/agent_lock.py
 LOCK_RELPATH = Path(".dev") / "agent.lock"
-_GIT_TIMEOUT = 15  # seconds; local plumbing should be instant
+WORKTREES_RELDIR = Path(".dev") / "worktrees"  # sanctioned worktrees home
+_GIT_TIMEOUT = 15  # seconds; local plumbing (queries) should be instant
+# `git worktree remove` is not a query — it physically deletes the checkout. A
+# JS worktree carries node_modules + build output (tens of thousands of files),
+# which blows far past the query budget on Windows, where an AV scanner walks
+# every one. Sized for a real project tree, not for plumbing.
+_GIT_DELETE_TIMEOUT = 300
 
 
 # ── git plumbing ─────────────────────────────────────────────────────────────
 
 
-def _git(args: list[str], cwd: Path | str) -> subprocess.CompletedProcess[str]:
-    """Run a git command; never raises on non-zero exit (callers check)."""
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        capture_output=True,
-        encoding="utf-8",  # git porcelain is UTF-8; locale decoding mojibakes it
-        errors="replace",
-        timeout=_GIT_TIMEOUT,
-    )
+def _git(
+    args: list[str], cwd: Path | str, timeout: int | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Run a git command; never raises — failure is a non-zero result (callers check).
+
+    A timeout is reported as a normal failed result (exit 124, the conventional
+    timeout code) rather than an exception: these commands are cleanup plumbing,
+    and a raised TimeoutExpired aborts mid-flight — which is precisely how
+    ``repo remove`` used to leave a worktree unregistered but its directory on
+    disk, the orphan it exists to prevent. Degrading lets the caller fall through
+    to its own recovery (``_rmtree_force``).
+
+    A ``cwd`` that is not a real directory is degraded the same way (exit 125).
+    ``subprocess`` cannot start a child in a missing/invalid cwd — on Windows
+    ``CreateProcess`` raises ``NotADirectoryError`` (WinError 267), and it does so
+    BEFORE the command runs, so the timeout guard never sees it. This bites the
+    ``repo`` commands two ways: probing a worktree whose folder is already gone
+    (``stale`` reading a dangling worktree, ``prune`` re-checking an orphan dir
+    that vanished), and a mangled ``--repo`` (a shell that stripped the
+    backslashes off ``E:\\projects\\...`` → ``E:projects...``, an invalid
+    drive-relative path). Both used to crash the whole CLI with WinError 267.
+
+    We degrade rather than silently retry in the process cwd: for ``repo_root``
+    that would resolve a bad ``--repo`` to whatever repo navig happens to sit in
+    and operate on the WRONG one. A failed result instead surfaces as a clean
+    "not inside a git repository" error, or a graceful skip at each caller.
+    """
+    if cwd is None or not os.path.isdir(cwd):
+        return subprocess.CompletedProcess(
+            args=["git", *args],
+            returncode=125,
+            stdout="",
+            stderr=f"cwd is not a directory: {cwd!r}",
+        )
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=str(cwd),
+            capture_output=True,
+            encoding="utf-8",  # git porcelain is UTF-8; locale decoding mojibakes it
+            errors="replace",
+            timeout=timeout or _GIT_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            args=["git", *args],
+            returncode=124,
+            stdout="",
+            stderr=f"git {' '.join(args)} timed out after {timeout or _GIT_TIMEOUT}s",
+        )
+    except OSError as exc:
+        # Defence-in-depth for the microscopic isdir→CreateProcess race and for a
+        # path is_dir() accepts but CreateProcess rejects (a broken junction, a
+        # freshly-unlinked worktree): a cwd problem must never crash the CLI.
+        return subprocess.CompletedProcess(
+            args=["git", *args],
+            returncode=125,
+            stdout="",
+            stderr=f"git {' '.join(args)} failed to start: {exc}",
+        )
 
 
 def repo_root(cwd: Path | None = None) -> Path | None:
@@ -70,6 +126,41 @@ def repo_root(cwd: Path | None = None) -> Path | None:
     if res.returncode != 0:
         return None
     return Path(res.stdout.strip())
+
+
+# Env hints consulted only when the process cwd is NOT inside a git repo. A
+# launched ``navig.exe`` does not always inherit the shell's directory: on
+# Windows, PowerShell's Set-Location / Push-Location moves the *shell* location
+# but leaves ``[Environment]::CurrentDirectory`` (what a child process inherits)
+# untouched, and navig may be spawned from a daemon/workspace dir instead. An
+# agent driving these commands from a subshell can point them at the repo via
+# either var — Claude Code exports CLAUDE_PROJECT_DIR into tool/hook envs.
+_REPO_ENV_HINTS = ("NAVIG_REPO", "CLAUDE_PROJECT_DIR")
+
+
+def resolve_repo_root(repo: str | None = None) -> Path | None:
+    """Resolve the target repo root, robust to an unreliable process cwd.
+
+    Precedence:
+
+    1. an explicit ``--repo`` path (the operator said so — if it is not a repo
+       that is an error, never a reason to guess elsewhere);
+    2. the process cwd, when it is inside a git repo (so an operator standing in
+       repo B is never overridden by an env hint pointing at repo A);
+    3. the ``NAVIG_REPO`` / ``CLAUDE_PROJECT_DIR`` env hints, in that order.
+
+    Returns None only when none of these lands inside a git repo.
+    """
+    if repo:
+        return repo_root(Path(repo))
+    root = repo_root()  # process cwd
+    if root is not None:
+        return root
+    for name in _REPO_ENV_HINTS:
+        hint = os.environ.get(name)
+        if hint and (found := repo_root(Path(hint))) is not None:
+            return found
+    return None
 
 
 def _is_within(child: Path, parent: Path) -> bool:
@@ -125,6 +216,77 @@ def list_worktrees(root: Path) -> list[dict]:
         )
         wt["label"] = wt["path"].name if not wt["is_primary"] else f"{wt['path'].name} (main checkout)"
     return worktrees
+
+
+def _relative_age(mtime: float, now: float) -> str:
+    """Coarse human age (``3d ago``) from a mtime — no git call needed."""
+    secs = max(0.0, now - mtime)
+    for label, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if secs >= size:
+            return f"{int(secs // size)}{label} ago"
+    return "just now"
+
+
+def orphan_worktree_dirs(root: Path, registered: list[dict] | None = None) -> list[dict]:
+    """Physical dirs under ``.dev/worktrees/`` that git no longer tracks.
+
+    On Windows ``git worktree remove`` frequently cannot delete the physical
+    folder (a live process — antivirus, a file watcher, the navig daemon —
+    holds a handle), so git unregisters the worktree but the directory is left
+    behind. These are invisible to ``git worktree list`` — and therefore to the
+    rest of ``stale`` — yet each can be a full multi-thousand-file checkout, so
+    the pile silently grows across parallel sessions. ``navig repo prune``
+    removes them.
+
+    One entry per orphan: ``path``, ``name``, ``entries`` (count of top-level
+    items — a full checkout has ~15, an empty shell 0; this is the honest disk
+    signal, since ``git worktree remove`` often strips the ``.git`` marker but
+    leaves a heavy ``core/``/``apps/`` tree behind), ``checkout`` (still has a
+    ``.git`` marker), ``age`` (relative, from the folder mtime — git plumbing is
+    unreliable on a dangling worktree). Registered worktree dirs are excluded.
+    Sorted by name.
+    """
+    base = root / WORKTREES_RELDIR
+    if not base.is_dir():
+        return []
+    if registered is None:
+        registered = list_worktrees(root)
+    reg = {os.path.normcase(str(Path(wt["path"]).resolve())) for wt in registered}
+    now = datetime.now().timestamp()
+    orphans: list[dict] = []
+    try:
+        children = sorted((p for p in base.iterdir() if p.is_dir()), key=lambda p: p.name)
+    except OSError:
+        return []
+    for child in children:
+        try:
+            if os.path.normcase(str(child.resolve())) in reg:
+                continue
+            mtime = child.stat().st_mtime
+            with os.scandir(child) as it:  # one syscall; NOT a recursive walk
+                entries = sum(1 for _ in it)
+        except OSError:
+            continue
+        orphans.append(
+            {
+                "path": str(child),
+                "name": child.name,
+                "entries": entries,
+                "checkout": (child / ".git").exists(),
+                "age": _relative_age(mtime, now),
+            }
+        )
+    return orphans
+
+
+def _orphan_kind(od: dict) -> str:
+    """Rich-styled honesty label for an orphan dir, from its top-level entry count."""
+    n = od.get("entries", 0)
+    if n == 0:
+        return "[dim]empty[/dim]"
+    if n > 3:
+        return f"[yellow]checkout (~{n} top-level)[/yellow]"
+    return "[dim]leftover[/dim]"
 
 
 def dirty_ref(wt_path: Path) -> tuple[str | None, bool]:
@@ -253,6 +415,7 @@ def collect_stale(root: Path) -> dict:
     return {
         "default_branch": base,
         "worktrees": extra_wts,
+        "orphan_dirs": orphan_worktree_dirs(root, worktrees),
         "unmerged_branches": branches,
         "stashes": stashes,
         "lock": read_lock(root),
@@ -312,18 +475,24 @@ def _lock_meta(lock: dict) -> dict:
 # ── CLI commands ─────────────────────────────────────────────────────────────
 
 
-def _require_root() -> Path:
-    root = repo_root()
+def _require_root(repo: str | None = None) -> Path:
+    root = resolve_repo_root(repo)
     if root is None:
         from navig import console_helper as ch
 
-        ch.error("Not inside a git repository.")
+        ch.error(
+            "Not inside a git repository.",
+            f"tried {repo or Path.cwd()} — pass --repo <path>, or set "
+            "NAVIG_REPO / CLAUDE_PROJECT_DIR (a launched navig.exe may not "
+            "inherit your shell's directory).",
+        )
         raise typer.Exit(1)
     return root
 
 
 @repo_app.command("conflicts")
 def conflicts_cmd(
+    repo: str = typer.Option(None, "--repo", help="Target repo (default: current directory)"),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable output"),
     include_dirty: bool = typer.Option(
         True,
@@ -336,7 +505,7 @@ def conflicts_cmd(
     Read-only (in-memory ``git merge-tree``). Exit code 2 when any pair
     conflicts — same convention as clash — so scripts and hooks can gate on it.
     """
-    root = _require_root()
+    root = _require_root(repo)
     data = collect_conflicts(root, include_dirty=include_dirty)
     any_conflict = any(p["status"] == "conflict" for p in data["pairs"])
 
@@ -390,10 +559,11 @@ def conflicts_cmd(
 
 @repo_app.command("stale")
 def stale_cmd(
+    repo: str = typer.Option(None, "--repo", help="Target repo (default: current directory)"),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable output"),
 ) -> None:
     """Report leftover agent work: worktrees, unmerged branches, stashes, lock."""
-    root = _require_root()
+    root = _require_root(repo)
     data = collect_stale(root)
 
     if json_out:
@@ -422,6 +592,20 @@ def stale_cmd(
             table.add_row(
                 _display_path(wt["path"], root), wt["branch"] or "detached", state, wt["last_commit"]
             )
+        ch.print_table(table)
+
+    if data.get("orphan_dirs"):
+        table = ch.create_table(
+            "Orphaned worktree dirs (.dev/worktrees — untracked by git)",
+            [
+                {"name": "Path", "style": "cyan"},
+                {"name": "Kind", "style": "white"},
+                {"name": "Age", "style": "dim"},
+            ],
+        )
+        for od in data["orphan_dirs"]:
+            findings += 1
+            table.add_row(_display_path(od["path"], root), _orphan_kind(od), od.get("age") or "?")
         ch.print_table(table)
 
     if data["unmerged_branches"]:
@@ -467,9 +651,359 @@ def stale_cmd(
     if findings == 0:
         ch.success("Nothing stale — no leftover worktrees, branches, or stashes.")
     else:
-        ch.dim(
+        nudge = (
             f"{findings} item(s) to review · merge or delete finished branches, "
             "drop obsolete stashes, remove finished worktrees (git worktree remove)"
+        )
+        if data.get("orphan_dirs"):
+            nudge += " · clear orphaned dirs: navig repo prune"
+        ch.dim(nudge)
+
+
+def _rmtree_force(path: Path, attempts: int = 3, base_delay: float = 0.5) -> str | None:
+    """Delete a directory tree, clearing read-only bits and retrying transient locks.
+
+    On Windows an antivirus / search indexer briefly holds a handle on a
+    freshly checked-out worktree, so the first delete fails with "in use" even
+    though nothing owns the dir for long (verified: dirs undeletable right after
+    checkout delete cleanly minutes later, daemon still running). We clear
+    read-only bits (git objects are RO) and retry with backoff. Returns None on
+    success, or the last error string — the folder stays, to be re-tried later
+    once the transient holder is gone.
+    """
+    import shutil
+    import stat
+    import time
+
+    def _clear_ro(func, p, *_):  # onexc/onerror hook: chmod +w then retry the op
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+
+    last: str | None = None
+    for i in range(max(1, attempts)):
+        try:
+            try:
+                shutil.rmtree(path, onexc=lambda f, p, e: _clear_ro(f, p))  # py >= 3.12
+            except TypeError:
+                shutil.rmtree(path, onerror=lambda f, p, e: _clear_ro(f, p))  # py < 3.12
+            return None
+        except OSError as exc:
+            last = getattr(exc, "strerror", None) or str(exc)
+            if i < attempts - 1:
+                time.sleep(base_delay * (2 ** i))  # 0.5s, then 1.0s
+    return last
+
+
+def _orphan_live_worktree(orphan: Path) -> dict | None:
+    """Whether ``orphan`` is still a LIVE git worktree/repo of its own.
+
+    The common orphan is a DEAD leftover — ``git worktree remove`` stripped its
+    gitdir, so ``rev-parse --show-toplevel`` resolves up to the PARENT repo, not
+    the dir itself: safe to delete, because any committed work lives on branch
+    refs, never in the directory. A dir that IS its own live worktree/repo may
+    hold uncommitted or unmerged work git would normally protect — prune refuses
+    it without ``--force``.
+
+    Returns ``{"dirty": bool, "branch": str|None}`` when live, else None.
+    """
+    top = _git(["rev-parse", "--show-toplevel"], orphan)
+    if top.returncode != 0:
+        return None  # not a git dir at all — a plain leftover folder
+    try:
+        if Path(top.stdout.strip()).resolve() != orphan.resolve():
+            return None  # resolved to the PARENT repo — a dead leftover
+    except OSError:
+        return None
+    st = _git(["status", "--porcelain"], orphan)
+    # symbolic-ref reports the branch even on an unborn branch (no commits yet);
+    # it fails on a detached HEAD, which correctly yields branch=None.
+    br = _git(["symbolic-ref", "--short", "HEAD"], orphan)
+    return {
+        "dirty": bool(st.stdout.strip()) if st.returncode == 0 else False,
+        "branch": br.stdout.strip() if br.returncode == 0 else None,
+    }
+
+
+@repo_app.command("prune")
+def prune_cmd(
+    repo: str = typer.Option(None, "--repo", help="Target repo (default: current directory)"),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Actually delete (default: dry run — list only)"
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Delete even a live worktree/repo of its own (may hold uncommitted work)"
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Remove orphaned .dev/worktrees dirs that git no longer tracks.
+
+    ``git worktree remove`` often can't delete a worktree's folder on Windows (a
+    live handle blocks it), so git unregisters it and the directory lingers —
+    invisible to ``git worktree list``, silently piling up across sessions. This
+    runs ``git worktree prune`` (metadata) then deletes the leftover physical
+    dirs. Dry-run by default; pass ``--yes`` to delete.
+
+    SAFE by default: **committed work is never at risk** (prune deletes
+    directories, not branch refs), and a dir that is still a live worktree/repo
+    of its own — one that could hold uncommitted work git would protect — is
+    SKIPPED unless ``--force``. Never touches a registered worktree, and never
+    deletes anything outside ``.dev/worktrees/``.
+    """
+    root = _require_root(repo)
+    _git(["worktree", "prune"], root)  # drop dangling metadata first (safe, idempotent)
+    base = (root / WORKTREES_RELDIR).resolve()
+    orphans = orphan_worktree_dirs(root)
+    for od in orphans:
+        od["live"] = _orphan_live_worktree(Path(od["path"]))  # dict when live, else None
+
+    removed: list[str] = []
+    skipped: list[dict] = []
+    if yes:
+        for od in orphans:
+            p = Path(od["path"])
+            # HARD SAFETY: only ever delete a direct child of .dev/worktrees/.
+            if p.resolve().parent != base:
+                skipped.append({"name": od["name"], "reason": "refused (outside .dev/worktrees)"})
+                continue
+            # SAFETY: never delete a live worktree/repo (uncommitted work) without --force.
+            if od["live"] is not None and not force:
+                detail = od["live"].get("branch") or "detached"
+                if od["live"].get("dirty"):
+                    detail += ", uncommitted changes"
+                skipped.append({"name": od["name"], "reason": f"live worktree ({detail}) — use --force"})
+                continue
+            err = _rmtree_force(p)
+            (removed.append(od["name"]) if err is None
+             else skipped.append({"name": od["name"], "reason": err}))
+
+    if json_out:
+        typer.echo(
+            json.dumps(
+                {"orphans": orphans, "removed": removed, "skipped": skipped, "dry_run": not yes},
+                indent=2,
+            )
+        )
+        return
+
+    from navig import console_helper as ch
+
+    if not orphans:
+        ch.success("No orphaned worktree dirs — .dev/worktrees is clean.")
+        return
+
+    live_count = sum(1 for od in orphans if od["live"] is not None)
+
+    if not yes:
+        table = ch.create_table(
+            f"Orphaned worktree dirs — {len(orphans)} (dry run)",
+            [
+                {"name": "Path", "style": "cyan"},
+                {"name": "Kind", "style": "white"},
+                {"name": "Safe?", "style": "white"},
+                {"name": "Age", "style": "dim"},
+            ],
+        )
+        for od in orphans:
+            safe = (
+                "[red]LIVE — needs --force[/red]" if od["live"] is not None
+                else "[green]dead leftover[/green]"
+            )
+            table.add_row(
+                _display_path(od["path"], root), _orphan_kind(od), safe, od.get("age") or "?"
+            )
+        ch.print_table(table)
+        detail = (
+            "Committed work is never at risk — prune deletes directories, not branch refs.\n"
+            "Delete them with: navig repo prune --yes"
+        )
+        if live_count:
+            detail += (
+                f"\n{live_count} live worktree(s) will be SKIPPED unless you add --force."
+            )
+        ch.warning("Dry run — nothing deleted.", detail)
+        return
+
+    if removed:
+        ch.success(f"Removed {len(removed)} orphaned dir(s).", ", ".join(removed))
+    if skipped:
+        has_live = any("live worktree" in s["reason"] for s in skipped)
+        has_locked = any(
+            "live worktree" not in s["reason"] and "outside" not in s["reason"] for s in skipped
+        )
+        hints = []
+        if has_locked:
+            hints.append(
+                "Locked dirs: something still holds a file inside them — most often a "
+                "shell/editor/terminal whose current directory is in the worktree (cd out "
+                "of it), a dev server or process still running from it, or an "
+                "antivirus/indexer briefly walking a fresh checkout. Close or cd out, then "
+                "re-run (prune retries transient locks); a reboot clears stubborn ones."
+            )
+        if has_live:
+            hints.append("Live worktrees: re-run with --force only if their uncommitted work is disposable.")
+        ch.warning(
+            f"{len(skipped)} not removed.",
+            "\n".join(f"{s['name']}: {s['reason']}" for s in skipped)
+            + ("\n" + "\n".join(hints) if hints else ""),
+        )
+    if not removed and not skipped:
+        ch.success("No orphaned worktree dirs — .dev/worktrees is clean.")
+
+
+_BRANCH_TYPES = ("feat", "fix", "chore", "docs", "refactor")
+_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def _new_base_ref(root: Path, default: str) -> str | None:
+    """Base for a new worktree: prefer ``origin/<default>`` (latest), else local
+    ``<default>``, else None (HEAD). Basing on ``origin/<default>`` — not the
+    possibly-behind local checkout — is the whole point of ``new``."""
+    for candidate in (f"origin/{default}", default):
+        if _git(["rev-parse", "--verify", "--quiet", candidate], root).returncode == 0:
+            return candidate
+    return None
+
+
+@repo_app.command("new")
+def new_cmd(
+    slug: str = typer.Argument(..., help="Kebab-case name, e.g. 'auth-fix' -> feat/auth-fix"),
+    repo: str = typer.Option(None, "--repo", help="Target repo (default: current directory)"),
+    branch_type: str = typer.Option(
+        "feat", "--type", "-t", help=f"Branch type: {'/'.join(_BRANCH_TYPES)}"
+    ),
+    from_ref: str = typer.Option(
+        None, "--from", help="Base ref (default: latest origin/<default-branch>)"
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Create an isolated worktree under .dev/worktrees/ for a parallel session.
+
+    The sanctioned way to run a second/third Claude session: each gets its own
+    worktree (own HEAD), so they never collide with the main checkout. The branch
+    is based on the LATEST ``origin/<default-branch>`` (fetched first) — not your
+    possibly-behind local checkout — then the folder to open is printed. Never
+    creates a sibling folder outside the repo.
+    """
+    from navig import console_helper as ch
+
+    root = _require_root(repo)
+
+    if not _SLUG_RE.match(slug):
+        ch.error(
+            f"Invalid slug: {slug!r}",
+            "Use kebab-case — lowercase letters, digits, single hyphens (e.g. auth-fix).",
+        )
+        raise typer.Exit(1)
+    if branch_type not in _BRANCH_TYPES:
+        ch.error(f"Invalid --type {branch_type!r}.", f"One of: {', '.join(_BRANCH_TYPES)}")
+        raise typer.Exit(1)
+
+    branch = f"{branch_type}/{slug}"
+    wt_dir = root / WORKTREES_RELDIR / slug
+    if wt_dir.exists():
+        ch.error(
+            f"Path already exists: {_display_path(wt_dir, root)}",
+            "Pick another slug, or clear leftovers with: navig repo prune",
+        )
+        raise typer.Exit(1)
+    if _git(["rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"], root).returncode == 0:
+        ch.error(f"Branch already exists: {branch}", "Pick another slug or --type.")
+        raise typer.Exit(1)
+
+    default = default_branch(root)
+    if from_ref is None:
+        _git(["fetch", "origin", default], root)  # best-effort; offline is fine
+    base = from_ref or _new_base_ref(root, default)
+
+    add_args = ["worktree", "add", str(wt_dir), "-b", branch]
+    if base:
+        add_args.append(base)
+    res = _git(add_args, root)
+    if res.returncode != 0:
+        ch.error("git worktree add failed.", (res.stderr or res.stdout).strip()[:300])
+        raise typer.Exit(1)
+
+    if json_out:
+        typer.echo(
+            json.dumps({"path": str(wt_dir), "branch": branch, "base": base or "HEAD"}, indent=2)
+        )
+        return
+
+    ch.success(
+        f"Worktree ready on {branch} (based on {base or 'HEAD'}).",
+        f"Open a Claude Code session in this folder:\n  {wt_dir}\n"
+        f"When done: merge {branch} to {default}, then: navig repo remove {slug}",
+    )
+
+
+@repo_app.command("remove")
+def remove_cmd(
+    slug: str = typer.Argument(..., help="Worktree slug under .dev/worktrees/"),
+    repo: str = typer.Option(None, "--repo", help="Target repo (default: current directory)"),
+    force: bool = typer.Option(
+        False, "--force", help="Discard uncommitted changes (git refuses a dirty worktree otherwise)"
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Reliably remove a .dev/worktrees/<slug> worktree — unregister + delete.
+
+    ``git worktree remove`` frequently can't delete the folder on Windows (an
+    antivirus / indexer briefly holds the fresh checkout), so it unregisters the
+    worktree but leaves an orphaned directory behind — the whole reason the pile
+    grows. This unregisters it (git refuses a *dirty* worktree without
+    ``--force``, so uncommitted work is protected) then retries the physical
+    delete with backoff, so a finished worktree does not leak an orphan.
+    """
+    from navig import console_helper as ch
+
+    root = _require_root(repo)
+    wt_dir = root / WORKTREES_RELDIR / slug
+    key = os.path.normcase(str(wt_dir.resolve()))
+    registered = {os.path.normcase(str(Path(w["path"]).resolve())) for w in list_worktrees(root)}
+    if key not in registered:
+        ch.error(
+            f"{slug} is not a registered worktree under .dev/worktrees/.",
+            "List them: git worktree list  ·  clean orphaned dirs: navig repo prune",
+        )
+        raise typer.Exit(1)
+
+    # Unregister via git — it refuses a dirty worktree without --force (protects uncommitted work).
+    res = _git(
+        ["worktree", "remove", *(["--force"] if force else []), str(wt_dir)],
+        root,
+        timeout=_GIT_DELETE_TIMEOUT,
+    )
+    reg_after = {os.path.normcase(str(Path(w["path"]).resolve())) for w in list_worktrees(root)}
+    if key in reg_after:  # still registered → git refused (usually: uncommitted changes)
+        ch.error(
+            "git worktree remove refused.",
+            (res.stderr or res.stdout).strip()[:300]
+            + "\nAdd --force to discard the worktree's uncommitted changes.",
+        )
+        raise typer.Exit(1)
+
+    # Unregistered — ensure the folder is gone (git may leave it under a transient lock).
+    leftover = _rmtree_force(wt_dir) if wt_dir.exists() else None
+    _git(["worktree", "prune"], root)  # tidy dangling metadata
+
+    if json_out:
+        typer.echo(
+            json.dumps(
+                {"slug": slug, "removed": not wt_dir.exists(), "leftover_error": leftover}, indent=2
+            )
+        )
+        return
+
+    if not wt_dir.exists():
+        ch.success(f"Removed worktree {slug}.")
+    else:
+        ch.warning(
+            f"Unregistered {slug}, but its folder is still locked.",
+            f"{leftover}\nSomething still holds a file inside it — most often a "
+            "shell/editor/terminal whose current directory is in the worktree (cd out of "
+            "it), a dev server still running from it, or an antivirus/indexer walking a "
+            "fresh checkout. Close or cd out, then re-run `navig repo prune` "
+            "(it retries transient locks).",
         )
 
 
@@ -481,17 +1015,23 @@ lock_app = typer.Typer(
 repo_app.add_typer(lock_app, name="lock")
 
 
+def _ctx_repo(ctx: typer.Context) -> str | None:
+    """The group-level ``--repo`` stashed by the lock callback, if any."""
+    return (ctx.obj or {}).get("repo") if ctx.obj else None
+
+
 @lock_app.callback()
-def lock_default(ctx: typer.Context) -> None:
-    """With no subcommand, show lock status."""
+def lock_default(
+    ctx: typer.Context,
+    repo: str = typer.Option(None, "--repo", help="Target repo (default: current directory)"),
+) -> None:
+    """Inspect / release the main-checkout agent lock (.dev/agent.lock)."""
+    ctx.obj = {"repo": repo}
     if ctx.invoked_subcommand is None:
-        lock_status_cmd()
+        _print_lock_status(_require_root(repo))
 
 
-@lock_app.command("status")
-def lock_status_cmd() -> None:
-    """Show who holds the main-checkout agent lock."""
-    root = _require_root()
+def _print_lock_status(root: Path) -> None:
     from navig import console_helper as ch
 
     st = lock_state(read_lock(root))
@@ -508,14 +1048,25 @@ def lock_status_cmd() -> None:
         ch.dim("Stale (past TTL) — safe to release: navig repo lock release")
 
 
+@lock_app.command("status")
+def lock_status_cmd(
+    ctx: typer.Context,
+    repo: str = typer.Option(None, "--repo", help="Target repo (default: current directory)"),
+) -> None:
+    """Show who holds the main-checkout agent lock."""
+    _print_lock_status(_require_root(repo or _ctx_repo(ctx)))
+
+
 @lock_app.command("release")
 def lock_release_cmd(
+    ctx: typer.Context,
+    repo: str = typer.Option(None, "--repo", help="Target repo (default: current directory)"),
     force: bool = typer.Option(
         False, "--force", help="Release even when the lock is fresh (another agent may be live!)"
     ),
 ) -> None:
     """Release the agent lock (stale locks always; fresh locks need --force)."""
-    root = _require_root()
+    root = _require_root(repo or _ctx_repo(ctx))
     from navig import console_helper as ch
 
     st = lock_state(read_lock(root))
@@ -658,11 +1209,15 @@ def _guard_script_state(root: Path, settings: dict, name: str) -> tuple[str, str
 
 
 def _guard_target_root(repo: str | None) -> Path:
-    root = repo_root(Path(repo) if repo else None)
+    root = resolve_repo_root(repo)
     if root is None:
         from navig import console_helper as ch
 
-        ch.error("Target is not inside a git repository.", repo or str(Path.cwd()))
+        ch.error(
+            "Target is not inside a git repository.",
+            f"{repo or Path.cwd()} — pass --repo <path>, or set "
+            "NAVIG_REPO / CLAUDE_PROJECT_DIR.",
+        )
         raise typer.Exit(1)
     return root
 

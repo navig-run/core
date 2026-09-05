@@ -16,12 +16,16 @@ Usage::
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from navig.core.yaml_io import atomic_write_text
+from navig.core.json_io import (
+    JsonReadError,
+    atomic_write_json,
+    load_json_for_update,
+    load_json_safe,
+)
 from navig.platform.paths import media_budget_path
 
 logger = logging.getLogger(__name__)
@@ -74,19 +78,16 @@ class BudgetGuard:
         return datetime.now(timezone.utc).strftime("%Y-%m")
 
     def _load(self) -> dict:
-        try:
-            if self._path.exists():
-                return json.loads(self._path.read_text(encoding="utf-8"))
-        except Exception as exc:
-            logger.debug("BudgetGuard: failed to load %s: %s", self._path, exc)
-        return {}
+        # Read-only view (used/remaining/can_afford) — degrade to {} on any failure so a
+        # status read never crashes. The MUTATING path (charge) reads via
+        # load_json_for_update directly, so a transient lock there raises instead of
+        # returning {} and letting the save wipe the spend history.
+        return load_json_safe(self._path, default={})
 
     def _save(self, data: dict) -> None:
         try:
-            tmp = self._path.with_suffix(".tmp")
-            atomic_write_text(tmp, json.dumps(data, indent=2))
-            tmp.replace(self._path)
-        except Exception as exc:
+            atomic_write_json(data, self._path)
+        except Exception as exc:  # noqa: BLE001
             logger.warning("BudgetGuard: failed to save %s: %s", self._path, exc)
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -110,7 +111,18 @@ class BudgetGuard:
         if cost <= 0.0:
             return  # free service — nothing to track
 
-        data = self._load()
+        try:
+            data = load_json_for_update(self._path, default={})
+        except JsonReadError:
+            # Budget file exists but is transiently unreadable (a lock). Skip billing
+            # this ONE call rather than save {} over the whole spend history — which
+            # would both LOSE the history AND reset the guard (0 spent → the monthly
+            # limit stops biting until the file is rewritten).
+            logger.warning(
+                "BudgetGuard: %s unreadable — not recording the %s charge", self._path, service
+            )
+            return
+
         key = self._month_key()
         current = data.get(key, 0.0)
 

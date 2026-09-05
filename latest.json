@@ -1,7 +1,8 @@
 {
-  "version": "3.24.0",
+  "version": "3.25.0",
   "channel": "stable",
-  "download_url": "https://github.com/navig-run/core/releases/download/v3.24.0/navig-3.24.0.tar.gz",
+  "pypi": "https://pypi.org/project/navig/3.25.0/",
+  "download_url": "https://github.com/navig-run/core/releases/download/v3.25.0/navig-3.25.0.tar.gz",
   "changelog_url": "https://github.com/navig-run/core/releases",
-  "released_at": "2026-07-19"
+  "released_at": "2026-09-05"
 }

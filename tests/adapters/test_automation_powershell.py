@@ -120,3 +120,63 @@ def test_execute_command_uses_encoded_command():
     assert any("-EncodedCommand" in str(a) for a in captured_args), (
         "-EncodedCommand not found in subprocess args"
     )
+
+
+# ── Encoding: a caller-supplied command can be a cmdlet OR a native console tool ──
+
+
+def test_execute_command_reads_a_native_console_tool():
+    r"""`desktop_powershell` passes whatever the MODEL wrote, so the command can be a
+    native console tool — whose bytes PowerShell does NOT convert.
+
+    `_ENCODING_PREFIX` sets `[Console]::OutputEncoding`, which makes PowerShell's own
+    output UTF-8, but measured on this machine `icacls C:\Windows` comes back in cp866
+    with the prefix applied exactly as without it. Decoding everything as UTF-8 therefore
+    turned a localized ACL listing into U+FFFD before handing it to the model.
+    """
+    import subprocess
+    import sys
+
+    import pytest
+
+    if sys.platform != "win32":
+        pytest.skip("PowerShellExecutor is Windows-only")
+
+    from navig.adapters.automation.powershell import PowerShellExecutor
+
+    probe = subprocess.run(["icacls", r"C:\Windows"], capture_output=True, timeout=60).stdout
+    if not any(b > 127 for b in probe):
+        pytest.skip("this Windows install reports ACL group names in ASCII")
+
+    result = PowerShellExecutor.execute_command(r"icacls C:\Windows", timeout=60)
+
+    assert "\ufffd" not in result.stdout, (
+        "replacement characters: a console tool's output was decoded as UTF-8"
+    )
+    localized = [line for line in result.stdout.splitlines() if any(ord(c) > 127 for c in line)]
+    assert localized, "the localized group names vanished entirely"
+    letters = [c for c in localized[0] if ord(c) > 127]
+    assert all(c.isalpha() for c in letters), (
+        f"non-letter characters inside a group name -> wrong code page: {localized[0]!r}"
+    )
+
+
+def test_execute_command_still_reads_powershell_utf8_output():
+    """The other direction: the prefix makes cmdlet output UTF-8 and it must stay correct."""
+    import sys
+
+    import pytest
+
+    if sys.platform != "win32":
+        pytest.skip("PowerShellExecutor is Windows-only")
+
+    from navig.adapters.automation.powershell import PowerShellExecutor
+
+    result = PowerShellExecutor.execute_command(
+        "(New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544'))"
+        ".Translate([System.Security.Principal.NTAccount]).Value",
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "\ufffd" not in result.stdout
+    assert result.stdout.strip().startswith("BUILTIN\\")

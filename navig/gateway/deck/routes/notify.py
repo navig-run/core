@@ -317,16 +317,30 @@ async def handle_notify_monitors_get(request: "web.Request") -> "web.Response":
         except Exception:
             has_psutil = False
 
+        # Ask the live gateway whether each monitor is ACTUALLY running (not just
+        # enabled in config): a crashed monitor is enabled+available yet dead, and
+        # reporting config intent alone would show it green. None when no gateway is
+        # attached (the caller can't distinguish, so it shouldn't cry "stopped").
+        gw = request.app.get("gateway") if hasattr(request, "app") else None
+        running_of = getattr(gw, "is_monitor_running", None) if gw is not None else None
+
         out = []
         for m in _MONITORS:
             available, requirement = _monitor_availability(
                 m["key"], mode=mode, is_win=is_win, has_psutil=has_psutil
             )
+            running: bool | None = None
+            if callable(running_of):
+                try:
+                    running = bool(running_of(m["key"]))
+                except Exception:  # never fail the whole card on one probe
+                    running = None
             out.append({
                 **m,
                 "enabled": _monitor_enabled(cfg, m["key"]),
                 "available": available,
                 "requirement": requirement,
+                "running": running,
             })
         return _ok({"monitors": out})
     except Exception as exc:

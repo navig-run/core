@@ -1,8 +1,6 @@
 """Hermetic unit tests for navig.core.continuation."""
 from __future__ import annotations
 
-import pytest
-
 from navig.core.continuation import (
     ContinuationPolicy,
     _to_bool,
@@ -82,8 +80,17 @@ class TestToBool:
     def test_none_returns_default(self):
         assert _to_bool(None, default=True) is True
 
-    def test_int_non_bool_returns_default(self):
-        assert _to_bool(1, default=False) is False
+    def test_numeric_flags_are_honoured_not_discarded(self):
+        """Was ``test_int_non_bool_returns_default``, asserting ``_to_bool(1) is False``.
+
+        That documented the implementation rather than a requirement: the helper checked
+        ``bool`` then ``str`` and returned *default* for everything else, so an int never
+        reached a branch. Since ``merge_policy(**updates)`` defaults each field to its
+        CURRENT value, a numeric flag was not merely mis-read — the caller's update was
+        silently dropped. A supplied value must never resolve to its opposite.
+        """
+        assert _to_bool(1, default=False) is True
+        assert _to_bool(0, default=True) is False
 
 
 class TestToInt:

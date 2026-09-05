@@ -1,8 +1,6 @@
 """Tests for operation_recorder.py (types) and safety_guard.py (pure helpers)."""
 from __future__ import annotations
 
-import pytest
-
 # ──────────────────────────────────────────────────────────────────────────────
 # operation_recorder.py — enums + OperationRecord
 # ──────────────────────────────────────────────────────────────────────────────

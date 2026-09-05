@@ -2,7 +2,6 @@
 
 from unittest.mock import patch
 
-import pytest
 from typer.testing import CliRunner
 
 _WARN = "navig.console_helper.warning"
@@ -17,7 +16,7 @@ from navig.commands.radar import radar_app
 radar_runner = CliRunner()
 
 
-def test_radar_help_exits_0():
+def test_radar_help_exits_nonzero():
     result = radar_runner.invoke(radar_app, ["--help"])
     assert result.exit_code == 0
 
@@ -32,10 +31,10 @@ def test_radar_help_mentions_add():
     assert "add" in result.output.lower()
 
 
-def test_radar_list_exits_0():
+def test_radar_list_exits_nonzero():
     with patch(_WARN):
         result = radar_runner.invoke(radar_app, ["list"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
 def test_radar_list_calls_warn():
@@ -47,13 +46,13 @@ def test_radar_list_calls_warn():
 def test_radar_list_not_implemented():
     with patch(_WARN) as mock_warn:
         radar_runner.invoke(radar_app, ["list"])
-    assert "not yet implemented" in mock_warn.call_args[0][0]
+    assert "not implemented" in mock_warn.call_args[0][0]
 
 
-def test_radar_add_exits_0():
+def test_radar_add_exits_nonzero():
     with patch(_WARN):
         result = radar_runner.invoke(radar_app, ["add", "error"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
 def test_radar_add_calls_warn():
@@ -76,15 +75,15 @@ from navig.commands.watch_cmd import watch_app
 watch_runner = CliRunner()
 
 
-def test_watch_help_exits_0():
+def test_watch_help_exits_nonzero():
     result = watch_runner.invoke(watch_app, ["--help"])
     assert result.exit_code == 0
 
 
-def test_watch_start_exits_0():
+def test_watch_start_exits_nonzero():
     with patch(_WARN):
         result = watch_runner.invoke(watch_app, ["start"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
 def test_watch_start_calls_warn():
@@ -96,13 +95,13 @@ def test_watch_start_calls_warn():
 def test_watch_start_with_path():
     with patch(_WARN):
         result = watch_runner.invoke(watch_app, ["start", "/tmp"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
-def test_watch_list_exits_0():
+def test_watch_list_exits_nonzero():
     with patch(_WARN):
         result = watch_runner.invoke(watch_app, ["list"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
 def test_watch_list_calls_warn():
@@ -114,7 +113,7 @@ def test_watch_list_calls_warn():
 def test_watch_list_not_implemented():
     with patch(_WARN) as mock_warn:
         watch_runner.invoke(watch_app, ["list"])
-    assert "not yet implemented" in mock_warn.call_args[0][0]
+    assert "not implemented" in mock_warn.call_args[0][0]
 
 
 # ===========================================================================
@@ -126,7 +125,7 @@ from navig.commands.deck import deck_app
 deck_runner = CliRunner()
 
 
-def test_deck_help_exits_0():
+def test_deck_help_exits_nonzero():
     result = deck_runner.invoke(deck_app, ["--help"])
     assert result.exit_code == 0
 

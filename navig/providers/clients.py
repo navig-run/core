@@ -8,7 +8,7 @@ Based on multi-provider architecture.
 import json
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -288,10 +288,74 @@ class StreamChunk:
 
     delta: str | None = None
     tool_call_delta: ToolCall | None = None
+    #: Which tool call this fragment belongs to, when the provider says so
+    #: (OpenAI's ``tool_calls[].index``, Anthropic's content-block index). It is
+    #: the only reliable way to tell two PARALLEL calls apart: continuation
+    #: fragments carry no id, so without it a second call's arguments append to
+    #: the first. ``None`` = the provider didn't say; merge by id / arrival.
+    tool_call_index: int | None = None
     finish_reason: str | None = None
     usage: dict[str, int] | None = None
     model: str | None = None
     provider: str | None = None
+
+
+def merge_tool_call_deltas(chunks: Iterable[StreamChunk]) -> list[ToolCall]:
+    """Reassemble streamed tool-call fragments into whole :class:`ToolCall`s.
+
+    A streaming provider never sends a tool call in one piece, and each splits it
+    differently:
+
+    * **OpenAI-compatible** — the FIRST fragment of a call carries ``id`` +
+      ``name``; every continuation carries only a slice of ``arguments`` with an
+      empty id, identified solely by ``index``.
+    * **Anthropic** — ``content_block_start`` fixes the id + name, then each
+      ``input_json_delta`` repeats them alongside its ``partial_json`` slice.
+
+    Both collapse onto one rule: a fragment opening a *new* call starts one,
+    anything else appends its arguments to the call it belongs to. Calls come
+    back in the order the provider began them.
+
+    Without this, a consumer that reads only ``chunk.delta`` sees an empty
+    response whenever the model answers with a tool call instead of text — the
+    decision to act is thrown away and the turn looks like the model said
+    nothing.
+    """
+    merged: list[ToolCall] = []
+    by_key: dict[object, ToolCall] = {}
+
+    for chunk in chunks:
+        fragment = getattr(chunk, "tool_call_delta", None)
+        if fragment is None:
+            continue
+        index = getattr(chunk, "tool_call_index", None)
+        # Prefer the provider's own index; fall back to the id (Anthropic repeats
+        # it on every fragment). Neither ⇒ this is a continuation of whichever
+        # call is currently open.
+        key: object | None = index if index is not None else (fragment.id or None)
+
+        if key is not None and key in by_key:
+            target = by_key[key]
+        elif key is not None or not merged:
+            target = ToolCall(id=fragment.id or "", name="", arguments="")
+            merged.append(target)
+            if key is not None:
+                by_key[key] = target
+        else:
+            target = merged[-1]
+
+        # First non-empty wins: continuations legitimately carry blanks, and an
+        # id/name arriving later must not overwrite the one that opened the call.
+        if fragment.id and not target.id:
+            target.id = fragment.id
+        if fragment.name and not target.name:
+            target.name = fragment.name
+        if fragment.arguments:
+            target.arguments += fragment.arguments
+
+    # A call with no name is unroutable — drop it rather than dispatch a nameless
+    # tool (a fragment stream that never named anything is malformed, not a call).
+    return [call for call in merged if call.name]
 
 
 class BaseProviderClient(ABC):
@@ -371,6 +435,17 @@ class BaseProviderClient(ABC):
             model=result.model,
             provider=result.provider,
         )
+        # `complete()` already returned whole tool calls — pass them through as
+        # one fragment each. Dropping them here is the same defect as ignoring
+        # tool_call deltas upstream: a consumer that streams a provider without
+        # its own SSE implementation would see a tool-using turn as an empty
+        # one, with nothing to reply with and nothing to run.
+        for position, call in enumerate(result.tool_calls or []):
+            yield StreamChunk(
+                tool_call_delta=call,
+                tool_call_index=position,
+                provider=result.provider,
+            )
 
     def get_available_models(self) -> list[ModelDefinition]:
         """Get list of available models for this provider."""
@@ -561,24 +636,41 @@ class OpenAIClient(BaseProviderClient):
                     # Text delta
                     text = delta.get("content")
 
-                    # Tool call delta
-                    tc_delta = None
-                    if delta.get("tool_calls"):
-                        tc = delta["tool_calls"][0]
-                        tc_delta = ToolCall(
-                            id=tc.get("id", ""),
-                            name=tc.get("function", {}).get("name", ""),
-                            arguments=tc.get("function", {}).get("arguments", ""),
+                    # Tool call deltas. One delta can carry SEVERAL parallel
+                    # calls; reading only [0] dropped the rest on the floor.
+                    # `index` is what tells them apart downstream — id and name
+                    # arrive on a call's first fragment only.
+                    tc_deltas = [
+                        (
+                            tc.get("index"),
+                            ToolCall(
+                                id=tc.get("id") or "",
+                                name=(tc.get("function") or {}).get("name") or "",
+                                arguments=(tc.get("function") or {}).get("arguments") or "",
+                            ),
                         )
+                        for tc in (delta.get("tool_calls") or [])
+                    ]
+                    first_index, first_call = tc_deltas[0] if tc_deltas else (None, None)
 
                     yield StreamChunk(
                         delta=text,
-                        tool_call_delta=tc_delta,
+                        tool_call_delta=first_call,
+                        tool_call_index=first_index,
                         finish_reason=choice.get("finish_reason"),
                         usage=chunk_data.get("usage"),
                         model=chunk_data.get("model"),
                         provider=self.name,
                     )
+                    # Any additional parallel calls in the same delta ride their
+                    # own chunks (finish_reason/usage/model stay on the first so
+                    # a consumer can't double-count them).
+                    for extra_index, extra_call in tc_deltas[1:]:
+                        yield StreamChunk(
+                            tool_call_delta=extra_call,
+                            tool_call_index=extra_index,
+                            provider=self.name,
+                        )
 
         except httpx.HTTPError as e:
             raise ProviderError(
@@ -841,6 +933,7 @@ class AnthropicClient(BaseProviderClient):
 
                 current_tool_id = ""
                 current_tool_name = ""
+                current_tool_index: int | None = None
                 # Anthropic reports input + cache tokens in message_start.usage and
                 # only output_tokens in message_delta.usage — carry the former so
                 # the final usage chunk has the real prompt + cache counts (else the
@@ -882,6 +975,20 @@ class AnthropicClient(BaseProviderClient):
                         if block.get("type") == "tool_use":
                             current_tool_id = block.get("id", "")
                             current_tool_name = block.get("name", "")
+                            current_tool_index = event.get("index")
+                            # Open the call HERE, not on the first argument
+                            # fragment: a zero-argument tool call sends no
+                            # input_json_delta at all, so emitting only on the
+                            # deltas dropped it completely.
+                            yield StreamChunk(
+                                tool_call_delta=ToolCall(
+                                    id=current_tool_id,
+                                    name=current_tool_name,
+                                    arguments="",
+                                ),
+                                tool_call_index=current_tool_index,
+                                provider=self.name,
+                            )
 
                     elif event_type == "content_block_delta":
                         delta = event.get("delta", {})
@@ -899,6 +1006,7 @@ class AnthropicClient(BaseProviderClient):
                                     name=current_tool_name,
                                     arguments=delta.get("partial_json", ""),
                                 ),
+                                tool_call_index=event.get("index", current_tool_index),
                                 provider=self.name,
                             )
 

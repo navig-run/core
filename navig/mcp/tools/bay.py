@@ -66,6 +66,19 @@ def register(server: Any) -> None:
         }
     )
 
+    # See navig.mcp_server._gate_tool — unlisted defaults to "safe".
+    # A module's register() must be self-sufficient: register_all_tools creates this
+    # dict, but a direct `module.register(server)` call (tests, a plugin host) does not,
+    # and assuming it exists raised AttributeError. cdp.py already guarded; these did not.
+    if not hasattr(server, "_tool_safety"):
+        server._tool_safety = {}
+    server._tool_safety.update({
+        "navig_bay_acquire": "dangerous",  # entitlement + writes installed content to disk
+        # read-only — recorded explicitly so a missing entry is a build failure,
+        # not a silent default to "safe".
+        "navig_bay_list": "safe",
+    })
+
 
 def _tool_bay_list(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     from navig.gateway.deck.routes.catalog import gather_bay_items

@@ -92,7 +92,13 @@ def provider_has_config_key(provider_id: str, *, navig_dir: Path, cfg: dict[str,
 
 def provider_has_vault_key(provider_id: str) -> bool:
     try:
+        from navig.vault import vault_exists
         from navig.vault.core import get_vault
+
+        # LOOK before opening: `get_vault()` creates the store, so this read-only probe
+        # used to leave an empty encrypted vault behind on machines that had none.
+        if not vault_exists():
+            return False
 
         vault = get_vault()
         if vault is None:
@@ -133,16 +139,24 @@ def detect_provider_sources(provider_id: str, *, navig_dir: Path, cfg: dict[str,
 
 
 def check_api_key_in_env(provider: str) -> bool:
-    """Return True if a known API key for *provider* is set in the environment or navig config."""
+    """Return True if a known API key for *provider* is set in the environment or navig config.
+
+    The environment is the primary source — this function is named for it — so it is checked
+    first, unconditionally. (Previously the env var was only consulted inside the ``except``
+    fallback, so whenever ``navig.config`` imported cleanly a real ``OPENAI_API_KEY=...`` in the
+    environment went unseen and the function returned False.) A value stored in navig config
+    under the same name is honored as a secondary source.
+    """
     for env_name in provider_env_vars(provider.lower()):
+        if os.environ.get(env_name):
+            return True
         try:
             from navig.config import get as _cfg_get  # noqa: PLC0415
 
             if bool(_cfg_get(env_name, "")):
                 return True
         except Exception:  # noqa: BLE001
-            if os.environ.get(env_name):
-                return True
+            pass
     return False
 
 

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from navig.console_helper import (
     CONFIRMATION_THRESHOLDS,
     OPERATION_LEVELS,

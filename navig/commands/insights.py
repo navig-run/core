@@ -19,7 +19,6 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
@@ -150,9 +149,23 @@ class InsightsEngine:
 
         self.config_manager = config_manager or get_config_manager()
 
-        # History file location
-        self.history_dir = Path(self.config_manager.global_config_dir) / "history"
-        self.history_file = self.history_dir / "operations.jsonl"
+        # Ask the RECORDER where the ledger is; never rebuild the path here.
+        #
+        # This used to be `global_config_dir / "history"`, which is not where the
+        # recorder writes. `OperationRecorder` resolves `config.base_dir`, and
+        # `base_dir` becomes the PROJECT `.navig/` whenever the cwd is inside a navig
+        # project (ConfigManager -> paths.find_app_root) — while `global_config_dir` is
+        # always `~/.navig`. So inside any project the recorder appended to
+        # `<project>/.navig/history/operations.jsonl` and insights read the global file
+        # instead: analytics over a ledger nothing had written to, reported as "no
+        # operations" rather than as a mismatch.
+        #
+        # `navig ledger` already had this right (`get_operation_recorder().history_file`);
+        # this was the one consumer that hand-rolled it.
+        from navig.operation_recorder import get_operation_recorder
+
+        self.history_file = get_operation_recorder().history_file
+        self.history_dir = self.history_file.parent
 
         # Cache for loaded operations
         self._operations: list[dict[str, Any]] = []

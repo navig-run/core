@@ -8,6 +8,7 @@ ancestors (the supervisor that spawned us, NSSM, the launching shell).
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 from navig.daemon import single_instance as si
@@ -142,3 +143,92 @@ def test_gateway_supersede_passes_our_config_dir():
     assert seen.get("config_dir") is not None, "supersede swept machine-wide (unscoped)"
     from navig.platform import paths
     assert Path(seen["config_dir"]) == paths.config_dir()
+
+
+# ---------------------------------------------------------------------------
+# pid_from_pidfile — a PID file is a claim, not proof
+# ---------------------------------------------------------------------------
+
+
+def _spawn_sleeper():
+    import subprocess
+    import sys
+
+    return subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(45)"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def test_pidfile_owner_is_returned_when_it_is_still_the_owner(tmp_path):
+    """Anti-vacuity: a check that never resolves would make `agent stop` unable to stop."""
+    import pytest
+
+    pytest.importorskip("psutil")
+    proc = _spawn_sleeper()
+    try:
+        f = tmp_path / "x.pid"
+        f.write_text(str(proc.pid), encoding="utf-8")  # written just after it started
+        assert si.pid_from_pidfile(f) == proc.pid
+    finally:
+        proc.kill()
+
+
+def test_a_recycled_pid_reads_as_not_running(tmp_path):
+    """The bug: the file outlives its process and the OS reissues the number.
+
+    `navig agent stop` sent taskkill /F to whatever answered to it.
+    """
+    import pytest
+
+    pytest.importorskip("psutil")
+    proc = _spawn_sleeper()
+    try:
+        f = tmp_path / "x.pid"
+        f.write_text(str(proc.pid), encoding="utf-8")
+        stale = time.time() - 3600  # the file predates this process by an hour
+        os.utime(f, (stale, stale))
+        assert si.pid_from_pidfile(f) is None
+    finally:
+        proc.kill()
+
+
+def test_a_dead_pid_reads_as_not_running(tmp_path):
+    import subprocess
+    import sys
+
+    import pytest
+
+    pytest.importorskip("psutil")
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait(timeout=30)
+    f = tmp_path / "x.pid"
+    f.write_text(str(proc.pid), encoding="utf-8")
+    assert si.pid_from_pidfile(f) is None
+
+
+def test_a_cmdline_marker_mismatch_reads_as_not_running(tmp_path):
+    """Defence in depth for callers with a stable marker (the tray's script name)."""
+    import pytest
+
+    pytest.importorskip("psutil")
+    proc = _spawn_sleeper()
+    try:
+        f = tmp_path / "x.pid"
+        f.write_text(str(proc.pid), encoding="utf-8")
+        assert si.pid_from_pidfile(f, cmdline_contains="navig_tray") is None
+    finally:
+        proc.kill()
+
+
+def test_missing_garbage_and_nonsense_pidfiles_read_as_not_running(tmp_path):
+    assert si.pid_from_pidfile(tmp_path / "absent.pid") is None
+    (tmp_path / "junk.pid").write_text("not-a-number", encoding="utf-8")
+    assert si.pid_from_pidfile(tmp_path / "junk.pid") is None
+    (tmp_path / "empty.pid").write_text("", encoding="utf-8")
+    assert si.pid_from_pidfile(tmp_path / "empty.pid") is None
+    (tmp_path / "zero.pid").write_text("0", encoding="utf-8")
+    assert si.pid_from_pidfile(tmp_path / "zero.pid") is None
+    (tmp_path / "neg.pid").write_text("-1", encoding="utf-8")
+    assert si.pid_from_pidfile(tmp_path / "neg.pid") is None

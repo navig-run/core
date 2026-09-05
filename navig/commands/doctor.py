@@ -11,14 +11,16 @@ import importlib
 import logging
 import os
 import re
+import shutil
 import socket
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 import typer
 
-from navig._daemon_defaults import _GATEWAY_PORT
+from navig._daemon_defaults import _DAEMON_PORT, _GATEWAY_PORT
 from navig.console_helper import get_console
 from navig.platform.paths import config_dir
 
@@ -154,9 +156,11 @@ def _daemon_autostart() -> tuple[bool, str]:
 
     try:
         if sys.platform == "win32":
+            # No text mode: only the exit status is read, and schtasks writes localized
+            # text in the console code page that decoding could only get wrong.
             r = subprocess.run(
                 ["schtasks", "/query", "/tn", "NAVIG Daemon"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True, timeout=5,
             )
             return r.returncode == 0, "Task Scheduler"
         r = subprocess.run(
@@ -236,6 +240,135 @@ def check_config() -> list[tuple[str, bool, str]]:
     return results
 
 
+def check_logs() -> list[tuple[str, bool, str]]:
+    """Report where the daemon is ACTUALLY writing, not where logs are meant to be.
+
+    This row exists because of a real, expensive misdiagnosis. `navig.log` lives in
+    `config_dir()`, and `config_dir()` becomes the PROJECT `.navig/` whenever the
+    process's cwd is inside a tree that has a `.navig/` of its own -- so the file follows whatever directory
+    the daemon happened to be launched from. Seven of them existed on one machine.
+    The one an operator naturally opens, `~/.navig/navig.log`, showed EIGHT DAYS with
+    zero lines and read exactly like a dead or log-blind daemon, while the daemon was
+    running fine and logging into the desktop app's workspace, and a cron job ran an
+    hour after that file's last entry.
+
+    So this does not print where the log SHOULD be. It asks the running process --
+    via its own open file handles, falling back to its cwd -- and prints what it finds.
+
+    Honesty rule (the doctor rule): "I could not look" is never a green tick. No
+    daemon, no psutil, an unreadable process -> warn and say which.
+    """
+    results: list[tuple[str, bool, str]] = []
+
+    from navig.platform import paths
+
+    # 1. The supervisor's own logs. These DO use the canonical OS location, and are
+    #    the reliable ones: daemon.log is what records child deaths and orphan sweeps.
+    log_dir = paths.log_dir()
+    daemon_log = log_dir / "daemon.log"
+    if daemon_log.is_file():
+        age_min = (time.time() - daemon_log.stat().st_mtime) / 60
+        age = f"{age_min:.0f}m ago" if age_min < 90 else f"{age_min / 60:.1f}h ago"
+        results.append(
+            _check("supervisor logs", True, f"{log_dir} (daemon.log last written {age})")
+        )
+    else:
+        results.append(
+            _check("supervisor logs", False, f"{daemon_log} not found", warn=True)
+        )
+
+    # 2. The live daemon's app log -- the one that moves.
+    pid = None
+    try:
+        from navig.daemon.supervisor import NavigDaemon
+
+        if NavigDaemon.is_running():
+            pid = NavigDaemon.read_pid()
+    except Exception as exc:  # noqa: BLE001 - a probe must not break doctor
+        results.append(_check("daemon log path", False, f"could not read the pid file: {exc}", warn=True))
+        return results
+
+    if not pid:
+        results.append(
+            _check(
+                "daemon log path",
+                False,
+                "daemon is not running, so its live log location is unknown "
+                f"(when stopped it would use {paths.config_dir() / 'navig.log'})",
+                warn=True,
+            )
+        )
+        return results
+
+    try:
+        import psutil  # noqa: PLC0415 - optional, and only needed for this row
+    except ImportError:
+        results.append(
+            _check("daemon log path", False, "psutil not installed - cannot ask the process", warn=True)
+        )
+        return results
+
+    try:
+        proc = psutil.Process(pid)
+        # The SUPERVISOR does not open navig.log -- its gateway child does. Asking only
+        # the supervisor finds nothing and invites a guess; asking the children finds
+        # the real file. (Measured: supervisor 113012 held daemon.log/gateway.log,
+        # gateway 79708 held the navig.log that was actually being written.)
+        live = None
+        for candidate in [proc, *proc.children(recursive=True)]:
+            try:
+                for handle in candidate.open_files():
+                    if handle.path.endswith("navig.log"):
+                        live = handle.path
+                        break
+            except Exception:  # noqa: BLE001, PERF203 - a child may exit mid-scan
+                continue
+            if live:
+                break
+    except Exception as exc:  # noqa: BLE001
+        results.append(
+            _check("daemon log path", False, f"could not inspect pid {pid}: {exc}", warn=True)
+        )
+        return results
+
+    if live is None:
+        # DO NOT GUESS. Deriving a path from the cwd produced
+        # `~/.navig/.navig/navig.log` on the first run of this check -- a path nothing
+        # writes. Printing an invented location is the very defect this row exists to
+        # prevent, so say what is known (the cwd) and admit the rest.
+        try:
+            cwd = proc.cwd()
+        except Exception:  # noqa: BLE001
+            cwd = "unknown"
+        results.append(
+            _check(
+                "daemon log path",
+                False,
+                f"no navig.log is open by pid {pid} or its children "
+                f"(daemon cwd: {cwd}) - it may not have logged yet",
+                warn=True,
+            )
+        )
+        return results
+
+    expected = paths.config_dir() / "navig.log"
+    if Path(live).resolve() == expected.resolve():
+        results.append(_check("daemon log path", True, str(live)))
+    else:
+        # Not an error -- this is legitimate and cwd-driven. But it is the exact thing
+        # that made a healthy daemon look dead, so it must be SAID rather than implied.
+        results.append(
+            _check(
+                "daemon log path",
+                False,
+                f"{live} - NOT {expected}. `navig.log` follows the "
+                "daemon's working directory; read the path above, not the default one",
+                warn=True,
+            )
+        )
+    return results
+
+
 def check_cache_dir() -> list[tuple[str, bool, str]]:
     """Check cache directory is writable."""
     results = []
@@ -282,7 +415,7 @@ def check_storage() -> list[tuple[str, bool, str]]:
             results.append(
                 _check(
                     "Disk Space",
-                    True,
+                    False,  # a Low-Space WARNING must render ⚠, not a green ✓ (warn is ignored when ok=True)
                     f"Low Space Warning: {free_gb:.2f}GB free. Consider cleanup.",
                     warn=True,
                 )
@@ -293,6 +426,194 @@ def check_storage() -> list[tuple[str, bool, str]]:
         results.append(_check("Disk Space", False, f"Failed to stat volume: {e}"))
 
     return results
+
+
+# ── Database integrity ────────────────────────────────────────────────────────
+# NAVIG's own stores sit at the config-dir root and one level under it (data/,
+# memory/, credentials/, bot/ …). The scan is bounded to those two levels and skips
+# copies + scratch trees, so a doctor run can never wander into a space or cache tree
+# holding an unbounded number of databases.
+_DB_SCAN_SKIP = {".backup", "backups", "cache", "spaces", "runtime", ".git", "trash"}
+_DB_SCAN_BUDGET_S = 8.0
+
+# The unsafe-FTS-trigger defect is repaired by the owning store's schema init, which runs
+# when that store is next opened — so the remedy is "open this store", and the operator
+# needs to be told HOW. Each command below is a READ-ONLY verb chosen because it opens the
+# store and changes nothing else; a remedy that also mutates data would be a poor thing to
+# print in a diagnostic. Pinned by tests/cli/test_doctor_fts_remedy.py, which asserts every
+# command here actually resolves in the CLI — a remedy naming a command that no longer
+# exists is worse than the generic sentence it replaced.
+_FTS_REPAIR_COMMAND = {
+    "links.db": "navig links list",
+    "knowledge_graph.db": "navig kg status",
+    "index.db": "navig memory bank",
+}
+
+
+def _fts_repair_hint(offenders: list[str]) -> str:
+    """The concrete command(s) that repair the offending stores, newest advice first.
+
+    Falls back to naming the store when the database is not one we know a verb for:
+    "reopen <name>" is still more actionable than "reopen the owning store", and it never
+    invents a command that does not exist.
+    """
+    cmds: list[str] = []
+    unknown: list[str] = []
+    for offender in offenders:
+        db = offender.split(":", 1)[0]
+        cmd = _FTS_REPAIR_COMMAND.get(db)
+        if cmd and cmd not in cmds:
+            cmds.append(cmd)
+        elif not cmd and db not in unknown:
+            unknown.append(db)
+    parts = []
+    if cmds:
+        parts.append("repair by opening the store: " + " ; ".join(cmds))
+    if unknown:
+        parts.append("reopen the owning store for " + ", ".join(unknown))
+    return " — ".join(parts) if parts else "reopening the owning store repairs it"
+
+
+def _local_databases() -> list[Path]:
+    """The operator's own SQLite stores, bounded to two levels under the config dir."""
+    root = config_dir()
+    found = [*root.glob("*.db"), *root.glob("*/*.db")]
+    return sorted({p for p in found if not (_DB_SCAN_SKIP & set(p.parts))})
+
+
+def _external_content_fts_misuse(con: Any) -> list[str]:
+    """External-content FTS5 indexes whose sync triggers use plain DML.
+
+    An fts5 table declared ``content=<table>`` stores no copy of the text, so its index
+    may only be maintained with the command syntax
+    (``INSERT INTO t(t) VALUES('delete', …)`` then a fresh insert). A plain
+    ``UPDATE t SET …`` / ``DELETE FROM t …`` inside a sync trigger silently desyncs the
+    index and eventually raises "database disk image is malformed" — exactly what broke
+    editing a bookmark twice (#530c0a21).
+
+    This reads schema only. That is deliberate: it reports the defect BEFORE any data is
+    damaged, and it needs no write access — fts5's own ``'integrity-check'`` is issued as
+    an INSERT and cannot run on the read-only connection doctor uses.
+    """
+    fts = {
+        name: (sql or "")
+        for name, sql in con.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type='table' AND sql LIKE '%USING fts5%'"
+        ).fetchall()
+    }
+    # content='' is CONTENTLESS (a different, legal mode) — only content=<table> is external.
+    external = {n for n, sql in fts.items() if re.search(r"content\s*=\s*'?[A-Za-z_]", sql)}
+    if not external:
+        return []
+    offenders: set[str] = set()
+    for _tname, tsql in con.execute(
+        "SELECT name, sql FROM sqlite_master WHERE type='trigger'"
+    ).fetchall():
+        for table in external:
+            if re.search(rf"\bUPDATE\s+{re.escape(table)}\b", tsql or "", re.I) or re.search(
+                rf"\bDELETE\s+FROM\s+{re.escape(table)}\b", tsql or "", re.I
+            ):
+                offenders.add(table)
+    return sorted(offenders)
+
+
+def check_databases() -> list[tuple[str, bool, str]]:
+    """Integrity of the local SQLite stores — read-only, never mutating.
+
+    Two independent signals:
+      * ``PRAGMA quick_check`` — page-level corruption.
+      * an external-content FTS5 trigger audit — the schema defect that corrupts a
+        search index over time (see :func:`_external_content_fts_misuse`).
+
+    ``quick_check`` deliberately, not ``integrity_check``: it skips the expensive
+    index-vs-table cross-check, and the whole sweep is capped by ``_DB_SCAN_BUDGET_S``
+    so a large install can never make ``navig doctor`` hang.
+    """
+    import sqlite3
+    import time
+
+    databases = _local_databases()
+    if not databases:
+        # Nothing found is not "healthy" — it means the scan learned nothing.
+        return [_check("Database integrity", False, "no local databases found to check", warn=True)]
+
+    deadline = time.monotonic() + _DB_SCAN_BUDGET_S
+    checked = 0
+    corrupt: list[str] = []
+    unreadable: list[str] = []
+    fts_defects: list[str] = []
+    skipped = 0
+
+    for path in databases:
+        if time.monotonic() > deadline:
+            skipped = len(databases) - checked - len(unreadable)
+            break
+        try:
+            # mode=ro: doctor must never create, migrate or write a live store.
+            # busy_timeout: these are the operator's LIVE stores, so the daemon may hold a
+            # write lock as we look. Without it a momentary lock raises instantly and the
+            # store is reported "unreadable" — a health warning about a perfectly healthy
+            # database, which is exactly the noise that trains you to skim past this row.
+            con = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+            con.execute("PRAGMA busy_timeout=5000")
+        except sqlite3.DatabaseError as exc:
+            unreadable.append(f"{path.name} ({exc})")
+            continue
+        try:
+            row = con.execute("PRAGMA quick_check").fetchone()
+            verdict = (row[0] if row else "") or ""
+            if verdict.lower() != "ok":
+                corrupt.append(f"{path.name}: {verdict.splitlines()[0]}")
+            for table in _external_content_fts_misuse(con):
+                fts_defects.append(f"{path.name}:{table}")
+            checked += 1
+        except sqlite3.DatabaseError as exc:
+            unreadable.append(f"{path.name} ({exc})")
+        finally:
+            con.close()
+
+    if corrupt:
+        return [
+            _check(
+                "Database integrity",
+                False,
+                f"{len(corrupt)} corrupt: {'; '.join(corrupt[:3])}"
+                + (" …" if len(corrupt) > 3 else "")
+                # `navig db backup` has never existed, and the local-store command that
+                # does (`navig db local backup <dir>`) WRITES backups rather than listing
+                # them — so the old text sent an operator whose database is corrupt, the
+                # worst moment to be misdirected, after a command that errors.
+                + " — no automatic restore: put a known-good copy of the file back, then"
+                + " verify with navig db local status (navig db local backup <dir> writes"
+                + " fresh copies of the stores that are still healthy)",
+            )
+        ]
+    if fts_defects:
+        # A schema defect, not damage yet: the index desyncs and only later errors.
+        return [
+            _check(
+                "Database integrity",
+                False,
+                f"{checked} DB(s) intact, but {len(fts_defects)} search index(es) use "
+                f"unsafe external-content triggers: {', '.join(fts_defects[:3])}"
+                + (" …" if len(fts_defects) > 3 else "")
+                + " — "
+                + _fts_repair_hint(fts_defects),
+                warn=True,
+            )
+        ]
+    if unreadable or skipped:
+        # Could-not-look is never a green tick.
+        parts = []
+        if unreadable:
+            parts.append(f"{len(unreadable)} unreadable ({'; '.join(unreadable[:2])})")
+        if skipped:
+            parts.append(f"{skipped} skipped (budget {_DB_SCAN_BUDGET_S:.0f}s)")
+        return [
+            _check("Database integrity", False, f"{checked} of {len(databases)} verified — "
+                   + ", ".join(parts), warn=True)
+        ]
+    return [_check("Database integrity", True, f"{checked} databases intact (quick_check + FTS audit)")]
 
 
 def check_vault() -> list[tuple[str, bool, str]]:
@@ -363,6 +684,185 @@ def check_vault() -> list[tuple[str, bool, str]]:
     return results
 
 
+def _bindability_row(label: str, port: int) -> CheckResult:
+    """Answer "could a daemon actually start here?" — only call when nothing is LISTENING.
+
+    `connect_ex` answers a different question ("is someone listening"), and the two come
+    apart exactly where it matters: **Windows RESERVES port ranges** (Hyper-V / WSL /
+    Docker) in which `bind()` raises PermissionError while nothing is listening and
+    `Get-NetTCPConnection` cheerfully reports the port free. Measured on this machine:
+    8680-8779, 8790-8889, 9011-9110 and 9181-9580 are all reserved, `_DAEMON_PORT` (8765)
+    sits inside the first, and `navig cdp new` once failed to allocate ANY port because
+    its whole 9222+ window was swallowed.
+
+    SO_REUSEADDR is set deliberately: it mirrors what the real binders do, so the probe
+    predicts what a daemon start will actually see rather than raising a false alarm on a
+    POSIX socket sitting in TIME_WAIT. It cannot mask a reservation — those refuse the
+    bind either way — and the "someone is listening" case is handled by the caller before
+    this is reached.
+    """
+    import socket
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            probe.bind(("127.0.0.1", port))
+    except OSError as exc:
+        hint = (
+            " — check `netsh interface ipv4 show excludedportrange protocol=tcp`"
+            if os.name == "nt"
+            else ""
+        )
+        # NOT ok: nothing is listening AND nothing can bind, so this port is unusable.
+        # A ✓ here would be the "green light over an unknown" this file was hardened
+        # against. warn= rather than error: NAVIG self-heals onto a free port, so the
+        # install still works — the operator just needs to know why the port moved.
+        return _check(
+            label,
+            False,
+            f"Port {port} is free but NOT bindable ({exc.strerror or exc}){hint}",
+            warn=True,
+        )
+    return _check(label, True, f"Port {port} is free and bindable")
+
+
+# cmd.exe truncates PATH at 8191 characters. Past that EVERY command resolved through a
+# shell dies with "'x' is not recognized" — naming a tool that IS installed and whose
+# directory IS on PATH, which is why the error sends you reinstalling node_modules instead
+# of looking at the environment. Measured on the operator's machine: PATH 6698 chars, and a
+# `tauri dev` chain (three nested `npm run` levels, each prepending ~7 node_modules/.bin
+# dirs) landed it at 8022 — 169 from the ceiling, with `vite` already unresolvable one hop
+# deeper inside npx. The nesting cost that chain +1324 chars, which is where the warn
+# threshold below comes from: less than that in reserve and an ordinary nested toolchain
+# can cross the line.
+_CMD_PATH_LIMIT = 8191
+_PATH_NESTING_RESERVE = 2000  # > the +1324 a measured 3-level npm chain adds
+
+
+def partition_path_entries(entries: list[str]) -> tuple[list[str], list[tuple[str, str]]]:
+    """Split PATH entries into what resolves something and what does not.
+
+    Returns ``(kept, removed)``; each removed item is ``(entry, reason)`` with reason
+    ``"missing"`` or ``"duplicate"``. Deliberately only those two classes: neither can
+    affect command resolution, so pruning them needs no judgement about what the operator
+    "still uses" — which is what makes an automated rewrite of their PATH defensible.
+
+    Comparison is case-insensitive and ignores a trailing separator, because ``C:\\Foo``
+    and ``c:\\foo\\`` are the same directory; counting them as two would invent
+    reclaimable space that deleting cannot actually recover.
+    """
+    kept: list[str] = []
+    removed: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for entry in entries:
+        key = entry.strip().rstrip("\\/").lower()
+        if key in seen:
+            removed.append((entry, "duplicate"))
+            continue
+        seen.add(key)
+        try:
+            exists = Path(os.path.expandvars(entry)).is_dir()
+        except OSError:
+            exists = False
+        if exists:
+            kept.append(entry)
+        else:
+            removed.append((entry, "missing"))
+    return kept, removed
+
+
+def _user_path_from_registry() -> str | None:
+    """The PERSISTENT user PATH — the only PATH `navig doctor clean-path` can rewrite.
+
+    ``None`` when it cannot be read, so a caller can tell "nothing to reclaim" from "I did
+    not manage to look" and refrain from claiming either. Best-effort by contract: a health
+    check must never crash the doctor, and a registry that will not open is a reason to say
+    less, not to fail the run.
+
+    Deliberately separate from the read inside ``clean_path_cmd``: that one also needs the
+    value KIND in order to write it back, and must fail loudly rather than quietly do
+    nothing. Same key, different obligations.
+    """
+    if os.name != "nt":
+        return None
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_READ) as key:
+            raw, _kind = winreg.QueryValueEx(key, "Path")
+        return str(raw)
+    except Exception:  # noqa: BLE001 — see contract above; never crash the doctor
+        return None
+
+
+def check_path_health() -> list[tuple[str, bool, str]]:
+    """PATH headroom, and how much of it is reclaimable dead/duplicate entries.
+
+    Windows only: the 8191 ceiling is a cmd.exe property, so on POSIX this contributes
+    no row rather than a green one about a limit that does not exist there.
+    """
+    if os.name != "nt":
+        return []
+
+    raw = os.environ.get("PATH")
+    if not raw:
+        # Cannot look ⇒ warn, never ✓. See tests/cli/test_doctor_honesty.py.
+        return [_check("PATH health", False, "PATH is empty or could not be read", warn=True)]
+
+    # Headroom is measured on THIS PROCESS's PATH, because that is the string a shell
+    # actually has to resolve against — it is what breaks.
+    used = len(raw)
+    headroom = _CMD_PATH_LIMIT - used
+
+    # Reclaimable space is measured on the PERSISTENT USER PATH instead, because that is
+    # the only thing `clean-path` can rewrite. A shell can inject entries into its own
+    # environment that no command can remove — npm prepends ~7 node_modules/.bin dirs per
+    # nesting level, and this row's own home is a session whose PATH carries 11 duplicates
+    # the registry does not have. Counting those as reclaimable sent the operator to a
+    # cleanup that then correctly answered "already clean": advice that is a dead end.
+    waste = ""
+    persistent = _user_path_from_registry()
+    if persistent:
+        _kept, removed = partition_path_entries(
+            [e for e in persistent.split(os.pathsep) if e.strip()]
+        )
+        if removed:
+            dead = sum(1 for _e, reason in removed if reason == "missing")
+            dupes = sum(1 for _e, reason in removed if reason == "duplicate")
+            reclaimable = sum(len(entry) + 1 for entry, _reason in removed)
+            waste = (
+                f"; {dead} missing + {dupes} duplicate entries in your user PATH hold "
+                f"{reclaimable} chars (reclaim: navig doctor clean-path)"
+            )
+
+    if headroom <= 0:
+        return [
+            _check(
+                "PATH health",
+                False,
+                f"PATH is {used} chars — OVER cmd.exe's {_CMD_PATH_LIMIT} limit, so "
+                f"shell command resolution is already truncated{waste}",
+            )
+        ]
+    if headroom < _PATH_NESTING_RESERVE:
+        return [
+            _check(
+                "PATH health",
+                False,
+                f"PATH is {used} chars — only {headroom} under cmd.exe's "
+                f"{_CMD_PATH_LIMIT} limit, and nested tooling adds ~1300{waste}",
+                warn=True,
+            )
+        ]
+    return [
+        _check(
+            "PATH health",
+            True,
+            f"PATH is {used} chars, {headroom} under the {_CMD_PATH_LIMIT} limit{waste}",
+        )
+    ]
+
+
 def check_sockets(target_port: int | None = None) -> list[tuple[str, bool, str]]:
     """Check if critical ports are available or correctly bound."""
     results = []
@@ -391,25 +891,39 @@ def check_sockets(target_port: int | None = None) -> list[tuple[str, bool, str]]
                     _check(
                         "Port Occupation",
                         True,
+                        # A bound port means the gateway is running — genuinely healthy, so
+                        # this stays ✓. (warn= was dead here anyway: it is ignored when ok=True.)
                         f"Port {target_port} is bound (Gateway running)",
-                        warn=True,
                     )
                 )
             else:
-                # connect_ex can't detect OS port reservations (WinNAT/Hyper-V
-                # excluded ranges refuse connects AND binds) — don't promise
-                # bindability, only that nothing is listening.
-                results.append(
-                    _check(
-                        "Port Occupation",
-                        True,
-                        f"Port {target_port} is not in use (OS-reserved ranges "
-                        "may still block binding — the gateway self-heals to "
-                        "a free port if so)",
-                    )
-                )
+                # Nothing is LISTENING — which is not the same as "a daemon could start
+                # here". This row used to stop at connect_ex and disclaim the difference
+                # in prose ("OS-reserved ranges may still block binding"), i.e. a ✓ over
+                # an unknown. It is answerable: attempt the bind.
+                results.append(_bindability_row("Port Occupation", target_port))
     except Exception as e:
         results.append(_check("Port Occupation", False, f"Socket error on port {target_port}: {e}"))
+
+    # The gateway is not the only port NAVIG binds. `_DAEMON_PORT` carries the IPC/MCP
+    # WebSocket server, and a reserved range that swallows it is just as fatal and just as
+    # invisible — on this developer's machine 8765 sits inside a Hyper-V reservation while
+    # 8789 survives only because it lands in a one-port gap between two of them. Checking
+    # one port and calling the row "Network Sockets" protected a path, not the surface.
+    if _DAEMON_PORT != target_port:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.5)
+                if s.connect_ex(("127.0.0.1", _DAEMON_PORT)) == 0:
+                    results.append(
+                        _check("Daemon Port", True, f"Port {_DAEMON_PORT} is bound (daemon running)")
+                    )
+                else:
+                    results.append(_bindability_row("Daemon Port", _DAEMON_PORT))
+        except Exception as e:  # noqa: BLE001
+            results.append(
+                _check("Daemon Port", False, f"Socket error on port {_DAEMON_PORT}: {e}")
+            )
 
     return results
 
@@ -423,26 +937,42 @@ def check_formations() -> list[tuple[str, bool, str]]:
     file type and effectively always showed 0. ``discover_formations()`` is the
     loader's real discovery (builtin + user store + config + plugins), so the
     count matches what actually loads.
+
+    It also surfaces any BROKEN ``formation.json`` (``formation_load_errors()``):
+    the loader silently skips a malformed manifest, so a count of only the good
+    ones would be a green light over a broken formation — the honesty rule forbids it.
     """
     results = []
     try:
-        from navig.formations.loader import discover_formations
+        from navig.formations.loader import discover_formations, formation_load_errors
 
         n = len(discover_formations())
+        errors = formation_load_errors()
     except Exception as e:  # noqa: BLE001
         results.append(_check("Formations", False, f"discovery failed: {e}", warn=True))
         return results
 
-    if n == 0:
-        # Builtins ship with NAVIG, so 0 discoverable means the builtin store is
-        # likely missing — a ⚠ (ok=False, warn=True), NOT a green tick: `_check`
-        # renders ✓ whenever ok=True regardless of warn, and a green light over a
-        # broken store is exactly what the doctor honesty rule forbids.
+    # `_check` renders ✓ whenever ok=True regardless of warn, and a green light over a
+    # broken/empty store is exactly what the doctor honesty rule forbids — so every
+    # not-fully-healthy branch here is ok=False (⚠).
+    if n > 0:
+        results.append(_check("Formations", True, f"{n} discovered"))
+    elif errors:
+        # 0 loaded but files ARE present and broken — NOT a missing-store situation.
+        results.append(
+            _check("Formations", False, f"0 loaded — {len(errors)} broken (see below)", warn=True)
+        )
+    else:
+        # Builtins ship with NAVIG, so 0 discoverable AND nothing broken means the
+        # builtin store is likely missing.
         results.append(
             _check("Formations", False, "0 discovered — builtin store may be missing", warn=True)
         )
-    else:
-        results.append(_check("Formations", True, f"{n} discovered"))
+
+    # Surface each BROKEN formation.json — discover_formations silently skips these, so a
+    # count of only the good ones would hide them behind a green tick.
+    for subdir, reason in errors:
+        results.append(_check("Formations", False, f"{subdir.name}: {reason}", warn=True))
 
     return results
 
@@ -470,7 +1000,7 @@ def check_skills() -> list[tuple[str, bool, str]]:
         else:
             results.append(_check("Skills", True, f"{total} found, 0 invalid"))
     else:
-        results.append(_check("Skills", True, "Skills dir not found (non-fatal)", warn=True))
+        results.append(_check("Skills", False, "Skills dir not found (non-fatal)", warn=True))
 
     return results
 
@@ -756,8 +1286,11 @@ def check_browsers() -> list[tuple[str, bool, str]]:
 
         running = list_debug_browsers()
     except Exception as exc:  # noqa: BLE001 — doctor must never be the thing that breaks
+        # `return []` hides the section, which reads as "no leaked browsers" — the exact
+        # state this check exists to end (~24 of them, 3.6 GB of profiles, unnoticed).
+        # A debug line nobody reads is not a report.
         logger.debug("browser leak check failed: %s", exc)
-        return []
+        return [_check("Leaked browsers", False, f"COULD NOT VERIFY ({exc})", warn=True)]
 
     orphans = [b for b in running if b["kind"] == "orphan"]
     foreign = [b for b in running if b["kind"] == "foreign"]
@@ -813,8 +1346,72 @@ def check_python_deps() -> list[tuple[str, bool, str]]:
     return results
 
 
-def check_reachability() -> list[tuple[str, bool, str]]:
-    """Can the bot actually HEAR? (lighthouse mode only — empty section otherwise.)
+def check_media_tools() -> list[tuple[str, bool, str]]:
+    """The two external tools the media pipeline needs — and silently skips.
+
+    ffmpeg and OCR are the only dependencies whose absence produces a *plausible
+    empty answer* rather than an error: a video with no transcript, an image with
+    no text. Everything else that goes missing raises. So these two are the pair
+    worth a row — without one, the operator's evidence is that the feature "found
+    nothing", which is exactly what a working feature looks like on quiet input.
+    """
+    results = []
+
+    ffmpeg = shutil.which("ffmpeg")
+    results.append(_check(
+        "ffmpeg",
+        bool(ffmpeg),
+        ffmpeg or "not on PATH — video/audio transcription and frame OCR are skipped",
+        warn=True,
+    ))
+
+    from navig.core.ocr import (
+        OCR_INSTALL_HINT,
+        ocr_language,
+        ocr_language_gap,
+        ocr_unavailable_reason,
+    )
+
+    reason = ocr_unavailable_reason()
+    if reason is None:
+        detail = "available"
+        try:
+            import pytesseract  # type: ignore
+
+            detail = f"tesseract {pytesseract.get_tesseract_version()}"
+        except Exception:  # noqa: BLE001 — the probe already said it works
+            pass
+        # An installed Tesseract reading the WRONG language is the worst of the
+        # three states: it returns confident-looking nonsense, so a green row
+        # here would tell the operator not to look at the one thing that is
+        # broken. Say which language it reads in, and warn when that is not the
+        # language they pinned.
+        gap = ocr_language_gap()
+        if gap:
+            results.append(_check(
+                "OCR (on-screen text)", False,
+                f"{detail} — but {gap}. Text in that script reads as noise.",
+                warn=True,
+            ))
+        else:
+            lang = ocr_language()
+            results.append(_check(
+                "OCR (on-screen text)", True,
+                f"{detail} · reads {lang}" if lang else detail,
+            ))
+    else:
+        results.append(_check(
+            "OCR (on-screen text)",
+            False,
+            f"{reason} — image/video text is silently skipped. Fix: {OCR_INSTALL_HINT}",
+            warn=True,
+        ))
+
+    return results
+
+
+def _webhook_tenant_rows() -> list[tuple[str, bool, str]]:
+    """Can the bot actually HEAR? (lighthouse mode only — no rows otherwise.)
 
     "Uplink: online" is not proof of reachability. The lighthouse webhook URL embeds
     ``sha256(deck.api_key)`` — the Durable Object the edge routes Telegram's POSTs to
@@ -838,7 +1435,7 @@ def check_reachability() -> list[tuple[str, bool, str]]:
             return [
                 _check(
                     "Telegram webhook",
-                    True,
+                    False,  # lighthouse mode with no webhook is a ⚠, not a green ✓
                     "not configured (bot uses long-polling)",
                     warn=True,
                 )
@@ -858,13 +1455,299 @@ def check_reachability() -> list[tuple[str, bool, str]]:
         elif edge and not hook.startswith(f"{edge}/tg/"):
             # Not our edge — we can't derive or vouch for this tenant, so don't pretend to.
             results.append(
-                _check("Telegram webhook", True, "custom host (not the lighthouse edge)", warn=True)
+                # We can't derive or vouch for this tenant — that's a ⚠ (could-not-verify),
+                # never a green ✓ (matches the "COULD NOT VERIFY" sibling below).
+                _check("Telegram webhook", False, "custom host (not the lighthouse edge)", warn=True)
             )
         else:
             results.append(_check("Telegram webhook", True, "tenant matches the live brain"))
     except Exception as exc:  # noqa: BLE001 — doctor must never crash on a check
         results.append(_check("Telegram webhook", False, f"COULD NOT VERIFY ({exc})", warn=True))
 
+    return results
+
+
+def _miniapp_button_row() -> list[tuple[str, bool, str]]:
+    """Is the Mini App button serving the deck we actually deployed?
+
+    The sibling of the webhook-tenant check above, pointing the other way: that one
+    catches "the bot cannot HEAR with every light green", this one catches "the deck
+    SHOWS an old app with every light green". Telegram caches a Mini App by URL and
+    ignores Cache-Control, so a button URL whose ``v=`` cache-bust never changed pins
+    every client to the bundle it cached — a deploy the operator watched succeed that
+    literally no one can see.
+
+    Applies in EVERY cloud mode (unlike the webhook rows), because the button points
+    at the deck, not at the brain's ingress.
+    """
+    try:
+        from navig.commands.miniapp import miniapp_button_health
+
+        verdict = miniapp_button_health()
+    except Exception as exc:  # noqa: BLE001 — doctor must never crash on a check
+        return [_check("Mini App button", False, f"COULD NOT VERIFY ({exc})", warn=True)]
+
+    if verdict is None:
+        return []  # no deck deployed — the question does not apply
+    ok, detail, warn = verdict
+    return [_check("Mini App button", ok, detail, warn=warn)]
+
+
+def check_reachability() -> list[tuple[str, bool, str]]:
+    """Reachability rows: can the bot HEAR, and is the deck people open the current one?"""
+    return _webhook_tenant_rows() + _miniapp_button_row()
+
+
+def _gateway_has_ever_run() -> bool:
+    """Has a gateway ever bound on this install?
+
+    The live gateway writes ``gateway.json`` when it binds, so its presence answers the
+    question. Its own function so a test can replace *this* rather than patching
+    ``paths.config_dir`` — patching the global path resolver poisons whatever has
+    already cached a config dir, and the damage outlives the test that did it (two
+    unrelated vault rows went green-but-empty in a neighbouring file before this was
+    split out).
+
+    Unknown counts as "has run": between reassuring the operator and warning them, an
+    unanswerable question should not resolve to the reassuring answer.
+    """
+    try:
+        from navig.platform.paths import config_dir
+
+        return (config_dir() / "gateway.json").exists()
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def check_pending_approvals() -> list[tuple[str, bool, str]]:
+    """Approvals the operator was asked for and has not answered.
+
+    The record is written to `<config_dir>/approvals/` so it survives a restart — and until
+    now **nothing read it back**. A durable record no surface displays is the same shape as
+    the bug it was built to fix: the daemon knows something is outstanding and the operator
+    cannot see it. `ApprovalManager.list_pending()` is the in-memory view, which is empty
+    after every restart, so it cannot answer this question.
+
+    Not a failure — an unanswered approval is a normal state. It is reported as a WARN so it
+    shows up without pretending the install is broken, and stays silent when there is
+    nothing waiting.
+    """
+    try:
+        from navig.approval import journal, resume
+    except Exception:  # noqa: BLE001 — an absent module must not break doctor
+        return []
+
+    try:
+        pending = journal.list_pending()
+        resumable = resume.list_resumable()
+    except Exception as exc:  # noqa: BLE001 — doctor must never crash on a check
+        # `return []` renders as NO ROW, which the operator reads as "nothing waiting" —
+        # the reassuring answer to an unanswerable question, and the same shape this
+        # function was written to fix (a durable record no surface displays). The sibling
+        # `_webhook_tenant_rows` already reports this case as `COULD NOT VERIFY (...)`;
+        # match it. Note the import guard above still returns [] on purpose: no approvals
+        # module means there is genuinely nothing to report, which is an answer.
+        return [
+            _check("Pending approvals", False, f"COULD NOT VERIFY ({exc})", warn=True)
+        ]
+
+    if not pending and not resumable:
+        return []
+
+    rows: list[tuple[str, bool, str]] = []
+    if pending:
+        newest = max((e.get("asked_at") or 0) for e in pending.values())
+        age_min = max(0, int((time.time() - newest) / 60))
+        rows.append((
+            "Waiting on you",
+            False,
+            f"{len(pending)} approval(s) unanswered (most recent {age_min}m ago) — "
+            "answer from Telegram or the deck",
+        ))
+
+    stale = [rid for rid, e in resumable.items() if resume.is_too_old(e)]
+    if stale:
+        rows.append((
+            "Too old to resume",
+            False,
+            f"{len(stale)} approved-too-late record(s) past "
+            f"{int(resume.max_age_seconds() / 60)}m — answering these now re-runs nothing; "
+            "re-issue the request instead",
+        ))
+    return rows
+
+
+def check_gateway_auth() -> list[tuple[str, bool, str]]:
+    """Is anything actually authenticating requests to the local gateway?
+
+    ``require_bearer_auth`` opens with ``if not token: return None`` — **no token means
+    open access** — and seventeen route modules sit behind it, including
+    ``POST /approval/{id}/respond``. An unauthenticated gateway lets any local process
+    list the agent's pending approvals and answer them.
+
+    The gateway therefore **mints and persists a token on its first start**. That makes
+    "no token" mean something quite different from what it used to, and the two cases
+    are not the same news:
+
+    * the gateway has **never started** — nothing is wrong; the token appears when it
+      does. Informational.
+    * the gateway **has started** and there is still no token — the mint could not
+      write, so a running gateway is serving its admin routes to anything on this
+      machine. That is a fault, not a setting.
+
+    ``gateway.json`` is the discriminator: the live gateway writes it when it binds, so
+    its presence means this install has run one.
+
+    (An earlier version of this row predated the mint and told the operator to set a
+    token by hand as though they had simply never configured one. That advice was right
+    for the failure case and misleading for the ordinary one — the whole reason to tell
+    these apart.)
+    """
+    try:
+        from navig.config import ConfigManager
+
+        gateway_cfg = ConfigManager().get("gateway", {}) or {}
+        auth = gateway_cfg.get("auth") if isinstance(gateway_cfg, dict) else None
+        token = (auth or {}).get("token") if isinstance(auth, dict) else None
+        host = gateway_cfg.get("host", "127.0.0.1") if isinstance(gateway_cfg, dict) else "127.0.0.1"
+
+        if token:
+            return [_check("Gateway auth", True, f"bearer token set · bound to {host}")]
+
+        has_run = _gateway_has_ever_run()
+
+        if not has_run:
+            return [
+                _check(
+                    "Gateway auth",
+                    True,
+                    "no token yet — one is generated and saved the first time the "
+                    "gateway starts",
+                )
+            ]
+
+        local_only = str(host).strip() in {"127.0.0.1", "localhost", "::1"}
+        detail = (
+            f"this gateway has run but has NO token, so its admin routes — including "
+            f"approval responses — accept every request. The startup mint could not "
+            f"write to your config. Bound to {host}"
+            + (
+                " (local processes only). Set one now: navig config set "
+                "gateway.auth.token <secret>"
+                if local_only
+                else " — this is reachable off this machine. Set one NOW: "
+                "navig config set gateway.auth.token <secret>"
+            )
+        )
+        # Bound to a non-loopback address with no token is not a warning, it is a hole.
+        return [_check("Gateway auth", False, detail, warn=local_only)]
+    except Exception as exc:  # noqa: BLE001 — could-not-look is a warning, never a ✓
+        return [_check("Gateway auth", False, str(exc)[:120], warn=True)]
+
+
+def check_mcp_trust() -> list[tuple[str, bool, str]]:
+    """What each configured MCP server is actually allowed to do.
+
+    A third-party MCP server's tools are held for approval by default; marking one
+    ``vetted`` lets the reads it *declares* run unprompted, and `…​.tools` narrows what it
+    may offer at all. Both are set with `navig config set`, and until this row existed
+    there was no way to confirm either took effect.
+
+    The failure that matters is silent: an unrecognised tier — a typo, or a value the
+    operator expected to mean something — falls back to ``byo`` with a log line the
+    person who typed it will never see. That is the "configured but not in effect" state,
+    so it is reported as a **warning**, not as a tidy ✓ over a setting that is being
+    ignored.
+
+    Returns an empty list when no MCP servers are configured, so the section does not
+    appear on an install that does not use them.
+    """
+    results: list[tuple[str, bool, str]] = []
+    try:
+        from navig.config import ConfigManager
+        from navig.mcp.trust import (
+            ServerTrust,
+            allowed_tools_for_server,
+            auto_approve_tools_for_server,
+            trust_for_server,
+        )
+
+        # A fresh manager, not the process-wide singleton: that one caches for the
+        # lifetime of the process and would happily describe a different install.
+        mcp_cfg = ConfigManager().get("mcp", {}) or {}
+        servers = mcp_cfg.get("servers") if isinstance(mcp_cfg, dict) else None
+        names = sorted(servers) if isinstance(servers, dict) else []
+        if not names:
+            return []
+
+        raw_trust = (mcp_cfg.get("trust") or {}) if isinstance(mcp_cfg, dict) else {}
+        raw_servers = raw_trust.get("servers") if isinstance(raw_trust, dict) else None
+        raw_servers = raw_servers if isinstance(raw_servers, dict) else {}
+
+        for name in names:
+            tier = trust_for_server(name)
+            scope = allowed_tools_for_server(name)
+
+            entry = raw_servers.get(name)
+            configured = entry.get("tier") if isinstance(entry, dict) else entry
+            # Only a STRING can be a tier; anything else was never going to apply.
+            mistyped = (
+                configured is not None
+                and str(configured).strip().lower()
+                not in {t.value for t in ServerTrust}
+            )
+
+            if scope is None:
+                scope_text = "all tools"
+            elif scope:
+                scope_text = f"{len(scope)} tool(s): {', '.join(sorted(scope)[:4])}"
+            else:
+                scope_text = "NO tools (empty allowlist denies everything)"
+
+            # Pre-authorised tools are the one setting here that lets a WRITE happen
+            # with nobody watching, so it is always shown — a release valve the operator
+            # cannot see is one they cannot review.
+            pre_authorised = auto_approve_tools_for_server(name)
+            if pre_authorised:
+                scope_text += (
+                    f" · {len(pre_authorised)} pre-authorised: "
+                    f"{', '.join(sorted(pre_authorised)[:4])}"
+                )
+
+            detail = f"{tier.value} · {scope_text}"
+
+            # Pre-authorising on a byo server is inert: gate 1 needs a vetted endpoint,
+            # so those tools still prompt. Silently doing nothing is the failure mode
+            # this whole row exists to catch.
+            if pre_authorised and tier is not ServerTrust.VETTED and not mistyped:
+                results.append(
+                    _check(
+                        f"MCP {name}",
+                        False,
+                        f"{detail} — auto_approve has no effect on a '{tier.value}' "
+                        f"server; mark it vetted or those tools will keep asking.",
+                        warn=True,
+                    )
+                )
+                continue
+
+            if mistyped:
+                results.append(
+                    _check(
+                        f"MCP {name}",
+                        False,
+                        f"configured tier {configured!r} is not recognised — using "
+                        f"'{tier.value}'. Valid: vetted, byo.",
+                        warn=True,
+                    )
+                )
+            elif scope == ():
+                results.append(_check(f"MCP {name}", False, detail, warn=True))
+            else:
+                results.append(_check(f"MCP {name}", True, detail))
+    except Exception as exc:  # noqa: BLE001
+        # Could-not-look is a WARNING, never a ✓ — the rule this file learned the hard way.
+        results.append(_check("MCP trust", False, str(exc)[:120], warn=True))
     return results
 
 
@@ -896,8 +1779,11 @@ def check_config_health() -> list[tuple[str, bool, str]]:
                     "Compare it with your live config, then delete it to clear this.",
                 )
             )
-    except Exception:  # noqa: BLE001 — a health check must never crash the doctor
-        pass
+    except Exception as exc:  # noqa: BLE001 — a health check must never crash the doctor
+        # Skipping silently means the operator cannot tell "no corrupt copy" from "I could
+        # not look" — and a kept config.yaml.corrupt is evidence of a load that already
+        # failed once.
+        results.append(_check("config.yaml", False, f"COULD NOT VERIFY ({exc})", warn=True))
 
     # 2. Recent self-healing events. Silence here is the healthy state.
     try:
@@ -914,11 +1800,23 @@ def check_config_health() -> list[tuple[str, bool, str]]:
                 )
             )
             for entry in events[1:]:
-                results.append(_check("", True, f"  {incidents.describe(entry)}", warn=True))
+                # Continuation rows for the SAME finding. These MUST NOT be ok=True:
+                # _check() renders ✓ whenever ok=True and ignores warn=, so ok=True here
+                # printed a green tick over a real self-healing incident (a
+                # DECK_KEY_REIDENTIFIED shows as "✓ :  …") — the precise "every light
+                # green while broken" trap this whole section exists to prevent. And the
+                # empty label rendered "✓ :  detail" in the console and "" in --json.
+                # Render each as a labelled ⚠ sub-row instead.
+                results.append(
+                    _check("Incidents", False, incidents.describe(entry), warn=True)
+                )
         else:
             results.append(_check("Incidents", True, "none — no config rescue was needed"))
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        # "none — no config rescue was needed" and "I could not read the incident log" are
+        # opposite answers, and silence renders as the first. This section exists because a
+        # daemon that heals itself at 3am and tells nobody looks exactly like a healthy one.
+        results.append(_check("Incidents", False, f"COULD NOT VERIFY ({exc})", warn=True))
 
     # 3. Is the identity recoverable at all? (deck.api_key IS the Lighthouse tenant.)
     try:
@@ -947,8 +1845,11 @@ def check_config_health() -> list[tuple[str, bool, str]]:
                         warn=True,
                     )
                 )
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        # Without this row the operator cannot tell whether a config wipe would silently
+        # re-identify the install and move the bot's mailbox — which is the whole reason
+        # the mirror is checked here.
+        results.append(_check("Key recovery", False, f"COULD NOT VERIFY ({exc})", warn=True))
 
     return results
 
@@ -968,8 +1869,10 @@ def check_ledger() -> list[tuple[str, bool, str]]:
         from navig.operation_recorder import get_operation_recorder
 
         markers = get_operation_recorder().iter_inflight()
-    except Exception:  # noqa: BLE001 — a health check must never crash the doctor
-        return []
+    except Exception as exc:  # noqa: BLE001 — a health check must never crash the doctor
+        # Hiding the section reads as "no interrupted operations", which is the answer this
+        # check exists to stop taking on faith.
+        return [_check("Ledger", False, f"COULD NOT VERIFY ({exc})", warn=True)]
 
     if not markers:
         return []
@@ -1064,14 +1967,169 @@ def check_repo_guard() -> list[tuple[str, bool, str]]:
                     f"(age {lk.get('age_minutes', '?')}m, branch {lk.get('branch') or '?'})"
                 )
             results.append(_check("Repo Guard", True, detail))
-    except Exception:  # noqa: BLE001 — a doctor check must never crash doctor
-        return []
+
+        # Orphaned worktree dirs pile up (git worktree remove often can't delete
+        # them on Windows); surface a warn row when any exist. Silent when clean.
+        try:
+            from navig.commands.repo import orphan_worktree_dirs
+
+            n_orphans = len(orphan_worktree_dirs(root))
+        except Exception:  # noqa: BLE001 — never let this crash the guard check
+            n_orphans = 0
+        if n_orphans:
+            results.append(
+                _check(
+                    "Worktree orphans",
+                    False,
+                    f"{n_orphans} orphaned dir(s) in .dev/worktrees (untracked) — "
+                    "clean: navig repo prune",
+                    warn=True,
+                )
+            )
+    except Exception as exc:  # noqa: BLE001 — a doctor check must never crash doctor
+        # Not "outside a git repo" — that case returns [] explicitly inside the try above.
+        # Reaching here means the guard state could not be read, and a hidden section reads
+        # as "the guard is fine", which is what a half-wired guard already fakes.
+        return [_check("Repo guard", False, f"COULD NOT VERIFY ({exc})", warn=True)]
     return results
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Report collection — the shared seam
 # ──────────────────────────────────────────────────────────────────────────────
+
+
+def _git_head(src_dir: Path) -> tuple[str, str] | None:
+    """``(full_sha, short_sha)`` of HEAD in *src_dir*, or None if it isn't a git checkout.
+
+    Uses ``git rev-parse`` (which walks UP to the repo root), so it works even though this
+    monorepo keeps ``.git`` at the root, not inside the editable ``core/`` src dir.
+    """
+    import subprocess
+
+    try:
+        full = subprocess.run(
+            ["git", "-C", str(src_dir), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5, encoding="utf-8", errors="replace",
+        )
+        if full.returncode != 0 or not full.stdout.strip():
+            return None
+        short = subprocess.run(
+            ["git", "-C", str(src_dir), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5, encoding="utf-8", errors="replace",
+        )
+        s = short.stdout.strip() if short.returncode == 0 and short.stdout.strip() else full.stdout.strip()[:8]
+        return full.stdout.strip(), s
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _git_count(src_dir: Path, rng: str) -> int | None:
+    """``git rev-list --count <rng>`` (e.g. ``A..B``); None on any failure."""
+    import subprocess
+
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(src_dir), "rev-list", "--count", rng],
+            capture_output=True, text=True, timeout=5, encoding="utf-8", errors="replace",
+        )
+        if r.returncode == 0 and r.stdout.strip().isdigit():
+            return int(r.stdout.strip())
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def check_daemon_freshness() -> list[tuple[str, bool, str]]:
+    """Is the RUNNING daemon executing the code that's on disk NOW?
+
+    An editable/pip install loads its source into memory once at boot, so a merge, a
+    ``git pull`` or a branch switch changes disk while the running daemon keeps the OLD
+    code — the "merged but not live" trap, invisible with every other light green. The
+    daemon records the commit/version it booted from (``supervisor._capture_code_identity``);
+    here we compare it to the current on-disk state and surface a ⚠ when they differ.
+
+    Returns [] when the daemon is stopped (nothing to compare) or when neither a git commit
+    nor a version can be resolved — silence beats crying wolf.
+    """
+    try:
+        from navig.daemon.supervisor import NavigDaemon
+    except Exception:  # noqa: BLE001
+        return []
+    try:
+        if not NavigDaemon.is_running():
+            return []  # stopped — nothing to compare, and that is an answer
+        state = NavigDaemon.read_state() or {}
+    except Exception as exc:  # noqa: BLE001
+        # "stopped" is an answer; "I could not read the daemon's state" is not, and this
+        # check exists for the merged-but-not-live trap that is already invisible with
+        # every other light green.
+        return [_check("Daemon freshness", False, f"COULD NOT VERIFY ({exc})", warn=True)]
+
+    boot = state.get("boot_code") if isinstance(state, dict) else None
+    boot = boot if isinstance(boot, dict) else {}
+    src_dir = Path(__file__).resolve().parents[2]
+    disk = _git_head(src_dir)
+
+    # --- git checkout: compare commits (the editable-install case) ---
+    if disk is not None:
+        disk_full, disk_short = disk
+        boot_commit = str(boot.get("commit") or "")
+        if not boot_commit:
+            # An older daemon that predates freshness tracking — honest ⚠, not silence:
+            # restarting both enables the feature AND loads whatever is newest on disk.
+            return [
+                _check(
+                    "Daemon freshness",
+                    False,
+                    "the running daemon predates freshness tracking — restart once "
+                    "(navig service restart --admin) to enable it",
+                    warn=True,
+                )
+            ]
+        if boot_commit == disk_full:
+            branch = str(boot.get("branch") or "")
+            detail = f"running current commit {disk_short}" + (f" ({branch})" if branch else "")
+            behind = _git_count(src_dir, "HEAD..@{upstream}")  # offline: last-fetched ref
+            if behind:
+                detail += f" · disk is {behind} behind upstream — `navig update` to pull"
+            return [_check("Daemon freshness", True, detail)]
+        n = _git_count(src_dir, f"{boot_commit}..{disk_full}")
+        boot_branch = str(boot.get("branch") or "")
+        boot_ctx = f" on {boot_branch}" if boot_branch else ""
+        gap = f"{n} commit(s) behind" if n else "diverged from"
+        return [
+            _check(
+                "Daemon freshness",
+                False,
+                f"STALE — daemon booted at {boot_commit[:8]}{boot_ctx}, disk is now at "
+                f"{disk_short} ({gap} on-disk). Restart to load the new code: "
+                "navig update  /  navig service restart --admin",
+                warn=True,
+            )
+        ]
+
+    # --- non-git (wheel) install: compare versions ---
+    boot_ver = str(boot.get("version") or "")
+    try:
+        import navig as _nav
+
+        cur_ver = str(getattr(_nav, "__version__", "") or "")
+    except Exception:  # noqa: BLE001
+        cur_ver = ""
+    if boot_ver and cur_ver and boot_ver != cur_ver:
+        return [
+            _check(
+                "Daemon freshness",
+                False,
+                f"STALE — daemon is running v{boot_ver}, v{cur_ver} is installed. "
+                "Restart to load it: navig service restart --admin",
+                warn=True,
+            )
+        ]
+    if boot_ver and cur_ver:
+        return [_check("Daemon freshness", True, f"running v{cur_ver}")]
+    return []  # can't determine — say nothing rather than cry wolf
 
 
 def _collect_sections(
@@ -1084,23 +2142,42 @@ def _collect_sections(
     """
     secs: list[tuple[str, list[tuple[str, bool, str]]]] = [
         ("Config", check_config()),
-        ("Runtime", check_runtime()),
-        ("Storage", check_storage() + check_vault()),
-        ("Filesystem", check_cache_dir()),
+        ("Runtime", check_runtime() + check_path_health()),
+        ("Storage", check_storage() + check_databases() + check_vault()),
+        ("Filesystem", check_cache_dir() + check_logs()),
         ("Network Sockets", check_sockets(port)),
         ("Formations", check_formations()),
         ("Skills", check_skills()),
-        ("Gateway", check_gateway(port=port) + check_event_processor(port=port)),
+        (
+            "Gateway",
+            check_gateway(port=port)
+            + check_event_processor(port=port)
+            + check_gateway_auth(),
+        ),
         ("AI Providers", check_ai_providers()),
+        ("Identity", check_identity()),
+        ("Media Tools", check_media_tools()),
         ("Wiring", check_wiring()),
     ]
+
+    freshness_results = check_daemon_freshness()
+    if freshness_results:  # only when the daemon is running + freshness is determinable
+        secs.append(("Daemon", freshness_results))
+
+    mcp_trust_results = check_mcp_trust()
+    if mcp_trust_results:  # only when MCP servers are configured
+        secs.append(("MCP Trust", mcp_trust_results))
 
     config_health_results = check_config_health()
     if config_health_results:
         secs.append(("Config Health", config_health_results))
 
+    approval_results = check_pending_approvals()
+    if approval_results:  # silent when nothing is waiting
+        secs.append(("Approvals", approval_results))
+
     reachability_results = check_reachability()
-    if reachability_results:  # only in lighthouse mode
+    if reachability_results:  # webhook rows are lighthouse-only; the button row is not
         secs.append(("Reachability", reachability_results))
 
     ledger_results = check_ledger()
@@ -1189,6 +2266,96 @@ def collect_report(
 # ──────────────────────────────────────────────────────────────────────────────
 # Main command
 # ──────────────────────────────────────────────────────────────────────────────
+
+
+def check_identity() -> list[tuple[str, bool, str]]:
+    """Which identity actually reaches the model, and can it still be cached.
+
+    Three questions an operator cannot otherwise answer:
+
+    * **Which source won.** Seven sources can supply identity and only the
+      highest-priority one is used. An ``IDENTITY.md`` outranked by a persona
+      looks exactly like a broken ``IDENTITY.md`` until something says so.
+    * **Is the guardrail floor intact.** It is compiled in and cannot be removed
+      by a file, so this row is normally a formality — but it names the floor
+      version, which is what you want when an agent misbehaves.
+    * **Is the system prefix byte-stable.** A single volatile field in the system
+      block discards the whole cached tools+system prefix on every turn; the
+      symptom is a silent cost multiple, never an error.
+    """
+    results: list[tuple[str, bool, str]] = []
+
+    # ── Which source won, and what it shadowed ──────────────────────────────
+    try:
+        from navig.personas.soul_loader import SOURCE_LABELS, resolve_soul
+
+        resolution = resolve_soul()
+        if not resolution.raw:
+            results.append(_check(
+                "Identity source",
+                False,
+                "nothing resolved — the agent will fall back to a built-in identity",
+                warn=True,
+            ))
+        else:
+            label = SOURCE_LABELS.get(resolution.source, resolution.source)
+            detail = f"{label} · {len(resolution.raw):,} chars"
+            if resolution.persona:
+                detail += f" · persona {resolution.persona}"
+            if resolution.shadowed:
+                detail += " · shadows " + ", ".join(
+                    SOURCE_LABELS.get(s.tag, s.tag) for s in resolution.shadowed
+                )
+            results.append(_check("Identity source", True, detail))
+    except Exception as exc:  # noqa: BLE001
+        results.append(_check("Identity source", False, str(exc)[:120], warn=True))
+
+    # ── Guardrail floor ─────────────────────────────────────────────────────
+    try:
+        from navig.agent.conv.guardrails import (
+            GUARDRAIL_FLOOR_VERSION,
+            guardrail_floor,
+            guardrails_paths,
+        )
+
+        floor = guardrail_floor()
+        operator_files = [p for p, _tag in guardrails_paths() if p.exists()]
+        detail = f"v{GUARDRAIL_FLOOR_VERSION} · {len(floor):,} chars"
+        if operator_files:
+            detail += f" · +{len(operator_files)} operator file(s)"
+        results.append(_check("Guardrail floor", bool(floor.strip()), detail))
+    except Exception as exc:  # noqa: BLE001
+        results.append(_check("Guardrail floor", False, str(exc)[:120], warn=True))
+
+    # ── Prompt-prefix stability (the cache invariant) ────────────────────────
+    try:
+        from navig.agent.conv.soul import get_soul_loader
+
+        loader = get_soul_loader()
+        ctx = loader.resolve()
+
+        def _build() -> str:
+            return loader.build_system_prompt(
+                soul=ctx.condensed,
+                lang_instruction="",
+                awareness="",
+                capabilities="",
+                guardrails=ctx.guardrails,
+                tone=ctx.tone,
+                banned_phrases=ctx.banned_phrases,
+                truncation_note=ctx.truncation_note,
+            )
+
+        first, second = _build(), _build()
+        stable = first == second
+        detail = f"{len(first):,} chars · ~{round(len(first) / 4):,} tok"
+        if not stable:
+            detail += " · NOT byte-stable — the prompt cache will miss every turn"
+        results.append(_check("Prompt prefix", stable, detail, warn=not stable))
+    except Exception as exc:  # noqa: BLE001
+        results.append(_check("Prompt prefix", False, str(exc)[:120], warn=True))
+
+    return results
 
 
 def check_wiring() -> list[tuple[str, bool, str]]:
@@ -1513,4 +2680,151 @@ def migrate_packs(
         print(f"  ✓ migrated {src.name}")
 
     if migrated:
-        print(f"\n  {migrated} pack(s) migrated to ~/.navig/plugins/. Legacy `navig package` reads plugins/ first.")
+        # `navig package` does not exist — the plugin surface is `navig plugin`.
+        print(
+            f"\n  {migrated} pack(s) migrated to ~/.navig/plugins/. "
+            "See them with `navig plugin list`."
+        )
+
+
+@doctor_app.command("clean-path")
+def clean_path_cmd(
+    apply: bool = typer.Option(False, "--apply", help="Actually rewrite PATH (default: dry-run)"),
+    json_output: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """Prune non-existent and duplicate directories from the persistent user PATH (Windows).
+
+    The companion to the `PATH health` check: that row reports how much of PATH is
+    reclaimable, this reclaims it. Only two classes are ever removed — directories that
+    do not exist, and exact duplicates — because neither can affect command resolution,
+    so no judgement is made about what the operator still uses.
+
+    Why it matters: cmd.exe truncates PATH at 8191 chars, and past that every command
+    resolved through a shell fails naming a tool that IS installed. On this developer's
+    machine 76 dead ``AppData/Local/Temp/<random>`` entries had leaked into the persistent
+    user PATH, and a nested `npm run` chain crossed the ceiling.
+
+    Dry-run by default; `--apply` writes. The previous value is saved under
+    `<config>/backups/` first, and only the USER PATH is touched — the machine PATH
+    needs admin and is not navig's to rewrite.
+    """
+    import json as _json
+
+    from navig import console_helper as ch
+
+    if os.name != "nt":
+        # The 8191 ceiling is a cmd.exe property. Say so plainly rather than pruning a
+        # POSIX PATH for a problem it does not have.
+        msg = "clean-path is Windows-only (the 8191-char ceiling is a cmd.exe property)"
+        if json_output:
+            print(_json.dumps({"supported": False, "reason": msg}))
+        else:
+            ch.warning(msg)
+        raise typer.Exit(1)
+
+    import winreg
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_READ) as key:
+            # winreg does NOT expand REG_EXPAND_SZ, which is what we want: expanding
+            # %VAR% and writing the result back is how a PATH gets silently baked.
+            raw, kind = winreg.QueryValueEx(key, "Path")
+    except FileNotFoundError:
+        raw, kind = "", winreg.REG_EXPAND_SZ
+    except OSError as exc:
+        msg = f"could not read the user PATH from the registry: {exc}"
+        if json_output:
+            print(_json.dumps({"supported": True, "error": msg}))
+        else:
+            ch.error(msg)
+        raise typer.Exit(1) from exc
+
+    entries = [e for e in str(raw).split(os.pathsep) if e.strip()]
+    kept, removed = partition_path_entries(entries)
+    new_value = os.pathsep.join(kept)
+    freed = len(raw) - len(new_value)
+
+    if json_output:
+        print(
+            _json.dumps(
+                {
+                    "supported": True,
+                    "applied": bool(apply and removed),
+                    "before_chars": len(raw),
+                    "after_chars": len(new_value),
+                    "freed_chars": freed,
+                    "removed": [{"entry": e, "reason": r} for e, r in removed],
+                },
+                indent=2,
+            )
+        )
+        if not (apply and removed):
+            return
+
+    if not json_output:
+        if not removed:
+            ch.success(f"User PATH is already clean ({len(raw)} chars, {len(entries)} entries)")
+            return
+        table = ch.Table(box=None, show_header=True, padding=(0, 2))
+        table.add_column("Reason", no_wrap=True)
+        table.add_column("Chars", no_wrap=True, justify="right")
+        table.add_column("Directory")  # the one wrappable column
+        for entry, reason in removed:
+            colour = "yellow" if reason == "duplicate" else "red"
+            table.add_row(f"[{colour}]{reason}[/{colour}]", str(len(entry) + 1), entry)
+        ch.console.print(table)
+        ch.info(
+            f"{len(removed)} entr{'y' if len(removed) == 1 else 'ies'} · "
+            f"{len(raw)} → {len(new_value)} chars (frees {freed})"
+        )
+
+    if not apply:
+        if not json_output:
+            ch.info("dry-run — re-run with --apply to write it")
+        return
+
+    # A prune that empties PATH is a bug, not a clean machine. Refuse rather than write.
+    if not kept:
+        ch.error("refusing to write: every entry would be removed")
+        raise typer.Exit(1)
+
+    backup_dir = config_dir() / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup = backup_dir / f"path-user-{time.strftime('%Y%m%d-%H%M%S')}.txt"
+    backup.write_text(str(raw), encoding="utf-8")
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE) as key:
+            # Preserve the ORIGINAL value kind: rewriting a REG_EXPAND_SZ PATH as REG_SZ
+            # turns every %VAR% in it into a literal that resolves to nothing.
+            winreg.SetValueEx(key, "Path", 0, kind, new_value)
+    except OSError as exc:
+        ch.error(f"could not write the user PATH: {exc} (unchanged; backup at {backup})")
+        raise typer.Exit(1) from exc
+
+    _broadcast_environment_change()
+    ch.success(f"User PATH rewritten — freed {freed} chars. Backup: {backup}")
+    ch.info("open a NEW terminal to pick it up; restore by pasting the backup back if needed")
+
+
+def _broadcast_environment_change() -> None:
+    """Tell running shells the environment changed. Best-effort by design.
+
+    Without it the new PATH only reaches processes started after the next logon. A
+    failure here means "existing windows keep the old PATH", which is a nuisance, not a
+    reason to fail a write that already succeeded.
+    """
+    try:
+        import ctypes
+
+        ctypes.windll.user32.SendMessageTimeoutW(
+            0xFFFF,  # HWND_BROADCAST
+            0x1A,  # WM_SETTINGCHANGE
+            0,
+            "Environment",
+            0x2,  # SMTO_ABORTIFHUNG
+            5000,
+            None,
+        )
+    except Exception:  # noqa: BLE001 — a notification must never fail the command
+        pass

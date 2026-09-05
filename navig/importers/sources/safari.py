@@ -36,11 +36,24 @@ class SafariImporter(BaseImporter):
                 self._walk(children=[child], folder_path=[], items=items)
             return items
         except Exception as exc:
-            logger.warning("[%s] %s", self.SOURCE_NAME, exc)
-            return []
+            return self._fail(exc)
+
+    @staticmethod
+    def _leaf_title(node: dict) -> str:
+        """A LEAF's title, which Safari stores in ``URIDictionary['title']``.
+
+        Only *folder* nodes (``WebBookmarkTypeList``) carry a top-level ``Title``. A
+        bookmark (``WebBookmarkTypeLeaf``) puts its name here instead, so reading only
+        ``Title`` silently labelled every real bookmark with its own URL — and because
+        folders DO have ``Title``, the folder tree looked correct, which masked it.
+        """
+        uri = node.get("URIDictionary")
+        return str(uri.get("title") or "") if isinstance(uri, dict) else ""
 
     def _walk(self, children: list[dict], folder_path: list[str], items: list[ImportedItem]) -> None:
         for node in children:
+            # `Title` still wins where present (folders, and any exporter that writes it
+            # on a leaf); URIDictionary is the fallback Safari actually uses.
             title = str(node.get("Title") or "")
             url = str(node.get("URLString") or "")
             nested = node.get("Children", [])
@@ -50,12 +63,13 @@ class SafariImporter(BaseImporter):
                     ImportedItem(
                         source=self.SOURCE_NAME,
                         type=self.ITEM_TYPE,
-                        label=title or url,
+                        label=title or self._leaf_title(node) or url,
                         value=url,
                         meta={"folder": "/".join(folder_path)},
                     )
                 )
 
             if isinstance(nested, list) and nested:
+                # Folder path stays sourced from the folder's own `Title` only.
                 next_path = folder_path + ([title] if title else [])
                 self._walk(children=nested, folder_path=next_path, items=items)

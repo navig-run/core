@@ -71,6 +71,14 @@ def _discover_actions() -> int:
     return len(_load_all_actions())
 
 
+def _discover_output_styles() -> int:
+    from navig.ui.output_styles import load_output_styles
+
+    # Only the builtin tier counts: a style found in the developer's own
+    # ~/.navig/output-styles/ would mask an empty shipped directory.
+    return len([s for s in load_output_styles() if s.source == "builtin"])
+
+
 # subdir -> (what actually loads it, how). A `None` loader means the directory is resolved
 # as a plain path by a named consumer rather than by a discovery function; the asset that
 # consumer resolves is named so the guard proves the exact file it depends on is shipped.
@@ -80,6 +88,7 @@ LOADER_BACKED = {
     "skills": _discover_skills,          # commands/skills._resolve_skills_dirs
     "prompts": _discover_prompts,        # prompts/loader.load_prompt
     "actions": _discover_actions,        # commands/action (absorbs builtin into the store)
+    "output-styles": _discover_output_styles,  # ui/output_styles.load_output_styles
 }
 
 PATH_BACKED = {

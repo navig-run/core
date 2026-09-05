@@ -8,10 +8,6 @@ All tests are hermetic — no real wiki files required.
 
 from __future__ import annotations
 
-import json
-import math
-from pathlib import Path
-
 import pytest
 
 from navig.wiki_rag import BM25Index, TextTokenizer, WikiDocument
@@ -82,10 +78,17 @@ class TestTextTokenizer:
         assert "test" in result
 
     def test_filters_short_words(self):
-        # Words ≤2 chars filtered out
-        result = TextTokenizer.tokenize("go on do it up")
+        # Words <=2 chars are filtered out. The input used to be "go on do it up" -- every
+        # word <=2 chars -- so tokenize() correctly returned [] and the `for w in result`
+        # loop below never executed: the test asserted nothing at all. A mixed input makes
+        # both halves of the rule observable: the short words go, the long ones stay.
+        result = TextTokenizer.tokenize("go on running do quickly it")
+        assert result, "tokenize() dropped everything; the assertions below cannot run"
         for w in result:
             assert len(w) > 2
+        assert "running" in result and "quickly" in result, (
+            f"words longer than 2 chars must survive filtering: {result}"
+        )
 
     def test_non_alphanumeric_split(self):
         result = TextTokenizer.tokenize("foo-bar baz.qux")

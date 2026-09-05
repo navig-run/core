@@ -735,6 +735,7 @@ def cmd_init(
         ch.dim("  navig wiki list           - View all pages")
     else:
         ch.error("Failed to initialize wiki")
+        raise typer.Exit(1)
 
 
 @wiki_app.command("list")
@@ -1152,7 +1153,7 @@ def links_broken():
     ch.dim("")
 
     for b in broken:
-        ch.error(f"  {b['file']}:{b['line']} → [[{b['link']}]]")
+        ch.error(f"  {b['file']}:{b['line']} → \\[\\[{b['link']}]]")
 
 
 @wiki_app.command("publish")

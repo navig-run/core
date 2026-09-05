@@ -9,7 +9,6 @@ import hashlib
 import hmac
 import time
 from datetime import datetime, timezone
-from unittest.mock import patch
 
 # ---------------------------------------------------------------------------
 # SignatureConfig

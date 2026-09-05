@@ -141,7 +141,7 @@ navig backup export                       # Export NAVIG config
 navig backup import backup.json           # Import NAVIG config
 navig backup run --all                    # Full server backup
 navig backup run --db-all --compress gzip # All databases, compressed
-navig backup restore <name>               # Restore from backup
+navig backup restore <name>               # NOT IMPLEMENTED - lists contents, exits 1
 navig backup remove <name>                # Delete backup
 ```
 

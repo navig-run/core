@@ -55,8 +55,17 @@ class ImageProvider(Enum):
 
 
 # Which ImageProvider a bare vault/media key label maps to (for the smart default).
+#
+# NOTE "openai" → OPENAI_GPT_IMAGE, not OPENAI: OPENAI is the DALL-E 3 path, and
+# OpenAI has retired that model — a current project-scoped key (sk-proj-...) gets
+# `400 The model 'dall-e-3' does not exist`, which reads like a broken key rather
+# than a stale model id (observed 2026-08-25 on a live key with credit). gpt-image-1
+# is its successor and is already fully implemented here as OPENAI_GPT_IMAGE, so a
+# freshly configured OpenAI key now works out of the box. The DALL-E path stays
+# reachable for anyone whose org still has it: IMAGE_PROVIDER=openai, or
+# `navig config set generate.image_provider openai`.
 _IMAGE_KEY_TO_PROVIDER: dict[str, ImageProvider] = {
-    "openai": ImageProvider.OPENAI,
+    "openai": ImageProvider.OPENAI_GPT_IMAGE,
     "recraft": ImageProvider.RECRAFT,
     "google": ImageProvider.GEMINI_FLASH,
     "stability": ImageProvider.STABILITY,
@@ -140,6 +149,12 @@ class ImageSize(Enum):
     SQUARE_LARGE = "1024x1024"
     LANDSCAPE = "1792x1024"
     PORTRAIT = "1024x1792"
+    # gpt-image-1's own aspect ratios. The 1792 sizes above are DALL·E 3's, and DALL·E 3
+    # is gone from accounts now (see the note at the top of this module) — so the only
+    # portrait size the enum offered could not be used by the only model that works, and
+    # asking for it returns a 400 that names the MODEL rather than the size.
+    PORTRAIT_GPT = "1024x1536"
+    LANDSCAPE_GPT = "1536x1024"
 
 
 class ImageQuality(Enum):

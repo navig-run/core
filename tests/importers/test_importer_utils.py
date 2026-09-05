@@ -6,8 +6,6 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from navig.importers.utils import (
     chrome_default_path,
     edge_default_path,

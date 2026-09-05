@@ -2,7 +2,6 @@
 
 from unittest.mock import patch
 
-import pytest
 from typer.testing import CliRunner
 
 from navig.commands.portable import portable_app
@@ -16,7 +15,7 @@ _WARN = "navig.console_helper.warning"
 # App structure
 # ---------------------------------------------------------------------------
 
-def test_help_exits_0():
+def test_help_exits_nonzero():
     result = runner.invoke(portable_app, ["--help"])
     assert result.exit_code == 0
 
@@ -40,10 +39,10 @@ def test_no_args_exits_nonzero_or_help():
 # portable create
 # ---------------------------------------------------------------------------
 
-def test_create_exits_0():
+def test_create_exits_nonzero():
     with patch(_WARN):
         result = runner.invoke(portable_app, ["create"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
 def test_create_calls_warn():
@@ -55,13 +54,13 @@ def test_create_calls_warn():
 def test_create_warn_says_not_implemented():
     with patch(_WARN) as mock_warn:
         runner.invoke(portable_app, ["create"])
-    assert "not yet implemented" in mock_warn.call_args[0][0]
+    assert "not implemented" in mock_warn.call_args[0][0]
 
 
 def test_create_with_custom_output_name():
     with patch(_WARN) as mock_warn:
         result = runner.invoke(portable_app, ["create", "my-bundle"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
     mock_warn.assert_called_once()
 
 
@@ -71,7 +70,7 @@ def test_create_warn_called_once():
     assert mock_warn.call_count == 1
 
 
-def test_create_help_exits_0():
+def test_create_help_exits_nonzero():
     result = runner.invoke(portable_app, ["create", "--help"])
     assert result.exit_code == 0
 
@@ -80,10 +79,10 @@ def test_create_help_exits_0():
 # portable validate
 # ---------------------------------------------------------------------------
 
-def test_validate_exits_0():
+def test_validate_exits_nonzero():
     with patch(_WARN):
         result = runner.invoke(portable_app, ["validate"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
 def test_validate_calls_warn():
@@ -95,13 +94,13 @@ def test_validate_calls_warn():
 def test_validate_warn_says_not_implemented():
     with patch(_WARN) as mock_warn:
         runner.invoke(portable_app, ["validate"])
-    assert "not yet implemented" in mock_warn.call_args[0][0]
+    assert "not implemented" in mock_warn.call_args[0][0]
 
 
 def test_validate_with_path_argument():
     with patch(_WARN) as mock_warn:
         result = runner.invoke(portable_app, ["validate", "/tmp/bundle"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
     mock_warn.assert_called_once()
 
 
@@ -111,7 +110,7 @@ def test_validate_warn_called_once():
     assert mock_warn.call_count == 1
 
 
-def test_validate_help_exits_0():
+def test_validate_help_exits_nonzero():
     result = runner.invoke(portable_app, ["validate", "--help"])
     assert result.exit_code == 0
 

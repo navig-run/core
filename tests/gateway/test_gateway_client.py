@@ -3,14 +3,16 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from navig._daemon_defaults import _DAEMON_PORT, _GATEWAY_PORT
 
 
 def _make_config_mock(raw: dict):
     mgr = MagicMock()
+    # BOTH readers, deliberately. `gateway_cli_defaults` reads the pydantic-validated
+    # view (port/host are schema-declared); `gateway_request_headers` MUST NOT, because
+    # that view drops `gateway.auth` entirely -- see tests/gateway/test_cli_gateway_auth.py.
     mgr._load_global_config.return_value = raw
+    mgr.get_global_config.return_value = raw
     return mgr
 
 

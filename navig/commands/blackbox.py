@@ -131,7 +131,7 @@ def blackbox_record(
     rec = _recorder()
     event = rec.record(et, {"message": msg}, tags=tag or [], source=source)
     if event:
-        _ch.success(f"Recorded [{et.value}]  [dim]{event.id}[/dim]")
+        _ch.success(f"Recorded \\[{et.value}]  [dim]{event.id}[/dim]")
     else:
         _ch.warning("Recording skipped (blackbox disabled or error).")
 

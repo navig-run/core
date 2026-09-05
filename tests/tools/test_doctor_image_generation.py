@@ -1,8 +1,6 @@
 """Batch 119: tests for navig/commands/doctor.py and navig/tools/image_generation.py."""
 from __future__ import annotations
 
-import os
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -278,12 +276,29 @@ class TestImageGenerationConfig:
         assert cfg.max_concurrent == 2
 
     def test_from_env_defaults(self, monkeypatch):
+        from navig.tools import image_generation, media_providers
         from navig.tools.image_generation import ImageGenerationConfig, ImageProvider
 
         monkeypatch.delenv("IMAGE_PROVIDER", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("STABILITY_API_KEY", raising=False)
         monkeypatch.delenv("LOCAL_IMAGE_API_URL", raising=False)
+        # Clearing env is not enough: from_env() resolves keys through
+        # resolve_media_key, which falls back to the VAULT. On a machine with a real
+        # Recraft key stored there, _resolve_default_provider's smart default picked
+        # recraft ("the provider you have a key for") and this asserted OPENAI. The
+        # subject here is "no key configured ANYWHERE", so the resolver has to say so.
+        monkeypatch.setattr(media_providers, "resolve_media_key", lambda *a, **k: None)
+        # The SAME hazard one layer up, and the one that actually made this test
+        # order-dependent: _resolve_default_provider consults the PERSISTENT CONFIG
+        # (generate.image_provider / media.image_provider) before it looks at any key,
+        # and the config manager is a process-wide singleton. On a machine whose real
+        # ~/.navig/config.yaml pins a provider — this one does, `image_provider:
+        # openai_gpt_image` — the answer depended on whether an earlier test in the same
+        # xdist worker happened to isolate the singleton first. It passed alone, passed
+        # in every subset, and failed in the full suite: the classic read of a flake.
+        # "No key configured ANYWHERE" has to include the config file.
+        monkeypatch.setattr(image_generation, "_config_image_provider", lambda: None)
 
         cfg = ImageGenerationConfig.from_env()
         assert cfg.provider == ImageProvider.OPENAI

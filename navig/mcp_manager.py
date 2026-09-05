@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
+from navig.core.aio_subprocess import terminate_process_tree_sync
+from navig.core.coerce import coerce_bool
+from navig.core.proc_text import decode_console_result
 from navig.core.yaml_io import atomic_write_text
 from navig.platform import paths
 
@@ -45,7 +48,7 @@ class MCPServer:
 
     def is_enabled(self) -> bool:
         """Check if server is enabled."""
-        return self.config.get("enabled", False)
+        return coerce_bool(self.config.get("enabled", False), default=False)
 
     def is_running(self) -> bool:
         """Check if server process is running."""
@@ -102,16 +105,22 @@ class MCPServer:
 
         try:
             ch.info(f"Stopping MCP server: {self.name}")
-            self.process.terminate()
-            self.process.wait(timeout=5)
-            ch.success(f"MCP server '{self.name}' stopped")
-            return True
+            # Stop the whole tree. An npm-type server is configured as `npx <package>`, and on
+            # Windows npx resolves to npx.CMD — CreateProcess runs a .cmd through cmd.exe, so
+            # self.process is a SHELL and the real server (node) is its child. terminate() +
+            # wait() reaped the shell and reported "stopped" while node kept running; restart
+            # then started a second one on top of the orphan.
+            terminate_process_tree_sync(self.process, grace=5.0)
 
-        except subprocess.TimeoutExpired:
-            ch.warning("Server did not stop gracefully, forcing...")
-            self.process.kill()
-            self.process.wait()
-            ch.success(f"MCP server '{self.name}' forcefully stopped")
+            # Report what is TRUE, not what we attempted. The old code printed "stopped" the
+            # moment wait() returned — which it did as soon as the shell died, whether or not
+            # the server had. A stop that returns True over a live server sends restart() on
+            # to start a second one.
+            if self.is_running():
+                ch.error(f"MCP server '{self.name}' is still running after stop")
+                return False
+
+            ch.success(f"MCP server '{self.name}' stopped")
             return True
 
         except Exception as e:
@@ -120,7 +129,10 @@ class MCPServer:
 
     def restart(self) -> bool:
         """Restart the MCP server."""
-        self.stop()
+        if not self.stop():
+            # Do not fall through to start(): it would find the old process still alive, warn
+            # "already running" and return True — reporting a restart that never happened.
+            return False
         return self.start()
 
     def get_status(self) -> dict[str, Any]:
@@ -158,28 +170,62 @@ class MCPManager:
         self._load_servers()
 
     def _load_servers(self):
-        """Load MCP servers from configuration file."""
-        if not self.servers_file.exists():
-            self.servers = {}
-            return
+        """Load MCP servers from configuration file.
+
+        A failed READ must never become a destructive WRITE. This used to reset
+        `self.servers = {}` on any failure, and every mutating verb is
+        load -> mutate -> `_save_servers()` — so one transient lock (an antivirus,
+        or a read landing mid-replace) followed by `navig mcp add` wrote an empty
+        store over EVERY configured server. `load_json_for_update` is the canonical
+        reader for a read-modify-write: it rides out transient locks and then
+        distinguishes "absent or genuinely empty" (safe to overwrite) from "has
+        content but could not be read" (never overwrite).
+        """
+        from navig.core.json_io import JsonReadError, load_json_for_update
+
+        self.servers = {}
+        self._load_failed = False
 
         try:
-            with open(self.servers_file, encoding='utf-8') as f:
-                servers_config = json.load(f)
-
-            for name, config in servers_config.items():
-                self.servers[name] = MCPServer(name, config)
-
-            # (this used to print "Loaded N MCP server(s)" on EVERY mcp command,
-            # before the command's own output — bookkeeping is not a result.)
-            logger.debug("Loaded %d MCP server(s)", len(self.servers))
-
-        except Exception as e:
+            servers_config = load_json_for_update(self.servers_file, default={})
+        except JsonReadError as e:
+            self._load_failed = True
             ch.error(f"Failed to load MCP servers: {e}")
-            self.servers = {}
+            return
 
-    def _save_servers(self):
-        """Save MCP servers to configuration file (atomic write)."""
+        for name, config in servers_config.items():
+            self.servers[name] = MCPServer(name, config)
+
+        # (this used to print "Loaded N MCP server(s)" on EVERY mcp command,
+        # before the command's own output — bookkeeping is not a result.)
+        logger.debug("Loaded %d MCP server(s)", len(self.servers))
+
+    def _save_servers(self) -> bool:
+        """Save MCP servers to configuration file (atomic write). False if not saved.
+
+        Two failures used to be silent here. It printed the write error and returned
+        None while every caller went straight on to `ch.success("... installed")`, so
+        a full disk reported a server that was never stored; and it would happily
+        write an EMPTY store over a populated file when the preceding load had failed
+        (see `_load_servers`). Both are the same contract: do not claim a change that
+        is not on disk, and never let a failed read decide what gets written.
+        """
+        if getattr(self, "_load_failed", False):
+            from navig.core import incidents
+
+            incidents.record(
+                incidents.STORE_WRITE_REFUSED,
+                store="mcp_servers",
+                path=str(self.servers_file),
+            )
+            ch.error(
+                "Refusing to save MCP servers: the existing "
+                f"{self.servers_file.name} could not be read, so writing now would "
+                f"replace it with an incomplete set. Fix or move "
+                f"{self.servers_file}, then retry."
+            )
+            return False
+
         try:
             servers_config = {name: server.config for name, server in self.servers.items()}
 
@@ -188,9 +234,11 @@ class MCPManager:
             tmp_path.replace(self.servers_file)
 
             logger.debug("Saved %d MCP server(s)", len(self.servers))
+            return True
 
         except Exception as e:
             ch.error(f"Failed to save MCP servers: {e}")
+            return False
 
     def search_directory(self, query: str) -> list[dict[str, Any]]:
         """Search MCP directory for servers.
@@ -318,12 +366,11 @@ class MCPManager:
                     ch.error("npm not found on PATH — install Node.js to add npm-based MCP servers")
                     return False
                 ch.step("Installing npm package…")
-                result = subprocess.run(
+                result = decode_console_result(subprocess.run(
                     [npm, "install", "-g", package],
                     capture_output=True,
-                    text=True,
-                    timeout=_INSTALL_TIMEOUT,
-                )
+                                        timeout=_INSTALL_TIMEOUT,
+                ))
 
                 if result.returncode != 0:
                     ch.error(f"npm install failed: {result.stderr.strip() or 'unknown error'}")
@@ -374,7 +421,8 @@ class MCPManager:
             }
 
             self.servers[name] = MCPServer(name, config)
-            self._save_servers()
+            if not self._save_servers():
+                return False
 
             ch.success(f"MCP server '{name}' installed")
             # (was a NON-f-string: it printed the literal "{name}" — and named a
@@ -413,7 +461,8 @@ class MCPManager:
 
         # Remove from configuration
         del self.servers[name]
-        self._save_servers()
+        if not self._save_servers():
+            return False
 
         ch.success(f"MCP server '{name}' uninstalled")
         ch.warning("Package may still be installed globally - remove manually if needed")
@@ -426,7 +475,8 @@ class MCPManager:
             return False
 
         self.servers[name].config["enabled"] = True
-        self._save_servers()
+        if not self._save_servers():
+            return False
         ch.success(f"MCP server '{name}' enabled")
         return True
 
@@ -443,7 +493,8 @@ class MCPManager:
             server.stop()
 
         server.config["enabled"] = False
-        self._save_servers()
+        if not self._save_servers():
+            return False
         ch.success(f"MCP server '{name}' disabled")
         return True
 

@@ -556,3 +556,112 @@ def test_tool_connector_list_uses_list_all_directly() -> None:
     assert row["can_search"] is True
     assert row["can_fetch"] is False
     assert row["can_act"] is True
+
+
+# ---------------------------------------------------------------------------
+# OAuth connectors: a failed token injection must fail FAST and say why.
+#
+# Regression: `await ConnectorAuthManager().inject_token(connector)` discarded its
+# return value, so a disconnected/unrefreshable connector fell through and ran the
+# operation tokenless. The agent got whatever the connector or upstream produced
+# ("no access token", a bare 401) instead of an actionable message -- and because
+# search/fetch/act are wrapped by the connector CircuitBreaker, those auth failures
+# were charged to the breaker: three calls to a disconnected connector opened it for
+# 30s, so the first call AFTER the user connected was rejected too.
+#
+# Every pre-existing test here uses requires_oauth=False, which skips the injection
+# branch entirely -- that is why this was never caught.
+# ---------------------------------------------------------------------------
+
+
+def _oauth_connector_class(cid: str = "oauthconn") -> type[BaseConnector]:
+    """A connector that requires OAuth and records whether it was ever invoked."""
+
+    class _OAuthConn(BaseConnector):
+        manifest = ConnectorManifest(
+            id=cid,
+            display_name="OAuth Conn",
+            description="Requires OAuth.",
+            domain=ConnectorDomain.DATA,
+            icon="🔐",
+            requires_oauth=True,
+        )
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.search_called = False
+
+        async def search(self, query: str, **kw: Any):  # type: ignore[override]
+            self.search_called = True
+            return []
+
+        async def fetch(self, resource_id: str, **kw: Any):  # type: ignore[override]
+            return None
+
+        async def act(self, action: Action):  # type: ignore[override]
+            return ActionResult(success=False, error="stub")
+
+        async def health_check(self):
+            from navig.connectors.types import HealthStatus
+
+            return HealthStatus(ok=True, latency_ms=0.0)
+
+    return _OAuthConn
+
+
+@pytest.mark.asyncio
+async def test_failed_injection_raises_actionable_error_and_skips_the_call():
+    from navig.connectors.errors import ConnectorAuthError
+
+    reg = _fresh_registry(_oauth_connector_class())
+    connector = reg.get("oauthconn")
+
+    with patch(
+        "navig.connectors.auth_manager.ConnectorAuthManager.inject_token",
+        AsyncMock(return_value=False),  # token missing / refresh failed
+    ):
+        with pytest.raises(ConnectorAuthError) as exc:
+            await handle_connector_call(
+                "connector_oauthconn_search", {"query": "hi"}, registry=reg
+            )
+
+    assert "not connected" in str(exc.value).lower()
+    assert "settings" in str(exc.value).lower(), "the error must tell the user what to do"
+    assert connector.search_called is False, (
+        "a tokenless call must never reach the connector -- it would be charged to "
+        "the CircuitBreaker's failure budget as if the upstream were down"
+    )
+
+
+@pytest.mark.asyncio
+async def test_successful_injection_still_runs_the_operation():
+    reg = _fresh_registry(_oauth_connector_class())
+    connector = reg.get("oauthconn")
+
+    with patch(
+        "navig.connectors.auth_manager.ConnectorAuthManager.inject_token",
+        AsyncMock(return_value=True),
+    ):
+        result = await handle_connector_call(
+            "connector_oauthconn_search", {"query": "hi"}, registry=reg
+        )
+
+    assert result == {"results": []}
+    assert connector.search_called is True
+
+
+@pytest.mark.asyncio
+async def test_injection_raising_is_reported_as_an_auth_error_not_swallowed():
+    """inject_token swallows internally, but belt-and-braces: a raise must not leak."""
+    from navig.connectors.errors import ConnectorAuthError
+
+    reg = _fresh_registry(_oauth_connector_class())
+
+    with patch(
+        "navig.connectors.auth_manager.ConnectorAuthManager.inject_token",
+        AsyncMock(side_effect=RuntimeError("vault locked")),
+    ):
+        with pytest.raises(ConnectorAuthError):
+            await handle_connector_call(
+                "connector_oauthconn_search", {"query": "hi"}, registry=reg
+            )

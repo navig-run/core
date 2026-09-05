@@ -290,7 +290,7 @@ def action_run(
 
     ch.dim(f"→ {command}")
     if dry_run:
-        ch.info("[dry-run] Command not executed.")
+        ch.info("[yellow]DRY RUN:[/yellow] Command not executed.")
         return
 
     try:

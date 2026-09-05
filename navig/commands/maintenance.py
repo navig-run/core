@@ -37,6 +37,14 @@ def update_packages(options: dict) -> None:
     server_config = config_manager.load_server_config(active_server)
 
     dry_run = options.get("dry_run", False)
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    # Only on the real path — a --dry-run touches nothing, so it must not contend
+    # for the lock. This family runs apt/logrotate, which is the incident #1099 exists for.
+    if not dry_run:
+        from navig.core import host_lock  # noqa: PLC0415
+
+        host_lock.guard_remote(config_manager, active_server, "navig maintenance update-packages (apt)")
     json_output = options.get("json", False)
 
     result_data = {
@@ -181,6 +189,14 @@ def clean_packages(options: dict) -> None:
     server_config = config_manager.load_server_config(active_server)
 
     dry_run = options.get("dry_run", False)
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    # Only on the real path — a --dry-run touches nothing, so it must not contend
+    # for the lock. This family runs apt/logrotate, which is the incident #1099 exists for.
+    if not dry_run:
+        from navig.core import host_lock  # noqa: PLC0415
+
+        host_lock.guard_remote(config_manager, active_server, "navig maintenance clean-packages (apt)")
     json_output = options.get("json", False)
 
     result_data = {
@@ -265,6 +281,14 @@ def rotate_logs(options: dict) -> None:
     server_config = config_manager.load_server_config(active_server)
 
     dry_run = options.get("dry_run", False)
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    # Only on the real path — a --dry-run touches nothing, so it must not contend
+    # for the lock. This family runs apt/logrotate, which is the incident #1099 exists for.
+    if not dry_run:
+        from navig.core import host_lock  # noqa: PLC0415
+
+        host_lock.guard_remote(config_manager, active_server, "navig maintenance rotate-logs (logrotate -f)")
     json_output = options.get("json", False)
 
     result_data = {
@@ -330,6 +354,14 @@ def cleanup_temp(options: dict) -> None:
     server_config = config_manager.load_server_config(active_server)
 
     dry_run = options.get("dry_run", False)
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    # Only on the real path — a --dry-run touches nothing, so it must not contend
+    # for the lock. This family runs apt/logrotate, which is the incident #1099 exists for.
+    if not dry_run:
+        from navig.core import host_lock  # noqa: PLC0415
+
+        host_lock.guard_remote(config_manager, active_server, "navig maintenance cleanup-temp")
     json_output = options.get("json", False)
 
     result_data = {
@@ -607,8 +639,14 @@ def system_info(options: dict) -> None:
 
         info_data = {}
         for key, cmd in info_commands.items():
-            result = remote_ops.run_command(server_config, cmd)
-            info_data[key] = result.strip() if result else "N/A"
+            # execute_command(command, server_config) -> CompletedProcess. This used to
+            # call run_command(server_config, cmd): a method that does not exist, with
+            # the arguments reversed, whose result was then treated as a string. The
+            # AttributeError landed in the handler below, so `system info` only ever
+            # printed "Error gathering system info: ... has no attribute 'run_command'".
+            result = remote_ops.execute_command(cmd, server_config)
+            output = (result.stdout or "").strip() if result.returncode == 0 else ""
+            info_data[key] = output or "N/A"
 
         if json_output:
             console.print(json.dumps(info_data, indent=2))

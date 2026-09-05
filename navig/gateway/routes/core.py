@@ -17,6 +17,7 @@ try:
     from aiohttp import web
 except ImportError as _exc:
     raise RuntimeError("aiohttp is required for gateway routes (pip install aiohttp)") from _exc
+from navig.core.background import spawn
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import (
     envelope_error,
@@ -169,7 +170,7 @@ def _shutdown(gw):
             await gw.stop()
             sys.exit(0)
 
-        asyncio.create_task(_d())
+        spawn(_d())
         return resp
 
     return h

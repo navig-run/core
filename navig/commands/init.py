@@ -115,11 +115,16 @@ def init_app(options: dict[str, Any]) -> None:
     navig_dir = Path.cwd() / ".navig"
 
     if navig_dir.exists():
+        # The command did NOT do what it was asked — it refused. `navig init && navig
+        # host add …` used to run the rest of the chain against an app this call never
+        # touched. (quickstart guards on `.navig` existing, so it never reaches here.)
+        import typer  # noqa: PLC0415 — module-level import would cost every `navig help`
+
         ch.error(
             "App already initialized",
             f".navig/ directory already exists in {Path.cwd()}",
         )
-        return
+        raise typer.Exit(2)
 
     if not quiet:
         ch.header("Initializing NAVIG App")
@@ -189,9 +194,11 @@ def init_app(options: dict[str, Any]) -> None:
             if not quiet:
                 ch.success("✓ Directory is accessible")
         except (PermissionError, OSError) as e:
-            ch.error(f"WARNING: Created directory but cannot access it: {e}")
+            # Its own text calls this a warning and the flow continues past it — the
+            # failure sink claimed an abort that never happens.
+            ch.warning(f"Created directory but cannot access it: {e}")
             ch.info("You may need to fix permissions manually.")
-            ch.info("Run: scripts/fix-navig-permissions.ps1 -Fix")
+            ch.info("Run: installers/fix-navig-permissions.ps1 -Fix")
 
         # Create config.yaml with app metadata
         app_name = Path.cwd().name
@@ -666,18 +673,25 @@ def show_init_status(*, render: bool = True) -> dict[str, Any]:
 
     vault_status = "empty"
     try:
-        # CredentialsVault is exported from the navig.vault package (an alias of Vault),
-        # NOT from navig.vault.core — so this import failed and the vault-status check
-        # always fell through to "empty". Vault's constructor accepts vault_path /
-        # auto_migrate and exposes list(), so the body is unchanged.
-        from navig.vault import CredentialsVault
+        # Ask the vault where the vault is. This used to build the path by hand as
+        # `navig_dir / "credentials" / "vault.db"`, which was wrong twice over:
+        # `credentials/` is the LEGACY location (navig/vault/migrate.py migrates AWAY
+        # from it) and `navig_dir` prefers the PROJECT `.navig/` when the cwd has one,
+        # while the vault is global. So it read a path nothing writes and reported
+        # "empty" for an operator with a full vault.
+        #
+        # LOOK before constructing. A Vault opens — and CREATES — its SQLite database on
+        # first connect, so probing with one turned this read-only status into a command
+        # that WROTE a vault.db (+ -wal, -shm) into whatever directory it had guessed:
+        # three stray files inside the user's project on every `navig init`.
+        from navig.vault import get_vault, vault_exists
 
-        vault = CredentialsVault(
-            vault_path=navig_dir / "credentials" / "vault.db",
-            auto_migrate=False,
-        )
-        creds = vault.list()
-        vault_status = "initialized" if creds else "empty"
+        if vault_exists():
+
+            # `list()` reads item metadata from the store and does NOT require an
+            # unlocked vault, so a locked one still reports honestly rather than
+            # collapsing to "empty".
+            vault_status = "initialized" if get_vault().list() else "empty"
     except (ImportError, RuntimeError, ValueError, OSError):
         vault_status = "empty"
 
@@ -719,7 +733,12 @@ def show_init_status(*, render: bool = True) -> dict[str, Any]:
             "kimi": ("kimi", "web/kimi_api_key", "moonshot/api_key", "moonshot_api_key"),
         }
         try:
+            # Same rule as the vault-status probe above: opening a Vault CREATES it.
+            from navig.vault import vault_exists
             from navig.vault.core import get_vault, reveal_secret
+
+            if not vault_exists():
+                return ""
 
             vault = get_vault()
             for label in label_map.get(provider_name, ()):
@@ -1522,8 +1541,10 @@ def _print_post_init_cloud_hint() -> None:
     over cloudflared + outbound uplink, with no VPS or DNS records.
     """
     from navig.core import Config
+    from navig.core.coerce import coerce_bool
     cfg = Config()
-    if bool(cfg.get("cloud.enabled", False)):
+    # coerce_bool so a stored "false" string (navig config set) reads as disabled.
+    if coerce_bool(cfg.get("cloud.enabled", False)):
         return  # already connected; nothing to advertise
     ch.info("")
     ch.info("Want the hosted Relay (relay.navig.run) + Telegram Mini App to reach this daemon?")
@@ -1583,7 +1604,7 @@ def run_init_rollback(
         ch.dim(f"  ↩  {a.description}")
 
     if dry_run:
-        ch.warning("[dry-run] No changes made.")
+        ch.warning("DRY RUN: No changes made.")
         return
 
     ctx = InstallerContext(config_dir=config_dir, profile=profile or "?")

@@ -9,10 +9,21 @@ Supports:
 No OAuth required - works with any standard ICS feed.
 """
 
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from navig.agent.proactive.providers import CalendarEvent, CalendarProvider
+
+logger = logging.getLogger(__name__)
+
+
+def _as_aware(dt: datetime) -> datetime:
+    """Return *dt* tz-aware so naive and tz-aware calendar times can be compared and
+    sorted without ``TypeError``. A naive value is interpreted as local time — the
+    convention for floating iCalendar times, and matching the naive ``datetime.now()``
+    bounds the CLI passes in."""
+    return dt if dt.tzinfo is not None else dt.astimezone()
 
 
 class ICSCalendarProvider(CalendarProvider):
@@ -92,16 +103,26 @@ class ICSCalendarProvider(CalendarProvider):
     async def _fetch_ics(self) -> str | None:
         """Fetch ICS data from URL or file."""
         if self.url:
-            try:
-                import httpx
-            except ImportError as _exc:
-                raise ImportError("Remote ICS requires: pip install httpx") from _exc
+            # SSRF: the URL is operator-configured but fetched with redirects, so
+            # a legit-looking feed that 302s to an internal address (cloud
+            # metadata, the local daemon, a LAN host) must be re-checked. Go
+            # through safe_fetch — it validates the initial URL AND every redirect
+            # hop (a bare check_url would only cover the first). Secure by default;
+            # local calendars are enabled with net.ssrf.allow_private_network.
+            from navig.net.ssrf import SsrfBlockedError, policy_from_config, safe_fetch
 
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(self.url, follow_redirects=True)
-                if resp.status_code == 200:
-                    return resp.text
+            try:
+                resp = await safe_fetch(self.url, policy_from_config())
+            except SsrfBlockedError as exc:
+                logger.warning("ICS calendar fetch blocked by SSRF policy: %s", exc)
                 return None
+            except ValueError as exc:
+                # malformed URL, non-http scheme, or redirect chain too long
+                logger.warning("ICS calendar fetch rejected: %s", exc)
+                return None
+            if resp.status_code == 200:
+                return resp.text
+            return None
 
         elif self.path and self.path.exists():
             return self.path.read_text(encoding="utf-8")
@@ -156,8 +177,14 @@ class ICSCalendarProvider(CalendarProvider):
     def _filter_events(
         self, events: list[CalendarEvent], start: datetime, end: datetime
     ) -> list[CalendarEvent]:
-        """Filter events to those within the time range."""
-        return [e for e in events if e.start >= start and e.start <= end]
+        """Filter events to those within the time range.
+
+        tz-safe: a tz-aware ``DTSTART`` (``…Z`` / ``TZID``) used to raise
+        ``TypeError: can't compare offset-naive and offset-aware datetimes`` against the
+        naive ``datetime.now()`` bounds. Both sides are coerced to aware for the compare.
+        """
+        start_a, end_a = _as_aware(start), _as_aware(end)
+        return [e for e in events if start_a <= _as_aware(e.start) <= end_a]
 
 
 class CalDAVProvider(CalendarProvider):

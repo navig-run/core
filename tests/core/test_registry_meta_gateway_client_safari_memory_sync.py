@@ -9,7 +9,6 @@ Batch 67: hermetic unit tests for
 from __future__ import annotations
 
 import plistlib
-import struct
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -156,17 +155,76 @@ class TestGatewayCliDefaults:
 
 
 class TestGatewayBaseUrl:
+    """`gateway_base_url()` resolves through `gateway_live_defaults()`, NOT
+    `gateway_cli_defaults()` — so patching only the latter is not hermetic.
+
+    `gateway_live_defaults` first reads the real `~/.navig/gateway.json` and opens a
+    TCP connection to whatever it names. On the operator's own machine that is their
+    LIVE daemon: it answered on 8789, the patched value was never consulted, and
+    `test_uses_configured_port` failed in any combined parallel run while passing
+    alone (whenever config-dir isolation held on that worker). A unit test must not
+    depend on whether the operator's daemon happens to be running, and must not open
+    sockets to it — the same class as the cron tests that created real jobs on the
+    live gateway.
+
+    `test_returns_http_url` was also VACUOUS: it patched the defaults to 8789 /
+    127.0.0.1, which is exactly what the unpatched resolver returns, so it passed
+    whether or not the patch took effect. It now uses a port no default would produce.
+
+    Discovery is stubbed at `read_gateway_discovery`, so these exercise the fallback
+    deterministically; the discovery branch itself is pinned separately below.
+    """
+
     def test_returns_http_url(self) -> None:
         from navig.gateway_client import gateway_base_url
-        with patch("navig.gateway_client.gateway_cli_defaults", return_value=(8789, "127.0.0.1")):
+        with (
+            patch("navig.gateway_client.read_gateway_discovery", return_value=None),
+            patch("navig.gateway_client.gateway_cli_defaults", return_value=(8123, "127.0.0.1")),
+        ):
             url = gateway_base_url()
-        assert url == "http://127.0.0.1:8789"
+        assert url == "http://127.0.0.1:8123"
 
     def test_uses_configured_port(self) -> None:
         from navig.gateway_client import gateway_base_url
-        with patch("navig.gateway_client.gateway_cli_defaults", return_value=(9999, "localhost")):
+        with (
+            patch("navig.gateway_client.read_gateway_discovery", return_value=None),
+            patch("navig.gateway_client.gateway_cli_defaults", return_value=(9999, "localhost")),
+        ):
             url = gateway_base_url()
         assert "9999" in url
+
+    def test_a_bind_any_host_is_rewritten_to_loopback(self) -> None:
+        """`0.0.0.0` is a bind address, not a connectable client target."""
+        from navig.gateway_client import gateway_base_url
+        with (
+            patch("navig.gateway_client.read_gateway_discovery", return_value=None),
+            patch("navig.gateway_client.gateway_cli_defaults", return_value=(9999, "0.0.0.0")),
+        ):
+            url = gateway_base_url()
+        assert url == "http://127.0.0.1:9999"
+
+    def test_a_reachable_discovery_wins_over_config(self) -> None:
+        """The whole point of the resolver: follow the self-healing bind."""
+        from navig.gateway_client import gateway_base_url
+        with (
+            patch("navig.gateway_client.read_gateway_discovery", return_value=(7777, "127.0.0.1")),
+            patch("socket.create_connection"),
+            patch("navig.gateway_client.gateway_cli_defaults", return_value=(9999, "127.0.0.1")),
+        ):
+            url = gateway_base_url()
+        assert "7777" in url, "a live discovered endpoint must win over the config port"
+
+    def test_a_stale_discovery_falls_back_to_config(self) -> None:
+        """Anti-vacuity for the test above, and the real recovery path: a recorded
+        endpoint nothing answers on must not strand every client."""
+        from navig.gateway_client import gateway_base_url
+        with (
+            patch("navig.gateway_client.read_gateway_discovery", return_value=(7777, "127.0.0.1")),
+            patch("socket.create_connection", side_effect=OSError("refused")),
+            patch("navig.gateway_client.gateway_cli_defaults", return_value=(9999, "127.0.0.1")),
+        ):
+            url = gateway_base_url()
+        assert "9999" in url, "a stale discovery file pinned clients to a dead port"
 
 
 class TestGatewayRequestHeaders:
@@ -179,9 +237,9 @@ class TestGatewayRequestHeaders:
     def test_adds_bearer_token_when_configured(self) -> None:
         from navig.gateway_client import gateway_request_headers
         mock_cfg = MagicMock()
-        mock_cfg._load_global_config.return_value = {
-            "gateway": {"auth": {"token": "secret123"}}
-        }
+        cfg = {"gateway": {"auth": {"token": "secret123"}}}
+        mock_cfg.get_global_config.return_value = cfg
+        mock_cfg._load_global_config.return_value = cfg
         with patch("navig.config.get_config_manager", return_value=mock_cfg):
             headers = gateway_request_headers()
         assert headers.get("Authorization") == "Bearer secret123"
@@ -189,6 +247,7 @@ class TestGatewayRequestHeaders:
     def test_no_auth_header_when_no_token(self) -> None:
         from navig.gateway_client import gateway_request_headers
         mock_cfg = MagicMock()
+        mock_cfg.get_global_config.return_value = {"gateway": {}}
         mock_cfg._load_global_config.return_value = {"gateway": {}}
         with patch("navig.config.get_config_manager", return_value=mock_cfg):
             headers = gateway_request_headers()

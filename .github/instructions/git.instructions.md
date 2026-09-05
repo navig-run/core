@@ -83,7 +83,7 @@ git checkout -b release/2.5.0
 # 3. Bump version, update CHANGELOG.md (move [Unreleased] to [X.Y.Z])
 # 4. PR release/2.5.0 to main
 # 5. After merge, tag via the release script (from main):
-bash scripts/release.sh 2.5.0
+bash tools/release.sh 2.5.0
 
 # 6. Back-merge main to develop
 git checkout develop && git merge main
@@ -92,7 +92,7 @@ git checkout develop && git merge main
 ### Quick tag for hotfix
 ```bash
 # From main, after hotfix merge:
-bash scripts/release.sh 2.5.1
+bash tools/release.sh 2.5.1
 ```
 
 ---
@@ -116,7 +116,7 @@ Configure in **Settings → Branches** for both `main` and `develop`:
 - Follows Keep a Changelog format (same structure as before)
 - During development: add entries under `## [Unreleased]`
 - On release: rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, add new empty `[Unreleased]` block
-- `scripts/release.sh` reads the `[X.Y.Z]` block and passes it to `gh release create` as the GitHub Release body
+- `tools/release.sh` reads the `[X.Y.Z]` block and passes it to `gh release create` as the GitHub Release body
 - Auto-generate draft entries: `git log v{prev}..HEAD --pretty="- %s (%h)"`
 - The public record is the GitHub Releases page — not a committed file
 
@@ -127,7 +127,7 @@ Configure in **Settings → Branches** for both `main` and `develop`:
 - All release tags are **annotated**: `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
 - Lightweight tags are forbidden for releases
 - Tag at the release merge commit on `main`
-- Tags are created by `scripts/release.sh` — never manually unless fixing a broken tag
+- Tags are created by `tools/release.sh` — never manually unless fixing a broken tag
 - Verify order: `git tag -l --sort=-creatordate --format="%(creatordate:short) %(refname:short)"`
 
 ---
@@ -161,7 +161,7 @@ git fetch && git rebase origin/develop
 git checkout develop && git pull
 git checkout -b release/2.5.0
 # bump version, update CHANGELOG.md, PR to main
-bash scripts/release.sh 2.5.0
+bash tools/release.sh 2.5.0
 ```
 
 ---
@@ -170,6 +170,6 @@ bash scripts/release.sh 2.5.0
 
 1. `main` only receives merges from `release/*` and `hotfix/*` — never direct commits
 2. Never `git push --force` to `main` or `develop`
-3. Never tag without `scripts/release.sh` (guards against wrong branch, dirty tree, out-of-order tags)
+3. Never tag without `tools/release.sh` (guards against wrong branch, dirty tree, out-of-order tags)
 4. Every release tag must be annotated — never lightweight
 5. `develop` must always be deployable (tests green, no broken imports)

@@ -29,6 +29,7 @@ from navig.comms.matrix_features import (
     require_matrix,
 )
 from navig.console_helper import get_console
+from navig.core.coerce import coerce_bool
 from navig.platform.paths import config_dir
 
 logger = logging.getLogger(__name__)
@@ -75,21 +76,42 @@ def _get_config() -> dict:
         return {}
 
 
-def _get_credential(profile: str = "default") -> dict:
-    """Pull Matrix credential from the vault (if available)."""
-    try:
-        from navig.vault.core import CredentialsVault
+def _item_profile(item) -> str:
+    """The profile a vault item belongs to.
 
-        vault = CredentialsVault()
-        creds = vault.list_by_provider("matrix")
-        for c in creds:
-            if c.profile_id == profile:
-                full = vault.get(c.id)
-                if full:
-                    return full.data
+    ``VaultItem`` has no ``profile_id`` attribute — it lives in ``metadata``. ``Vault.get``
+    reads it the same defensive way (``getattr`` first, then metadata) because credentials
+    added through older paths / the Telegram wizard may carry it in either place.
+    """
+    return str(getattr(item, "profile_id", None) or item.metadata.get("profile_id", "default"))
+
+
+def _get_credential(profile: str = "default") -> dict:
+    """Pull the Matrix credential for *profile* from the vault, or ``{}`` if none is stored.
+
+    Every line of this used to be wrong, and the `except` hid all of it, so it could only
+    ever return ``{}`` — `navig matrix login` never once read a stored credential:
+
+      * ``CredentialsVault`` is not in ``navig.vault.core`` (it is an alias exported from
+        ``navig.vault``), so the import alone raised ImportError;
+      * ``list_by_provider`` does not exist on ``Vault``;
+      * ``Vault.get`` takes ``(provider, profile_id)`` — not a credential id.
+
+    ``vault_exists()`` first because constructing a Vault CREATES the database (sqlite
+    connect + mkdir), and a credential *lookup* must not conjure a vault on a machine that
+    has none. A read failure is reported rather than swallowed: login can still proceed
+    from config, but the operator must know their stored credential was not used.
+    """
+    from navig.vault import get_vault, vault_exists
+
+    if not vault_exists():
         return {}
-    except Exception:
+    try:
+        cred = get_vault().get("matrix", profile_id=profile, caller="navig matrix")
+    except Exception as exc:  # noqa: BLE001 — locked/unreadable vault must not block login
+        console.print(f"[yellow]⚠[/] Could not read the Matrix credential from the vault: {exc}")
         return {}
+    return dict(cred.data) if cred and cred.data else {}
 
 
 def _run_async(coro):
@@ -172,22 +194,23 @@ def login(
         console.print(f"  Homeserver: {bot.cfg.homeserver_url}")
         if bot._client and bot._client.access_token:
             console.print(f"  Token: {bot._client.access_token[:12]}...")
-            # Persist token back to vault
+            # Persist the access token back onto the stored credential. Same three faults
+            # as _get_credential above, plus a fourth: `update` takes
+            # (credential_id, data=...) and MERGES, not a Credential object — so even a
+            # resolved import would have raised. Only an EXISTING credential is updated;
+            # login must not conjure a vault entry the operator never asked to store.
             try:
-                from navig.vault.core import CredentialsVault
+                from navig.vault import get_vault, vault_exists
 
-                vault = CredentialsVault()
-                creds = vault.list_by_provider("matrix")
-                for c in creds:
-                    if c.profile_id == profile:
-                        full = vault.get(c.id)
-                        if full:
-                            full.data["access_token"] = bot._client.access_token
-                            vault.update(full)
-                            console.print("  [dim]Token saved to vault[/]")
-                            break
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+                if vault_exists():
+                    vault = get_vault()
+                    cred = vault.get("matrix", profile_id=profile, caller="navig matrix login")
+                    if cred and vault.update(
+                        cred.id, data={"access_token": bot._client.access_token}
+                    ):
+                        console.print("  [dim]Token saved to vault[/]")
+            except Exception as exc:  # noqa: BLE001 — saving the token is best-effort
+                console.print(f"  [dim]Token not saved to vault: {exc}[/]")
 
     _run_async(_login())
 
@@ -214,7 +237,7 @@ def logout():
 def status():
     """Show Matrix connection status and account info."""
     cfg = _get_config()
-    enabled = cfg.get("enabled", False)
+    enabled = coerce_bool(cfg.get("enabled", False), default=False)
 
     table = Table(title="Matrix Status", show_header=False, border_style="dim")
     table.add_column("Key", style="bold")
@@ -242,13 +265,21 @@ def status():
 @matrix_app.command("accounts")
 def accounts():
     """List configured Matrix accounts from the vault."""
-    try:
-        from navig.vault.core import CredentialsVault
+    from navig.vault import get_vault, vault_exists
 
-        vault = CredentialsVault()
-        creds = vault.list_by_provider("matrix")
-    except Exception:
-        console.print("[yellow]![/] Vault not available or no Matrix credentials stored")
+    # Third site of the same dead lookup: this command could only ever reach its `except`,
+    # so it ALWAYS printed "Vault not available or no Matrix credentials stored" — a listing
+    # command reporting an empty vault over a full one. `list()` returns VaultItems (no
+    # decrypted payload), which is the right shape here: an account listing shows metadata
+    # and must not decrypt secrets.
+    if not vault_exists():
+        console.print("[yellow]![/] No Matrix accounts in vault")
+        console.print("  Add one: [cyan]navig vault add --provider matrix[/]")
+        return
+    try:
+        creds = get_vault().list(provider="matrix")
+    except Exception as exc:  # noqa: BLE001 — a locked/unreadable vault is not a crash
+        console.print(f"[yellow]![/] Could not read the vault: {exc}")
         return
 
     if not creds:
@@ -267,10 +298,16 @@ def accounts():
     table.add_column("Active", justify="center")
 
     for c in creds:
-        is_active = "★" if (c.id == active_id or c.profile_id == active_id) else ""
+        # A VaultItem has NO `profile_id` attribute — it lives in metadata (which is why
+        # Vault.get itself reads `getattr(m, "profile_id", None) or m.metadata[...]`).
+        # `c.profile_id` here would AttributeError, and it sits OUTSIDE the try above, so
+        # merely repairing the import would have turned a silent no-op into a crash on the
+        # first operator with a stored account.
+        profile_id = _item_profile(c)
+        is_active = "★" if (c.id == active_id or profile_id == active_id) else ""
         user_id = c.metadata.get("user_id", "[dim]—[/]")
         hs = c.metadata.get("homeserver_url", c.metadata.get("homeserver", "[dim]—[/]"))
-        table.add_row(c.profile_id, user_id, hs, is_active)
+        table.add_row(profile_id, user_id, hs, is_active)
 
     console.print(table)
 
@@ -280,26 +317,36 @@ def use_profile(
     profile: Annotated[str, typer.Argument(help="Credential profile name to activate")],
 ):
     """Switch the active Matrix account."""
-    try:
-        from navig.vault.core import CredentialsVault
+    from navig.vault import get_vault, vault_exists
 
-        vault = CredentialsVault()
-        creds = vault.list_by_provider("matrix")
-        found = any(c.profile_id == profile for c in creds)
-        if not found:
-            console.print(f"[red]✗[/] Profile '{profile}' not found in vault")
-            console.print("  Available: " + ", ".join(c.profile_id for c in creds))
-            raise typer.Exit(1)
-    except ImportError:
-        pass  # optional dependency not installed; feature disabled
+    # Fourth dead site of the same lookup. The whole validation sat behind the broken
+    # import, so `except ImportError: pass` swallowed it and `navig matrix use <typo>`
+    # silently accepted ANY name and wrote it to config as the active account.
+    #
+    # Only enforce membership when the vault can actually be enumerated AND holds Matrix
+    # entries: a config-only Matrix setup is legitimate (login merges config), so an absent
+    # or empty vault must not start rejecting profiles that used to be accepted.
+    known: set[str] = set()
+    if vault_exists():
+        try:
+            known = {_item_profile(i) for i in get_vault().list(provider="matrix")}
+        except Exception as exc:  # noqa: BLE001 — a locked vault must not block the switch
+            console.print(f"[yellow]![/] Could not read the vault to verify the profile: {exc}")
+    # Raised OUTSIDE the except above on purpose: typer.Exit subclasses RuntimeError, so an
+    # `except Exception` around it would swallow the failure and report success.
+    if known and profile not in known:
+        console.print(f"[red]✗[/] Profile '{profile}' not found in vault")
+        console.print("  Available: " + ", ".join(sorted(known)))
+        raise typer.Exit(1)
 
     try:
         from navig.config import get_config_manager
 
-        _cm = get_config_manager()
-        _cfg = _cm.get_global_config()
-        _cfg.setdefault("comms", {}).setdefault("matrix", {})["credential_id"] = profile
-        _cm.update_global_config(_cfg)
+        # set_global is the one safe dotted write: it refreshes, deep-sets the leaf and
+        # saves, so it cannot lose a concurrent update. The previous
+        # get_global_config() → mutate → update_global_config(whole dict) round trip
+        # rewrote every key from a snapshot taken before the edit.
+        get_config_manager().set_global("comms.matrix.credential_id", profile)
         console.print(f"[green]✓[/] Active Matrix profile → [bold]{profile}[/]")
     except Exception as e:
         console.print(f"[red]✗[/] Failed to set profile: {e}")
@@ -1068,7 +1115,7 @@ def inbox_process(
         plan = agent.process_single(fp, dry_run=dry_run)
         ctype = plan.get("content_type", "?")
         target = plan.get("target_path") or "(stays in inbox)"
-        console.print(f"  [{ctype}] {fp.name} -> {target}")
+        console.print(f"  \\[{ctype}] {fp.name} -> {target}")
         if not dry_run and not plan.get("error"):
             execute_plan(bridge.project_root, plan, dry_run=False, move_source=True)
 
@@ -1564,6 +1611,53 @@ def store_rooms(
     console.print(table)
 
 
+@store_app.command("set-purpose")
+def store_set_purpose(
+    room_id: Annotated[str, typer.Argument(help="Room ID (e.g. !abc:server)")],
+    purpose: Annotated[
+        str, typer.Argument(help="general | notifications | alerts | bridge")
+    ],
+):
+    """Classify what a stored room is FOR.
+
+    The `rooms --purpose` filter and the Purpose column have always existed with nothing able
+    to write the field, so every room read "general" and the filter could only ever match the
+    default.
+    """
+    import os
+
+    from navig.comms.matrix_store import ROOM_PURPOSES, MatrixStore
+
+    if purpose not in ROOM_PURPOSES:
+        console.print(
+            f"[red]✗[/] Unknown purpose [bold]{purpose}[/] — "
+            f"expected one of: {', '.join(ROOM_PURPOSES)}"
+        )
+        raise typer.Exit(1)
+
+    db_path = str(config_dir() / "matrix.db")
+    if not os.path.exists(db_path):
+        console.print("[yellow]⚠[/] Store not initialised")
+        raise typer.Exit(1)
+
+    store = MatrixStore(db_path)
+    try:
+        updated = store.set_room_purpose(room_id, purpose)
+    finally:
+        store.close()
+
+    if not updated:
+        # Say which of the two it is: an unknown room and a no-op update look identical to a
+        # caller that only gets "failed", and the fix for each is different.
+        console.print(
+            f"[yellow]⚠[/] No room [bold]{room_id}[/] in the store — "
+            "list what is there with [bold]navig matrix store rooms[/]"
+        )
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓[/] {room_id} is now [bold]{purpose}[/]")
+
+
 @store_app.command("events")
 def store_events(
     room_id: Annotated[str, typer.Argument(help="Room ID")],
@@ -1873,7 +1967,7 @@ def bridge_deploy(
     env_file = deploy_dir / ".env"
     if not env_file.exists():
         console.print(f"[yellow]⚠[/]  .env not found at {env_file}")
-        console.print("[dim]Run the VPS installer first: bash scripts/install_vps_synapse_bridges.sh[/]")
+        console.print("[dim]Run the VPS installer first: bash installers/install_vps_synapse_bridges.sh[/]")
         raise typer.Exit(1)
 
     console.print("[cyan]Pulling bridge images…[/]")

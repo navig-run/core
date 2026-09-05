@@ -169,6 +169,33 @@ def main() -> int:
     check("gateway supersede passes a config dir", "config_dir=" in src,
           "scoped — cannot kill another brain")
 
+    # The supersede sweep is only ONE of several kill paths. Each of the others has been a
+    # machine-wide-killer bug or is one un-scope away from becoming one; the source guard
+    # (tests/quality/test_no_unscoped_process_kill.py) locks them in the repo, and these
+    # wheel-level assertions lock them in the shipped artifact — so a refactor that drops the
+    # scoping AND deletes the guard test still cannot ship a daemon-killer.
+    check("gateway _free_port is config-scoped",
+          "config_dir" in inspect.getsource(gw_mod._free_port),
+          "scoped — won't taskkill another brain's port holder")
+    check("navig bot stop routes through the scoped killer",
+          "kill_other_instances" in inspect.getsource(gw_mod.bot_stop),
+          "config-scoped (#672)")
+
+    from navig.daemon.supervisor import NavigDaemon
+
+    check("_kill_orphan_daemons is config-scoped",
+          "config_dir" in inspect.getsource(NavigDaemon._kill_orphan_daemons),
+          "scoped — navig service stop can't kill another brain (#669)")
+
+    # Read the tray source directly — importing tray_app pulls optional GUI deps not in the
+    # base wheel; a text check on the shipped file is enough for a second tripwire. Only
+    # assert when it ships (its absence is a packaging question, not a scoping regression).
+    tray_file = pkg / "desktop" / "tray_app.py"
+    if tray_file.exists():
+        check("tray orphan-bot cleanup routes through the scoped killer",
+              "kill_other_instances" in tray_file.read_text(encoding="utf-8"),
+              "config-scoped (#676)")
+
     # ── END-TO-END: the product, not its files ───────────────────────────────
     # This is the check that caught the `space init` bug. Everything above proves the FILES
     # are present; only this proves the PRODUCT works with them.

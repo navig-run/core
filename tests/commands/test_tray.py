@@ -6,11 +6,8 @@ to keep tests hermetic (no real processes).
 """
 
 import json
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from navig.commands.tray import _is_tray_running, tray_app

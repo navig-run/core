@@ -98,6 +98,7 @@ class IdentityStore:
         self._lock = threading.Lock()  # guards all write operations
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=5000")  # wait for a lock, don't error instantly
         self._conn.executescript(_DDL)
         logger.info("IdentityStore initialised at %s", self.db_path)
 
@@ -183,7 +184,20 @@ class IdentityStore:
             "SELECT * FROM navig_identities ORDER BY updated_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
-        return [self._row_to_profile(r) for r in rows]
+        # Isolated per row, NOT degraded inside _row_to_profile. This module's documented
+        # flow is `profile = store.get_or_create(...)` -> mutate -> `store.save(profile)`
+        # (see navig/identity/__init__.py), and save() re-serialises profile.socials and
+        # profile.metadata — so degrading a malformed blob on read would let the next save
+        # PERSIST the emptied value over the user's real social links. Read-side degrade is
+        # safe; a read-modify-write is not. This way one corrupt row costs that row instead
+        # of the whole listing, and get() still raises so nothing writes an emptied blob back.
+        out: list[UserProfile] = []
+        for r in rows:
+            try:
+                out.append(self._row_to_profile(r))
+            except Exception as exc:  # noqa: BLE001 - one bad row must not sink the list
+                logger.warning("identity list_all: skipping unreadable row: %s", exc)
+        return out
 
     def search_by_wallet(self, wallet: str) -> UserProfile | None:
         row = self._conn.execute(

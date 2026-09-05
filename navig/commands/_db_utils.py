@@ -6,7 +6,6 @@ database_advanced.py, and backup.py at command-dispatch time.
 """
 
 import hashlib
-import io
 import os
 import subprocess
 import tempfile
@@ -14,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from navig.core.file_permissions import set_owner_only_file_permissions
+from navig.core.proc_text import decode_console_result
 
 
 def create_mysql_config_file(user: str, password: str) -> str:
@@ -109,7 +109,7 @@ def run_mysql_query(
             db_name,
             "-e", query,
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = decode_console_result(subprocess.run(cmd, capture_output=True))
         return result.returncode == 0, result.stdout, result.stderr
     except FileNotFoundError:
         pass  # mysql CLI not installed — fall back to PyMySQL

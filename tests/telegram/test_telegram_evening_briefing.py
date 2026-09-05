@@ -57,15 +57,38 @@ def _last_text(send_mock) -> str:
 # Eve-log unit tests
 # ---------------------------------------------------------------------------
 
-class TestEveLog:
+class _IsolatedConfigDir:
+    """setup/teardown that swap ``NAVIG_CONFIG_DIR`` and put back what was there.
+
+    The suite's session fixture points ``NAVIG_CONFIG_DIR`` at an isolated temp dir. The
+    classes below need their OWN dir, so they overwrite it — and they used to **pop** it in
+    teardown instead of restoring it. Nothing sets it again, so from that point on every
+    later test in the same xdist worker resolved config to the operator's REAL ``~/.navig``.
+
+    Measured with an audit of every real-home read during a full suite run: 106 reads across
+    32 tests, and this file's three teardowns were the largest remaining cause once the
+    gateway's own hardcoded ``storage_dir`` was fixed. It is also the upstream cause of
+    ``tests/tools/test_doctor_image_generation.py::test_from_env_defaults`` failing only in
+    the full suite — the operator's real config pins an image provider, so the assertion
+    depended on whether this file had already run in that worker.
+
+    Restoring rather than popping keeps the isolation the session fixture set up.
+    """
+
     def setup_method(self):
         self._tmpdir = tempfile.TemporaryDirectory()
+        self._prev_config_dir = os.environ.get("NAVIG_CONFIG_DIR")
         os.environ["NAVIG_CONFIG_DIR"] = self._tmpdir.name
 
     def teardown_method(self):
         self._tmpdir.cleanup()
-        os.environ.pop("NAVIG_CONFIG_DIR", None)
+        if self._prev_config_dir is None:
+            os.environ.pop("NAVIG_CONFIG_DIR", None)
+        else:
+            os.environ["NAVIG_CONFIG_DIR"] = self._prev_config_dir
 
+
+class TestEveLog(_IsolatedConfigDir):
     def test_save_and_get_shipped(self):
         from navig.agent.proactive.eve_log import get_today, save_shipped
         save_shipped("Fixed login bug · Deployed v2.3")
@@ -207,15 +230,7 @@ class TestEvePrompts:
 # _handle_eve_pending_reply — reply capture
 # ---------------------------------------------------------------------------
 
-class TestEvePendingReply:
-    def setup_method(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        os.environ["NAVIG_CONFIG_DIR"] = self._tmpdir.name
-
-    def teardown_method(self):
-        self._tmpdir.cleanup()
-        os.environ.pop("NAVIG_CONFIG_DIR", None)
-
+class TestEvePendingReply(_IsolatedConfigDir):
     def _call(self, text: str, pending_type: str | None, active: bool = True):
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
@@ -364,15 +379,7 @@ class TestMorningCallback:
 # Notification briefings — morning / evening
 # ---------------------------------------------------------------------------
 
-class TestNotificationBriefings:
-    def setup_method(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        os.environ["NAVIG_CONFIG_DIR"] = self._tmpdir.name
-
-    def teardown_method(self):
-        self._tmpdir.cleanup()
-        os.environ.pop("NAVIG_CONFIG_DIR", None)
-
+class TestNotificationBriefings(_IsolatedConfigDir):
     def _mgr(self):
         from navig.gateway.notifications import TelegramNotifier
         return object.__new__(TelegramNotifier)

@@ -107,12 +107,20 @@ def test_max_tokens_out_of_range():
         LLMModeConfig(max_tokens=200000)
 
 
-def test_unknown_provider_warns(caplog):
-    """Unknown provider logs a warning but doesn't fail."""
+def test_unknown_provider_warns(navig_log_capture):
+    """An unknown provider is accepted (may be OpenAI-compatible) but MUST warn — a typo'd
+    provider silently routing is the exact silent-failure this guards against.
+
+    navig_log_capture (not caplog): the validator logs via navig.llm.router, and navig's
+    loggers set propagate=False, so caplog never sees it — tests/conftest.py.
+    """
     from navig.llm.router import LLMModeConfig
 
     cfg = LLMModeConfig(provider="banana_ai", model="test")
-    assert cfg.provider == "banana_ai"
+    assert cfg.provider == "banana_ai"  # accepted, not rejected
+    assert any("Unknown provider" in m and "banana_ai" in m for m in navig_log_capture), (
+        f"an unknown provider must WARN; got: {list(navig_log_capture)}"
+    )
 
 
 def test_extra_fields_allowed():

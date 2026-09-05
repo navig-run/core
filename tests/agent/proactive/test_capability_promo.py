@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 # Patch heavy imports before loading the module
 with patch("navig.agent.proactive.user_state.UserStateTracker._load_state"):
     from navig.agent.proactive.capability_promo import (

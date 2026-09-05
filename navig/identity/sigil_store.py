@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from navig.identity.entity import NaviEntity
 
+from navig.core.yaml_io import read_text_retrying
 from navig.platform.paths import entity_json_path as _entity_json_path
 
 
@@ -28,6 +29,14 @@ def _identity_path() -> Path:
 
 
 _SCHEMA_VERSION = 1
+
+
+class SigilReadError(RuntimeError):
+    """entity.json is present but could not be read — a transient OS lock (an AV/backup
+    agent, a read landing mid-``os.replace``) or a corrupt file. Raised on the genesis
+    path so a fresh identity is NEVER minted OVER a possibly-live one: that would silently
+    RE-IDENTIFY the node (a new seed → a different NaviEntity) — the identity twin of the
+    config-wipe class."""
 
 
 def persist_entity(entity: NaviEntity) -> None:
@@ -69,7 +78,7 @@ def load_entity() -> dict | None:
     if not _identity_path().exists():
         return None
     try:
-        raw = _identity_path().read_text(encoding="utf-8").strip()
+        raw = read_text_retrying(_identity_path()).strip()  # ride out transient OS locks
         if not raw:
             return None
         data = json.loads(raw)
@@ -121,6 +130,18 @@ def ensure_sigil(demo: bool = False) -> NaviEntity:
     data = load_entity()
     if data is not None:
         return derive_entity(data["seed"])
+
+    # load_entity() came back None. Before treating this as a first-time genesis and
+    # minting a FRESH seed — which persist_entity writes OVER entity.json, silently
+    # RE-IDENTIFYING the node — make sure the file is genuinely ABSENT. A present-but-
+    # unreadable file (a transient AV/backup lock, or a corrupt one) must never be
+    # re-seeded; fail loudly so a retry (once the lock clears) succeeds, or
+    # reset_entity() forces a deliberate re-genesis.
+    if _identity_path().exists():
+        raise SigilReadError(
+            "entity.json is present but unreadable — refusing to mint a new identity over "
+            "a possibly-live one (retry once it reads cleanly, or reset to force re-genesis)."
+        )
 
     entity = derive_entity(get_seed_for_session(demo=demo))
     persist_entity(entity)

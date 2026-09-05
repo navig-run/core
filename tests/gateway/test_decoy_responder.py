@@ -8,9 +8,6 @@ from __future__ import annotations
 
 import hashlib
 from datetime import date
-from unittest.mock import patch
-
-import pytest
 
 from navig.gateway.decoy_responder import (
     CLUES,

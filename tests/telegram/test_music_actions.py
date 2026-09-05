@@ -44,6 +44,20 @@ async def test_bare_link_replies_with_platforms(monkeypatch):
     assert kwargs.get("parse_mode") == "HTML"
 
 
+async def test_failed_send_returns_false_so_the_caller_falls_through(monkeypatch):
+    # send_message returns None on a REJECTED send (no exception raised). offer_links
+    # must then return False — the DM caller does `if offer_links(...): return`, so a
+    # True here would SKIP the normal agent reply and the user, whose card failed to
+    # send, would get nothing at all. False lets the agent reply fire as a fallback.
+    monkeypatch.setattr(music_actions, "enabled", lambda: True)
+    monkeypatch.setattr(music_actions, "resolve_links", lambda url: _FAKE)
+    ch = MagicMock()
+    ch.send_message = AsyncMock(return_value=None)  # Telegram rejected the send
+
+    assert await music_actions.offer_links(ch, 100, 5, _SPOTIFY) is False
+    ch.send_message.assert_awaited_once()  # it DID attempt the send
+
+
 async def test_non_music_text_is_noop(monkeypatch):
     monkeypatch.setattr(music_actions, "enabled", lambda: True)
     monkeypatch.setattr(music_actions, "resolve_links", lambda url: _FAKE)

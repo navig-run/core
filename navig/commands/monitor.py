@@ -19,6 +19,8 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from typing import Any, NamedTuple
 
+from navig.core.proc_text import decode_console_result
+
 try:
     import psutil  # type: ignore[import-untyped]
 except ImportError:
@@ -470,12 +472,11 @@ def get_services_info(max_services: int = 40, include_stopped: bool = False) -> 
     try:
         cmd = ["systemctl", "list-units", "--type=service", "--no-pager", "--no-legend"]
         cmd.insert(3, "--all" if include_stopped else "--state=running")
-        result = subprocess.run(
+        result = decode_console_result(subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
-            timeout=_PROBE_TIMEOUT,
-        )
+                        timeout=_PROBE_TIMEOUT,
+        ))
         lines = [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
         total = len(lines)
         rows = []

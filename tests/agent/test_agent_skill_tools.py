@@ -50,14 +50,36 @@ def _clear_ctx() -> None:
 
 
 class TestNotInitialised:
+    """"Not initialised" now means *resolution failed*, not "no context was injected".
+
+    The tool used to hold a module-global context set once at registration; with none set
+    it reported "not initialised". It now resolves the ACTIVE SPACE's shared context per
+    call — which is what lets one daemon serve many spaces, and what makes a
+    force-activation land on the instance the prompt is built from.
+
+    So these tests must break resolution to reach the branch. Patching is also what keeps
+    them hermetic: without it the handler reads the operator's real ``~/.navig/skills``.
+    """
+
     def setup_method(self):
         _clear_ctx()
 
-    def test_returns_not_initialised(self):
+    @staticmethod
+    def _break_resolution(monkeypatch):
+        def _boom(*_a, **_kw):
+            raise RuntimeError("no active space")
+
+        monkeypatch.setattr(
+            "navig.agent.skills_context.get_skills_context", _boom, raising=False
+        )
+
+    def test_returns_not_initialised(self, monkeypatch):
+        self._break_resolution(monkeypatch)
         result = handle_manage_skills("list")
         assert "not initialised" in result.lower()
 
-    def test_activate_not_initialised(self):
+    def test_activate_not_initialised(self, monkeypatch):
+        self._break_resolution(monkeypatch)
         result = handle_manage_skills("activate", skill_name="test")
         assert "not initialised" in result.lower()
 
@@ -190,19 +212,52 @@ class TestRegister:
     def teardown_method(self):
         _clear_ctx()
 
-    def test_sets_skills_ctx(self):
-        ctx = _ctx()
-        with patch("navig.agent.tools.skill_tools._AGENT_REGISTRY" if False else "navig.agent.agent_tool_registry._AGENT_REGISTRY"):
-            register_skill_tools(ctx)
-        assert skill_tools_mod._skills_ctx is ctx
+    def test_the_tool_actually_lands_in_the_registry(self):
+        """The assertion the old test was missing entirely.
 
-    def test_registry_failure_silently_ignored(self):
+        It patched `_AGENT_REGISTRY` with a `MagicMock` — which **has every attribute** —
+        so the call to `register_function` (a method that has never existed on the real
+        registry) "succeeded" against the mock, and the test then asserted only that a
+        module global had been set. The tool was absent from every live agent for as long
+        as it existed, with a green test next to it.
+
+        Assert against the REAL registry. A mock cannot fail this way.
+        """
+        from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+
+        try:
+            register_skill_tools()
+            assert "manage_skills" in _AGENT_REGISTRY
+            entry = _AGENT_REGISTRY.get_entry("manage_skills")
+            assert entry is not None and entry.toolset == "skills"
+        finally:
+            _AGENT_REGISTRY.deregister_toolset("skills")
+
+    def test_an_explicit_context_still_pins_the_tool_to_it(self):
+        """The optional override kept working for embedders that inject their own."""
+        from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+
         ctx = _ctx()
-        with patch("navig.agent.tools.skill_tools.logger") as mock_log:
-            # If registry import fails, it should just log debug
-            with patch.dict("sys.modules", {"navig.agent.agent_tool_registry": None}):
-                register_skill_tools(ctx)
-        assert skill_tools_mod._skills_ctx is ctx  # context still set
+        try:
+            register_skill_tools(ctx)
+            assert skill_tools_mod._skills_ctx is ctx
+        finally:
+            _AGENT_REGISTRY.deregister_toolset("skills")
+
+    def test_a_broken_registry_is_not_swallowed(self):
+        """Registration failure must reach the caller.
+
+        This used to be `test_registry_failure_silently_ignored`, and that swallow is
+        precisely what hid the bug: the AttributeError from the nonexistent method went to
+        `logger.debug` and the tool quietly never registered. `register_all_tools` already
+        isolates each group, so the group function does not need a second net — it needs
+        to be honest.
+        """
+        with (
+            patch.dict("sys.modules", {"navig.agent.agent_tool_registry": None}),
+            pytest.raises(ImportError),
+        ):
+            register_skill_tools()
 
 
 # ── get_skill_schemas ─────────────────────────────────────────

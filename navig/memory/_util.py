@@ -10,9 +10,16 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from navig.core.json_io import safe_json_loads as _safe_json_loads_impl
 from navig.core.yaml_io import atomic_write_text as _atomic_write_text_impl
 
 _logger = logging.getLogger("navig.memory")
+
+
+# The blob-parsing primitive now lives with the other JSON primitives in
+# navig.core.json_io (the stores outside memory/ need it too). Re-exported here so the
+# memory modules and their tests keep their existing import site — ONE implementation.
+safe_json_loads = _safe_json_loads_impl
 
 
 def _atomic_write_text(path: Path, content: str) -> None:

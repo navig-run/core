@@ -21,7 +21,7 @@ import typer
 
 from navig.console_helper import get_console
 from navig.lazy_loader import lazy_import
-from navig.platform.paths import config_dir, scripts_dir
+from navig.platform.paths import scripts_dir
 
 ch = lazy_import("navig.console_helper")
 
@@ -247,7 +247,7 @@ def ahk_doctor():
                 checks.append(("Test Execution", test_result.stderr[:30], "✗ Fail", "red"))
 
         # Check 5: Directories
-        script_dir = adapter._script_dir
+        script_dir = adapter._scripts_dir  # _script_dir (singular) never existed
         if script_dir.exists():
             checks.append(("Script Directory", str(script_dir)[:40], "✓ Pass", "green"))
         else:
@@ -871,6 +871,8 @@ def ahk_automate(
         ch.error("AI module not available")
         ch.info("The AI generation feature requires the AI assistant to be configured.")
         raise typer.Exit(1) from _exc
+    except typer.Exit:
+        raise  # deliberate exit; the catch-all below would rewrite its code
     except Exception as e:
         ch.error(f"Automation failed: {e}")
         raise typer.Exit(1) from e
@@ -946,7 +948,7 @@ def layout_save(
 
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     wm = WindowManager(adapter)
     wm.save_layout(name)
@@ -961,7 +963,7 @@ def layout_restore(
 
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     wm = WindowManager(adapter)
     wm.restore_layout(name)
@@ -976,7 +978,7 @@ def layout_list():
     console = get_console()
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     wm = WindowManager(adapter)
     layouts = wm.list_layouts()
@@ -1198,7 +1200,12 @@ def ahk_ocr(
         import pytesseract
         from PIL import Image
     except ImportError as _exc:
-        ch.error("OCR requires pytesseract and Pillow. pip install pytesseract Pillow")
+        from navig.core.ocr import OCR_INSTALL_HINT
+
+        # One install hint for every OCR surface: `navig doctor` → Media Tools,
+        # the Telegram Transcript button, and this command must not each invent
+        # their own — the binary half is the one people miss.
+        ch.error(f"OCR is not available — {OCR_INSTALL_HINT}")
         raise typer.Exit(1) from _exc
 
     img = None
@@ -1237,8 +1244,22 @@ def ahk_ocr(
             raise typer.Exit(1) from e
 
     try:
-        text = pytesseract.image_to_string(img)
+        from navig.core.ocr import ocr_language, ocr_language_gap
+
+        # Same language decision as every other OCR surface. Without it this read
+        # the operator's screen as ENGLISH: Tesseract does not decline a script it
+        # has no pack for, it returns confident-looking nonsense — so a Cyrillic
+        # window came back as plausible Latin garbage with nothing to say it was
+        # wrong. The `lang` seam is shared; the confidence filter in
+        # `extract_ocr_text_from_image_bytes` deliberately is NOT reused here,
+        # because a screen scraper that silently drops low-confidence words is a
+        # worse answer than a raw dump.
+        lang = ocr_language()
+        text = pytesseract.image_to_string(img, **({"lang": lang} if lang else {}))
         print(text)
+        if gap := ocr_language_gap():
+            # stderr on purpose: stdout is the payload and is routinely piped.
+            print(f"⚠ {gap}", file=sys.stderr)
     except Exception as e:
         ch.error(f"OCR failed: {e}")
         raise typer.Exit(1) from e
@@ -1296,7 +1317,7 @@ def ahk_listener_start():
 
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     # #SingleInstance Force in script handles replacement
     pid = adapter.run_detached(listener_path)
@@ -1476,7 +1497,7 @@ def ahk_processes(
 
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     processes = adapter.get_processes()
 
@@ -1508,7 +1529,7 @@ def ahk_kill(
     """Kill a process by name or PID."""
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     if not force:
         ch.warning(f"About to kill process: {identifier}")
@@ -1532,7 +1553,7 @@ def ahk_start(
     """Start a new process."""
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     result = adapter.start_process(executable, args, wait)
     if result.success:
@@ -1555,7 +1576,7 @@ def ahk_monitors(
 
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     monitors = adapter.get_monitors()
 
@@ -1590,7 +1611,7 @@ def ahk_move_to_monitor(
     """Move window to specific monitor."""
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     result = adapter.move_window_to_monitor(window, monitor)
     if result.success:
@@ -1610,7 +1631,7 @@ def ahk_transparency(
     """Set window transparency."""
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     result = adapter.set_window_transparency(window, opacity)
     if result.success:
@@ -1631,7 +1652,7 @@ def ahk_window_state(
 
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     state = adapter.get_window_state(window)
 
@@ -1643,7 +1664,7 @@ def ahk_window_state(
 
     if not state.get("exists"):
         ch.error(f"Window not found: {window}")
-        return
+        raise typer.Exit(2)
 
     table = Table(title=f"State: {window}")
     table.add_column("Property", style="cyan")
@@ -1666,13 +1687,15 @@ def ahk_active_window(
 
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     window = adapter.get_active_window()
 
     if not window:
+        # The QUERY failed — on Windows something always holds focus, so a falsy
+        # result means the lookup did not work, not that the desktop is empty.
         ch.error("No active window")
-        return
+        raise typer.Exit(1)
 
     if json_output:
         print(json.dumps(window.to_dict(), indent=2))
@@ -1702,7 +1725,7 @@ def ahk_find(
 
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     windows = adapter.find_windows(title, class_name)
 
@@ -1740,7 +1763,7 @@ def ahk_notify(
     """Show Windows notification."""
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     result = adapter.show_notification(title, message, duration)
     if result.success:
@@ -1759,7 +1782,7 @@ def ahk_volume(
     """Get or set system volume."""
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     if level is None:
         # Get current volume
@@ -1781,7 +1804,7 @@ def ahk_mute(
     """Mute or unmute system audio."""
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     result = adapter.mute(not unmute)
     if result.success:
@@ -1796,7 +1819,7 @@ def ahk_is_muted():
     """Check if system audio is muted."""
     adapter = _get_adapter()
     if not adapter:
-        return
+        raise typer.Exit(1)
 
     muted = adapter.is_muted()
     if muted:

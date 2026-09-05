@@ -20,12 +20,18 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from navig.core import incidents
+from navig.memory._util import safe_json_loads
+
+logger = logging.getLogger("navig.memory.links_db")
 
 # ─────────────────────────── schema ──────────────────────────────────────────
 
@@ -45,6 +51,9 @@ CREATE TABLE IF NOT EXISTS links (
     updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+"""
+
+_FTS_TABLE = """
 CREATE VIRTUAL TABLE IF NOT EXISTS links_fts USING fts5(
     id UNINDEXED,
     url,
@@ -54,22 +63,46 @@ CREATE VIRTUAL TABLE IF NOT EXISTS links_fts USING fts5(
     content='links',
     content_rowid='rowid'
 );
+"""
 
--- Keep FTS in sync via triggers
-CREATE TRIGGER IF NOT EXISTS links_fts_insert AFTER INSERT ON links BEGIN
+# ``links_fts`` is an EXTERNAL-CONTENT table (``content='links'``). For those, the index
+# may only be maintained with the special command syntax — an ordinary
+# ``UPDATE links_fts SET …`` / ``DELETE FROM links_fts …`` is illegal and leaves the
+# index disagreeing with the content table. The original triggers did exactly that, so
+# the first edit of a row silently desynced the index (the OLD title stayed searchable)
+# and the SECOND edit of that row raised "database disk image is malformed" — i.e.
+# editing the same bookmark twice broke the store. Deleting a row corrupted it the same
+# way. The correct form removes the old terms with a ``'delete'`` command (supplying the
+# values exactly as they were indexed) before inserting the new ones.
+#
+# These are DROPped and recreated on every open, NOT ``CREATE TRIGGER IF NOT EXISTS``:
+# every database written before this fix already carries the broken definitions, and
+# IF NOT EXISTS would leave them in place forever.
+_TRIGGERS = """
+DROP TRIGGER IF EXISTS links_fts_insert;
+DROP TRIGGER IF EXISTS links_fts_update;
+DROP TRIGGER IF EXISTS links_fts_delete;
+
+CREATE TRIGGER links_fts_insert AFTER INSERT ON links BEGIN
     INSERT INTO links_fts(rowid, id, url, title, notes, tags)
     VALUES (new.rowid, new.id, new.url, COALESCE(new.title,''), COALESCE(new.notes,''), COALESCE(new.tags,''));
 END;
 
-CREATE TRIGGER IF NOT EXISTS links_fts_update AFTER UPDATE ON links BEGIN
-    UPDATE links_fts SET url=new.url, title=COALESCE(new.title,''), notes=COALESCE(new.notes,''), tags=COALESCE(new.tags,'')
-    WHERE id=new.id;
+CREATE TRIGGER links_fts_delete AFTER DELETE ON links BEGIN
+    INSERT INTO links_fts(links_fts, rowid, id, url, title, notes, tags)
+    VALUES ('delete', old.rowid, old.id, old.url, COALESCE(old.title,''), COALESCE(old.notes,''), COALESCE(old.tags,''));
 END;
 
-CREATE TRIGGER IF NOT EXISTS links_fts_delete AFTER DELETE ON links BEGIN
-    DELETE FROM links_fts WHERE id=old.id;
+CREATE TRIGGER links_fts_update AFTER UPDATE ON links BEGIN
+    INSERT INTO links_fts(links_fts, rowid, id, url, title, notes, tags)
+    VALUES ('delete', old.rowid, old.id, old.url, COALESCE(old.title,''), COALESCE(old.notes,''), COALESCE(old.tags,''));
+    INSERT INTO links_fts(rowid, id, url, title, notes, tags)
+    VALUES (new.rowid, new.id, new.url, COALESCE(new.title,''), COALESCE(new.notes,''), COALESCE(new.tags,''));
 END;
 """
+
+# Bumped when the FTS index itself must be rebuilt (not the `links` table schema).
+_FTS_SCHEMA_VERSION = 1
 
 # ─────────────────────────── data model ──────────────────────────────────────
 
@@ -82,7 +115,10 @@ class LinkRecord:
         self.url: str = row["url"]
         self.title: str | None = row.get("title")
         self.notes: str | None = row.get("notes")
-        self.tags: list[str] = json.loads(row.get("tags") or "[]")
+        # safe_json_loads: LinkRecord is built inside `[LinkRecord(dict(r)) for r in
+        # rows]` on every listing/search, so one corrupt tags blob would blank the whole
+        # bookmark list. update() must not write this degraded value back — see there.
+        self.tags: list[str] = safe_json_loads(row.get("tags"), [])
         self.vault_cred_id: str | None = row.get("vault_cred_id")
         self.last_visited: datetime | None = (
             datetime.fromisoformat(row["last_visited"]) if row.get("last_visited") else None
@@ -114,12 +150,72 @@ class LinksDB:
 
     def __init__(self, db_path: Path) -> None:
         self._path = db_path
+        # Captured BEFORE connect(): a repair on a brand-new database is not an incident,
+        # it is just initialisation. Only a store that already existed can have been
+        # damaged by the old triggers, and only that is worth telling the operator about.
+        pre_existing = db_path.exists()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._con = sqlite3.connect(str(db_path), check_same_thread=False)
         self._con.row_factory = sqlite3.Row
         self._con.execute("PRAGMA journal_mode=WAL")
         self._con.execute("PRAGMA foreign_keys=ON")
+        self._con.execute("PRAGMA busy_timeout=5000")  # wait for a lock, don't error instantly
         self._con.executescript(_SCHEMA)
+        self._con.executescript(_FTS_TABLE)
+        self._con.executescript(_TRIGGERS)
+        self._con.commit()
+        self._repair_fts_index_once(pre_existing=pre_existing)
+
+    def _repair_fts_index_once(self, *, pre_existing: bool = True) -> None:
+        """Rebuild the FTS index once, for databases written by the broken triggers.
+
+        Swapping the triggers only stops NEW damage — an existing database already has an
+        index that disagrees with `links` (stale terms, and the state that made the second
+        edit of a row raise "database disk image is malformed"). ``'rebuild'`` regenerates
+        it from the content table, which is also the documented repair for a malformed
+        FTS5 index. Gated on ``PRAGMA user_version`` so it runs once, not on every open.
+
+        A repair on an EXISTING store is recorded as an incident: this is a self-healing
+        behaviour, and a daemon that heals itself and tells nobody is the exact failure
+        mode `navig.core.incidents` exists to kill. `pre_existing=False` (a database this
+        call just created) records nothing — there was no damage, only initialisation.
+        """
+        row = self._con.execute("PRAGMA user_version").fetchone()
+        if row is not None and int(row[0]) >= _FTS_SCHEMA_VERSION:
+            return
+        try:
+            self._rebuild_fts()
+        except sqlite3.DatabaseError:
+            # Never brick the store over its search index: add/list/get do not need FTS,
+            # and search() falls back to LIKE. Loud, because a silent self-heal that
+            # failed is indistinguishable from a healthy install.
+            logger.warning(
+                "links: could not rebuild the FTS index for %s — full-text search will "
+                "fall back to LIKE until it is repaired",
+                self._path,
+                exc_info=True,
+            )
+            if pre_existing:
+                incidents.record(
+                    incidents.FTS_INDEX_UNREPAIRABLE, store="links", path=str(self._path)
+                )
+            return
+        self._con.execute(f"PRAGMA user_version = {_FTS_SCHEMA_VERSION}")
+        self._con.commit()
+        if pre_existing:
+            incidents.record(
+                incidents.FTS_INDEX_REPAIRED, store="links", path=str(self._path)
+            )
+
+    def _rebuild_fts(self) -> None:
+        """Regenerate the index from `links`; recreate the table if it is past rebuilding."""
+        try:
+            self._con.execute("INSERT INTO links_fts(links_fts) VALUES('rebuild')")
+        except sqlite3.DatabaseError:
+            logger.warning("links: FTS index too damaged to rebuild in place; recreating it")
+            self._con.execute("DROP TABLE IF EXISTS links_fts")
+            self._con.executescript(_FTS_TABLE)
+            self._con.execute("INSERT INTO links_fts(links_fts) VALUES('rebuild')")
         self._con.commit()
 
     # ─────────────────────── write operations ──────────────────────────────
@@ -171,12 +267,18 @@ class LinksDB:
             return False
         new_title = title if title is not None else link.title
         new_notes = notes if notes is not None else link.notes
-        new_tags = tags if tags is not None else link.tags
         new_cred = vault_cred_id if vault_cred_id is not None else link.vault_cred_id
+        # tags is the one PARSED field, so it must not be round-tripped through
+        # link.tags: a corrupt blob degrades to [] on read (see LinkRecord), and writing
+        # that back would destroy the stored value on an unrelated edit (a title change).
+        # COALESCE leaves the column untouched unless the caller supplied new tags — a
+        # failed READ must never become a destructive WRITE.
+        new_tags_json = json.dumps(tags) if tags is not None else None
         self._con.execute(
-            """UPDATE links SET title=?, notes=?, tags=?, vault_cred_id=?, updated_at=CURRENT_TIMESTAMP
+            """UPDATE links SET title=?, notes=?, tags=COALESCE(?, tags),
+               vault_cred_id=?, updated_at=CURRENT_TIMESTAMP
                WHERE id=?""",
-            (new_title, new_notes, json.dumps(new_tags), new_cred, link_id),
+            (new_title, new_notes, new_tags_json, new_cred, link_id),
         )
         self._con.commit()
         return True
@@ -249,8 +351,11 @@ class LinksDB:
                 (query, limit),
             ).fetchall()
             return [LinkRecord(dict(r)) for r in rows]
-        except sqlite3.OperationalError:
-            # FTS syntax error: fallback to LIKE search
+        except sqlite3.DatabaseError:
+            # DatabaseError, not OperationalError: a damaged index raises the PARENT class
+            # ("database disk image is malformed"), so catching only OperationalError let
+            # search hard-fail on exactly the databases that most needed the fallback.
+            # Covers both that and the original case (an FTS query-syntax error).
             like = f"%{query}%"
             rows = self._con.execute(
                 "SELECT * FROM links WHERE url LIKE ? OR title LIKE ? OR notes LIKE ? LIMIT ?",

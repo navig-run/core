@@ -19,6 +19,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from navig.core.proc_text import console_encoding
+
 logger = logging.getLogger(__name__)
 
 # Process cmdline fragments identifying a NAVIG service process.
@@ -75,7 +77,8 @@ def process_table() -> list[tuple[int, str]]:
                     "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine } "
                     "| ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }",
                 ],
-                capture_output=True, text=True, timeout=10, creationflags=_CREATE_NO_WINDOW,
+                capture_output=True, timeout=10, creationflags=_CREATE_NO_WINDOW,
+                encoding=console_encoding(), errors="replace",
             ).stdout
             for line in out.splitlines():
                 pid_s, tab, cmd = line.partition("\t")
@@ -140,6 +143,66 @@ def config_dir_of(pid: int) -> Path | None:
         return config_dir().resolve()
     except Exception:  # noqa: BLE001
         return None
+
+
+# A process writes its pidfile just AFTER it starts, so a genuine owner's create_time is at or
+# before the file's mtime. This only absorbs clock skew, not a real elapsed window.
+_PIDFILE_SKEW_SECONDS = 60.0
+
+
+def pid_from_pidfile(path: Path, *, cmdline_contains: str | None = None) -> int | None:
+    """The PID recorded in *path* — but only if it is STILL the process that wrote it.
+
+    A pidfile records a *number*, and a number is not an identity. When the process it named
+    exits, the OS is free to hand that number to anything, so every consumer that treats the
+    file as proof is one reboot away from acting on a stranger: ``navig agent stop`` sent
+    ``taskkill /F`` to it, and ``agent status`` / ``tray`` reported "running" because *something*
+    answered to the number. The same mistake in ``navig cdp stop`` could take out an unrelated
+    process tree (fixed in cac2c1d40).
+
+    The decisive test needs no new file format: the owner writes the pidfile just after starting,
+    so its ``create_time`` is at or before the file's mtime — while a process that recycled the
+    number necessarily started *after* the file was written. That is both necessary and
+    sufficient, because only the owner held that number at the moment it wrote the file.
+    *cmdline_contains* is optional defence in depth for callers that know a stable marker.
+
+    Returns ``None`` for missing, unparseable, dead, unreadable, or recycled — every one of which
+    means "not running", which is the safe answer: a caller that gets ``None`` reports nothing
+    running and kills nothing, whereas a wrong PID gets a live process killed.
+    """
+    try:
+        pid = int(path.read_text(encoding="utf-8").strip())
+        recorded_at = path.stat().st_mtime
+    except (OSError, ValueError):
+        return None
+    if pid <= 0:
+        return None
+
+    try:
+        import psutil  # type: ignore[import-untyped]
+
+        proc = psutil.Process(pid)
+        created = proc.create_time()
+        cmdline = " ".join(proc.cmdline() or [])
+    except Exception:  # noqa: BLE001 — NoSuchProcess / AccessDenied / no psutil: not ours
+        return None
+
+    if created > recorded_at + _PIDFILE_SKEW_SECONDS:
+        logger.warning(
+            "single-instance: pid %d in %s was recycled (started %ds after the file was "
+            "written) — treating as not running rather than acting on a stranger",
+            pid, path.name, int(created - recorded_at),
+        )
+        return None
+
+    if cmdline_contains and cmdline_contains.lower() not in cmdline.lower():
+        logger.warning(
+            "single-instance: pid %d no longer looks like %s — treating as not running",
+            pid, cmdline_contains,
+        )
+        return None
+
+    return pid
 
 
 def kill_other_instances(

@@ -207,7 +207,13 @@ class WriteFileTool(BaseTool):
 
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.open(mode, encoding=encoding).write(content)
+            # Close inside the try (via the context manager): text-mode writes buffer
+            # and the real OS write happens at flush/close, so a disk-full / quota
+            # error surfaces there. Without `with`, the handle is finalized by GC
+            # *after* this block and that close-time OSError is swallowed — the tool
+            # would then report "Written N chars" over an empty or partial file.
+            with path.open(mode, encoding=encoding) as fh:
+                fh.write(content)
         except PermissionError:
             return ToolResult(
                 name=self.name,

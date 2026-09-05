@@ -20,10 +20,42 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from navig.core.yaml_io import ConfigReadError, atomic_write_text, read_text_retrying
+
+_logger = logging.getLogger("navig.core.json_io")
+
+_T = TypeVar("_T")
+
+
+def safe_json_loads(raw: object, default: _T) -> _T:
+    """Parse a stored JSON *blob* (a DB column value), degrading a NULL/empty/malformed
+    value to *default* instead of raising. The in-memory twin of :func:`load_json_safe`,
+    which does the same job for a JSON *file*.
+
+    Stores parse JSON columns inside fetch LOOPS — ``[_row_to_x(r) for r in rows]``. A
+    bare ``json.loads`` raising on ONE corrupt row there loses the ENTIRE fetch (every
+    row), not just the bad blob: a single unreadable value takes out a whole list view.
+    The common guard ``json.loads(row["x"] or "{}")`` only covers NULL/empty — a
+    non-empty *malformed* blob still raises.
+
+    This is a pure *read-side* degrade: the row's real content lives in other columns,
+    and no caller writes *default* back over the original, so it cannot erase data
+    (unlike :func:`load_json_for_update`, whose whole job is refusing that). NAVIG only
+    ever writes ``json.dumps(...)``, so a bad blob means external or partial-write
+    corruption — note it at debug level rather than crash the read. Valid JSON is
+    returned unchanged (no type coercion), matching the per-site behaviour it replaces.
+    """
+    if not isinstance(raw, str) or not raw:
+        return default
+    try:
+        return json.loads(raw)
+    except (ValueError, TypeError):
+        _logger.debug("dropping unreadable JSON blob → default: %r", raw[:80])
+        return default
 
 
 class JsonReadError(ConfigReadError):

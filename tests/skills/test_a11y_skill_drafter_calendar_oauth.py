@@ -1,10 +1,7 @@
 """Tests for browser/a11y.py, agent/skill_drafter.py, connectors/google_calendar/oauth_config.py — batch 54."""
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # browser/a11y — annotate_a11y_snapshot

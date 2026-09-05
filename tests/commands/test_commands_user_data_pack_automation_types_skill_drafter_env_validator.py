@@ -249,12 +249,26 @@ class TestSkillDraft:
 
 class TestSkillDrafter:
     def test_default_output_dir(self) -> None:
+        """#281 routed skills-dir access through `paths.skills_dir()`; this used to
+        patch a module-level `config_dir` that no longer exists, so it raised
+        AttributeError instead of checking anything."""
         from navig.agent.skill_drafter import SkillDrafter
-        fake_dir = Path("/tmp/navig_config")
+        fake_dir = Path("/tmp/navig_config/skills")
         import navig.agent.skill_drafter as sd_mod
-        with patch.object(sd_mod, "config_dir", return_value=fake_dir):
+        with patch.object(sd_mod, "skills_dir", return_value=fake_dir):
             drafter = SkillDrafter()
-        assert drafter.output_dir == fake_dir / "skills"
+        assert drafter.output_dir == fake_dir
+
+    def test_default_output_dir_follows_the_config_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The contract with no mock in the way: drafted skills land in THIS brain's
+        `config_dir()/skills`, never a machine-global spot. Pairs with
+        tests/platform/test_cross_brain_isolation.py, where skills_dir is declared
+        per-brain OWNED."""
+        from navig.agent.skill_drafter import SkillDrafter
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        assert SkillDrafter().output_dir == tmp_path / "skills"
 
     def test_custom_output_dir(self, tmp_path: Path) -> None:
         from navig.agent.skill_drafter import SkillDrafter

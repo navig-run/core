@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import re
 import secrets as _secrets
 import time
@@ -39,7 +40,10 @@ from navig.notify import prefs, store
 from navig.notify.signal_presets import DEFAULT_CHANNELS, get_preset, preset_emoji
 from navig.notify.types import PRIORITIES, TYPE_KEYS
 
+logger = logging.getLogger("navig.notify")
+
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
+_HEX_RE = re.compile(r"^[0-9a-fA-F]+$")
 _SECRET_PREFIX = "sk_sig_"
 DEFAULT_TOLERANCE_S = 300
 SIG_HEADER = "X-Navig-Signature"
@@ -150,6 +154,10 @@ def verify_and_render(
 
     # Constant-time HMAC over "{ts}.{body}".
     provided = sig[len("sha256=") :] if sig.startswith("sha256=") else sig
+    # A signature is hex. Reject a non-hex/non-ASCII value cleanly as 401 — else
+    # hmac.compare_digest raises TypeError on non-ASCII and the route 500s.
+    if not _HEX_RE.match(provided):
+        return IngestResult(False, 401, "bad signature")
     signed = ts.encode() + b"." + body
     expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected.lower(), provided.lower()):
@@ -170,7 +178,11 @@ def verify_and_render(
         body=body,
         priority=priority,
         data=data,
-        signature=provided,
+        # Canonical (lowercase) — the replay-dedupe key must NOT vary with the
+        # attacker-controlled hex case (verification compares case-insensitively,
+        # so re-casing the hex passes HMAC but would otherwise mint a fresh
+        # _SEEN key, defeating replay defence #2).
+        signature=provided.lower(),
     )
 
 
@@ -341,12 +353,19 @@ def rotate_secret(name: str) -> str:
 
 
 def record_hit(name: str) -> None:
-    """Bump the hit counter + last-seen timestamp. Best-effort."""
-    store.init_db()
-    c = store.conn()
-    with c:
-        c.execute(
-            "UPDATE notify_signal_sources "
-            "SET hit_count = hit_count + 1, last_event_at = ? WHERE name = ?",
-            (store.now_iso(), name),
-        )
+    """Bump the hit counter + last-seen timestamp. Best-effort — never raises.
+
+    Called on the ingest success path AFTER delivery, so a transient DB blip
+    (an AV/backup lock on the UPDATE) must not turn a delivered event into a 500.
+    """
+    try:
+        store.init_db()
+        c = store.conn()
+        with c:
+            c.execute(
+                "UPDATE notify_signal_sources "
+                "SET hit_count = hit_count + 1, last_event_at = ? WHERE name = ?",
+                (store.now_iso(), name),
+            )
+    except Exception:  # noqa: BLE001 — a stats blip must never fail an ingest
+        logger.debug("record_hit failed for %s", name, exc_info=True)

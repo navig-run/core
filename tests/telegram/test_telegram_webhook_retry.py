@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
-import pytest
-
 from navig.gateway.channels.telegram import TelegramChannel
 
 

@@ -14,4 +14,5 @@ def origin_default(ctx: typer.Context):
         return
     from navig import console_helper as ch
 
-    ch.warning("navig origin is not yet implemented in this build.")
+    ch.warning("`origin` is not implemented — identities already ship as: navig agent personality list / set")
+    raise typer.Exit(1)

@@ -25,6 +25,10 @@ class MatrixChannelAdapter:
     def __init__(self, config: dict[str, Any] | None = None):
         self._bot = None
         self._config = config or {}
+        # True only when WE constructed the bot. `_ensure_bot` may instead adopt the
+        # process-wide singleton, which somebody else started and is still using —
+        # stopping that on our shutdown would take Matrix down for them.
+        self._owns_bot = False
 
     def _ensure_bot(self):
         """Lazy-load and configure the NavigMatrixBot."""
@@ -37,23 +41,32 @@ class MatrixChannelAdapter:
             existing = get_matrix_bot()
             if existing and existing.is_running:
                 self._bot = existing
+                self._owns_bot = False  # borrowed — not ours to start or stop
                 return
 
             # Create new from config
             if self._config:
                 self._bot = NavigMatrixBot(self._config)
+                self._owns_bot = True
         except ImportError:
             logger.error("matrix-nio is not installed. pip install matrix-nio[e2e]")
 
     async def start(self) -> None:
-        """Start the Matrix bot (login + sync)."""
+        """Start the Matrix bot (login + sync), unless we borrowed a running one."""
         self._ensure_bot()
-        if self._bot and not self._bot.is_running:
+        if self._bot and self._owns_bot and not self._bot.is_running:
             await self._bot.start()
 
     async def stop(self) -> None:
-        """Stop the Matrix bot."""
-        if self._bot and self._bot.is_running:
+        """Stop the Matrix bot — only if this adapter created it.
+
+        A borrowed singleton belongs to whoever started it (today: the gateway's
+        `_init_comms`). Stopping it here would close their client and cancel their
+        sync loop, and `NavigMatrixBot.stop()` also clears the module-level
+        registration, so every later `get_matrix_bot()` would return None while the
+        owner still holds a reference to the now-dead object.
+        """
+        if self._bot and self._owns_bot and self._bot.is_running:
             await self._bot.stop()
 
     async def send(self, target: str, message: str, **kwargs) -> str | None:

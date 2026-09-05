@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from navig.gateway.channels.audio_menu.config import (
     FORMATS,
     PROVIDERS,
@@ -67,6 +65,7 @@ class TestProviders:
 
     def test_deepgram_models_are_aura_variants(self):
         models = PROVIDERS["deepgram"]["models"]
+        assert models, "models was empty, so the loop below asserted nothing"
         for model_id in models:
             assert "aura" in model_id, f"Unexpected deepgram model: {model_id}"
 
@@ -167,6 +166,7 @@ class TestCrossStructural:
     def test_edge_voices_follow_bcp47_format(self):
         """Edge voices should follow format: lang-REGION-VoiceName."""
         voices = PROVIDERS["edge"]["models"]["edge-neural"]["voices"]
+        assert voices, "voices was empty, so the loop below asserted nothing"
         for voice in voices:
             parts = voice.split("-")
             assert len(parts) >= 3, f"Voice '{voice}' doesn't match expected format"

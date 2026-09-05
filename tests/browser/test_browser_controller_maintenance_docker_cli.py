@@ -177,11 +177,10 @@ class TestMaintenanceModule:
             patch.object(mock_cm, "load_server_config", return_value={}),
             patch("navig.commands.maintenance.RemoteOperations", return_value=mock_ops),
         ):
-            # Should run without exception (dry_run guards remote calls)
-            try:
-                m.update_packages({"dry_run": True, "json": True})
-            except Exception:
-                pass  # allowed — remote call may still fail in unit context
+            # The comment said "should run without exception" while the try/except made
+            # raising acceptable, so this passed either way. An uncaught exception IS the
+            # assertion for a no-crash test.
+            m.update_packages({"dry_run": True, "json": True})
 
 
 # ---------------------------------------------------------------------------

@@ -1,12 +1,7 @@
 """Tests for navig/core/migrations.py and navig/core/config_loader.py — batch 86."""
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
-from unittest.mock import patch
-
 import pytest
-import yaml
 
 from navig.core.migrations import (
     CURRENT_VERSION,
@@ -182,7 +177,6 @@ from navig.core.config_loader import (
     MAX_INCLUDE_DEPTH,
     CircularDependencyError,
     ConfigLoaderError,
-    _load_yaml_recursive,
     _process_includes,
     load_config,
 )

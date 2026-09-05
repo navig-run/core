@@ -74,18 +74,20 @@ def firewall_status(options):
         console.print("[yellow]DRY RUN:[/yellow] Would check firewall status")
         return
 
-    console.print(f"\n[cyan]═══ Firewall Status - {server_name} ═══[/cyan]\n")
+    # The header is for humans; under --json it corrupts the document a script parses.
+    if not options.get("json_output"):
+        console.print(f"\n[cyan]═══ Firewall Status - {server_name} ═══[/cyan]\n")
 
     # Get UFW status
     result = remote_ops.execute_command("sudo ufw status verbose", server_config)
 
-    if result["exit_code"] != 0:
+    if result.returncode != 0:
         console.print(
-            f"[red]✗[/red] Failed to get firewall status: {result.get('stderr', 'Unknown error')}"
+            f"[red]✗[/red] Failed to get firewall status: {(result.stderr or 'Unknown error')}"
         )
         return
 
-    output = result["stdout"]
+    output = (result.stdout or "")
 
     if options.get("json_output"):
         # Parse UFW output for JSON
@@ -122,6 +124,11 @@ def firewall_add_rule(port, protocol, allow_from, options):
     """
     config_manager = get_config_manager()
     server_name = require_active_server(options, config_manager)
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, "navig security firewall add-rule")
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -160,13 +167,13 @@ def firewall_add_rule(port, protocol, allow_from, options):
 
     result = remote_ops.execute_command(command, server_config)
 
-    if result["exit_code"] == 0:
+    if result.returncode == 0:
         console.print("[green]✓[/green] Firewall rule added successfully")
-        if result["stdout"]:
-            console.print(f"[dim]{result['stdout']}[/dim]")
+        if (result.stdout or ""):
+            console.print(f"[dim]{result.stdout or ''}[/dim]")
     else:
         console.print(
-            f"[red]✗[/red] Failed to add firewall rule: {result.get('stderr', 'Unknown error')}"
+            f"[red]✗[/red] Failed to add firewall rule: {(result.stderr or 'Unknown error')}"
         )
 
 
@@ -181,6 +188,11 @@ def firewall_remove_rule(port, protocol, options):
     """
     config_manager = get_config_manager()
     server_name = require_active_server(options, config_manager)
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, "navig security firewall remove-rule")
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -201,13 +213,13 @@ def firewall_remove_rule(port, protocol, options):
 
     result = remote_ops.execute_command(command, server_config)
 
-    if result["exit_code"] == 0:
+    if result.returncode == 0:
         console.print("[green]✓[/green] Firewall rule removed successfully")
-        if result["stdout"]:
-            console.print(f"[dim]{result['stdout']}[/dim]")
+        if (result.stdout or ""):
+            console.print(f"[dim]{result.stdout or ''}[/dim]")
     else:
         console.print(
-            f"[red]✗[/red] Failed to remove firewall rule: {result.get('stderr', 'Unknown error')}"
+            f"[red]✗[/red] Failed to remove firewall rule: {(result.stderr or 'Unknown error')}"
         )
 
 
@@ -221,6 +233,11 @@ def firewall_enable(options):
     config_manager = get_config_manager()
     server_name = require_active_server(options, config_manager)
 
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, "navig security firewall enable")
+
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
 
@@ -233,12 +250,12 @@ def firewall_enable(options):
     # Use --force to avoid interactive prompt
     result = remote_ops.execute_command("sudo ufw --force enable", server_config)
 
-    if result["exit_code"] == 0:
+    if result.returncode == 0:
         console.print("[green]✓[/green] Firewall enabled successfully")
         console.print("[yellow]⚠[/yellow] Make sure SSH (port 22) is allowed to avoid lockout")
     else:
         console.print(
-            f"[red]✗[/red] Failed to enable firewall: {result.get('stderr', 'Unknown error')}"
+            f"[red]✗[/red] Failed to enable firewall: {(result.stderr or 'Unknown error')}"
         )
 
 
@@ -252,6 +269,11 @@ def firewall_disable(options):
     config_manager = get_config_manager()
     server_name = require_active_server(options, config_manager)
 
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, "navig security firewall disable")
+
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
 
@@ -263,12 +285,12 @@ def firewall_disable(options):
 
     result = remote_ops.execute_command("sudo ufw disable", server_config)
 
-    if result["exit_code"] == 0:
+    if result.returncode == 0:
         console.print("[green]✓[/green] Firewall disabled successfully")
         console.print("[yellow]⚠[/yellow] Server is now unprotected by firewall")
     else:
         console.print(
-            f"[red]✗[/red] Failed to disable firewall: {result.get('stderr', 'Unknown error')}"
+            f"[red]✗[/red] Failed to disable firewall: {(result.stderr or 'Unknown error')}"
         )
 
 
@@ -302,7 +324,7 @@ def fail2ban_status(options):
         "systemctl is-active fail2ban 2>/dev/null", server_config
     )
     service_status = (
-        service_result["stdout"].strip() if service_result["exit_code"] == 0 else "inactive"
+        (service_result.stdout or "").strip() if service_result.returncode == 0 else "inactive"
     )
 
     if service_status != "active":
@@ -317,12 +339,12 @@ def fail2ban_status(options):
         "sudo fail2ban-client status 2>/dev/null", server_config
     )
 
-    if jails_result["exit_code"] != 0:
+    if jails_result.returncode != 0:
         console.print("[red]✗[/red] Failed to get Fail2Ban status")
         return
 
     # Parse jails
-    jails_output = jails_result["stdout"]
+    jails_output = (jails_result.stdout or "")
     console.print(f"\n{jails_output}\n")
 
     # Extract jail names
@@ -342,8 +364,8 @@ def fail2ban_status(options):
                 f"sudo fail2ban-client status {jail} 2>/dev/null", server_config
             )
 
-            if jail_status["exit_code"] == 0:
-                output = jail_status["stdout"]
+            if jail_status.returncode == 0:
+                output = jail_status.stdout or ""
 
                 # Parse banned IPs
                 currently_banned = 0
@@ -389,6 +411,11 @@ def fail2ban_unban(ip_address, jail, options):
     config_manager = get_config_manager()
     server_name = require_active_server(options, config_manager)
 
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, "navig security fail2ban unban")
+
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
 
@@ -418,10 +445,10 @@ def fail2ban_unban(ip_address, jail, options):
 
     result = remote_ops.execute_command(command, server_config)
 
-    if result["exit_code"] == 0:
+    if result.returncode == 0:
         console.print("[green]✓[/green] IP address unbanned successfully")
     else:
-        console.print(f"[red]✗[/red] Failed to unban IP: {result.get('stderr', 'Unknown error')}")
+        console.print(f"[red]✗[/red] Failed to unban IP: {(result.stderr or 'Unknown error')}")
 
 
 def ssh_audit(options):
@@ -494,8 +521,8 @@ def ssh_audit(options):
             )
 
             current_value = "not set"
-            if result["exit_code"] == 0 and result["stdout"].strip():
-                parts = result["stdout"].strip().split()
+            if result.returncode == 0 and (result.stdout or "").strip():
+                parts = (result.stdout or "").strip().split()
                 if len(parts) >= 2:
                     current_value = parts[1]
 
@@ -544,6 +571,11 @@ def check_security_updates(options):
     config_manager = get_config_manager()
     server_name = require_active_server(options, config_manager)
 
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, "navig security updates (apt-get update)")
+
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
 
@@ -566,12 +598,12 @@ def check_security_updates(options):
         )
         progress.update(task, completed=100)
 
-    if result["exit_code"] == 0 and result["stdout"].strip():
+    if result.returncode == 0 and (result.stdout or "").strip():
         console.print("[yellow]⚠[/yellow] Security updates available:\n")
-        console.print(result["stdout"])
+        console.print(result.stdout or "")
 
         # Count updates
-        update_count = len(result["stdout"].strip().split("\n"))
+        update_count = len((result.stdout or "").strip().split("\n"))
         console.print(f"\n[yellow]Total security updates: {update_count}[/yellow]")
         console.print("[dim]Install with: sudo apt-get upgrade[/dim]")
     else:
@@ -607,8 +639,8 @@ def audit_connections(options):
     console.print("[bold]Established Connections:[/bold]")
     est_result = remote_ops.execute_command("ss -tunap 2>/dev/null | grep ESTAB", server_config)
 
-    if est_result["exit_code"] == 0 and est_result["stdout"].strip():
-        lines = est_result["stdout"].strip().split("\n")
+    if est_result.returncode == 0 and (est_result.stdout or "").strip():
+        lines = (est_result.stdout or "").strip().split("\n")
         console.print(f"[yellow]Found {len(lines)} established connections[/yellow]\n")
 
         # Show first 10
@@ -624,8 +656,8 @@ def audit_connections(options):
     console.print("\n[bold]Listening Ports:[/bold]")
     listen_result = remote_ops.execute_command("ss -tuln 2>/dev/null | grep LISTEN", server_config)
 
-    if listen_result["exit_code"] == 0 and listen_result["stdout"].strip():
-        lines = listen_result["stdout"].strip().split("\n")
+    if listen_result.returncode == 0 and (listen_result.stdout or "").strip():
+        lines = (listen_result.stdout or "").strip().split("\n")
         console.print(f"[yellow]Found {len(lines)} listening ports[/yellow]\n")
 
         for line in lines:
@@ -639,9 +671,9 @@ def audit_connections(options):
         "ps aux 2>/dev/null | grep -E 'nc|ncat|netcat' | grep -v grep", server_config
     )
 
-    if susp_result["exit_code"] == 0 and susp_result["stdout"].strip():
+    if susp_result.returncode == 0 and (susp_result.stdout or "").strip():
         console.print("[red]⚠[/red] Suspicious processes found:\n")
-        console.print(susp_result["stdout"])
+        console.print(susp_result.stdout or "")
     else:
         console.print("[green]✓[/green] No suspicious processes detected")
 
@@ -826,7 +858,7 @@ def check_secrets(options):
 
         for config_file in config_files:
             try:
-                content = config_file.read_text(errors="replace")
+                content = config_file.read_text(errors="replace", encoding="utf-8")
 
                 # Check if redaction changes the content (indicates secrets present)
                 redacted = redact_sensitive_text(content)

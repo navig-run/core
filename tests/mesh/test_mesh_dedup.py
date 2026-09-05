@@ -4,8 +4,6 @@ from __future__ import annotations
 import asyncio
 import time
 
-import pytest
-
 from navig.mesh.dedup import DeduplicationFilter, HandoffQueue
 
 # ---------------------------------------------------------------------------

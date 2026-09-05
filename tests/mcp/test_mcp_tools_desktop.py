@@ -15,8 +15,6 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from navig.mcp.tools.desktop import (
     _coerce_bool,
     _tool_desktop_app,

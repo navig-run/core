@@ -15,6 +15,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from navig.core.coerce import coerce_bool
+
 try:
     from aiohttp import web
 except ImportError:
@@ -43,7 +45,8 @@ async def handle_deck_cloud_status(request: "web.Request") -> "web.Response":
     # Default ON to match _start_cloud_manager's behaviour. The previous
     # default of False here meant the Settings -> Cloud toggle rendered
     # "Enable cloud" while the manager was happily online -- confusing UX.
-    enabled = bool(cfg.get("cloud.enabled", True))
+    # coerce_bool so a stored "false" string (navig config set) reads as disabled.
+    enabled = coerce_bool(cfg.get("cloud.enabled", True))
     broker_url = cfg.get("cloud.broker_url", "https://api.navig.run")
     public_url = (cfg.get("cloud.public_url") or "").strip()
     # Reachability + deck-deploy state, so a single /cloud/status read tells the
@@ -135,6 +138,17 @@ async def handle_deck_cloud_enabled(request: "web.Request") -> "web.Response":
     if desired:
         if cm is not None and cm.status in ("online", "starting"):
             return web.json_response({"ok": True, "enabled": True, "manager": "already_running"})
+        # An existing manager in any OTHER state (error/off/stopping) still owns a
+        # live uplink task + aiohttp session in lighthouse mode. _start_cloud_manager
+        # REPLACES gw.cloud_manager with a fresh instance WITHOUT stopping the old one
+        # (server.py:_start_cloud_manager), orphaning that task — it keeps reconnecting
+        # forever. Stop it first, exactly like the restart handler does. Best-effort: a
+        # stop failure must not block re-enabling.
+        if cm is not None:
+            try:
+                await cm.stop()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("cloud_manager.stop before restart failed: %r", exc)
         # Pre-check the relay gate so we return a clear 402 instead of
         # silently starting + then having _start_cloud_manager swallow it.
         # Direct mode (public_url set) bypasses the gate.

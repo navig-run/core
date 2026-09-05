@@ -40,6 +40,28 @@ _RECAP_SYSTEM_PROMPT = (
 )
 
 
+def _recap_system_prompt() -> str:
+    """The recap prompt, in the operator's language.
+
+    A recap of *your own* conversation handed back in a language you did not
+    choose is the same defect as an English transcript of a Russian video: the
+    prompt was English-only, so a Russian conversation was recapped in English.
+    Follows ``user.language``; mirrors the conversation when nothing is pinned.
+    """
+    try:
+        from navig.core.language import resolve_language
+
+        language = resolve_language()
+    except Exception:  # noqa: BLE001 — a recap is not worth failing over
+        language = None
+    if language:
+        return f"{_RECAP_SYSTEM_PROMPT} Write the summary in {language}."
+    return (
+        f"{_RECAP_SYSTEM_PROMPT} Write the summary in the same language the "
+        "conversation is in."
+    )
+
+
 def _truncate_history(
     messages: list[dict[str, Any]],
     max_lines: int = _RECAP_MAX_LINES,
@@ -139,14 +161,17 @@ async def build_away_summary(
             return None
 
         # Enrich system prompt with structured notes when available
-        system_content = _RECAP_SYSTEM_PROMPT
+        base_prompt = _recap_system_prompt()
+        system_content = base_prompt
         if session_id:
             try:
                 from navig.memory.session_memory import get_session_extractor
                 notes = get_session_extractor(session_id).load_notes()
                 if notes:
+                    # base_prompt, not the raw constant — otherwise having session
+                    # notes silently strips the language instruction back off.
                     system_content = (
-                        f"{_RECAP_SYSTEM_PROMPT}\n\n"
+                        f"{base_prompt}\n\n"
                         f"Additionally, here are structured notes from prior extractions "
                         f"that may help your summary:\n\n{notes}"
                     )

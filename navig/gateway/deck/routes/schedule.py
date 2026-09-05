@@ -85,6 +85,22 @@ def _resolve_default_user_chat() -> tuple[int, int]:
 # ─── Reminders ───────────────────────────────────────────────────────────────
 
 
+def _get_runtime_store():
+    """Return the RuntimeStore, or None if unavailable.
+
+    Reminders MUST live in RuntimeStore — it is the store the firing poller (the
+    TelegramChannel reminder loop) reads, and where the lexicographic remind_at
+    comparison is UTC-canonical. The legacy bot_data.db is migrated into runtime.db
+    exactly ONCE and never re-read, so a reminder written to bot_data.db afterwards
+    (which is what get_bot_store() does) is orphaned and never fires.
+    """
+    try:
+        from navig.store.runtime import get_runtime_store  # type: ignore[import]
+        return get_runtime_store()
+    except Exception:
+        return None
+
+
 async def handle_deck_reminders_list(request: "web.Request") -> "web.Response":
     user_id_raw = request.query.get("user_id", "")
     user_id, _ = _resolve_default_user_chat()
@@ -93,14 +109,15 @@ async def handle_deck_reminders_list(request: "web.Request") -> "web.Response":
             user_id = int(user_id_raw)
         except ValueError:
             return _err("invalid user_id", status=400)
+    store = _get_runtime_store()
+    if store is None:
+        return _err("runtime store unavailable", status=503)
     try:
-        from navig.bot.stats_store import get_bot_store  # type: ignore[import]
-        store = get_bot_store()
         rows = store.get_user_reminders(user_id) if user_id else []
         return _ok({
             "user_id": user_id,
             "count": len(rows),
-            "reminders": [r.to_dict() for r in rows],
+            "reminders": list(rows),  # RuntimeStore returns plain dicts
         })
     except Exception as exc:
         logger.exception("reminders list failed")
@@ -120,6 +137,9 @@ async def handle_deck_reminders_create(request: "web.Request") -> "web.Response"
             remind_at = datetime.fromisoformat(when_iso.replace("Z", "+00:00"))
             if remind_at.tzinfo is None:
                 remind_at = remind_at.replace(tzinfo=timezone.utc)
+            # Normalize an offset-bearing time to UTC — RuntimeStore compares remind_at
+            # lexicographically against _utcnow(), so a stored '…-04:00' would mis-sort.
+            remind_at = remind_at.astimezone(timezone.utc)
         elif minutes_from_now:
             remind_at = datetime.now(timezone.utc) + timedelta(minutes=int(minutes_from_now))
         else:
@@ -130,18 +150,32 @@ async def handle_deck_reminders_create(request: "web.Request") -> "web.Response"
     user_id_raw = body.get("user_id")
     chat_id_raw = body.get("chat_id")
     user_id, chat_id = _resolve_default_user_chat()
-    if user_id_raw is not None:
-        user_id = int(user_id_raw)
-    if chat_id_raw is not None:
-        chat_id = int(chat_id_raw)
+    # A malformed user_id/chat_id is a client error, not a server fault — guard the
+    # int() the way the sibling cancel/trigger-create routes do (uncaught → raw 500).
+    try:
+        if user_id_raw is not None:
+            user_id = int(user_id_raw)
+        if chat_id_raw is not None:
+            chat_id = int(chat_id_raw)
+    except (TypeError, ValueError):
+        return _err("user_id and chat_id must be integers", status=400)
     if not user_id or not chat_id:
         return _err("no Telegram allowed_users configured — provide user_id+chat_id", status=400)
 
+    store = _get_runtime_store()
+    if store is None:
+        return _err("runtime store unavailable", status=503)
     try:
-        from navig.bot.stats_store import get_bot_store  # type: ignore[import]
-        store = get_bot_store()
-        rem = store.create_reminder(user_id, chat_id, message, remind_at)
-        return _ok(rem.to_dict(), status=201)
+        rid = store.create_reminder(user_id, chat_id, message, remind_at)
+        return _ok({
+            "id": rid,
+            "user_id": user_id,
+            "chat_id": chat_id,
+            "message": message,
+            "remind_at": remind_at.isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "completed": False,
+        }, status=201)
     except Exception as exc:
         logger.exception("reminder create failed")
         return _err(str(exc))
@@ -160,9 +194,10 @@ async def handle_deck_reminder_cancel(request: "web.Request") -> "web.Response":
             user_id = int(user_id_raw)
         except ValueError:
             return _err("invalid user_id", status=400)
+    store = _get_runtime_store()
+    if store is None:
+        return _err("runtime store unavailable", status=503)
     try:
-        from navig.bot.stats_store import get_bot_store  # type: ignore[import]
-        store = get_bot_store()
         ok = store.cancel_reminder(rid, user_id)
         if not ok:
             return _err("reminder not found or not owned by user", status=404)
@@ -597,17 +632,14 @@ async def handle_deck_triggers_history(request: "web.Request") -> "web.Response"
 
 
 async def handle_deck_briefing(request: "web.Request") -> "web.Response":
-    """Try several places that already compose a daily briefing — return first hit."""
-    # 1. compose_briefing in bizops (if it exists)
-    try:
-        from navig.bizops.briefing import compose_briefing  # type: ignore[import]
-        text = compose_briefing()
-        if text:
-            return _ok({"source": "bizops", "text": str(text),
-                         "ts": datetime.now(timezone.utc).isoformat(timespec="seconds")})
-    except Exception:
-        pass
-    # 2. life dashboard briefing
+    """Return a daily briefing from the first source that has one."""
+    # A `navig.bizops.briefing` probe used to sit here. It could never fire: that module has
+    # never existed in core, and the real `compose_briefing` lives in the PAID harbor plugin
+    # (`navig_harbor.bizops`) where it takes a 5-key finance snapshot that nothing produces.
+    # Removing it is behaviour-identical — no caller can ever have seen `"source": "bizops"` —
+    # and core should not reach into a private plugin by a guessed import path anyway. If
+    # harbor should contribute a briefing, it belongs behind a registered hook, not a guess.
+    # life dashboard briefing
     try:
         from navig.commands.life_dashboard import build_dashboard  # type: ignore[import]
         d = build_dashboard()

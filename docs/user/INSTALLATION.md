@@ -72,10 +72,10 @@ From `navig-core/`:
 
 ```bash
 # Linux
-bash scripts/install_navig_linux.sh
+bash installers/install_navig_linux.sh
 
 # macOS
-bash scripts/install_navig_macos.sh
+bash installers/install_navig_macos.sh
 ```
 
 ```powershell
@@ -115,9 +115,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\synapse_windows_down.ps1
 ```bash
 # Platform-specific script installers
 export NAVIG_TELEGRAM_BOT_TOKEN="<your-bot-token>"
-bash scripts/install_navig_linux.sh
+bash installers/install_navig_linux.sh
 # or
-bash scripts/install_navig_macos.sh
+bash installers/install_navig_macos.sh
 ```
 
 ```powershell
@@ -306,7 +306,7 @@ Use this path when you want NAVIG deployed as a normal server installer with sys
 
 ```bash
 cd navig-core
-sudo bash scripts/install_navig_factory_server.sh
+sudo bash installers/install_navig_factory_server.sh
 ```
 
 ### Service lifecycle

@@ -272,7 +272,19 @@ class DeployEngine:
             record = self._rollback_mgr.create_snapshot()
             if record:
                 self._snapshot = record
-                msg = f"Snapshot → {record.path}"
+                # `create_snapshot` deliberately returns a record on a dry run
+                # DESCRIBING the snapshot it would take, without touching the remote
+                # (pinned by test_snapshot_dry_run_returns_record /
+                # test_dry_run_snapshot_no_remote_call). Reporting that record as
+                # "Snapshot → <path>" told the operator a snapshot exists at a path
+                # that does not — the one phase of seven whose dry-run output claimed
+                # completed work. Every sibling marks its own: `_phase_push` emits
+                # "[DRY RUN] rsync …", `_phase_apply` logs "[DRY RUN] apply: …".
+                msg = (
+                    f"[DRY RUN] would snapshot → {record.path}"
+                    if dry_run
+                    else f"Snapshot → {record.path}"
+                )
             else:
                 msg = "Snapshot skipped (backup.enabled=false)"
             elapsed = time.perf_counter() - t0
@@ -302,7 +314,11 @@ class DeployEngine:
         try:
             cmd = self._build_rsync_cmd(source, target, excludes)
             logger.debug("rsync: %s", " ".join(cmd))
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            # UTF-8: rsync runs over SSH, so its file lists and errors carry REMOTE
+            # filenames — decoding those with the local ANSI page mangles any non-ASCII path.
+            r = subprocess.run(
+                cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=300
+            )
             elapsed = time.perf_counter() - t0
             if r.returncode == 0:
                 # Parse rsync summary line: "sent X bytes  received Y bytes"
@@ -516,7 +532,7 @@ class DeployEngine:
                 ["git", "rev-parse", "--short", "HEAD"],
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=5, encoding="utf-8", errors="replace",
             )
             return r.stdout.strip() if r.returncode == 0 else None
         except Exception:
@@ -529,7 +545,9 @@ class DeployEngine:
                 from navig.config import get_config_manager
 
                 cm = get_config_manager()
-                keep = int(cm._load_global_config().get("deploy", {}).get("history_keep", 50))
+                # Validated view does not declare `deploy`, so this always read the 50
+                # default and silently ignored the operator's configured retention.
+                keep = int((cm.get_global_config() or {}).get("deploy", {}).get("history_keep", 50))
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
             history = DeployHistory(cache_dir=self._cache_dir, keep=keep)

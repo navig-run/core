@@ -23,6 +23,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from navig.core.json_io import safe_json_loads
 from navig.store.base import BaseStore, _utcnow
 
 logger = logging.getLogger(__name__)
@@ -526,6 +527,12 @@ class TelegramCatalogStore(BaseStore):
         if chat_id is not None:
             clauses.append("chat_id = ?")
             params.append(chat_id)
+        # Exclude soft-deleted messages: mark_message_deleted sets tg_messages.deleted=1
+        # but leaves the FTS row, so without this a deleted message keeps surfacing under
+        # the FTS path (the LIKE fallback in _search_like already filters deleted=0). A
+        # message's FTS rowid is _fts_rowid('message', id) == id*2 (media is id*2+1), so
+        # this can never hide a media hit. Literal subquery — no bind param.
+        clauses.append("rowid NOT IN (SELECT id * 2 FROM tg_messages WHERE deleted = 1)")
         params.append(limit)
         try:
             rows = self._read_all(
@@ -602,7 +609,9 @@ def _room_dict(row: sqlite3.Row) -> dict[str, Any]:
         "last_synced": row["last_synced"],
         "message_count": row["message_count"] if "message_count" in row.keys() else None,
         "media_count": row["media_count"] if "media_count" in row.keys() else None,
-        "meta": json.loads(row["meta_json"] or "{}"),
+        # safe_json_loads: the *_dict mappers run inside `[_room_dict(r) for r in rows]`,
+        # so one corrupt blob would take out the whole catalog listing.
+        "meta": safe_json_loads(row["meta_json"], {}),
     }
 
 
@@ -653,9 +662,9 @@ def _media_dict(row: sqlite3.Row) -> dict[str, Any]:
         "ocr_text": row["ocr_text"],
         "transcript": row["transcript"],
         "ai_description": row["ai_description"],
-        "analysis": json.loads(row["analysis_json"]) if row["analysis_json"] else None,
+        "analysis": safe_json_loads(row["analysis_json"], None),
         "analyzed_at": row["analyzed_at"],
-        "tags": (json.loads(row["tags"]) if ("tags" in row.keys() and row["tags"]) else []),
+        "tags": (safe_json_loads(row["tags"], []) if "tags" in row.keys() else []),
         "category": (row["category"] if "category" in row.keys() else None),
     }
 

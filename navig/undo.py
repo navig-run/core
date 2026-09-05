@@ -54,7 +54,16 @@ ABSENT = None
 
 
 class UndoRefused(Exception):
-    """This operation must not be undone; ``str(exc)`` is the user-facing why."""
+    """This operation must not be undone; ``str(exc)`` is the user-facing why.
+
+    ``code`` is a coarse, stable slug for the SAME reason — safe to put in a bulk
+    listing or an API error body, because (unlike the message) it never embeds a
+    config key name or a vault ref. UIs branch on ``code``; humans read ``str(exc)``.
+    """
+
+    def __init__(self, message: str, *, code: str = "refused") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass
@@ -148,33 +157,45 @@ def ensure_undoable(record: OperationRecord, undone: dict[str, str]) -> None:
 
     if record.tags and "undo" in record.tags:
         raise UndoRefused(
-            f"{record.id} is itself an undo — re-run the original command to redo instead"
+            f"{record.id} is itself an undo — re-run the original command to redo instead",
+            code="is_undo",
         )
     if record.id in undone:
-        raise UndoRefused(f"{record.id} was already undone by {undone[record.id]}")
+        raise UndoRefused(
+            f"{record.id} was already undone by {undone[record.id]}", code="already_undone"
+        )
     if (record.undo_data or {}).get("sensitive"):
         ref = (record.undo_data or {}).get("vault_ref")
         hint = f" (vault: {ref})" if ref else ""
         raise UndoRefused(
             "secret-bearing key — plaintext is never stored in the ledger, so it "
-            f"cannot be replayed automatically; restore it manually{hint}"
+            f"cannot be replayed automatically; restore it manually{hint}",
+            code="sensitive",
         )
     if label != Reversibility.GREEN.value:
         hint = compensation_hint(op_type)
         extra = f" — compensation: {hint}" if hint else ""
-        raise UndoRefused(f"{record.id} is labeled {label}, not green (undoable){extra}")
+        raise UndoRefused(
+            f"{record.id} is labeled {label}, not green (undoable){extra}", code="not_green"
+        )
     if record.status != OperationStatus.SUCCESS:
-        raise UndoRefused(f"{record.id} did not succeed ({record.status.value}) — nothing to undo")
+        raise UndoRefused(
+            f"{record.id} did not succeed ({record.status.value}) — nothing to undo",
+            code="not_success",
+        )
     if not record.undo_data:
-        raise UndoRefused(f"{record.id} has no captured undo data")
+        raise UndoRefused(f"{record.id} has no captured undo data", code="no_undo_data")
     if op_type not in GREEN_CAPABLE_TYPES:
-        raise UndoRefused(f"no undo strategy for operation type '{op_type}'")
+        raise UndoRefused(
+            f"no undo strategy for operation type '{op_type}'", code="unsupported_type"
+        )
     # Defense in depth: never replay plaintext for a key that NAMES a secret,
     # even if a capture site forgot to mark it sensitive.
     key = (record.undo_data or {}).get("key")
     if op_type == "config_change" and key and is_sensitive_config_key(str(key)):
         raise UndoRefused(
-            f"config key '{key}' names secret material — automatic undo is disabled for it"
+            f"config key '{key}' names secret material — automatic undo is disabled for it",
+            code="sensitive_key",
         )
 
 
@@ -337,6 +358,62 @@ def perform_undo(record: OperationRecord) -> dict[str, Any]:
         return {"path": str(original), "restored_from": str(backup)}
 
     raise UndoRefused(f"no undo strategy for operation type '{op_type}'")
+
+
+def execute_undo(recorder: OperationRecorder, target: OperationRecord) -> str:
+    """Perform the undo of *target* and record it on the hash chain — THE write path.
+
+    This is the single place an undo is performed AND recorded: it wraps
+    :func:`perform_undo` with the ledger recording so the undo is itself a
+    chained, ``undo``-tagged entry (``operation_type`` = the target's type,
+    ``args.undo_of = target.id``, ``undo_data`` = the swapped redo material).
+    Every surface — the CLI (`navig undo`) and the Deck route — goes through
+    here, so none of them can skip the chain recording and fork the "one write
+    path" invariant (T-067/T-068).
+
+    Callers MUST have run :func:`ensure_undoable` + :func:`check_drift` first;
+    this performs the smallest possible write and records the outcome.
+
+    Returns the new undo operation's id. On a replay failure the failure is
+    recorded (a ``failed`` ledger line, chain-safe) and the original exception
+    is re-raised for the caller to surface.
+    """
+    import time
+
+    from navig.operation_recorder import claim_cli_operation
+
+    description = describe_undo(target)
+
+    # Reuse the middleware's in-flight record for this invocation when one exists
+    # (the CLI path), else start a standalone entry (library/route path) — exactly
+    # ONE ledger line per undo, carrying the richest data available.
+    record, start = claim_cli_operation(match=("navig undo",))
+    if record is None:
+        record = recorder.start_operation(command=f"navig undo {target.id}")
+    record.operation_type = target.operation_type
+    record.args = {**(record.args or {}), "undo_of": target.id}
+    record.tags = sorted({*(record.tags or []), "undo"})
+    started = start or time.time()
+
+    try:
+        swapped = perform_undo(target)
+    except Exception as exc:  # noqa: BLE001 — record the failure, then re-raise
+        recorder.complete_operation(
+            record,
+            success=False,
+            error=str(exc),
+            exit_code=1,
+            duration_ms=(time.time() - started) * 1000,
+        )
+        raise
+
+    return recorder.complete_operation(
+        record,
+        success=True,
+        output=description,
+        duration_ms=(time.time() - started) * 1000,
+        undo_data=swapped,
+    )
 
 
 # ---------------------------------------------------------------------------

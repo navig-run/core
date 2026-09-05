@@ -10,7 +10,6 @@ import pytest
 
 from navig.agent.routing_strategy import (
     ClassificationResult,
-    RequestTier,
     classify_request,
 )
 

@@ -2,10 +2,7 @@
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from navig.importers.sources.winscp import WinSCPImporter
 
@@ -148,14 +145,30 @@ class TestParseIni:
         assert items == []
 
     def test_url_encoded_name_decoded(self, tmp_path):
-        # configparser treats % as interpolation; use %% to get a literal %
-        # Instead verify that unquoted names work correctly via the .reg parser
-        # For INI format, use a simple name without % characters
-        content = "[session\\host]\nHostName=1.2.3.4\nName=MyServer\n"
+        # This test is NAMED for URL-encoded names — i.e. values containing `%` — but it
+        # used to strip the `%` out and carry three comment lines explaining that
+        # "configparser treats % as interpolation". That was the bug talking: the parser
+        # is built with interpolation=None now, so the test can assert what it claims.
+        content = "[session\\host]\nHostName=1.2.3.4\nName=Production%20Server\n"
         f = tmp_path / "winscp.ini"
         f.write_text(content, encoding="utf-8")
         items = _make()._parse_ini(f)
-        assert items[0].label == "MyServer"
+        assert items[0].label == "Production Server"
+
+    def test_one_percent_value_does_not_drop_every_other_session(self, tmp_path):
+        """WinSCP URL-encodes values, so `%` is ordinary data (`deploy%40example.com`).
+        With the default BasicInterpolation the read raised, and because the `try` wraps
+        the WHOLE section loop it returned [] — one odd session silently took out the
+        entire import."""
+        content = (
+            "[Sessions\\good]\nHostName=a.example\nUserName=alice\n\n"
+            "[Sessions\\bad]\nHostName=b.example\nUserName=deploy%40example.com\n"
+        )
+        f = tmp_path / "winscp.ini"
+        f.write_text(content, encoding="utf-8")
+        items = _make()._parse_ini(f)
+        assert len(items) == 2  # pre-fix: 0
+        assert {i.meta["username"] for i in items} == {"alice", "deploy%40example.com"}
 
     def test_exception_returns_empty_list(self, tmp_path):
         f = tmp_path / "bad.ini"

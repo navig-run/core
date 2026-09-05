@@ -33,6 +33,7 @@ import time
 from navig.debug_logger import get_debug_logger
 from navig.mesh.auth import attach_hmac, verify_payload
 from navig.mesh.registry import NodeRecord, NodeRegistry
+from navig.mesh.url_guard import is_lan_gateway_url
 
 logger = get_debug_logger()
 
@@ -125,6 +126,19 @@ def _parse_packet(
             if not verify_payload(d, secret):
                 logger.debug("[mesh.discovery] Dropped packet — bad or missing HMAC")
                 return None
+        # The mesh is LAN-only, and gateway_url is an endpoint we will GET /health on
+        # every probe cycle and POST /llm/chat to *with the mesh_token bearer*. Anyone on
+        # the LAN (or any local process) can send this packet — the HMAC above is only
+        # checked when mesh.secret is configured, which is not the default — so an
+        # unvalidated URL here is an SSRF sink with a credential attached. Drop it exactly
+        # like a bad HMAC. `gateway/routes/mesh.py` already guarded its manual bootstrap
+        # path; this closes the same hole on the unauthenticated one.
+        if not is_lan_gateway_url(d.get("gateway_url", "")):
+            logger.debug(
+                "[mesh.discovery] Dropped packet — non-LAN gateway_url from %s",
+                d.get("node_id", "?"),
+            )
+            return None
         return NodeRecord(
             node_id=d["node_id"],
             hostname=d["hostname"],

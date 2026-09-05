@@ -3,12 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
-
-from navig.tools.registry import ToolResult
 from navig.tools.web_fetch import _MAX_CHARS, WebFetchTool
 
 

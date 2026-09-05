@@ -107,9 +107,19 @@ def test_remove_needs_no_prompt_with_yes_and_actually_removes(mcp_config):
 
 
 def test_unknown_server_is_reported_not_crashed(mcp_config):
+    """Reported, not crashed — and not exit 0 either.
+
+    This asserted `exit_code == 0`, which pinned the very behaviour its `info` sibling
+    below was fixed away from: the manager printed "x MCP server 'nope' not found",
+    returned False, and the command discarded it, so `navig mcp enable api && <next>`
+    ran the next step against a server that does not exist.
+
+    "Not found" is the usage class (2), matching
+    test_info_unknown_server_is_reported_not_crashed.
+    """
     for args in (["enable", "nope"], ["disable", "nope"], ["remove", "nope", "--yes"]):
         result = runner.invoke(mcp_app, args)
-        assert result.exit_code == 0, f"{args} -> {result.output}"
+        assert result.exit_code == 2, f"{args} -> {result.output}"
         assert "not found" in result.output.lower()
 
 
@@ -134,8 +144,13 @@ def test_info_shows_one_servers_detail(mcp_config):
 
 
 def test_info_unknown_server_is_reported_not_crashed(mcp_config):
+    """Reported, not crashed — and not exit 0 either.
+
+    "Not found" is the usage class (exit 2). It used to print the message and exit 0,
+    so `navig mcp info api && <use it>` proceeded against a server that does not exist.
+    """
     result = runner.invoke(mcp_app, ["info", "nope"])
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 2, result.output
     assert "not found" in result.output.lower()
 
 
@@ -181,8 +196,13 @@ def test_info_json_is_parseable_and_never_leaks_env_values(mcp_config):
 
 
 def test_info_json_missing_server_is_null(mcp_config):
+    """The payload stays parseable; the exit code is the extra signal, not a substitute.
+
+    A `| jq` pipeline is unaffected by the code — a `&&` chain is not, and that is the
+    one this used to get wrong.
+    """
     result = runner.invoke(mcp_app, ["info", "ghost", "--json"])
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 2, result.output
     assert json.loads(result.output) is None  # a parseable "no such server"
 
 
@@ -200,3 +220,51 @@ def test_list_json_empty_is_empty_array_not_a_warning(mcp_config):
     result = runner.invoke(mcp_app, ["list", "--json"])
     assert result.exit_code == 0, result.output
     assert json.loads(result.output) == []
+
+
+# ---------------------------------------------------------------------------
+# `navig mcp tools` — the tool list must show which calls are gated
+# ---------------------------------------------------------------------------
+#
+# Classifying the 122 MCP tools is only useful if the operator can SEE the result.
+# "What an editor/agent can call" is half the answer; the other half is which of those
+# calls pass through the approval gate. Before this, the list showed neither, so a tool
+# like `desktop_powershell` ("Execute a PowerShell command … on the local machine") read
+# exactly like `navig_list_hosts`.
+
+
+def _tools_output(capsys, *, json_out: bool = False) -> str:
+    from navig.commands.mcp_cmd import mcp_tools
+
+    mcp_tools(json_out=json_out)
+    return capsys.readouterr().out
+
+
+def test_tools_marks_a_dangerous_tool_as_gated(capsys):
+    out = _tools_output(capsys)
+    line = next((ln for ln in out.splitlines() if "desktop_powershell" in ln), None)
+    assert line is not None, "desktop_powershell should be listed"
+    assert "gated" in line
+
+
+def test_tools_does_not_mark_a_read_only_tool_as_gated(capsys):
+    out = _tools_output(capsys)
+    line = next((ln for ln in out.splitlines() if "navig_list_hosts" in ln), None)
+    assert line is not None
+    assert "gated" not in line
+
+
+def test_tools_summarises_the_three_levels(capsys):
+    out = _tools_output(capsys)
+    assert "gated" in out and "moderate" in out and "safe" in out
+    assert "approval gate" in out
+
+
+def test_tools_json_carries_the_safety_level(capsys):
+    payload = json.loads(_tools_output(capsys, json_out=True))
+    by_name = {t["name"]: t for t in payload}
+
+    assert by_name["desktop_powershell"]["safety"] == "dangerous"
+    assert by_name["navig_list_hosts"]["safety"] == "safe"
+    # every entry carries one — a missing key would make the field unusable to a script
+    assert all("safety" in t for t in payload)

@@ -140,7 +140,12 @@ _SELF_TALK_DIRECTED_SUB: frozenset[str] = frozenset({
 _SELF_TALK_CONCEPT_WORDS: frozenset[str] = frozenset({
     # Latin-script cluster
     "name", "called",
-    "do", "doing", "work", "working",
+    # NOTE: bare "do" is deliberately absent. It is a generic auxiliary verb, not
+    # a bot-topic word, so it matched every "do you know/like/have …" question —
+    # e.g. "do you know Fight Club?" was classified as casual self-talk and routed
+    # to TALK, skipping web grounding entirely. "doing" (as in "what are you
+    # doing") IS a genuine state word and stays.
+    "doing", "work", "working",
     "help", "feel", "feeling",
     "ok", "okay",
     "bot", "ai", "robot", "assistant", "human", "person",
@@ -179,8 +184,19 @@ def _is_casual_self_talk(text: str) -> bool:
       3. No directed signal → False (let downstream classifiers decide).
       4. Short (≤ 4 tokens) + directed → True unconditionally.
       5. Longer (5-10 tokens) + directed + bot-concept word → True.
+
+    Veto: a message carrying a named-entity signal is never self-talk. "Do you
+    know Fight Club?" is a question ABOUT something, addressed to the bot — not a
+    question about the bot. Without this veto such messages fell through to TALK
+    and were answered from a small model's memory with no web grounding.
     """
     stripped = text.strip()
+
+    # ── 0. Named-entity veto ─────────────────────────────────────────────────
+    # Checked first: an entity reference means the user wants information, which
+    # outranks any self-talk phrasing wrapped around it.
+    if _has_entity_signal(stripped):
+        return False
 
     # ── 1. Token-count gate ───────────────────────────────────────────────────
     # Count CJK / Japanese kana / Korean Hangul characters as individual tokens.
@@ -482,6 +498,86 @@ def mode_to_llm_tier(mode: Mode) -> str:
         "ACT": "big_tasks",
         "CODE": "coding",
     }.get(mode, "small_talk")
+
+
+# ── Answer depth ───────────────────────────────────────────────────────────
+#
+# Depth is ORTHOGONAL to mode. Mode says *what kind of handler* runs; depth says
+# *how hard the brain works*. Previously every conversational message was pinned
+# to the "small" tier for latency, which meant a real question ("info about Fight
+# Club") was answered by an ~8B model with 1024 output tokens, no thinking and no
+# native web tools — the shallow-answer complaint. Chit-chat genuinely wants that
+# fast path; information questions do not.
+#
+# Bias: a false "deep" costs a few seconds. A false "quick" costs a wrong or
+# empty answer. When the signals disagree, prefer deep.
+
+Depth = Literal["quick", "deep"]
+
+#: Confidence below this triggers the cheap cached LLM classifier fallback.
+DEPTH_CONFIDENCE_THRESHOLD: float = 0.7
+
+
+def classify_depth(text: str) -> tuple[Depth, float]:
+    """Classify how much brain a message deserves.
+
+    Returns ``(depth, confidence)``. Pure heuristics, no I/O — a caller that
+    wants a second opinion on a low-confidence result can consult
+    :func:`navig.agent.router.llm_classifier.classify_by_llm`.
+    """
+    stripped = text.strip()
+
+    if not stripped:
+        return "quick", 1.0
+
+    # Mic-checks and audio probes are never questions.
+    if _MIC_CHECK.match(stripped):
+        return "quick", 1.0
+
+    word_count = len(stripped.split())
+    is_question = stripped.rstrip().endswith(("?", "？", "؟"))
+    has_entity = _has_entity_signal(stripped)
+
+    # A named entity means the user is asking ABOUT something. This is the single
+    # strongest signal and must beat the greeting/self-talk/opinion patterns that
+    # often wrap it ("hey, do you know Fight Club?").
+    if has_entity:
+        return "deep", 0.9
+
+    # ── Quick signals — checked BEFORE analytical verbs ─────────────────────
+    # Order matters: "what are you doing" matches _REASON_PATTERNS ("what are")
+    # yet is genuine self-talk, so self-talk must win first — exactly as
+    # classify_mode orders it. The entity veto inside _is_casual_self_talk
+    # already excluded real information questions.
+    if _TALK_PATTERNS.match(stripped) and word_count <= 5:
+        return "quick", 0.95
+    if _is_casual_self_talk(stripped):
+        return "quick", 0.9
+    if _OPINION_PATTERNS.search(stripped):
+        return "quick", 0.8
+
+    # ── Deep signals ────────────────────────────────────────────────────────
+    # Explicit analytical verbs: explain / why / compare / how does / …
+    if _REASON_PATTERNS.search(stripped):
+        return "deep", 0.85
+
+    # ── Ambiguous middle ─────────────────────────────────────────────────────
+    # A question mark on a non-trivial message is a real request for information
+    # even without a recognised entity or analytical verb.
+    if is_question and word_count >= 3:
+        return "deep", 0.75
+
+    # Very short, no question, no entity → almost certainly chat.
+    if word_count <= 2:
+        return "quick", 0.85
+
+    # Longer statements with no question and no entity are usually narrative
+    # ("I'm lying in bed trying to sleep"). Low confidence: the caller may
+    # escalate to the LLM classifier.
+    if word_count >= 8:
+        return "quick", 0.55
+
+    return "quick", 0.6
 
 
 def select_tools_for_text(text: str) -> list[str]:

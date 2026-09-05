@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+import typer
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -260,12 +261,30 @@ class TestDockerPs:
         assert "docker ps -a" in cmd
 
     def test_with_filter(self):
+        """A filtered listing is a PIPELINE (`docker ps | grep -E …`), so the
+        shell reports only grep's status: "no matches" and "docker failed" are
+        indistinguishable. Stay non-fatal rather than exiting 1 on the common,
+        benign no-match case."""
         cfg, remote, req = _make_docker_mocks()
         remote.execute_command.return_value = _fail_result()
         with patch("navig.config.get_config_manager", return_value=cfg), \
              patch("navig.remote.RemoteOperations", return_value=remote), \
              patch("navig.cli.recovery.require_active_host", req):
             _docker.docker_ps({"quiet": True}, filter="nginx")
+
+    def test_unfiltered_failure_exits_nonzero(self):
+        """Regression: an UNFILTERED listing has no pipeline, so a non-zero
+        status IS the failure (docker missing, daemon down, denied). This used
+        to fall through and exit 0 while printing nothing — indistinguishable
+        from a host that genuinely has no containers."""
+        cfg, remote, req = _make_docker_mocks()
+        remote.execute_command.return_value = _fail_result()
+        with patch("navig.config.get_config_manager", return_value=cfg), \
+             patch("navig.remote.RemoteOperations", return_value=remote), \
+             patch("navig.cli.recovery.require_active_host", req), \
+             pytest.raises(typer.Exit) as exc:
+            _docker.docker_ps({"quiet": True})
+        assert exc.value.exit_code == 1
 
     def test_json_format(self):
         cfg, remote, req = _make_docker_mocks()
@@ -311,8 +330,10 @@ class TestDockerLogs:
         remote.execute_command.return_value = _fail_result()
         with patch("navig.config.get_config_manager", return_value=cfg), \
              patch("navig.remote.RemoteOperations", return_value=remote), \
-             patch("navig.cli.recovery.require_active_host", req):
+             patch("navig.cli.recovery.require_active_host", req), \
+             pytest.raises(typer.Exit) as exc:
             _docker.docker_logs("missing", {"quiet": True})
+        assert exc.value.exit_code == 1
 
 
 class TestDockerExec:
@@ -335,6 +356,31 @@ class TestDockerExec:
         cmd = remote.execute_command.call_args[0][0]
         assert "www-data" in cmd
 
+    def test_failure_propagates_the_container_exit_code(self):
+        """Regression: a failing container command only printed a WARNING and
+        exited 0, so `navig docker exec app "npm run migrate" && deploy` ran
+        the deploy after a failed migration. The remote code is reused so `$?`
+        still carries what actually happened."""
+        cfg, remote, req = _make_docker_mocks()
+        remote.execute_command.return_value = SimpleNamespace(
+            returncode=17, stdout="", stderr="boom"
+        )
+        with patch("navig.config.get_config_manager", return_value=cfg), \
+             patch("navig.remote.RemoteOperations", return_value=remote), \
+             patch("navig.cli.recovery.require_active_host", req), \
+             pytest.raises(typer.Exit) as exc:
+            _docker.docker_exec("app", "npm run migrate", {"quiet": True})
+        assert exc.value.exit_code == 17
+
+    def test_success_does_not_exit(self):
+        """Anti-vacuity guard for the test above: a 0 status must NOT raise."""
+        cfg, remote, req = _make_docker_mocks()
+        with patch("navig.config.get_config_manager", return_value=cfg), \
+             patch("navig.remote.RemoteOperations", return_value=remote), \
+             patch("navig.cli.recovery.require_active_host", req):
+            _docker.docker_exec("app", "true", {"quiet": True})
+        remote.execute_command.assert_called()
+
 
 class TestDockerRestart:
     def test_basic(self):
@@ -350,8 +396,10 @@ class TestDockerRestart:
         remote.execute_command.return_value = _fail_result()
         with patch("navig.config.get_config_manager", return_value=cfg), \
              patch("navig.remote.RemoteOperations", return_value=remote), \
-             patch("navig.cli.recovery.require_active_host", req):
+             patch("navig.cli.recovery.require_active_host", req), \
+             pytest.raises(typer.Exit) as exc:
             _docker.docker_restart("ghost", {"quiet": True, "yes": True})
+        assert exc.value.exit_code == 1
 
 
 class TestDockerStop:
@@ -410,8 +458,10 @@ class TestDockerInspect:
         remote.execute_command.return_value = _fail_result()
         with patch("navig.config.get_config_manager", return_value=cfg), \
              patch("navig.remote.RemoteOperations", return_value=remote), \
-             patch("navig.cli.recovery.require_active_host", req):
+             patch("navig.cli.recovery.require_active_host", req), \
+             pytest.raises(typer.Exit) as exc:
             _docker.docker_inspect("unknown", {"quiet": True})
+        assert exc.value.exit_code == 1
 
 
 class TestDockerCompose:
@@ -434,6 +484,8 @@ class TestDockerCompose:
         cfg, remote, req = _make_docker_mocks()
         with patch("navig.config.get_config_manager", return_value=cfg), \
              patch("navig.remote.RemoteOperations", return_value=remote), \
-             patch("navig.cli.recovery.require_active_host", req):
+             patch("navig.cli.recovery.require_active_host", req), \
+             pytest.raises(typer.Exit) as exc:
             _docker.docker_compose("invalid", {"quiet": True})
+        assert exc.value.exit_code == 1
         remote.execute_command.assert_not_called()

@@ -14,6 +14,7 @@ from rich.table import Table
 
 from navig import console_helper as ch
 from navig.commands._db_utils import calculate_file_checksum, create_mysql_config_file
+from navig.core.proc_text import decode_console_result
 
 
 def _read_backup_metadata(metadata_file: Path) -> dict[str, Any] | None:
@@ -108,6 +109,11 @@ def backup_system_config(name: str | None, options: dict[str, Any]):
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
     server_name = require_active_server(options, config_manager)
 
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, "navig backup system-config")
+
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
 
@@ -142,7 +148,7 @@ def backup_system_config(name: str | None, options: dict[str, Any]):
     for remote_file in config_files:
         # Check if file exists
         check_cmd = f'test -f {remote_file} && echo "exists" || echo "missing"'
-        result = remote_ops.execute_command(check_cmd)
+        result = remote_ops.execute_command(check_cmd, server_config)
 
         if _result_indicates_missing(result):
             ch.warning(f"⊘ {remote_file} (not found)")
@@ -191,12 +197,26 @@ def backup_system_config(name: str | None, options: dict[str, Any]):
         if _tmp_m1 is not None:
             _tmp_m1.unlink(missing_ok=True)
 
+    # Exit honesty: if every file we tried FAILED (0 saved), this is a failure, not
+    # "complete" — a skipped/not-found file is not a failure. backup_all collects the
+    # raised typer.Exit so `--all` stays truthful.
+    all_failed = (
+        len([r for r in results if r.get("status") == "failed"]) > 0
+        and success_count == 0
+    )
+
     if options.get("json"):
         ch.raw_print(json.dumps(metadata))
+    elif all_failed:
+        ch.error("❌ System configuration backup FAILED — every file failed (0 saved)")
+        ch.info(f"   Location: {backup_dir.parent}")
     else:
         ch.success("✅ System configuration backup complete")
         ch.info(f"   Location: {backup_dir.parent}")
         ch.info(f"   Files backed up: {success_count}/{len(config_files)}")
+
+    if all_failed:
+        raise typer.Exit(1)
 
 
 def backup_all_databases(name: str | None, compress: str, options: dict[str, Any]):
@@ -268,7 +288,7 @@ def backup_all_databases(name: str | None, compress: str, options: dict[str, Any
         ]
 
         try:
-            result = subprocess.run(list_cmd, capture_output=True, text=True, check=True)
+            result = decode_console_result(subprocess.run(list_cmd, capture_output=True, check=True))
             databases = [
                 db.strip()
                 for db in result.stdout.split("\n")
@@ -402,13 +422,30 @@ def backup_all_databases(name: str | None, compress: str, options: dict[str, Any
         if _tmp_m2 is not None:
             _tmp_m2.unlink(missing_ok=True)
 
+    # Exit honesty: a dump "succeeds" on the command's exit code, and every dump can
+    # fail (wrong creds, mysqldump missing) while SHOW DATABASES succeeded. If we
+    # attempted databases and NONE succeeded, this is a failure — don't print
+    # "complete" / exit 0, or a nightly `navig backup` checking $LASTEXITCODE (and
+    # backup_all, which already collects a raised typer.Exit) records a zero-data run
+    # as success.
+    all_failed = (
+        len([r for r in results if r.get("status") == "failed"]) > 0
+        and metadata["success_count"] == 0
+    )
+
     if options.get("json"):
         ch.raw_print(json.dumps(metadata))
+    elif all_failed:
+        ch.error(f"❌ Database backup FAILED — every dump failed (0/{metadata['total_count']})")
+        ch.info(f"   Location: {backup_dir.parent}")
     else:
         ch.success("✅ Database backup complete")
         ch.info(f"   Location: {backup_dir.parent}")
         ch.info(f"   Databases: {metadata['success_count']}/{metadata['total_count']}")
         ch.info(f"   Total size: {total_size:.2f} MB")
+
+    if all_failed:
+        raise typer.Exit(1)
 
 
 def backup_hestia(name: str | None, options: dict[str, Any]):
@@ -420,19 +457,29 @@ def backup_hestia(name: str | None, options: dict[str, Any]):
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
     server_name = require_active_server(options, config_manager)
 
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, "navig backup hestia")
+
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
 
     # Check if HestiaCP is installed
     check_cmd = 'command -v v-list-users >/dev/null 2>&1 && echo "installed" || echo "missing"'
-    result = remote_ops.execute_command(check_cmd)
+    result = remote_ops.execute_command(check_cmd, server_config)
 
     if _result_indicates_missing(result):
         # An optional component that is simply not installed is a SKIP, not a
         # failure — `backup_all` (navig backup run --all) calls this in sequence,
         # and most servers do not run HestiaCP. Exiting non-zero here would abort
         # a comprehensive backup on every non-Hestia box. Absence → exit 0.
-        ch.error("HestiaCP not detected on this server")
+        #
+        # Reported as a SKIP, not `ch.error`: the exit code already says "fine",
+        # so a red ✗ over it contradicted the very decision above and made a
+        # routine non-Hestia box look like a failed backup. Matches the sibling
+        # skip in `backup_config` (⊘ … not found).
+        ch.warning("⊘ HestiaCP not detected on this server — skipped")
         return
 
     # Generate backup name
@@ -485,7 +532,7 @@ def backup_hestia(name: str | None, options: dict[str, Any]):
 
         # Check if directory exists
         check_cmd = f'test -d {remote_path} && echo "exists" || echo "missing"'
-        result = remote_ops.execute_command(check_cmd)
+        result = remote_ops.execute_command(check_cmd, server_config)
 
         if _result_indicates_missing(result):
             ch.warning(f"   ⊘ {remote_path} (not found)")
@@ -498,7 +545,7 @@ def backup_hestia(name: str | None, options: dict[str, Any]):
         dir_name = Path(remote_path).name
 
         tar_cmd = f"cd '{parent_dir}' && tar --exclude='*.log' --exclude='*.log.*' -czf '{tar_file}' '{dir_name}'"
-        result = remote_ops.execute_command(tar_cmd)
+        result = remote_ops.execute_command(tar_cmd, server_config)
 
         # Download archive
         local_dir = backup_dir / local_name
@@ -549,7 +596,7 @@ def backup_hestia(name: str | None, options: dict[str, Any]):
             )
 
             # Cleanup remote tar
-            remote_ops.execute_command(f"rm -f {tar_file}")
+            remote_ops.execute_command(f"rm -f {tar_file}", server_config)
 
         except Exception as e:
             ch.error(f"   ✗ {desc} (failed: {str(e)})")
@@ -580,13 +627,26 @@ def backup_hestia(name: str | None, options: dict[str, Any]):
         if _tmp_m3 is not None:
             _tmp_m3.unlink(missing_ok=True)
 
+    # Exit honesty, same rule as backup_system_config / backup_all_databases: if we
+    # attempted directories and NONE was saved, "complete" is a lie. A skipped
+    # (not-found) directory is not a failure — only a real download/extract error
+    # counts, so a partial HestiaCP install still exits 0.
+    all_failed = (
+        len([r for r in results if r.get("status") == "failed"]) > 0 and success_count == 0
+    )
+
     if options.get("json"):
         ch.raw_print(json.dumps(metadata))
+    elif all_failed:
+        ch.error(f"❌ HestiaCP backup FAILED — every directory failed (0/{len(hestia_dirs)})")
+        ch.info(f"   Location: {backup_dir.parent}")
     else:
         ch.success("✅ HestiaCP backup complete")
         ch.info(f"   Location: {backup_dir.parent}")
         ch.info(f"   Directories: {success_count}/{len(hestia_dirs)}")
         ch.info(f"   Total size: {total_size:.2f} MB")
+    if all_failed:
+        raise typer.Exit(1)
 
 
 def backup_web_config(name: str | None, options: dict[str, Any]):
@@ -597,6 +657,11 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
     config_manager = get_config_manager()
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
     server_name = require_active_server(options, config_manager)
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, "navig backup web-config")
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -628,7 +693,7 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
     for remote_path in nginx_files:
         is_dir = remote_path.endswith("/")
         check_cmd = f'test -{"d" if is_dir else "f"} {remote_path.rstrip("/")} && echo "exists" || echo "missing"'
-        result = remote_ops.execute_command(check_cmd)
+        result = remote_ops.execute_command(check_cmd, server_config)
 
         if _result_indicates_missing(result):
             continue
@@ -640,7 +705,7 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
 
             # List files and download each
             files_cmd = f"find {remote_path.rstrip('/')} -type f"
-            files_result = remote_ops.execute_command(files_cmd)
+            files_result = remote_ops.execute_command(files_cmd, server_config)
 
             for file_path in _result_stdout_text(files_result).strip().split("\n"):
                 if file_path:
@@ -654,8 +719,10 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
                             local_file,
                         )
                         results["nginx"].append({"file": file_path, "status": "success"})
-                    except (OSError, subprocess.CalledProcessError):
-                        pass  # Cleanup - operation may fail
+                    except (OSError, subprocess.CalledProcessError) as exc:
+                        ch.error(f"   ✗ Nginx: {file_path} ({exc})")
+                        results["nginx"].append(
+                            {"file": file_path, "status": "failed", "error": str(exc)})
         else:
             # Backup single file
             local_file = nginx_dir / Path(remote_path).name
@@ -669,8 +736,10 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
                 )
                 ch.success(f"   ✓ Nginx: {remote_path}")
                 results["nginx"].append({"file": remote_path, "status": "success"})
-            except (OSError, subprocess.CalledProcessError):
-                pass  # Cleanup - operation may fail
+            except (OSError, subprocess.CalledProcessError) as exc:
+                ch.error(f"   ✗ Nginx: {remote_path} ({exc})")
+                results["nginx"].append(
+                    {"file": remote_path, "status": "failed", "error": str(exc)})
 
     # Apache configuration
     apache_files = [
@@ -686,7 +755,7 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
     for remote_path in apache_files:
         is_dir = remote_path.endswith("/")
         check_cmd = f'test -{"d" if is_dir else "f"} {remote_path.rstrip("/")} && echo "exists" || echo "missing"'
-        result = remote_ops.execute_command(check_cmd)
+        result = remote_ops.execute_command(check_cmd, server_config)
 
         if _result_indicates_missing(result):
             continue
@@ -696,7 +765,7 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
             local_subdir.mkdir(exist_ok=True)
 
             files_cmd = f"find {remote_path.rstrip('/')} -type f"
-            files_result = remote_ops.execute_command(files_cmd)
+            files_result = remote_ops.execute_command(files_cmd, server_config)
 
             for file_path in _result_stdout_text(files_result).strip().split("\n"):
                 if file_path:
@@ -710,8 +779,10 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
                             local_file,
                         )
                         results["apache"].append({"file": file_path, "status": "success"})
-                    except (OSError, subprocess.CalledProcessError):
-                        pass  # Cleanup - operation may fail
+                    except (OSError, subprocess.CalledProcessError) as exc:
+                        ch.error(f"   ✗ Apache: {file_path} ({exc})")
+                        results["apache"].append(
+                            {"file": file_path, "status": "failed", "error": str(exc)})
         else:
             local_file = apache_dir / Path(remote_path).name
             try:
@@ -724,16 +795,25 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
                 )
                 ch.success(f"   ✓ Apache: {remote_path}")
                 results["apache"].append({"file": remote_path, "status": "success"})
-            except (OSError, subprocess.CalledProcessError):
-                pass  # Cleanup - operation may fail
+            except (OSError, subprocess.CalledProcessError) as exc:
+                ch.error(f"   ✗ Apache: {remote_path} ({exc})")
+                results["apache"].append(
+                    {"file": remote_path, "status": "failed", "error": str(exc)})
 
     # Save metadata
+    # Counted by STATUS, not by list length. The lists used to hold successes only —
+    # because every failure was silently dropped — so `len()` happened to mean
+    # "saved". Now that failures are recorded, `len()` would count them as backed-up
+    # files: the same number lying in the opposite direction.
+    saved = {k: [r for r in v if r.get("status") == "success"] for k, v in results.items()}
+    failures = [r for v in results.values() for r in v if r.get("status") == "failed"]
+
     metadata = {
         "timestamp": timestamp,
         "server": server_name,
         "type": "webserver",
-        "nginx_files": len(results["nginx"]),
-        "apache_files": len(results["apache"]),
+        "nginx_files": len(saved["nginx"]),
+        "apache_files": len(saved["apache"]),
         "details": results,
     }
 
@@ -751,13 +831,25 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
         if _tmp_m4 is not None:
             _tmp_m4.unlink(missing_ok=True)
 
+    # Exit honesty, same rule as its sibling backup steps. A server with neither
+    # nginx nor apache installed records no failures at all (every `test -f` said
+    # missing), so it stays a clean exit 0 — only a real download error counts.
+    all_failed = bool(failures) and not (saved["nginx"] or saved["apache"])
+
     if options.get("json"):
         ch.raw_print(json.dumps(metadata))
+    elif all_failed:
+        ch.error(f"❌ Web server backup FAILED — every file failed ({len(failures)} attempted, 0 saved)")
+        ch.info(f"   Location: {backup_dir.parent}")
     else:
         ch.success("✅ Web server backup complete")
         ch.info(f"   Location: {backup_dir.parent}")
-        ch.info(f"   Nginx files: {len(results['nginx'])}")
-        ch.info(f"   Apache files: {len(results['apache'])}")
+        ch.info(f"   Nginx files: {len(saved['nginx'])}")
+        ch.info(f"   Apache files: {len(saved['apache'])}")
+        if failures:
+            ch.warning(f"   {len(failures)} file(s) failed to download")
+    if all_failed:
+        raise typer.Exit(1)
 
 
 def backup_all(name: str | None, compress: str, options: dict[str, Any]):
@@ -865,8 +957,39 @@ def list_backups_cmd(options: dict[str, Any]):
         ch.info(f"\nBackups directory: {backups_dir}")
 
 
+def _backup_components(backup_dir: Path) -> list[dict[str, Any]]:
+    """Inventory a backup directory: one row per component, with file count and size."""
+    rows: list[dict[str, Any]] = []
+    for sub in sorted(p for p in backup_dir.iterdir() if p.is_dir()):
+        files = [f for f in sub.rglob("*") if f.is_file()]
+        rows.append({
+            "component": sub.name,
+            "files": len(files),
+            "size_mb": round(sum(f.stat().st_size for f in files) / (1024 * 1024), 2),
+            "path": str(sub),
+        })
+    return rows
+
+
 def restore_backup_cmd(backup_name: str, component: str | None, options: dict[str, Any]):
-    """Restore from backup (with confirmation)."""
+    """Report what a backup contains. **Restore itself is not implemented.**
+
+    This command used to print "⚠️ This will overwrite existing files/databases",
+    take the operator's ``y``, and then do nothing and exit 0 — on the one path a
+    person reaches while their server is already broken. Three separate lies in
+    one command: a destructive warning about an action that never happens, consent
+    collected for it, and a success exit code over a restore that did not occur.
+    A script (or `navig backup restore x && …`) could not tell it apart from a
+    real recovery.
+
+    It is NOT quietly implemented here instead: writing over ``/etc/ssh/sshd_config``,
+    importing across a live database, and untarring into ``/usr/local/hestia`` are
+    remote-destructive operations that need an owner's decision and a tested
+    rollback — an *untested* restore that really overwrites is far worse than one
+    that does nothing. So the command now does the honest, useful half: it shows
+    exactly what the backup holds and where, and exits non-zero so nothing
+    downstream mistakes it for a completed restore.
+    """
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
@@ -876,39 +999,52 @@ def restore_backup_cmd(backup_name: str, component: str | None, options: dict[st
         ch.error(f"Backup not found: {backup_name}")
         raise typer.Exit(2)
 
-    # A corrupt metadata.json must not block a restore that can still proceed.
+    # A corrupt metadata.json must not stop us describing what is on disk.
     metadata = _read_backup_metadata(backup_dir / "metadata.json") or {"type": "unknown"}
+    components = _backup_components(backup_dir)
+    if component:
+        components = [c for c in components if c["component"] == component]
 
     if options.get("dry_run"):
-        ch.info(f"[DRY RUN] Would restore from: {backup_name}")
-        ch.info(f"[DRY RUN] Type: {metadata.get('type', 'unknown')}")
-        if component:
-            ch.info(f"[DRY RUN] Component: {component}")
+        # "[DRY RUN] Would restore from: …" was itself untrue — it would not.
+        ch.warning("[DRY RUN] Restore is not implemented — nothing would be restored.")
+        ch.info(f"[DRY RUN] Backup: {backup_name} ({metadata.get('type', 'unknown')})")
         return
 
-    # Confirmation required
-    if not options.get("force"):
-        if options.get("json"):
-            ch.error("Restore requires --force flag in JSON mode")
-            raise typer.Exit(1)
+    if options.get("json"):
+        ch.raw_print(json.dumps({
+            "restored": False,
+            "reason": "restore is not implemented",
+            "backup": backup_name,
+            "type": metadata.get("type", "unknown"),
+            "path": str(backup_dir),
+            "components": components,
+        }, indent=2))
+        raise typer.Exit(1)
 
-        ch.warning("⚠️  RESTORE OPERATION")
-        ch.warning(f"   Backup: {backup_name}")
-        ch.warning(f"   Type: {metadata.get('type', 'unknown')}")
-        if component:
-            ch.warning(f"   Component: {component}")
-        ch.warning("   This will overwrite existing files/databases")
+    ch.error(f"Restore is not implemented — nothing was restored from '{backup_name}'.")
 
-        confirm = input("\nProceed with restore? [y/N]: ")
-        if confirm.lower() != "y":
-            ch.info("Restore cancelled")
-            return
+    if component and not components:
+        ch.warning(f"   (no component '{component}' in this backup)")
 
-    ch.info(f"🔄 Restoring from backup: {backup_name}")
-    ch.warning("⚠️  Restore functionality requires manual review")
-    ch.warning("   Please review backup contents in:")
-    ch.warning(f"   {backup_dir}")
-    ch.warning("   Then manually restore files/databases as needed")
+    if components:
+        table = Table(
+            title=f"📦 {backup_name} · {metadata.get('type', 'unknown')}",
+            show_header=True,
+            header_style="bold cyan",
+        )
+        table.add_column("Component", style="cyan", no_wrap=True)
+        table.add_column("Files", justify="right", no_wrap=True)
+        table.add_column("Size", justify="right", no_wrap=True)
+        table.add_column("Path")  # the one wrappable column
+        for c in components:
+            table.add_row(c["component"], str(c["files"]), f"{c['size_mb']:.2f} MB", c["path"])
+        ch.console.print(table)
+    else:
+        ch.warning(f"   This backup has no component directories: {backup_dir}")
+
+    ch.info(f"  Restore these by hand from {backup_dir}")
+    raise typer.Exit(1)
 
 
 # ============================================================================
@@ -930,6 +1066,13 @@ backup_app = typer.Typer(
 @backup_app.callback()
 def backup_callback(ctx: typer.Context):
     """Backup management - run without subcommand for help."""
+    # Every subcommand in this module reads `ctx.obj["json"]` / `.get("yes")` etc.
+    # The root `navig` callback populates it, but reaching a subcommand any other
+    # way (a CliRunner test, `backup_app` mounted elsewhere) left it None, and
+    # `ctx.obj.get(...)` on None raises AttributeError before the command runs.
+    # The group callback runs before every subcommand, so guarding here covers all
+    # 16 sites at once; child contexts inherit `obj` through the parent chain.
+    ctx.ensure_object(dict)
     if ctx.invoked_subcommand is None:
         show_subcommand_help("backup", ctx)
         raise typer.Exit()
@@ -990,7 +1133,11 @@ def backup_import(
     merge: bool = typer.Option(
         True,
         "--merge/--replace",
-        help="Merge with existing config (default) or replace",
+        help=(
+            "Merge (default): keep existing hosts/apps, add only new ones. "
+            "--replace: OVERWRITE entries present in the backup. Neither mode "
+            "deletes anything — entries absent from the backup are always kept."
+        ),
     ),
     password: str | None = typer.Option(
         None, "--password", "-p", help="Decryption password (prompted if needed)"
@@ -1110,7 +1257,7 @@ def backup_restore(
     ),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ):
-    """Restore from a comprehensive backup by name."""
+    """Report what a backup contains (restore itself is not implemented)."""
     ctx.obj["force"] = force
     restore_backup_cmd(backup_name, component, ctx.obj)
 

@@ -5,8 +5,6 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 # ---------------------------------------------------------------------------
 # navig.spaces.resolver
 # ---------------------------------------------------------------------------
@@ -203,7 +201,7 @@ class TestInstallerRunnerApply:
         assert results[0].state == ModuleState.SKIPPED
 
     def test_stops_on_failed_result(self, tmp_path):
-        from navig.installer.contracts import Action, ModuleState, Result
+        from navig.installer.contracts import ModuleState, Result
         from navig.installer.runner import apply
         ctx = self._make_ctx(tmp_path)
         actions = [self._make_action("bad_mod", "act1"), self._make_action("bad_mod2", "act2")]

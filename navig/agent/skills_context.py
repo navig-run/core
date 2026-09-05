@@ -24,9 +24,15 @@ Files *without* frontmatter are still loaded — the filename (stem) becomes
 the skill name, and activation rules default to empty (manual-only).
 
 Integration:
-    The agent calls ``SkillsContext.activate()`` each turn with the current
-    file paths and user message.  Matching skills are injected into the
-    system prompt via ``format_for_system_prompt()``.
+    The agent calls ``SkillsContext.activate()`` each turn with the current file
+    paths and user message, then renders the matches with
+    ``format_for_system_prompt()``.
+
+    ⚠ Despite that method's name, the block is prepended to the **user turn**,
+    not the system prompt — see ``ConversationalAgent.run_agentic``. Matched
+    skills are query-specific, so putting them in the system block would mutate
+    the cached ``tools → system`` prefix on every turn and re-bill it at write
+    price. The name is kept for backward compatibility with out-of-tree callers.
 """
 
 from __future__ import annotations
@@ -37,7 +43,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from navig.platform.paths import config_dir, skills_dir
+from navig.platform.paths import skills_dir
 
 logger = logging.getLogger(__name__)
 
@@ -373,7 +379,12 @@ class SkillsContext:
     # -- Formatting -----------------------------------------------------------
 
     def format_for_system_prompt(self, active_skills: list[ContextSkill]) -> str:
-        """Render active skills as a system-prompt section."""
+        """Render active skills as an ``## Active Skills`` section.
+
+        ⚠ Name notwithstanding, the caller prepends this to the **user turn**.
+        Skills are matched per message, so injecting them into the system block
+        would invalidate the cached tools+system prefix every turn.
+        """
         if not active_skills:
             return ""
 
@@ -412,6 +423,57 @@ class SkillsContext:
         """Force a reload of all skill files from disk."""
         self._loaded = False
         return self.load()
+
+
+# ---------------------------------------------------------------------------
+# Shared per-workspace contexts
+# ---------------------------------------------------------------------------
+
+#: One :class:`SkillsContext` per workspace dir, shared by every reader.
+_CONTEXTS: dict[str, SkillsContext] = {}
+
+
+def get_skills_context(
+    workspace_dir: str, *, include_installed: bool = True
+) -> SkillsContext:
+    """The one :class:`SkillsContext` for ``workspace_dir``.
+
+    Two callers need the **same object**, not merely equivalent ones:
+
+    * the prompt builder, which renders the active skills into the system prompt, and
+    * the ``manage_skills`` agent tool, whose ``force_activate`` / ``force_deactivate``
+      mutate in-memory sets on one instance.
+
+    Give them separate instances and the tool answers *"force-activated. It will be
+    included in the next turn"* while the next turn renders from an object that never
+    heard about it — a phantom success, and a worse failure than the tool being absent.
+
+    Keyed by workspace dir rather than held in a single module global because the daemon
+    never chdirs and the operator can switch the active space while it runs, so a lone
+    global would hand the new space whatever the previous one last activated.
+
+    Construction runs ``load()`` over the skill roots, so caching also keeps that off the
+    per-turn path.
+
+    ⚠ Scope is the **space, not the session**: two conversations in the same workspace
+    share these force-activation sets, so a skill switched on in one appears in the other.
+    That matches how skills already behave — auto-activation reads the same space-level
+    stores for every session — and the effect is additive instructions the operator can
+    switch back off. Making it per-session would mean threading a session key through the
+    tool, which it does not currently receive.
+    """
+    ctx = _CONTEXTS.get(workspace_dir)
+    if ctx is None:
+        ctx = SkillsContext(
+            workspace_dir=workspace_dir, include_installed=include_installed
+        )
+        _CONTEXTS[workspace_dir] = ctx
+    return ctx
+
+
+def reset_skills_contexts() -> None:
+    """Drop every cached context (tests; a space being re-scaffolded)."""
+    _CONTEXTS.clear()
 
 
 # ---------------------------------------------------------------------------

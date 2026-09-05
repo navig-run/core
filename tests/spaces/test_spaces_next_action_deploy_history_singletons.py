@@ -1,11 +1,7 @@
 """Batch 66 — spaces/next_action, deploy/history, cli/_singletons."""
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # navig.spaces.next_action — first_pending_task, SpaceNextAction
@@ -41,7 +37,7 @@ class TestFirstPendingTask:
 
 class TestGetSpaceNextAction:
     def test_returns_none_when_path_not_exist(self, tmp_path):
-        from navig.spaces.contracts import SpaceConfig, normalize_space_name
+        from navig.spaces.contracts import SpaceConfig
         from navig.spaces.next_action import get_space_next_action
 
         fake_cfg = SpaceConfig(

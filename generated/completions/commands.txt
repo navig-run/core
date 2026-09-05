@@ -4,6 +4,7 @@ navig action remove
 navig action run
 navig action show
 navig agent config
+navig agent context
 navig agent continuation continue
 navig agent continuation pause
 navig agent continuation skip
@@ -116,7 +117,16 @@ navig approve policy
 navig approve yes
 navig ask
 navig audio check
+navig audio clone
+navig audio draft
 navig audio gen
+navig audio plan
+navig audio publish
+navig audio render
+navig audio slowed
+navig audio speed
+navig audio translate
+navig audio voices
 navig audit tail
 navig auto click
 navig auto clipboard
@@ -212,6 +222,7 @@ navig cdp profile open
 navig cdp profile proxy
 navig cdp profile remove
 navig cdp profile use
+navig cdp record
 navig cdp screenshot
 navig cdp scroll
 navig cdp snapshot
@@ -315,6 +326,8 @@ navig debug tail
 navig deck deploy
 navig deck dev
 navig deck open
+navig dedupe restore
+navig dedupe scan
 navig deploy check
 navig deploy history
 navig deploy init
@@ -357,6 +370,7 @@ navig docker start
 navig docker stats
 navig docker stop
 navig docs
+navig doctor clean-path
 navig doctor migrate-packs
 navig download analyse
 navig download batch
@@ -368,6 +382,20 @@ navig download logout
 navig download music-links
 navig download post
 navig download profile
+navig ebay bulk
+navig ebay doctor
+navig ebay draft
+navig ebay edit
+navig ebay end
+navig ebay env
+navig ebay list
+navig ebay offers
+navig ebay orders
+navig ebay price
+navig ebay publish
+navig ebay relist
+navig ebay ship
+navig ebay show
 navig email list
 navig email search
 navig email send
@@ -381,6 +409,39 @@ navig evolve script
 navig evolve skill
 navig evolve status
 navig evolve workflow
+navig explore audio-sort
+navig explore audio-undo
+navig explore collect
+navig explore dedup
+navig explore gallery
+navig explore merge-episode
+navig explore open
+navig explore photos arrange
+navig explore photos arrange-remove
+navig explore photos classes
+navig explore photos dates
+navig explore photos explain
+navig explore photos faces
+navig explore photos gallery
+navig explore photos index
+navig explore photos organize
+navig explore photos people cluster
+navig explore photos people list
+navig explore photos people merge
+navig explore photos people name
+navig explore photos people split
+navig explore photos places
+navig explore photos search
+navig explore photos status
+navig explore photos subjects
+navig explore photos triage
+navig explore photos triage-undo
+navig explore photos undo
+navig explore photos views
+navig explore photos views-remove
+navig explore probe
+navig explore route
+navig explore undo
 navig facebook backup
 navig facebook caption
 navig facebook check
@@ -549,10 +610,20 @@ navig github wiki
 navig github workflows
 navig gmail compose
 navig habit add
+navig habit checkin
+navig habit journal
 navig habit list
+navig habit log
+navig habit pause
 navig habit remove
+navig habit resume
+navig habit review
+navig habit spark
+navig habit stats
 navig habit status
+navig habit streak
 navig habit templates
+navig habit today
 navig heartbeat configure
 navig heartbeat history
 navig heartbeat status
@@ -571,6 +642,9 @@ navig host deploy
 navig host discover-local
 navig host firewall
 navig host list
+navig host lock acquire
+navig host lock release
+navig host lock status
 navig host maintenance clean
 navig host maintenance install
 navig host maintenance run
@@ -578,6 +652,7 @@ navig host maintenance show
 navig host maintenance update
 navig host monitor report
 navig host monitor show
+navig host remove
 navig host security edit
 navig host security show
 navig host servers
@@ -713,11 +788,13 @@ navig matrix store bridges
 navig matrix store events
 navig matrix store prune
 navig matrix store rooms
+navig matrix store set-purpose
 navig matrix store stats
 navig matrix tail
 navig matrix use
 navig mcp disable
 navig mcp enable
+navig mcp info
 navig mcp install
 navig mcp install-config
 navig mcp list
@@ -872,6 +949,7 @@ navig output-style list
 navig output-style off
 navig output-style show
 navig output-style use
+navig pipeline reel
 navig pipeline run
 navig pipeline schedule
 navig pipeline status
@@ -914,13 +992,6 @@ navig plugins remove
 navig plugins show
 navig portable create
 navig portable validate
-navig presence accounts
-navig presence check
-navig presence crawl
-navig presence ingest
-navig presence lint
-navig presence report
-navig presence status
 navig proactive setup
 navig proactive start
 navig proactive status
@@ -955,6 +1026,9 @@ navig repo guard status
 navig repo guard uninstall
 navig repo lock release
 navig repo lock status
+navig repo new
+navig repo prune
+navig repo remove
 navig repo stale
 navig run
 navig scaffold apply
@@ -1040,6 +1114,7 @@ navig social receipts
 navig social redirect-uri
 navig social refresh
 navig social report
+navig social stats
 navig social status
 navig social sync
 navig software list
@@ -1119,10 +1194,21 @@ navig telegram business ping
 navig telegram business rights
 navig telegram business status
 navig telegram confirm
+navig telegram contacts list
+navig telegram contacts prune
+navig telegram contacts runs
+navig telegram contacts tag
+navig telegram contacts tag-list
+navig telegram contacts undo
 navig telegram dedupe
 navig telegram delete
+navig telegram delete-chat
 navig telegram dialogs
 navig telegram download-media
+navig telegram extensions disable
+navig telegram extensions enable
+navig telegram extensions info
+navig telegram extensions list
 navig telegram folders apply
 navig telegram folders export
 navig telegram folders list
@@ -1132,6 +1218,7 @@ navig telegram history sync
 navig telegram links
 navig telegram login
 navig telegram logout
+navig telegram members
 navig telegram move
 navig telegram rename
 navig telegram rename-bulk

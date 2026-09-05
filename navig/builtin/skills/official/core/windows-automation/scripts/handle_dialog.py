@@ -17,7 +17,6 @@ import sys
 import time
 
 from pywinauto import Desktop
-from pywinauto.findwindows import ElementNotFoundError
 
 # Fix Windows console encoding
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")

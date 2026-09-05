@@ -170,7 +170,16 @@ class ServerDiscovery:
 
         try:
             ssh_cmd = self._build_ssh_command(command)
-            result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=_DISCOVERY_SSH_TIMEOUT)
+            # UTF-8, not text=True: these bytes came from the REMOTE host, so the local
+            # ANSI code page has nothing to do with them (cp1251 here, while every server
+            # navig targets is UTF-8). Matches remote.py::execute_command.
+            result = subprocess.run(
+                ssh_cmd,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=_DISCOVERY_SSH_TIMEOUT,
+            )
 
             success = result.returncode == 0
             stdout_text = result.stdout.strip()

@@ -367,11 +367,19 @@ def is_running(app_id: str) -> bool:
         # No psutil — fall back to platform process listing.
         try:
             if sys.platform == "win32":
+                # BYTES, not text=True. tasklist writes the OEM code page (866 here) while
+                # text=True decodes with the ANSI one (cp1251) — and its output is not pure
+                # ASCII: measured 85 non-ASCII bytes in 6710 for a single filtered query,
+                # from the localized header. The mismatch is harmless for an ASCII needle,
+                # but the obvious "fix" of encoding="utf-8" RAISES on those bytes, which
+                # this except: would swallow into "the process is not running".
+                # An image name is ASCII, so compare without decoding at all and the
+                # question of which code page it is never arises.
                 out = subprocess.run(
                     ["tasklist", "/FI", f"IMAGENAME eq {name}.exe"],
-                    capture_output=True, text=True, timeout=5,
+                    capture_output=True, timeout=5,
                 )
-                return name.lower() in out.stdout.lower()
+                return name.lower().encode() in out.stdout.lower()
             out = subprocess.run(["pgrep", "-fi", name], capture_output=True, text=True, timeout=5)
             return out.returncode == 0
         except Exception:  # noqa: BLE001
@@ -491,7 +499,9 @@ def launch_with_cdp(
             # under a different PID. Now that the port answers, resolve the process
             # actually serving it and record THAT, so `cdp launched` (and anything
             # else reading the registry) reports a PID that exists.
-            real = _debug_browser_pids(port, user_data_dir)
+            # exe_hint matters for Electron apps: they carry no navig user-data-dir, so
+            # without it this would resolve ANY process on the port — and record it as ours.
+            real = _debug_browser_pids(port, user_data_dir, exe_hint=exe)
             if real and real[0] != proc.pid:
                 logger.debug("[cdp.targets] port %d: launcher pid %d → real browser pid %d",
                              port, proc.pid, real[0])
@@ -561,23 +571,84 @@ def remove_launched(port: int) -> None:
         _write_launched(data)
 
 
-def _terminate_pid(pid: int) -> bool:
-    """Terminate a process (and its children) by PID. Best-effort, cross-platform."""
-    try:
-        import psutil  # type: ignore
+# A genuine recorded process was created BEFORE record_launched() ran, so this only has to
+# absorb clock skew between psutil's create_time and time.time() — not a real elapsed window.
+_PID_REUSE_SLACK_SECONDS = 60.0
 
+
+def _pid_is_still_the_recorded_process(pid: int, entry: dict) -> bool:
+    """Is *pid* still the process we recorded at launch — or one that RECYCLED its number?
+
+    ``stop_launched`` terminates the tracked PID **and its whole process tree**, and the PID it
+    tracks is, by this module's own admission, usually a corpse: on Windows the ``chrome.exe`` we
+    ``Popen`` is a launcher that exits within ~100 ms. A dead PID is immediately available for
+    reuse, ``cdp-launched.json`` lives in the config dir and outlives reboots, and nothing here
+    checked identity — so ``navig cdp stop`` could terminate an arbitrary unrelated process tree
+    that merely inherited the number. Verified against a plain ``python -c "sleep(60)"``: killed,
+    reported ``True``. That breaks the promise ``cdp_actions.stop`` prints in its own docstring —
+    "it never kills unrelated browsers".
+
+    Two independent signals, both required:
+      * **create_time** — the decisive one. A recycled PID belongs to a process that necessarily
+        started *after* ours died, hence after we recorded it.
+      * **identity** — it must still look like what we launched (our profile dir, the executable
+        we recorded, or a debug-port flag), in case the clock is untrustworthy.
+
+    Refusing is safe and is the default for anything unreadable: ``stop_launched`` still sweeps
+    the processes genuinely serving the port and still verifies by probing it, so a PID we
+    decline to kill costs nothing — while a PID we kill wrongly costs the operator a live process.
+    """
+    try:
+        import psutil  # type: ignore  # noqa: PLC0415
+    except ImportError:
+        return False  # cannot identify -> must not kill
+
+    try:
         proc = psutil.Process(pid)
-        for child in proc.children(recursive=True):
-            try:
-                child.terminate()
-            except Exception:  # noqa: BLE001
-                pass
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except Exception:  # noqa: BLE001
-            proc.kill()
+        created = proc.create_time()
+        name = proc.name()
+        cmdline = " ".join(proc.cmdline() or [])
+    except Exception:  # noqa: BLE001 - gone, or unreadable (access denied): either way, not ours to kill
+        return False
+
+    started = entry.get("started")
+    if not isinstance(started, (int, float)):
+        return False  # no launch timestamp -> identity cannot be proven
+    if created > started + _PID_REUSE_SLACK_SECONDS:
+        logger.warning(
+            "[cdp.targets] refusing to kill pid %s: created after we recorded it (%s > %s) — "
+            "the PID was recycled and now belongs to %r",
+            pid, int(created), int(started), name,
+        )
+        return False
+
+    user_data_dir = entry.get("user_data_dir") or ""
+    if user_data_dir and user_data_dir in cmdline:
         return True
+    if "--remote-debugging-port" in cmdline:
+        return True
+    app = entry.get("app") or ""
+    if app and _exe_matches(name, app):
+        return True
+
+    logger.warning(
+        "[cdp.targets] refusing to kill pid %s (%r): it no longer matches the browser we "
+        "recorded for this port", pid, name,
+    )
+    return False
+
+
+def _terminate_pid(pid: int) -> bool:
+    """Terminate a process **and its children** by PID. Returns whether it is actually GONE.
+
+    The return value is consumed as a fact — ``stop_all_launched`` reports it to the operator as
+    ``orphans_reclaimed`` — so it must mean "gone", not "we tried". It used to return ``True``
+    from three places that verified nothing: after ``proc.kill()`` with no second wait, after only
+    ``terminate()``-ing the children (one that ignores SIGTERM outlives the sweep), and from the
+    catch-all handler, which read an access-denied failure as "already gone".
+    """
+    try:
+        import psutil  # type: ignore  # noqa: PLC0415
     except ImportError:
         try:
             if sys.platform == "win32":
@@ -589,20 +660,95 @@ def _terminate_pid(pid: int) -> bool:
         except Exception as exc:  # noqa: BLE001
             logger.warning("[cdp.targets] terminate pid %s failed: %s", pid, exc)
             return False
-    except Exception as exc:  # noqa: BLE001 (psutil NoSuchProcess etc.)
-        logger.debug("[cdp.targets] pid %s already gone: %s", pid, exc)
-        return True
+
+    try:
+        proc = psutil.Process(pid)
+        children = proc.children(recursive=True)
+    except psutil.NoSuchProcess:
+        return True  # genuinely gone
+    except Exception as exc:  # noqa: BLE001 - access denied etc: we could not even look
+        logger.warning("[cdp.targets] cannot inspect pid %s: %s", pid, exc)
+        return False
+
+    # Snapshot taken above, before anything is signalled: once the parent exits its tree can no
+    # longer be walked, so a child killed later has to be reached through a handle we already hold.
+    for child in children:
+        try:
+            child.terminate()
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        proc.terminate()
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        proc.wait(timeout=5)
+    except Exception:  # noqa: BLE001 - did not go quietly; escalate the WHOLE tree, not just it
+        for child in children:
+            try:
+                child.kill()
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            proc.kill()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            proc.wait(timeout=2)
+        except Exception:  # noqa: BLE001
+            pass
+
+    try:
+        gone = not proc.is_running()
+    except Exception:  # noqa: BLE001 - the handle is unusable, which means the process is gone
+        gone = True
+    if not gone:
+        logger.warning("[cdp.targets] pid %s survived terminate and kill", pid)
+    return gone
 
 
-def _debug_browser_pids(port: int, user_data_dir: str | None) -> list[int]:
-    """PIDs of the REAL browser processes serving *port*.
+def _exe_matches(argv0: str, hint: str) -> bool:
+    """Whether *argv0* is the executable *hint* names.
 
-    Selection is by ``--remote-debugging-port=<port>`` (and the unique
-    ``--user-data-dir`` when we recorded one) — never by process name. The
-    operator's own Chrome/Edge carries neither flag, so it can never be selected
-    here. Renderer/GPU/utility children carry ``--type=`` and die with their
-    parent, so only the MAIN processes are returned.
+    *hint* is what the registry stored: either a short app id (``"discord"``) or an absolute
+    executable path. Compared on basename, case-insensitively — Windows argv carries
+    ``…\\Discord.exe`` for the id ``discord``.
     """
+    name = os.path.basename(argv0).lower()
+    wanted = os.path.basename(hint).lower()
+    if not name or not wanted:
+        return False
+    return name == wanted or os.path.splitext(name)[0] == os.path.splitext(wanted)[0]
+
+
+def _debug_browser_pids(
+    port: int, user_data_dir: str | None, *, exe_hint: str | None = None
+) -> list[int]:
+    """PIDs of the REAL browser processes serving *port* THAT WE CAN ATTRIBUTE TO OURSELVES.
+
+    Selection is by ``--remote-debugging-port=<port>`` plus a second, identifying signal —
+    never by process name alone, and never by the port alone:
+
+    * the unique ``--user-data-dir`` we recorded, when there is one; or
+    * *exe_hint* — the executable we launched — when there is not.
+
+    That second signal is not optional. ``--user-data-dir`` is only defaulted for
+    ``BROWSER_APPS`` (chrome/edge/brave); an **Electron** app (discord/notion/slack/vscode) keeps
+    its own profile, so it is recorded with ``user_data_dir=None``. Matching on the port alone
+    then selected ANY process serving that port — including another tool's deliberately-debugged
+    browser that happens to sit there — and ``stop_launched`` terminates whatever this returns.
+    That is precisely what ``navig cdp status`` promises never happens ("NAVIG never touches a
+    browser it did not launch"). With neither signal available we return nothing: refusing to
+    kill costs a leaked browser we report honestly; killing a stranger costs the operator their
+    session.
+
+    Renderer/GPU/utility children carry ``--type=`` and die with their parent, so only the MAIN
+    processes are returned.
+    """
+    if not user_data_dir and not exe_hint:
+        return []  # unattributable — never sweep a port we cannot claim
+
     try:
         import psutil  # type: ignore
     except ImportError:
@@ -620,8 +766,11 @@ def _debug_browser_pids(port: int, user_data_dir: str | None) -> list[int]:
             cmd = " ".join(argv)
             if needle_port not in cmd:
                 continue
-            if needle_dir and needle_dir not in cmd:
-                continue
+            if needle_dir:
+                if needle_dir not in cmd:
+                    continue
+            elif not _exe_matches(argv[0], exe_hint or ""):
+                continue  # serving our port, but it is not the app we launched
             if any(a.startswith("--type=") for a in argv):
                 continue  # a child (renderer/gpu/utility) — reaped with its parent
             pids.append(int(proc.info["pid"]))
@@ -644,9 +793,16 @@ def stop_launched(port: int) -> dict:
         launcher, returned ``{"closed": true}``, and left the actual browser running
         forever. Every leak was silent, and each one holds a window and a profile dir.
 
-    So: kill the tracked PID (harmless if it is the corpse), then kill the processes
-    that are genuinely serving this debug port, then VERIFY by probing the port.
+    So: kill the tracked PID **only if it is still the process we recorded**, then kill
+    the processes genuinely serving this debug port, then VERIFY by probing the port.
     ``closed`` now means closed.
+
+    That first condition is not caution, it is the fix to a second bug. This docstring
+    used to justify the tracked-PID kill as "harmless if it is the corpse" — but a
+    corpse's PID is *reusable*, and this registry outlives reboots, so the number could
+    belong to anything by now; ``_terminate_pid`` would take it and its whole process
+    tree. See :func:`_pid_is_still_the_recorded_process`. Do not reintroduce the
+    unconditional kill on the grounds that the PID is probably dead — that IS the hazard.
     """
     data = _read_launched()
     entry = data.get(str(port))
@@ -656,11 +812,19 @@ def stop_launched(port: int) -> dict:
     user_data_dir = entry.get("user_data_dir")
 
     try:
-        _terminate_pid(int(entry["pid"]))
+        tracked_pid = int(entry["pid"])
     except (KeyError, TypeError, ValueError):  # a malformed registry entry must not block the kill
         pass
+    else:
+        # Only if it is STILL that process. The tracked PID is usually a dead launcher (above),
+        # and a dead PID gets recycled — killing it blind takes out whatever inherited the
+        # number, and its whole tree with it. See _pid_is_still_the_recorded_process.
+        if _pid_is_still_the_recorded_process(tracked_pid, entry):
+            _terminate_pid(tracked_pid)
 
-    for pid in _debug_browser_pids(port, user_data_dir):
+    # entry["app"] is the executable (or short id) we recorded at launch — the only thing that
+    # identifies an Electron app's process, which carries no navig --user-data-dir.
+    for pid in _debug_browser_pids(port, user_data_dir, exe_hint=entry.get("app")):
         _terminate_pid(pid)
 
     # The only honest signal: is the debug port still answering?
@@ -798,11 +962,36 @@ def stop_all_launched() -> dict:
     return out
 
 
+def _os_assigned_port() -> int | None:
+    """Ask the OS for any free localhost port, or None if even that fails.
+
+    Deliberately no SO_REUSEADDR: port 0 must yield a genuinely unused port, and on
+    Windows SO_REUSEADDR permits binding an address another socket already holds.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind(("127.0.0.1", 0))
+            return int(sock.getsockname()[1])
+        except OSError:
+            return None
+
+
 def find_free_port(start: int = 9222, count: int = 50) -> int | None:
     """Find a localhost port with nothing bound AND no live CDP endpoint.
 
     Used by `cdp new` to spin up an isolated browser without clobbering an
     existing debug session.
+
+    The `start..start+count` window is a PREFERENCE, not the search space. Windows
+    RESERVES port ranges for Hyper-V / WSL / Docker, and `bind()` inside a reserved
+    range raises PermissionError(13) even though nothing is listening — so a window
+    can be entirely unusable on a machine with tens of thousands of free ports.
+    Measured on the operator's own box: `netsh interface ipv4 show excludedportrange
+    protocol=tcp` reserves **9181-9280**, which swallows the whole default 9222..9271
+    window, and `navig cdp new` answered "no free debug port available" every time —
+    the browser automation this repo mandates for all browser work simply did not run.
+    So when the window is exhausted we fall back to an OS-assigned ephemeral port,
+    which is also what CDP itself recommends (`--remote-debugging-port=0`).
     """
     for port in range(start, start + count):
         # Skip ports already serving CDP.
@@ -815,7 +1004,9 @@ def find_free_port(start: int = 9222, count: int = 50) -> int | None:
                 return port
             except OSError:
                 continue
-    return None
+    # A port the OS just handed us from bind(0) had nothing bound to it, so it cannot
+    # already be serving CDP — no probe needed.
+    return _os_assigned_port()
 
 
 def new_session_profile_dir(name: str | None = None) -> str:

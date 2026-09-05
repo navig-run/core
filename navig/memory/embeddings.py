@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -308,6 +309,9 @@ class CachedEmbeddingProvider(EmbeddingProvider):
         cached = CachedEmbeddingProvider(base, cache_dir=Path('.cache/embeddings'))
     """
 
+    _MAX_ENTRIES = 20_000  # LRU cap — a bounded cache, not an ever-growing ledger
+    _SAVE_EVERY = 64  # debounce disk writes: persist after this many new entries
+
     def __init__(
         self,
         provider: EmbeddingProvider,
@@ -316,7 +320,11 @@ class CachedEmbeddingProvider(EmbeddingProvider):
         self.provider = provider
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self._cache: dict[str, list[float]] = {}
+        # Bounded LRU (was an unbounded dict that grew one ~KB vector per unique text for
+        # the process's life) + a dirty counter so a single embed_text() no longer rewrites
+        # the ENTIRE cache file on every miss (that was O(n²) bytes over a run).
+        self._cache: OrderedDict[str, list[float]] = OrderedDict()
+        self._dirty = 0
 
         # Load existing cache
         self._load_cache()
@@ -339,30 +347,51 @@ class CachedEmbeddingProvider(EmbeddingProvider):
         if cache_file.exists():
             try:
                 with open(cache_file, encoding='utf-8') as f:
-                    self._cache = json.load(f)
+                    self._cache = OrderedDict(json.load(f))
+                # Trim a previously-unbounded cache file down to the cap (keep most-recent).
+                while len(self._cache) > self._MAX_ENTRIES:
+                    self._cache.popitem(last=False)
                 _debug_log(f"Loaded {len(self._cache)} cached embeddings")
             except Exception as e:
                 _debug_log(f"Failed to load embedding cache: {e}")
-                self._cache = {}
+                self._cache = OrderedDict()
 
     def _save_cache(self) -> None:
         """Save cache to disk."""
         try:
             content = json.dumps(self._cache, ensure_ascii=False)
             _atomic_write_text(self._cache_file(), content)
+            self._dirty = 0
         except Exception as e:
             _debug_log(f"Failed to save embedding cache: {e}")
+
+    def _store(self, key: str, embedding: list[float]) -> None:
+        """Insert/refresh an entry, evicting the least-recently-used past the cap."""
+        self._cache[key] = embedding
+        self._cache.move_to_end(key)
+        while len(self._cache) > self._MAX_ENTRIES:
+            self._cache.popitem(last=False)
+        self._dirty += 1
+
+    def _maybe_save(self) -> None:
+        """Persist every write while the cache is SMALL (cheap rewrite → a short-lived CLI's
+        cache stays warm across runs), but DEBOUNCE once it's large so a tight embed_text loop
+        doesn't rewrite the whole file on every miss — that was the O(n²). At most
+        _SAVE_EVERY-1 recomputable entries are lost on an unclean exit (fine — it's a cache)."""
+        if len(self._cache) <= self._SAVE_EVERY or self._dirty >= self._SAVE_EVERY:
+            self._save_cache()
 
     def embed_text(self, text: str) -> list[float]:
         """Get embedding, using cache if available."""
         key = self._cache_key(text)
 
         if key in self._cache:
+            self._cache.move_to_end(key)  # LRU touch
             return self._cache[key]
 
         embedding = self.provider.embed_text(text)
-        self._cache[key] = embedding
-        self._save_cache()
+        self._store(key, embedding)
+        self._maybe_save()
 
         return embedding
 
@@ -376,6 +405,7 @@ class CachedEmbeddingProvider(EmbeddingProvider):
         for i, text in enumerate(texts):
             key = self._cache_key(text)
             if key in self._cache:
+                self._cache.move_to_end(key)  # LRU touch
                 results.append(self._cache[key])
             else:
                 results.append(None)
@@ -392,10 +422,10 @@ class CachedEmbeddingProvider(EmbeddingProvider):
                 new_embeddings,
             ):
                 key = self._cache_key(text)
-                self._cache[key] = embedding
+                self._store(key, embedding)
                 results[idx] = embedding
 
-            self._save_cache()
+            self._save_cache()  # one write per batch (not per item) — never O(n²)
 
         return results
 

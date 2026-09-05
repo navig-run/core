@@ -47,8 +47,8 @@ class TestFindGitRoot:
         """No .git anywhere → None.
 
         Uses `temp_dir` (the conftest fixture — system temp, OUTSIDE the checkout), not
-        pytest's `tmp_path`. `pytest.ini` pins basetemp to core/.pytest_tmp, which lives
-        INSIDE the git checkout, so every `tmp_path` has a .git ancestor and the upward
+        pytest's `tmp_path`. `core/conftest.py` points PYTEST_DEBUG_TEMPROOT at core/.dev/tmp,
+        which lives INSIDE the git checkout, so every `tmp_path` has a .git ancestor and the upward
         walk *correctly* returns the repo root. Asserting None from `tmp_path` meant
         asserting it from inside a repository — which is exactly why this failed (it got
         the worktree root back). See tests/core/test_tmp_dir_repo_boundary.py.
@@ -178,6 +178,16 @@ class TestImageSize:
     def test_portrait(self):
         assert ImageSize.PORTRAIT.value == "1024x1792"
 
+    def test_gpt_image_sizes(self):
+        """gpt-image-1 has its own ratios, and they are not DALL·E 3's.
+
+        The 1792 sizes belong to DALL·E 3, which no longer exists on accounts — so
+        without these the enum's only portrait option could not be used by the only
+        model that works, and the 400 it returned named the model rather than the size.
+        """
+        assert ImageSize.PORTRAIT_GPT.value == "1024x1536"
+        assert ImageSize.LANDSCAPE_GPT.value == "1536x1024"
+
     def test_all_sizes(self):
         assert set(ImageSize) == {
             ImageSize.SQUARE_SMALL,
@@ -185,6 +195,8 @@ class TestImageSize:
             ImageSize.SQUARE_LARGE,
             ImageSize.LANDSCAPE,
             ImageSize.PORTRAIT,
+            ImageSize.PORTRAIT_GPT,
+            ImageSize.LANDSCAPE_GPT,
         }
 
 

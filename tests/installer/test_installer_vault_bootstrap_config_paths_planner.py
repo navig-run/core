@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -199,7 +199,6 @@ def test_planner_missing_module_produces_placeholder(tmp_path):
 def test_planner_placeholder_module_not_reversible(tmp_path):
     from navig.installer.contracts import InstallerContext
     from navig.installer.planner import plan
-    from navig.installer.profiles import PROFILE_MODULES
 
     patched = ["nonexistent_module_xyz"]
     with patch.dict("navig.installer.profiles.PROFILE_MODULES", {"node": patched}):

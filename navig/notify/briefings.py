@@ -13,9 +13,22 @@ from navig.notify.router import get_notification_router
 logger = logging.getLogger("navig.notify")
 
 
-def _compose_raw() -> str:
-    """Best-effort plain-text briefing from whatever data sources are available."""
+def _compose_raw() -> tuple[str, list[str]]:
+    """Plain-text briefing, plus the names of any sources that FAILED.
+
+    A source that raises is not the same as a source with nothing to say. Every
+    failure used to be swallowed by a bare ``pass`` with no log at all, so a crashed
+    life dashboard produced "No new activity to brief on yet — add data in Apps to
+    start tracking" — a message that sends the operator off to add data they already
+    have. The caller distinguishes the three states: content, total failure, and a
+    genuinely empty install.
+
+    A missing optional source is NOT a failure: ``navig_harbor`` is a closed plugin
+    that most installs do not have, so an ImportError there is expected and silent.
+    """
     parts: list[str] = []
+    failed: list[str] = []
+
     # Life dashboard (habits / plans / calendar)
     try:
         from navig.commands.life_dashboard import build_dashboard  # type: ignore
@@ -24,27 +37,44 @@ def _compose_raw() -> str:
         txt = d if isinstance(d, str) else (d.get("text") if isinstance(d, dict) else "")
         if txt:
             parts.append(str(txt))
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001 — one bad source must not lose the briefing
+        failed.append("life dashboard")
+        logger.warning("briefing: life dashboard source failed: %s", exc, exc_info=True)
+
     # Spaces progress
     try:
         from navig.spaces.briefing import build_spaces_briefing_lines  # type: ignore
+        from navig.spaces.progress import collect_spaces_progress
 
-        lines = build_spaces_briefing_lines()
-        if lines:
-            parts.append("\n".join(lines) if isinstance(lines, (list, tuple)) else str(lines))
-    except Exception:  # noqa: BLE001
-        pass
-    # Finance one-liner
+        # Gate on the DATA api. build_spaces_briefing_lines is a *display* helper: with
+        # no spaces it returns a human-facing ["_No spaces available for briefing._"]
+        # placeholder rather than an empty list. Appending that made `raw` non-empty on
+        # a fresh install, which suppressed the real empty state below and handed the
+        # LLM a markdown placeholder as its only input. Its contract is shared with
+        # four other surfaces that render it directly, so it is right to leave alone.
+        if collect_spaces_progress():
+            lines = build_spaces_briefing_lines()
+            if lines:
+                parts.append("\n".join(lines) if isinstance(lines, (list, tuple)) else str(lines))
+    except Exception as exc:  # noqa: BLE001
+        failed.append("spaces progress")
+        logger.warning("briefing: spaces progress source failed: %s", exc, exc_info=True)
+
+    # Finance one-liner — optional closed plugin; absence is normal, not a failure.
     try:
         from navig_harbor import bizops
+    except ImportError:
+        bizops = None  # type: ignore[assignment]
+    if bizops is not None:
+        try:
+            snap = bizops.get_overview()
+            if snap.get("briefing"):
+                parts.append(str(snap["briefing"]))
+        except Exception as exc:  # noqa: BLE001
+            failed.append("finance overview")
+            logger.warning("briefing: finance source failed: %s", exc, exc_info=True)
 
-        snap = bizops.get_overview()
-        if snap.get("briefing"):
-            parts.append(str(snap["briefing"]))
-    except Exception:  # noqa: BLE001
-        pass
-    return "\n\n".join(p for p in parts if p).strip()
+    return "\n\n".join(p for p in parts if p).strip(), failed
 
 
 def _polish(raw: str) -> str:
@@ -78,14 +108,24 @@ async def build_and_dispatch_briefing(*, force: bool = False) -> dict:
         return {"skipped": "disabled"}
     import asyncio
 
-    raw = _compose_raw()
-    # _polish is SYNC (calls llm_generate) — never run it on the gateway event
-    # loop; offload so the daemon stays responsive during the summarize call.
-    text = (
-        await asyncio.to_thread(_polish, raw)
-        if raw
-        else "No new activity to brief on yet — add data in Apps to start tracking."
-    )
+    raw, failed = _compose_raw()
+    if raw:
+        # _polish is SYNC (calls llm_generate) — never run it on the gateway event
+        # loop; offload so the daemon stays responsive during the summarize call.
+        text = await asyncio.to_thread(_polish, raw)
+        if failed:
+            # Appended AFTER polishing so the model can't summarise the caveat away:
+            # a briefing silently missing a section is the same misleading shape as
+            # telling the operator there is no data at all.
+            text = f"{text}\n\n_(unavailable: {', '.join(failed)})_"
+    elif failed:
+        # Don't send them off to add data — nothing could be read.
+        text = (
+            "Couldn't build today's briefing — "
+            f"{', '.join(failed)} unavailable. Run `navig doctor`; no data was lost."
+        )
+    else:
+        text = "No new activity to brief on yet — add data in Apps to start tracking."
     title = f"Briefing · {datetime.now().strftime('%a %d %b')}"
     channels = settings["briefing_channels"] or None
     return await get_notification_router().dispatch(

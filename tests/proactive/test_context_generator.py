@@ -7,8 +7,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from navig.proactive.context_generator import ContextGenerator
 
 # ---------------------------------------------------------------------------

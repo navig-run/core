@@ -48,7 +48,7 @@ class PlanStep:
     args: dict[str, Any] = field(default_factory=dict)
     reason: str = ""
     # Filled during execution
-    status: str = "pending"  # pending | running | success | failed | skipped
+    status: str = "pending"  # pending | running | success | failed | skipped | denied
     output: str = ""
     error: str = ""
     elapsed_ms: float = 0.0
@@ -266,29 +266,49 @@ class PlanExecuteAgent:
     async def _request_approval(self, plan: ExecutionPlan) -> bool:
         """Present the plan and ask for user confirmation.
 
-        Uses navig's console_helper for interactive prompts.
-        Falls back to auto-approve if no TTY is available.
+        Fails CLOSED. Both branches used to return ``True``:
+
+        * no TTY → "auto-approve". The gateway and every daemon-hosted caller are
+          non-interactive by definition, so the one environment where nobody is
+          watching was the one that approved itself.
+        * any exception → "auto-approve". A failure to *ask* is not an answer.
+
+        A caller that genuinely runs unattended says so explicitly with
+        ``auto_approve=True`` (``navig agent plan --yes``), which skips this prompt —
+        and still does not skip the per-tool interlock in :meth:`_execute`.
         """
+        import sys
+
         try:
             from navig import console_helper as ch
 
             ch.info(f"Execution plan for: {plan.task}")
             for i, step in enumerate(plan.steps, 1):
-                ch.dim(f"  {i}. [{step.tool}] {step.reason}")
+                ch.dim(f"  {i}. \\[{step.tool}] {step.reason}")
                 if step.args:
                     for k, v in step.args.items():
                         ch.dim(f"     {k}={v}")
 
-            import sys
             if not sys.stdin.isatty():
-                logger.debug("Plan-execute: non-interactive — auto-approving")
-                return True
+                ch.warning(
+                    "Non-interactive session — cannot ask for plan approval. "
+                    "Re-run with --yes to execute unattended (each tool is still "
+                    "gated individually)."
+                )
+                return False
 
             answer = input("\nProceed with execution? [y/N] ").strip().lower()
             return answer in ("y", "yes")
-        except Exception:
-            # Non-interactive or import failure — auto-approve
-            return True
+        except (EOFError, KeyboardInterrupt):
+            logger.info("Plan-execute: approval prompt cancelled — not executing")
+            return False
+        except Exception as exc:  # noqa: BLE001 — could not ask ⇒ not approved
+            logger.error(
+                "Plan-execute: could not present the plan for approval (%s) — "
+                "refusing to execute",
+                exc,
+            )
+            return False
 
     # ── Phase 3: Execution ────────────────────────────────
 
@@ -299,7 +319,7 @@ class PlanExecuteAgent:
         max_retries: int = 1,
     ) -> None:
         """Execute plan steps sequentially via the tool registry."""
-        from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+        from navig.agent.agent_tool_registry import _AGENT_REGISTRY, is_failure_result
 
         # Build vault injector for credential-secured tools (F-17)
         def _vault_injector(keys: list[str]) -> dict[str, str]:
@@ -321,6 +341,48 @@ class PlanExecuteAgent:
             logger.info("Plan-execute: step %d/%d — %s", idx + 1, len(remaining), step.tool)
 
             t0 = time.monotonic()
+
+            # Per-tool approval interlock — FAIL CLOSED.
+            #
+            # The whole-plan prompt in phase 2 is a UX affordance, not the safety
+            # boundary, and it cannot be one here for two reasons: it does not run at
+            # all under `--yes`, and `_revise_plan` lets the LLM REPLACE the remaining
+            # steps mid-run — so the operator approves plan A and plan B executes.
+            # Gating each dispatch is what makes both cases safe, and it covers revised
+            # steps for free because they re-enter this same loop.
+            #
+            # This is the same interlock `agent/conv/agent.py` applies; this third
+            # dispatcher simply never had it.
+            try:
+                from navig.tools.approval import gate_agent_tool_call
+
+                denial = await gate_agent_tool_call(
+                    step.tool, parameters=step.args, reason="plan-execute"
+                )
+            except Exception as exc:  # noqa: BLE001 — interlock unavailable → deny
+                logger.error(
+                    "Plan-execute: approval interlock unavailable for %r"
+                    " — failing closed: %s",
+                    step.tool,
+                    exc,
+                )
+                denial = f"[Denied: approval interlock unavailable for '{step.tool}']"
+
+            if denial is not None:
+                step.elapsed_ms = (time.monotonic() - t0) * 1000
+                step.status = "denied"
+                step.error = denial
+                logger.warning(
+                    "Plan-execute: step %d denied — %s", idx + 1, denial
+                )
+                # Remaining steps were planned assuming this one ran, so continuing
+                # would execute them against a world that never changed. Stop and let
+                # the operator decide, rather than half-applying a plan.
+                for later in remaining[idx + 1:]:
+                    later.status = "skipped"
+                    later.error = "skipped — an earlier step was not approved"
+                break
+
             try:
                 # dispatch() is synchronous — run in executor to avoid blocking the event loop
                 result_str = await asyncio.to_thread(
@@ -330,8 +392,28 @@ class PlanExecuteAgent:
                     _vault_injector,
                 )
                 step.elapsed_ms = (time.monotonic() - t0) * 1000
-                step.status = "success"
                 step.output = str(result_str)[:2000]
+
+                # A tool that RAN and FAILED does not raise — `dispatch` returns
+                # "[ERROR] …" (navig_run exit!=0, a failed db query or dump, a
+                # permission-denied write). Marking that "success" put a green
+                # tick on a failed live-infra step in the plan report AND skipped
+                # the revision below, which only ever ran for raised failures.
+                if is_failure_result(result_str):
+                    step.status = "failed"
+                    step.error = str(result_str)[:2000]
+                    logger.warning(
+                        "Plan-execute: step %d reported failure — %s", idx + 1, step.error
+                    )
+                    if max_retries > 0 and idx + 1 < len(remaining):
+                        revised = await self._revise_plan(
+                            idx + 1, step, remaining[idx + 1:], toolset
+                        )
+                        if revised:
+                            remaining = remaining[: idx + 1] + revised
+                            max_retries -= 1
+                else:
+                    step.status = "success"
 
             except Exception as exc:
                 step.elapsed_ms = (time.monotonic() - t0) * 1000
@@ -410,10 +492,17 @@ class PlanExecuteAgent:
         """Make a single LLM call and return the text content."""
         try:
             from navig.llm.generate import run_llm
+
+            # `run_llm(messages: list[dict[str, str]], …)` — it has no `system_prompt`
+            # parameter and never did, so the previous call raised TypeError on every
+            # invocation and the handler below turned that into an empty plan. The system
+            # prompt goes in the message list, which is how every other caller does it.
             result = await asyncio.to_thread(
                 run_llm,
-                user_message,
-                system_prompt=system,
+                [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_message},
+                ],
             )
             if result and hasattr(result, "content"):
                 return result.content or ""
@@ -438,9 +527,13 @@ def format_plan_report(plan: ExecutionPlan) -> str:
     ]
 
     for i, step in enumerate(plan.steps, 1):
-        icon = {"success": "✅", "failed": "❌", "skipped": "⏭️", "pending": "⏳"}.get(
-            step.status, "❓"
-        )
+        icon = {
+            "success": "✅",
+            "failed": "❌",
+            "skipped": "⏭️",
+            "pending": "⏳",
+            "denied": "🚫",
+        }.get(step.status, "❓")
         lines.append(f"{icon} **Step {i}** — `{step.tool}` ({step.status})")
         if step.reason:
             lines.append(f"   {step.reason}")

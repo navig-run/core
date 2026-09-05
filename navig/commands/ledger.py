@@ -264,7 +264,8 @@ def ledger_show(
         ch.info(f"Ledger at {result.path} is empty — nothing to show")
         return
 
-    if status == "broken":
+    chain_broken = status == "broken"
+    if chain_broken:
         first = result.breaks[0]
         ch.error(f"Chain broken at line {first.line}: {first.reason}")
     elif status == "legacy":
@@ -310,6 +311,12 @@ def ledger_show(
     # override inspects an arbitrary file that has no live in-flight registry).
     if path is None:
         _note_interrupted_inflight(ch)
+
+    if chain_broken:
+        # The chain IS the integrity guarantee — a receipt whose chain does not verify
+        # proves nothing. Raised at the END so the operator still gets the full view,
+        # but `navig ledger show && <trust the receipts>` can no longer pass.
+        raise typer.Exit(1)
 
 
 def _note_interrupted_inflight(ch) -> None:

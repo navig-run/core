@@ -1,10 +1,13 @@
 """Template Management Commands"""
 
+import hashlib
 import os
 import re
 import subprocess
 import sys
 from typing import Any
+
+import typer
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
@@ -22,7 +25,7 @@ def list_templates_cmd(options: dict[str, Any]):
         from navig.cache_store import read_json_cache
 
         cache = read_json_cache(
-            "templates.json",
+            _templates_cache_name(),
             ttl_seconds=ttl_seconds,
             no_cache=bool(options.get("no_cache")),
         )
@@ -44,7 +47,7 @@ def list_templates_cmd(options: dict[str, Any]):
             from navig.cache_store import write_json_cache
 
             write_json_cache(
-                "templates.json",
+                _templates_cache_name(),
                 {
                     "templates": [
                         {
@@ -153,6 +156,45 @@ def list_templates_cmd(options: dict[str, Any]):
     ch.print_table(table)
 
 
+def _templates_cache_name() -> str:
+    """Cache filename for THIS install's template list.
+
+    The cache dir is machine-global by design (`%LOCALAPPDATA%\navig\\cache`, XDG
+    elsewhere) and the other two users of it — host discovery and ssh-key discovery — cache
+    machine facts, so global is right for them. The template list is not a machine fact any
+    more: enablement lives in `store_dir()`, which derives from NAVIG_CONFIG_DIR. Sharing
+    one `templates.json` across configs meant a second config read the first's answer —
+    observed while testing this change: a fresh config reported "Disabled" for a template
+    its own store said nothing about, because another config had just cached that.
+
+    So the FILENAME carries the store identity while the directory stays where the platform
+    wants it. Legacy `templates.json` files are simply never read again and expire on their
+    own.
+    """
+    from navig.platform.paths import store_dir
+
+    key = hashlib.sha256(str(store_dir()).encode("utf-8")).hexdigest()[:12]
+    return f"templates.{key}.json"
+
+
+def _drop_template_cache() -> None:
+    """`list` serves `templates.json` from a machine-global cache with a 1-hour TTL, so a
+    state change here must drop it or the list contradicts the command that just ran."""
+    from navig.cache_store import invalidate_json_cache
+
+    invalidate_json_cache(_templates_cache_name())
+
+
+def _template_exit_code(template_manager, name: str) -> int:
+    """2 when the template does not exist, 1 when the operation itself failed.
+
+    The manager signals both with a single False. "Not found" is the usage class and an
+    operation that failed is 1 — the same split `navig mcp` uses, pinned there by
+    test_info_unknown_server_is_reported_not_crashed.
+    """
+    return 2 if template_manager.get_template(name) is None else 1
+
+
 def enable_template_cmd(name: str, options: dict[str, Any]):
     """Enable an template."""
     template_manager = TemplateManager()
@@ -162,7 +204,12 @@ def enable_template_cmd(name: str, options: dict[str, Any]):
         ch.dim(f"Would enable template: {name}")
         return
 
-    template_manager.enable_template(name)
+    # enable_template() prints its own "not found" and returns False; discarding it exited
+    # 0, so `navig flow template add X && <next>` proceeded against a template that does
+    # not exist. Measured before the fix: "x Template 'nosuchtemplate' not found", exit 0.
+    if not template_manager.enable_template(name):
+        raise typer.Exit(_template_exit_code(template_manager, name))
+    _drop_template_cache()
 
 
 def disable_template_cmd(name: str, options: dict[str, Any]):
@@ -174,7 +221,9 @@ def disable_template_cmd(name: str, options: dict[str, Any]):
         ch.dim(f"Would disable template: {name}")
         return
 
-    template_manager.disable_template(name)
+    if not template_manager.disable_template(name):   # same shape, same exit-0 bug
+        raise typer.Exit(_template_exit_code(template_manager, name))
+    _drop_template_cache()
 
 
 def toggle_template_cmd(name: str, options: dict[str, Any]):
@@ -189,7 +238,9 @@ def toggle_template_cmd(name: str, options: dict[str, Any]):
             ch.dim(f"Would {action} template: {name}")
         return
 
-    template_manager.toggle_template(name)
+    if not template_manager.toggle_template(name):    # same shape, same exit-0 bug
+        raise typer.Exit(_template_exit_code(template_manager, name))
+    _drop_template_cache()
 
 
 def show_template_cmd(name: str, options: dict[str, Any]):
@@ -200,7 +251,8 @@ def show_template_cmd(name: str, options: dict[str, Any]):
     template = template_manager.get_template(name)
     if not template:
         ch.error(f"Template '{name}' not found")
-        return
+        ch.info("  List them with: navig flow template list")
+        raise typer.Exit(1)
 
     # Header
     status = "Enabled ✓" if template.is_enabled() else "Disabled"
@@ -347,7 +399,8 @@ def deploy_template_cmd(
     template = template_manager.get_template(name)
     if not template:
         ch.error(f"Template '{name}' not found")
-        return
+        ch.info("  List them with: navig flow template list")
+        raise typer.Exit(1)
 
     commands = template.get_commands()
     if not command_name:
@@ -360,12 +413,12 @@ def deploy_template_cmd(
         if commands:
             available = ", ".join(cmd.get("name", "") for cmd in commands)
             ch.dim(f"Available commands: {available}")
-        return
+        raise typer.Exit(1)
 
     raw_command = command_def.get("command")
     if not raw_command:
         ch.error(f"Template '{name}' command '{command_name}' has no command string")
-        return
+        raise typer.Exit(1)
 
     final_command, missing = _apply_command_args(raw_command, command_args or [])
     if missing:
@@ -410,9 +463,10 @@ def deploy_template_overview_cmd(name: str, dry_run: bool = False, ctx_obj: dict
                     sort_keys=True,
                 )
             )
-        else:
-            ch.error(f"Template '{name}' not found")
-        return
+            return
+        ch.error(f"Template '{name}' not found")
+        ch.info("  List them with: navig flow template list")
+        raise typer.Exit(1)
 
     commands = template.get_commands()
 
@@ -538,6 +592,12 @@ def validate_templates_cmd(options: dict[str, Any]):
 
     ch.print_table(table)
 
+    if not all_valid:
+        # After the table, so the operator still sees WHICH templates failed. A
+        # validate command that reports failures and exits 0 is unusable in a
+        # pipeline — the exit code is the only thing CI reads.
+        raise typer.Exit(1)
+
 
 def edit_template_cmd(name: str, options: dict[str, Any]):
     """
@@ -560,7 +620,9 @@ def edit_template_cmd(name: str, options: dict[str, Any]):
         ch.dim("Available templates:")
         for t in template_manager.list_templates():
             ch.dim(f"  - {t.name}")
-        return
+        # Invisible to the exit-honesty guard: it skips further output on the same
+        # helper to find the `return`, but stops at the `for` loop in between.
+        raise typer.Exit(1)
 
     # Get path to host-specific override file
     override_dir = config_manager.apps_dir / server / "templates"
@@ -597,8 +659,10 @@ def edit_template_cmd(name: str, options: dict[str, Any]):
             subprocess.run([editor, str(override_file)], check=True)
     except subprocess.CalledProcessError as e:
         ch.error(f"Editor exited with error: {e}")
-    except FileNotFoundError:
+        raise typer.Exit(1) from e
+    except FileNotFoundError as exc:
         ch.error(f"Editor '{editor}' not found. Set $EDITOR environment variable.")
+        raise typer.Exit(1) from exc
 
 
 def _generate_template_skeleton(template) -> str:

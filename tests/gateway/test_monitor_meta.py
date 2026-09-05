@@ -3,6 +3,8 @@ Windows, connectivity needs Lighthouse, resources needs psutil."""
 
 from __future__ import annotations
 
+import pytest
+
 from navig.gateway.deck.routes.notify import _monitor_availability
 
 
@@ -182,3 +184,116 @@ def test_monitor_toggle_honors_on_off_and_case():
     # deck and gateway must still coerce identically across the newly-handled tokens
     for v in ("on", "ON", "off", "OFF", "TRUE", "no", "yes"):
         assert _truthy(v) == gw_truthy(v), v
+
+
+def test_section_enabled_coerces_config_set_string_toggles():
+    """The gateway boots channels (telegram/sms/discord/cloud/mesh/deck/…) from
+    `<section>_cfg.get("enabled", <default>)`. `navig config set <section>.enabled false`
+    stores the STRING "false" (truthy) — a raw read would leave the channel ON. The
+    `_section_enabled` helper routes those through the canonical coercion."""
+    from navig.gateway.server import _section_enabled
+
+    # the footgun: a config-set string "false"/"0"/"off" DISABLES a default-on channel
+    for off in ("false", "False", "0", "off", "OFF", "no", ""):
+        assert _section_enabled({"enabled": off}, True) is False, off
+    # a config-set string "true"/"1"/"on" ENABLES a default-off channel
+    for on in ("true", "True", "1", "on", "ON", "yes"):
+        assert _section_enabled({"enabled": on}, False) is True, on
+    # real bools pass through unchanged (onboarding sets these programmatically)
+    assert _section_enabled({"enabled": True}, False) is True
+    assert _section_enabled({"enabled": False}, True) is False
+    # a missing key, an empty section, or a non-mapping → the caller's default
+    assert _section_enabled({}, True) is True
+    assert _section_enabled({}, False) is False
+    assert _section_enabled(None, True) is True
+    assert _section_enabled("nonsense", False) is False
+
+
+# ── the THIRD reader of monitors.*.enabled ────────────────────────────────────
+#
+# The deck (`deck/routes/notify._truthy`) and the gateway
+# (`server._monitor_enabled_truthy`) both use coerce_bool and are pinned to each other
+# above. `cloud/manager._connectivity_enabled` was a third reader agreeing with
+# neither: it used a hand-rolled `in (True, "1", "true", "yes", "True")` that missed
+# "on"/"ON"/"TRUE"/"y" and the int 1 — so the documented
+# `navig config set monitors.connectivity.enabled on` left the monitor OFF. It also
+# read through `Config()`, which serves the snapshot loaded at process start, so a
+# toggle needed a daemon restart.
+#
+# This is the gate ConnectivityReporter consults before every send, so getting it
+# wrong silences the "brain offline" alert entirely.
+
+
+@pytest.fixture
+def connectivity_config(tmp_path, monkeypatch):
+    """Write a real monitors.connectivity.enabled into an isolated config dir."""
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+
+    from navig import config as config_mod
+    from navig.core import shared_config
+
+    def _write(literal: str | None) -> None:
+        config_mod.reset_config_manager()
+        monkeypatch.setattr(shared_config.ConfigSingleton, "_instance", None, raising=False)
+        body = "{}\n" if literal is None else (
+            f"monitors:\n  connectivity:\n    enabled: {literal}\n"
+        )
+        (tmp_path / "config.yaml").write_text(body, encoding="utf-8")
+
+    yield _write
+    config_mod.reset_config_manager()
+    monkeypatch.setattr(shared_config.ConfigSingleton, "_instance", None, raising=False)
+
+
+@pytest.mark.parametrize("literal", ["'on'", "'ON'", "'true'", "'yes'", "'1'", "true"])
+def test_connectivity_gate_enables_on_every_documented_form(connectivity_config, literal):
+    from navig.cloud.manager import _connectivity_enabled
+
+    connectivity_config(literal)
+    assert _connectivity_enabled() is True, f"{literal} failed to enable the monitor"
+
+
+@pytest.mark.parametrize("literal", ["'off'", "'false'", "'no'", "'0'", "false"])
+def test_connectivity_gate_disables_on_every_documented_form(connectivity_config, literal):
+    from navig.cloud.manager import _connectivity_enabled
+
+    connectivity_config(literal)
+    assert _connectivity_enabled() is False, f"{literal} failed to disable the monitor"
+
+
+def test_connectivity_gate_defaults_off_when_unset(connectivity_config):
+    """Connectivity is opt-in — only config_incidents is in MONITORS_DEFAULT_ON."""
+    from navig.cloud.manager import _connectivity_enabled
+
+    connectivity_config(None)
+    assert _connectivity_enabled() is False
+
+
+def test_connectivity_gate_agrees_with_the_deck_and_gateway(connectivity_config):
+    """All THREE readers must resolve the same config value identically."""
+    from navig.cloud.manager import _connectivity_enabled
+    from navig.gateway.deck.routes.notify import _truthy as deck_truthy
+    from navig.gateway.server import _monitor_enabled_truthy as gw_truthy
+
+    for literal, raw in (("'on'", "on"), ("'false'", "false"), ("'YES'", "YES"), ("'0'", "0")):
+        connectivity_config(literal)
+        gate = _connectivity_enabled()
+        assert gate == deck_truthy(raw) == gw_truthy(raw), (
+            f"the cloud gate disagrees with the deck/gateway on {raw!r}: "
+            f"gate={gate} deck={deck_truthy(raw)} gateway={gw_truthy(raw)}"
+        )
+
+
+def test_connectivity_gate_picks_up_a_toggle_without_a_restart(connectivity_config):
+    from navig.cloud.manager import _connectivity_enabled
+
+    connectivity_config("'off'")
+    assert _connectivity_enabled() is False
+
+    # `navig config set …` from another process, mid-run. No cache reset — the point.
+    from navig.platform.paths import config_dir
+
+    (config_dir() / "config.yaml").write_text(
+        "monitors:\n  connectivity:\n    enabled: 'on'\n", encoding="utf-8"
+    )
+    assert _connectivity_enabled() is True, "the gate is serving a boot-time snapshot"

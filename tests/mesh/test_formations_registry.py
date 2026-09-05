@@ -4,9 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-import navig.formations.registry as reg_mod
 from navig.formations.registry import FormationRegistry, get_registry
 
 

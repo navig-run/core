@@ -10,12 +10,9 @@ Batch 57: hermetic unit tests for
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # navig/memory/paths.py
@@ -146,7 +143,7 @@ class TestPatternAnalyzer:
         assert result == []
 
     def test_score_by_frequency_above_min(self) -> None:
-        from navig.agent.pattern_analyzer import PatternAnalyzer, ScoredPattern
+        from navig.agent.pattern_analyzer import PatternAnalyzer
         recs = [MagicMock(command="ls"), MagicMock(command="ls"), MagicMock(command="ls")]
         pa = PatternAnalyzer(min_occurrences=2)
         result = pa.score_by_frequency(recs)

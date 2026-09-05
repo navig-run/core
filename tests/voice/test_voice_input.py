@@ -135,7 +135,18 @@ class TestVoiceInputValidation:
         finally:
             tmp.unlink(missing_ok=True)
 
-    def test_no_backend_error(self):
+    def test_no_backend_error(self, monkeypatch):
+        """`NONE` is overloaded: as INPUT it means "unset, auto-detect for me"
+        (voice_input.py replaces it with `detect_transcription_backend()`), and as
+        OUTPUT it means "nothing available". So this only reached the no-backend
+        branch on a machine with no transcription backend installed — on one with
+        faster-whisper it downloaded a model from huggingface.co and tried to
+        transcribe, inside a suite whose marker promises MOCKED dependencies.
+        Force the detection result instead of depending on what is installed."""
+        monkeypatch.setattr(
+            "navig.agent.voice_input.detect_transcription_backend",
+            lambda: TranscriptionBackend.NONE,
+        )
         tmp = _tmp_audio(suffix=".wav")
         try:
             handler = VoiceInputHandler(TranscriptionConfig(backend=TranscriptionBackend.NONE))
@@ -377,14 +388,89 @@ class TestResolveKeyAndSingleton:
 
         assert _resolve_key("deepgram/api-key", "DEEPGRAM_API_KEY") == "vault-key"
 
-    def test_get_voice_handler_singleton_ignores_second_config(self):
+    def test_get_voice_handler_singleton_ignores_second_config(self, monkeypatch):
         import navig.agent.voice_input as voice_input_mod
 
-        voice_input_mod._default_handler = None
+        # monkeypatch, not a bare assignment with a reset at the bottom: that reset only
+        # runs when the asserts PASS, so a real failure here used to leave a DEEPGRAM
+        # handler in the process singleton for every later test in the worker — and the
+        # first error you then see belongs to a test that did nothing wrong.
+        monkeypatch.setattr(voice_input_mod, "_default_handler", None)
+
         first = get_voice_handler(TranscriptionConfig(backend=TranscriptionBackend.DEEPGRAM))
         second = get_voice_handler(TranscriptionConfig(backend=TranscriptionBackend.WHISPER_API))
 
         assert first is second
         assert second.config.backend == TranscriptionBackend.DEEPGRAM
 
-        voice_input_mod._default_handler = None
+
+# ── "I have no way to listen" must be distinguishable from "it was silent" ────
+#
+# `transcribe_audio` returns `text if success else None`, discarding
+# TranscriptionResult.error — so an install with no backend answers exactly like
+# a silent clip. Callers that report to a human need to tell the two apart;
+# `stt_unavailable_reason` is that seam, and it is the mirror of
+# `navig.core.ocr.ocr_unavailable_reason`.
+
+
+class TestSttUnavailableReason:
+    @staticmethod
+    def _handler_with(monkeypatch, backend):
+        """Install a handler whose RESOLVED backend is *backend*.
+
+        The backend is forced after construction on purpose: `__init__` replaces a
+        `NONE` config with `detect_transcription_backend()`, so passing NONE in
+        yields whatever this machine happens to have (faster-whisper here) and the
+        no-backend case would silently test the opposite of what it claims.
+        """
+        from navig.agent import voice_input as vi
+
+        handler = vi.VoiceInputHandler(config=vi.TranscriptionConfig())
+        handler.config.backend = backend
+        monkeypatch.setattr(vi, "_default_handler", handler)
+        return handler
+
+    def test_no_backend_is_named(self, monkeypatch):
+        from navig.agent import voice_input as vi
+
+        self._handler_with(monkeypatch, vi.TranscriptionBackend.NONE)
+        assert vi.stt_unavailable_reason() == "no transcription backend is installed"
+
+    def test_a_working_backend_reports_nothing(self, monkeypatch):
+        from navig.agent import voice_input as vi
+
+        self._handler_with(monkeypatch, vi.TranscriptionBackend.FASTER_WHISPER)
+        assert vi.stt_unavailable_reason() is None
+
+    def test_it_reads_the_same_backend_transcribe_will_use(self, monkeypatch):
+        """A status light that calls a different function from the consumer is how
+        a green light comes to sit over a broken install — so this must read the
+        handler's OWN resolved backend, not re-detect."""
+        from navig.agent import voice_input as vi
+
+        handler = self._handler_with(monkeypatch, vi.TranscriptionBackend.FASTER_WHISPER)
+        monkeypatch.setattr(vi, "detect_transcription_backend",
+                            lambda: vi.TranscriptionBackend.NONE)
+
+        assert vi.stt_unavailable_reason() is None, "it re-detected instead of reading config"
+        assert handler.config.backend is vi.TranscriptionBackend.FASTER_WHISPER
+
+    def test_a_broken_handler_never_breaks_the_caller(self, monkeypatch):
+        """The reason annotates an answer; it must never replace one with a crash."""
+        from navig.agent import voice_input as vi
+
+        def _boom(*a, **kw):
+            raise RuntimeError("handler exploded")
+
+        monkeypatch.setattr(vi, "get_voice_handler", _boom)
+        assert vi.stt_unavailable_reason() is None
+
+    def test_the_install_hint_is_the_one_the_transcriber_quotes(self):
+        """Two places tell the user how to fix this; they must not drift."""
+        from navig.agent import voice_input as vi
+
+        assert "faster-whisper" in vi.STT_INSTALL_HINT
+        source = Path(vi.__file__).read_text(encoding="utf-8")
+        assert "pip install faster-whisper) or set OPENAI_API_KEY" not in source.replace(
+            vi.STT_INSTALL_HINT, ""
+        ), "a second hard-coded copy of the install hint has appeared"

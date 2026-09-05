@@ -42,6 +42,11 @@ Blocked ranges when ``allow_private_network=False`` (the default)
 - ``fc00::/7``          — unique local (IPv6 private)
 - ``fe80::/10``         — link-local (IPv6)
 - ``0.0.0.0/8``         — "this" network
+
+An IPv6 address that TUNNELS an IPv4 (IPv4-mapped, 6to4, Teredo, NAT64) is unwrapped and
+its embedded IPv4 re-checked against the ranges above — closing the classic IPv6→internal
+SSRF bypass (e.g. NAT64 ``64:ff9b::a9fe:a9fe`` reaching the ``169.254.169.254`` cloud
+metadata endpoint).
 """
 
 from __future__ import annotations
@@ -77,6 +82,12 @@ _BLOCKED_NETS: tuple[Union[IPv4Network, IPv6Network], ...] = (
     IPv6Network("::ffff:0:0/96"),     # IPv4-mapped addresses
     IPv6Network("::/128"),            # unspecified
 )
+
+# NAT64 well-known prefix (RFC 6052) — the low 32 bits carry an embedded IPv4. 6to4
+# (2002::/16) and Teredo (2001::/32) embed IPv4 too; the stdlib exposes those via
+# ``IPv6Address.sixtofour`` / ``.teredo``. ``_embedded_ipv4s`` unwraps all of them so a
+# private IPv4 tunnelled through an IPv6 hostname can't slip past the IPv4 block list above.
+_NAT64_PREFIX = IPv6Network("64:ff9b::/96")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -139,7 +150,9 @@ def is_safe_url(url: str, policy: SsrfPolicy | None = None) -> bool:
     try:
         check_url(url, policy)
         return True
-    except (SsrfBlockedError, ValueError):
+    except (SsrfBlockedError, ValueError, OSError):
+        # OSError covers socket.gaierror from resolve_host: an unresolvable host can't be
+        # verified safe, so this non-raising filter treats it as unsafe rather than crashing.
         return False
 
 
@@ -278,6 +291,63 @@ async def safe_fetch(
     )
 
 
+def safe_get(
+    url: str,
+    policy: SsrfPolicy | None = None,
+    *,
+    max_redirects: int = 5,
+    **requests_kwargs,
+):
+    """Validate *url* and perform a **synchronous** GET via ``requests``.
+
+    The sync twin of :func:`safe_fetch`. Every URL — the initial one AND each
+    redirect hop — is re-validated with :func:`check_url` before it is fetched,
+    so an ``http://ok.example`` that ``302``s to ``http://169.254.169.254/``
+    (cloud metadata) is blocked, not followed. Redirects are handled here
+    (``allow_redirects=False`` per hop), not by ``requests``, because letting
+    requests follow would jump to the redirect target's IP without re-checking
+    the SSRF policy. An ``allow_redirects`` kwarg is ignored.
+
+    Returns
+    -------
+    requests.Response — the first non-redirect response.
+
+    Raises
+    ------
+    SsrfBlockedError:
+        If the initial URL, or any redirect target, resolves into a blocked
+        range (before that hop's network I/O).
+    ValueError:
+        If a URL is malformed, or the redirect chain exceeds *max_redirects*.
+    ImportError:
+        If ``requests`` is not installed.
+    """
+    check_url(url, policy)
+    try:
+        import requests  # noqa: PLC0415
+    except ImportError as exc:
+        raise ImportError(
+            "navig.net.ssrf.safe_get requires 'requests'. "
+            "Install it with: pip install requests"
+        ) from exc
+
+    # Follow redirects ourselves so every hop is re-checked against the SSRF
+    # policy; requests' own redirect-following would jump to a blocked IP unchecked.
+    requests_kwargs.pop("allow_redirects", None)
+    current = url
+    for _ in range(max_redirects + 1):
+        response = requests.get(current, allow_redirects=False, **requests_kwargs)
+        location = response.headers.get("location")
+        if response.is_redirect and location:
+            current = str(urllib.parse.urljoin(current, location))
+            check_url(current, policy)  # re-validate the redirect target
+            continue
+        return response
+    raise ValueError(
+        f"safe_get: redirect chain exceeded {max_redirects} hops starting at {url!r}"
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Config-driven policy
 # ──────────────────────────────────────────────────────────────────────────────
@@ -332,10 +402,32 @@ def _parse_ip(addr: str) -> Union[IPv4Address, IPv6Address, None]:
         return None
 
 
+def _embedded_ipv4s(ip: IPv6Address) -> list[IPv4Address]:
+    """IPv4 addresses tunnelled inside an IPv6 address — IPv4-mapped, 6to4, Teredo and
+    NAT64 — so a private IPv4 reached via an IPv6 hostname can't slip past the IPv4 block
+    list. The caller re-checks each against the IPv4 nets."""
+    out: list[IPv4Address] = []
+    if ip.ipv4_mapped is not None:
+        out.append(ip.ipv4_mapped)
+    if ip.sixtofour is not None:
+        out.append(ip.sixtofour)
+    if ip.teredo is not None:  # (server, client) — either being blocked is enough
+        out.extend(v for v in ip.teredo if v is not None)
+    if ip in _NAT64_PREFIX:
+        out.append(IPv4Address(int(ip) & 0xFFFFFFFF))
+    return out
+
+
 def _is_blocked(ip: Union[IPv4Address, IPv6Address]) -> bool:
-    """Return ``True`` if *ip* falls within any of the blocked networks."""
+    """Return ``True`` if *ip* falls within any blocked network — or, for an IPv6 address,
+    if it TUNNELS a blocked IPv4 via IPv4-mapped / 6to4 / Teredo / NAT64 (a classic SSRF
+    bypass: e.g. NAT64 ``64:ff9b::a9fe:a9fe`` reaches ``169.254.169.254``)."""
     for net in _BLOCKED_NETS:
-        if isinstance(net, IPv4Network) and isinstance(ip, IPv4Address) or isinstance(net, IPv6Network) and isinstance(ip, IPv6Address):
-            if ip in net:
-                return True
+        same_family = (isinstance(net, IPv4Network) and isinstance(ip, IPv4Address)) or (
+            isinstance(net, IPv6Network) and isinstance(ip, IPv6Address)
+        )
+        if same_family and ip in net:
+            return True
+    if isinstance(ip, IPv6Address):
+        return any(_is_blocked(v4) for v4 in _embedded_ipv4s(ip))
     return False

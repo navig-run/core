@@ -1,9 +1,9 @@
 """`navig plans` CLI.
 
 Every test here runs in ``temp_dir``, NOT ``tmp_path`` — and that is load-bearing, not
-style. ``pytest.ini`` pins ``--basetemp=.pytest_tmp``, which lives *inside* ``core/``, so
-every ``tmp_path`` sits under NAVIG's own checkout. Space discovery walks UP from the
-given path looking for a project ``.navig/`` (``spaces/resolver.py``) and duly finds
+style. ``core/conftest.py`` points ``PYTEST_DEBUG_TEMPROOT`` at ``core/.dev/tmp``, which lives
+*inside* ``core/``, so every ``tmp_path`` sits under NAVIG's own checkout. Space discovery
+walks UP from the given path looking for a project ``.navig/`` (``spaces/resolver.py``) and finds
 ``core/.navig`` — so a plans command invoked under ``tmp_path`` discovers a real
 project-scope space called ``core``, belonging to the repo we are testing.
 

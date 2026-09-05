@@ -45,7 +45,6 @@ class TestGetPatchright:
             "playwright.async_api": MagicMock(async_playwright=fake_pw),
         }
         with patch.dict("sys.modules", modules):
-            import importlib
             with patch("builtins.__import__") as mock_import:
                 def side_effect(name, *args, **kwargs):
                     if name == "patchright.async_api":

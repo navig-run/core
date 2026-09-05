@@ -7,7 +7,7 @@ Covers: set_todo_list, get_todo_list, _auto_save, TodoCreateTool, TodoUpdateTool
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -19,6 +19,30 @@ from navig.agent.tools.todo_tools import (
     get_todo_list,
     set_todo_list,
 )
+
+
+@pytest.fixture(autouse=True)
+def _restore_module_refs():
+    """Put the module's todo-list and persistence refs back after every test.
+
+    These tests assign `_mod._todo_list_ref` / `_mod._persistence_ref` directly, and the
+    per-class `setup_method` resets are the only thing keeping that from escaping the
+    file. Measured: with every test PASSING the module ends at None either way, so this
+    changes nothing on the happy path — and that is exactly why it is worth having.
+
+    What it covers is the failure path. A test that fails between assigning a MagicMock
+    and the next `setup_method` leaves that mock installed as the process-wide todo list,
+    so the next test to call `get_todo_list()` fails for a reason that has nothing to do
+    with it — and the error you read first is not the error that happened. Teardown here
+    runs whether the test passed or failed, and keeps holding if these tests are ever
+    reordered or extended.
+    """
+    original_list = _mod._todo_list_ref
+    original_persistence = _mod._persistence_ref
+    yield
+    _mod._todo_list_ref = original_list
+    _mod._persistence_ref = original_persistence
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Helpers
@@ -46,9 +70,16 @@ class TestSetGetTodoList:
         _mod._todo_list_ref = None
         _mod._persistence_ref = None
 
-    def test_get_raises_when_not_initialised(self):
-        with pytest.raises(RuntimeError, match="not initialised"):
-            get_todo_list()
+    def test_get_creates_a_list_on_demand(self):
+        """The old contract was `raise RuntimeError("not initialised")`, and it is why
+        these tools were never registered: nothing in the tree calls `set_todo_list`, so
+        that error was the ONLY thing they could ever return. A list is now created for
+        the conversation on first use."""
+        _mod.reset_todo_lists()
+        tl = get_todo_list("chat:new")
+        assert tl is not None
+        assert tl.items == []
+        assert get_todo_list("chat:new") is tl
 
     def test_set_and_get_roundtrip(self):
         tl = _make_todo_list()
@@ -61,13 +92,17 @@ class TestSetGetTodoList:
         set_todo_list(tl, pers)
         assert _mod._persistence_ref is pers
 
-    def test_set_none_clears_ref(self):
+    def test_clearing_the_override_falls_back_to_per_conversation(self):
+        """Clearing the pin does not disable the tools — it returns them to the normal
+        per-conversation path."""
         tl = _make_todo_list()
         set_todo_list(tl)
+        assert get_todo_list("chat:x") is tl, "the override should win while pinned"
+
         set_todo_list(None)
         _mod._todo_list_ref = None
-        with pytest.raises(RuntimeError):
-            get_todo_list()
+        _mod.reset_todo_lists()
+        assert get_todo_list("chat:x") is not tl
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -232,8 +267,11 @@ class TestTodoShowTool:
         assert result.success is True
         assert "My Task" in result.output
 
-    def test_show_not_initialised_raises(self):
+    def test_show_on_a_fresh_conversation_reports_an_empty_list(self):
+        """It must answer, not raise: `run()` is contractually forbidden from raising, and
+        an agent asking for its todos before creating any is the normal first call."""
         _mod._todo_list_ref = None
-        tool = TodoShowTool()
-        with pytest.raises(RuntimeError):
-            run(tool.run({}))
+        _mod.reset_todo_lists()
+        result = run(TodoShowTool().run({"_session_id": "chat:fresh"}))
+        assert result.success is True
+        assert "no todo" in str(result.output).lower() or "empty" in str(result.output).lower()

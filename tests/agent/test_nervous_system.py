@@ -5,8 +5,6 @@ Tests for navig.agent.nervous_system
 import asyncio
 from unittest.mock import MagicMock
 
-import pytest
-
 from navig.agent.nervous_system import (
     Event,
     EventEmitter,

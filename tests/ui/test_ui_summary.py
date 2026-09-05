@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 import navig.ui.summary as summary_mod
 from navig.ui.models import SummaryResult
 from navig.ui.summary import render_ai_response, render_next_step, render_summary

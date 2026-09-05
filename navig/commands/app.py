@@ -143,7 +143,7 @@ def list_apps(options: dict[str, Any]) -> None:
             f"Host '{host_name}' not found",
             "Use 'navig host list' to see available hosts.",
         )
-        return
+        raise typer.Exit(2)
 
     # Get apps on this host
     try:
@@ -153,7 +153,7 @@ def list_apps(options: dict[str, Any]) -> None:
         active_app = config_manager.get_active_app()
     except Exception as e:
         ch.error(f"Error listing apps on host '{host_name}'", str(e))
-        return
+        raise typer.Exit(1) from e
 
     if not apps:
         from navig.cli.recovery import empty_list_recovery
@@ -304,7 +304,7 @@ def use_app(options: dict[str, Any]) -> None:
 
     if not app_name:
         ch.error("App name is required")
-        return
+        raise typer.Exit(2)
 
     # Get active host
     from navig.cli.recovery import require_active_host  # noqa: PLC0415
@@ -316,7 +316,7 @@ def use_app(options: dict[str, Any]) -> None:
             f"App '{app_name}' not found on host '{host_name}'",
             "Use 'navig app list' to see available apps.",
         )
-        return
+        raise typer.Exit(2)
 
     # Determine scope (local or global)
     local_scope = options.get("local", False)
@@ -383,7 +383,7 @@ def add_app(options: dict[str, Any]) -> None:
 
     if not app_name:
         ch.error("App name is required")
-        return
+        raise typer.Exit(2)
 
     # Get active host if not specified
     if not host_name:
@@ -396,12 +396,12 @@ def add_app(options: dict[str, Any]) -> None:
             f"Host '{host_name}' not found",
             "Use 'navig host list' to see available hosts.",
         )
-        return
+        raise typer.Exit(2)
 
     # Check if app already exists
     if config_manager.app_exists(host_name, app_name):
         ch.error(f"App '{app_name}' already exists on host '{host_name}'")
-        return
+        raise typer.Exit(1)
 
     ch.info(f"Adding new app '{app_name}' to host '{host_name}'")
     ch.dim("Press Ctrl+C to cancel at any time.\n")
@@ -411,7 +411,7 @@ def add_app(options: dict[str, Any]) -> None:
         host_config = config_manager.load_host_config(host_name)
     except Exception as e:
         ch.error("Error loading host configuration", str(e))
-        return
+        raise typer.Exit(1) from e
 
     # Auto-detect webserver type from host configuration
     detected_webserver = None
@@ -526,7 +526,9 @@ def remove_app(options: dict[str, Any]) -> None:
     if not app_name:
         if not quiet:
             ch.error("App name is required")
-        return
+        # Outside the quiet guard: `quiet` decides whether the user is TOLD, never
+        # whether it failed.
+        raise typer.Exit(2)
 
     # Get active host if not specified
     if not host_name:
@@ -538,13 +540,13 @@ def remove_app(options: dict[str, Any]) -> None:
                 "No active host configured",
                 "Use 'navig host use <name>' or specify --host flag.",
             )
-        return
+        raise typer.Exit(2)
 
     # Verify app exists
     if not config_manager.app_exists(host_name, app_name):
         if not quiet:
             ch.error(f"App '{app_name}' not found on host '{host_name}'")
-        return
+        raise typer.Exit(2)
 
     # Confirm deletion
     if not force:
@@ -583,7 +585,7 @@ def show_app(options: dict[str, Any]) -> None:
 
     if not app_name:
         ch.error("App name is required")
-        return
+        raise typer.Exit(2)
 
     # Get active host if not specified
     if not host_name:
@@ -595,7 +597,7 @@ def show_app(options: dict[str, Any]) -> None:
         app_config = config_manager.load_app_config(host_name, app_name)
     except Exception as e:
         ch.error("Error loading app configuration", str(e))
-        return
+        raise typer.Exit(1) from e
 
     # Output format
     if json_output:
@@ -635,7 +637,7 @@ def edit_app(options: dict[str, Any]) -> None:
 
     if not app_name:
         ch.error("App name is required")
-        return
+        raise typer.Exit(2)
 
     # Get active host if not specified
     if not host_name:
@@ -645,7 +647,7 @@ def edit_app(options: dict[str, Any]) -> None:
     # Verify app exists
     if not config_manager.app_exists(host_name, app_name):
         ch.error(f"App '{app_name}' not found on host '{host_name}'")
-        return
+        raise typer.Exit(2)
 
     # Try to find individual app file first (new format)
     config_file = None
@@ -667,7 +669,7 @@ def edit_app(options: dict[str, Any]) -> None:
             file_type = "host configuration (legacy embedded format)"
         else:
             ch.error(f"Configuration file not found for app '{app_name}'")
-            return
+            raise typer.Exit(2)
 
     # Determine editor
     editor = os.environ.get("EDITOR") or os.environ.get("VISUAL")
@@ -714,7 +716,7 @@ def clone_app(options: dict[str, Any]) -> None:
 
     if not source_name or not new_name:
         ch.error("Both source and new app names are required")
-        return
+        raise typer.Exit(2)
 
     # Get active host if not specified
     if not host_name:
@@ -724,19 +726,19 @@ def clone_app(options: dict[str, Any]) -> None:
     # Verify source exists
     if not config_manager.app_exists(host_name, source_name):
         ch.error(f"Source app '{source_name}' not found on host '{host_name}'")
-        return
+        raise typer.Exit(2)
 
     # Verify new name doesn't exist
     if config_manager.app_exists(host_name, new_name):
         ch.error(f"App '{new_name}' already exists on host '{host_name}'")
-        return
+        raise typer.Exit(1)
 
     # Load source configuration
     try:
         source_config = config_manager.load_app_config(host_name, source_name)
     except Exception as e:
         ch.error("Error loading source app configuration", str(e))
-        return
+        raise typer.Exit(1) from e
 
     ch.info(f"Cloning app '{source_name}' to '{new_name}' on host '{host_name}'")
     ch.dim("The new app will have the same configuration as the source.\n")
@@ -797,7 +799,7 @@ def info_app(options: dict[str, Any]) -> None:
 
     if not app_name:
         ch.error("App name is required")
-        return
+        raise typer.Exit(2)
 
     # Get active host if not specified
     if not host_name:
@@ -807,14 +809,14 @@ def info_app(options: dict[str, Any]) -> None:
     # Verify app exists
     if not config_manager.app_exists(host_name, app_name):
         ch.error(f"App '{app_name}' not found on host '{host_name}'")
-        return
+        raise typer.Exit(2)
 
     # Load app configuration
     try:
         app_config = config_manager.load_app_config(host_name, app_name)
     except Exception as e:
         ch.error("Error loading app configuration", str(e))
-        return
+        raise typer.Exit(1) from e
 
     # Get additional info
     active_app = config_manager.get_active_app()
@@ -901,7 +903,7 @@ def search_apps(options: dict[str, Any]) -> None:
 
     if not query:
         ch.error("Search query is required")
-        return
+        raise typer.Exit(2)
 
     query_lower = query.lower()
     results = []
@@ -986,7 +988,7 @@ def migrate_apps(options: dict[str, Any]) -> None:
             f"Host '{host_name}' not found",
             "Use 'navig host list' to see available hosts.",
         )
-        return
+        raise typer.Exit(2)
 
     ch.header(f"App Migration: {host_name}")
     ch.info("Converting apps from embedded format to individual files")
@@ -1001,7 +1003,7 @@ def migrate_apps(options: dict[str, Any]) -> None:
         host_config = config_manager.load_host_config(host_name)
     except Exception as e:
         ch.error("Error loading host configuration", str(e))
-        return
+        raise typer.Exit(1) from e
 
     # Check if host has embedded apps
     if "apps" not in host_config or not host_config["apps"]:
@@ -1082,6 +1084,12 @@ app_app = typer.Typer(
 @app_app.callback()
 def app_callback(ctx: typer.Context):
     """App management - run without subcommand for help."""
+    # Nine sibling modules already do this. The root `navig` callback ensures the dict,
+    # so through the real CLI this is a no-op; it matters when the sub-app is reached
+    # directly (a test, a programmatic invoke), where `ctx.obj[...]` would otherwise
+    # die with "'NoneType' object does not support item assignment" — a crash that is
+    # also non-zero, so an exit-code assertion can pass for entirely the wrong reason.
+    ctx.ensure_object(dict)
     if ctx.invoked_subcommand is None:
         import os as _os  # noqa: PLC0415
 

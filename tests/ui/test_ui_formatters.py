@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from navig.ui import formatters as fmt_mod
 from navig.ui.formatters import render_command_row, render_kv_diagnostics, render_section_divider
 

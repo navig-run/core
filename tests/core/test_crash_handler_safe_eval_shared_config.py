@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -31,7 +31,12 @@ class TestCrashHandlerDebugMode:
         assert h.is_debug is True
 
     def test_enable_debug_flips_flag(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("NAVIG_DEBUG", raising=False)
+        # `enable_debug()` writes os.environ directly, so monkeypatch must own the key
+        # or it survives teardown and every later test in this xdist worker runs in
+        # debug mode. `delenv` alone does NOT suffice: on a var that was ABSENT it
+        # records nothing to restore. Verified empirically; same class as #1125.
+        monkeypatch.setenv("NAVIG_DEBUG", "")  # records "was absent" -> undo deletes
+        monkeypatch.delenv("NAVIG_DEBUG", raising=False)  # absent for the assertion below
         from navig.core.crash_handler import CrashHandler
         h = CrashHandler()
         assert h.is_debug is False
@@ -76,7 +81,6 @@ class TestCrashHandlerCleanup:
             f.write_text("{}")
             logs.append(f)
         # They are sorted by mtime; make timestamps distinct enough
-        import time
         for idx, f in enumerate(logs):
             import os
             os.utime(f, (idx, idx))
@@ -167,44 +171,37 @@ class TestConfigSingletonHelpers:
         return obj
 
     def test_get_nested_simple_key(self) -> None:
-        from navig.core.shared_config import ConfigSingleton
         obj = self._make_instance()
         data = {"host": "example.com"}
         assert obj._get_nested(data, "host") == "example.com"
 
     def test_get_nested_dot_notation(self) -> None:
-        from navig.core.shared_config import ConfigSingleton
         obj = self._make_instance()
         data = {"plugins": {"brain": {"db_path": "/tmp/brain.db"}}}
         assert obj._get_nested(data, "plugins.brain.db_path") == "/tmp/brain.db"
 
     def test_get_nested_missing_returns_default(self) -> None:
-        from navig.core.shared_config import ConfigSingleton
         obj = self._make_instance()
         data = {"plugins": {}}
         assert obj._get_nested(data, "plugins.missing.key", "fallback") == "fallback"
 
     def test_get_nested_missing_no_default_returns_none(self) -> None:
-        from navig.core.shared_config import ConfigSingleton
         obj = self._make_instance()
         assert obj._get_nested({}, "no.such.key") is None
 
     def test_set_nested_simple_key(self) -> None:
-        from navig.core.shared_config import ConfigSingleton
         obj = self._make_instance()
         data: dict = {}
         obj._set_nested(data, "host", "example.com")
         assert data == {"host": "example.com"}
 
     def test_set_nested_dot_notation_creates_parents(self) -> None:
-        from navig.core.shared_config import ConfigSingleton
         obj = self._make_instance()
         data: dict = {}
         obj._set_nested(data, "plugins.brain.db_path", "/tmp/test.db")
         assert data == {"plugins": {"brain": {"db_path": "/tmp/test.db"}}}
 
     def test_set_nested_overwrites_leaf(self) -> None:
-        from navig.core.shared_config import ConfigSingleton
         obj = self._make_instance()
         data = {"a": {"b": "old"}}
         obj._set_nested(data, "a.b", "new")

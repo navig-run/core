@@ -1,6 +1,28 @@
 """
 Cheap-turn model routing for NAVIG.
 
+.. warning::
+
+   **NOT WIRED.** Nothing in ``core/navig`` calls ``choose_cheap_model_route``,
+   ``get_routing_config`` or ``is_simple_turn`` — verified across the whole repo,
+   including plugins, apps and dynamic-import sites. The only references are this
+   module, four test files (158 tests), the CHANGELOG entry announcing it, and the
+   ``_ALLOWLIST`` in ``tests/quality/test_bool_coercion_canonical.py``.
+
+   The logic is complete and heavily covered; it was simply never connected to the
+   agent. Two consequences worth knowing before you touch anything here:
+
+   * ``agent.cheap_model_routing`` is not read by any live code path, so nothing a
+     user puts in their config reaches this module today.
+   * ``_coerce_bool`` below is blacklist-falsy (unknown → True), which contradicts
+     its own call site's ``default=False``. That inconsistency is currently
+     unreachable, which is why it has been left alone rather than "fixed" — twice.
+
+   Wiring this up changes which model answers a user's turn, so it is a deliberate
+   product decision (cost/latency against quality), not a cleanup. Deleting it is the
+   other honest option. Either way, decide it explicitly instead of discovering the
+   dormancy again from the inside.
+
 For inexpensive conversational turns (short, plain-text, no code/tools), the
 router can redirect to a cheaper/faster model rather than always using the
 configured primary model.  This reduces latency and cost without sacrificing

@@ -14,7 +14,10 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from pathlib import Path
     from typing import Protocol
+
+    from navig.agent.conv.soul import SoulContext
 
     class AIClientProtocol(Protocol):
         async def chat(self, messages: list[dict]) -> str: ...
@@ -41,6 +44,11 @@ _PLAN_CTX_TTL: float = 300.0
 # run_agentic defaults — all numeric knobs in one place
 _MAX_ITERATIONS: int = 90            # default ReAct loop budget
 _MAX_PARALLEL_TOOLS: int = 8         # semaphore width for fan-out tool calls
+# Wall-clock cap for a single tool dispatch. The tool runs OFF the event loop
+# (asyncio.to_thread / SpeculativeExecutor.aexecute); wait_for lets the turn
+# abandon a hung live-infra call at this bound instead of wedging forever. Mirror
+# of agent_tool_registry.TOOL_TIMEOUT_SECONDS (which caps the sync-on-loop path).
+_TOOL_DISPATCH_TIMEOUT: float = 120.0
 _COMPRESS_AFTER_TURN: int = 3        # turns before context compression starts
 _BUDGET_WARN_PCT: float = 0.70       # inject budget-warning message above this
 _BUDGET_HARD_PCT: float = 0.90       # disable tool_choice above this
@@ -73,6 +81,130 @@ _AGENTIC_DEFAULT_MAXTOK: int = 4_096
 # generate longer / slower replies on some providers. 256 still leaves
 # room for a 4-sentence answer.
 _AGENTIC_CHAT_MAXTOK: int = 256
+
+
+#: Toolsets offered on EVERY turn, whatever the message looks like.
+#:
+#: These hold state ACROSS turns, and `suggest_toolsets` returns nothing for a short
+#: message — so router-gating them means a tool can be offered in turn 1 and gone by
+#: turn 3, leaving the agent with a todo list it believes it recorded and cannot update.
+#: An intermittent stateful tool is worse than an absent one. `get_plan_context` is the
+#: existing precedent: a meta tool registered straight into `core`.
+_ALWAYS_ON_TOOLSETS: tuple[str, ...] = ("skills", "todo")
+
+
+def default_turn_toolsets(
+    message: str,
+    *,
+    toolset: str | list[str] = "core",
+    tier_override: str = "",
+) -> list[str]:
+    """Resolve which toolsets a turn puts in front of the model.
+
+    Extracted from ``run_agentic`` so the decision is assertable on its own: the tools a
+    model is *offered* are a different question from the tools that are *registered*, and
+    only this function answers the first one.
+    """
+    explicit_toolsets = [toolset] if isinstance(toolset, str) else list(toolset)
+
+    # Always-on meta tools — see _ALWAYS_ON_TOOLSETS.
+    for _ts in _ALWAYS_ON_TOOLSETS:
+        if _ts not in explicit_toolsets:
+            explicit_toolsets.append(_ts)
+
+    # The research/depth tier is an explicit request for a properly grounded
+    # answer, so it must be handed the retrieval tools regardless of what the
+    # message-shape router infers. Without this the merged set stayed just
+    # "core" (bash/read/write/list) for a short question like "info about Fight
+    # Club" — the model had no search/web_fetch/wiki/browser to answer with,
+    # which is the root of the shallow-answer complaint. "browser" lets it open
+    # and read a page, not just paraphrase search snippets.
+    if (tier_override or "").strip() == "research":
+        for _ts in ("research", "browser"):
+            if _ts not in explicit_toolsets:
+                explicit_toolsets.append(_ts)
+    # A message carrying a URL is a request to look at that URL. The default
+    # toolset is "core" (bash/read_file/write_file/list_files) — nothing in it
+    # can fetch a page — and the shape router returns NOTHING for a short
+    # message, so a pasted link reached a model with no way to open it. Its
+    # only honest reply was "Can't access external links", which is exactly
+    # what the operator got. "search" is {search, web_fetch}; web_fetch runs
+    # through the SSRF guard, so this widens capability, not attack surface.
+    if _MESSAGE_HAS_URL.search(message or "") and "search" not in explicit_toolsets:
+        explicit_toolsets.append("search")
+    try:
+        from navig.llm.router import suggest_toolsets
+
+        suggested = suggest_toolsets(user_input=message)
+        merged = list(explicit_toolsets)
+        for suggested_toolset in suggested:
+            if suggested_toolset not in merged:
+                merged.append(suggested_toolset)
+        logger.debug(
+            "F-20 semantic routing: explicit=%s suggested=%s → merged=%s",
+            explicit_toolsets,
+            suggested,
+            merged,
+        )
+        return merged
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("F-20 semantic routing failed, using explicit toolsets (%s)", exc)
+        return explicit_toolsets
+
+
+def _tool_needs_session(tool_name: str) -> bool:
+    """Does this tool keep state per conversation?
+
+    Read from the registered tool's own ``needs_session`` declaration, so a new
+    session-scoped tool works the day it is registered instead of needing a line in the
+    agent's dispatch loop. Never raises — an unknown or half-registered name simply does
+    not get the key, which is the pre-existing behaviour for every other tool.
+    """
+    try:
+        from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+
+        entry = _AGENT_REGISTRY.get_entry(tool_name)
+        return bool(getattr(entry.tool_ref, "needs_session", False)) if entry else False
+    except Exception:  # noqa: BLE001 — never break dispatch over a context nicety
+        return False
+
+#: A message carrying a link needs a toolset that can actually open it — see the
+#: toolset merge in run_agentic. Deliberately narrow (an explicit scheme): a bare
+#: "example.com" is far more often prose than a request to fetch something.
+_MESSAGE_HAS_URL = re.compile(r"https?://\S+", re.I)
+
+# ── StatusEvent argument/result redaction ──────────────────────────────────
+# A live progress view (and the Telegram debug X-ray) shows what tool ran with
+# what input, so summaries must be short AND never leak a secret. We show only
+# a few known-safe keys and always truncate; anything unrecognised is omitted
+# rather than dumped.
+_SAFE_ARG_KEYS: tuple[str, ...] = (
+    "query", "url", "path", "file", "host", "command", "q", "name", "id", "topic",
+)
+_ARG_SUMMARY_MAX: int = 80
+_RESULT_SUMMARY_MAX: int = 120
+
+
+def _summarize_tool_args(args: Any) -> str:
+    """Compact, secret-safe one-line summary of a tool's arguments."""
+    if not isinstance(args, dict):
+        return ""
+    parts: list[str] = []
+    for key in _SAFE_ARG_KEYS:
+        if key in args and args[key] not in (None, "", [], {}):
+            val = str(args[key]).replace("\n", " ")
+            if len(val) > _ARG_SUMMARY_MAX:
+                val = val[: _ARG_SUMMARY_MAX - 1] + "…"
+            parts.append(f"{key}={val}")
+    return " · ".join(parts)
+
+
+def _summarize_tool_result(result: Any) -> str:
+    """First line of a tool result, truncated — never the whole payload."""
+    text = str(result).strip().replace("\n", " ")
+    if len(text) > _RESULT_SUMMARY_MAX:
+        text = text[: _RESULT_SUMMARY_MAX - 1] + "…"
+    return text
 
 
 class ConversationalAgent:
@@ -124,6 +256,11 @@ class ConversationalAgent:
         self._user_identity: dict[str, str] = {}
         self._active_persona: str = ""
         self._runtime_persona: str = ""
+        # This session's resolved identity (soul + persona traits + guardrails).
+        # Lives on the INSTANCE: the loader is a process-wide singleton, so state
+        # kept there is shared by every chat in the daemon.
+        self._soul_ctx = None
+        self._soul_key: tuple[str, str, str] = ("", "", "")
         self._detected_language_hint: str = ""
         self._last_detected_language: str = "en"
         self._session_fallback_language: str = ""
@@ -141,11 +278,6 @@ class ConversationalAgent:
         self._user_profile_loaded: bool = False
         # Declared here for static-analysis visibility (set True in run_agentic on first call)
         self._agentic_tools_registered: bool = False
-        # Lazily-built skill matcher — auto-activates matching SKILL.md skills
-        # (installed + plugin-provided) into the prompt each turn. See
-        # _build_skills_section. None until first turn; then a
-        # (working_dir, SkillsContext) tuple, rebuilt if the active space changes.
-        self._skills_ctx = None
 
     @property
     def ai_client(self):
@@ -240,6 +372,39 @@ class ConversationalAgent:
         except Exception as exc:
             logger.warning("StatusEvent callback error: %s", exc)
 
+    async def _emit(
+        self,
+        type_: str,
+        task_id: str,
+        message: str,
+        *,
+        step_index: int | None = None,
+        total_steps: int | None = None,
+        **meta: Any,
+    ) -> None:
+        """Best-effort StatusEvent emit helper.
+
+        Cheap no-op when no callback is registered — the fast common case — so
+        the ReAct loop can emit freely without guarding each call site. Never
+        raises; a status failure must never break a reply.
+        """
+        if self._on_status_update is None:
+            return
+        try:
+            await self._emit_event(
+                StatusEvent(
+                    type=type_,  # type: ignore[arg-type]
+                    task_id=task_id,
+                    message=message,
+                    timestamp=datetime.now(),
+                    step_index=step_index,
+                    total_steps=total_steps,
+                    metadata=meta,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 — status is never load-bearing
+            logger.debug("status emit skipped: %s", exc)
+
     @staticmethod
     def load_soul_content() -> str:
         """Return the raw SOUL.md string, forcing a synchronous load if not yet cached.
@@ -270,8 +435,25 @@ class ConversationalAgent:
         """
         self._user_identity = {"user_id": user_id, "username": username}
 
-    def set_active_persona(self, config_or_name=None, soul_content: str | None = None) -> None:
-        """Compatibility persona setter kept for older callers."""
+    def set_active_persona(
+        self,
+        config_or_name=None,
+        soul_content: str | None = None,
+        *,
+        space: str = "",
+        cwd: "Path | None" = None,
+    ) -> None:
+        """Bind THIS session's identity: persona soul, tone, banned phrases.
+
+        Resolves through the unified chain and stores the result on the instance.
+        Callers used to pass a bare persona *name* and no ``soul_content``, so this
+        recorded the name and nothing else — a persona's ``soul.md``, ``tone`` and
+        ``banned_phrases`` were parsed, validated, and then reached no prompt at all.
+
+        *soul_content* remains supported for callers that pre-resolved identity
+        themselves (the CLI single-agent path, tests); note it goes through the
+        process-global loader override and is therefore not per-session.
+        """
         name = ""
         if isinstance(config_or_name, str):
             name = config_or_name.strip()
@@ -281,6 +463,26 @@ class ConversationalAgent:
         self._runtime_persona = name
         if soul_content:
             self._soul_loader.override(soul_content)
+            self._soul_ctx = None
+            self._soul_key = ("", "", "")
+            return
+
+        key = (name.lower(), space or "", str(cwd) if cwd else "")
+        if key == self._soul_key and self._soul_ctx is not None:
+            return
+        try:
+            self._soul_ctx = self._soul_loader.resolve(persona=name, space=space, cwd=cwd)
+            self._soul_key = key
+            logger.debug(
+                "identity resolved: source=%s persona=%s shadowed=%d",
+                self._soul_ctx.source,
+                self._soul_ctx.persona or "-",
+                len(self._soul_ctx.shadowed),
+            )
+        except Exception as exc:  # noqa: BLE001 — identity must never break a turn
+            logger.warning("identity resolution failed (%s); using loader default", exc)
+            self._soul_ctx = None
+            self._soul_key = ("", "", "")
 
     def set_language_preferences(
         self,
@@ -418,15 +620,37 @@ class ConversationalAgent:
             self._plan_ctx_loaded_at = now
         return ""
 
-    def _build_awareness_context(self) -> str:
-        now = datetime.now().astimezone()
-        parts = [f"System time: {now.strftime('%H:%M %Z')}, {now.strftime('%A %d %B %Y')}."]
+    def _build_session_context(self) -> str:
+        """The STABLE half of session awareness — who we're talking to.
+
+        Everything here holds for the life of the session, so it can sit in the
+        cached system prefix. The clock and the one-shot freshness line moved to
+        :meth:`_build_turn_context`.
+        """
+        parts: list[str] = []
         if uname := self._user_identity.get("username", ""):
             parts.append(f"You are talking to {uname} (your operator). Address them naturally.")
         elif uid := self._user_identity.get("user_id", ""):
             parts.append(f"User ID: {uid}.")
         if profile := self._load_user_profile():
             parts.append(f"## About the user\n{profile}")
+        return "\n".join(parts)
+
+    def _build_turn_context(self) -> str:
+        """The VOLATILE half — rides the user turn, never the system prompt.
+
+        ``System time`` used to open ``## Session Context`` in the *system* block.
+        Since the Anthropic cache breakpoint sits on the system message and its
+        prefix spans ``tools → system``, a minute-granularity timestamp there
+        capped the cache lifetime at ~60s and re-billed the whole tool schema
+        block at write price. Same reason the freshness line moved: it is a
+        one-shot, so it differed between turn 1 and turn 2 — a guaranteed miss.
+
+        The freshness line ALSO has a side effect (``mark_freshness_consumed``),
+        which is why it must never live in a memoised system prompt.
+        """
+        now = datetime.now().astimezone()
+        parts = [f"System time: {now.strftime('%H:%M %Z')}, {now.strftime('%A %d %B %Y')}."]
         # When no recent history survived the session-boundary filter, tell the
         # LLM explicitly to start fresh so it does not invent continuations of the
         # previous session (e.g. sleep reminders).  One-shot: cleared after first use.
@@ -434,6 +658,14 @@ class ConversationalAgent:
             self._history.mark_freshness_consumed()
             parts.append("Fresh session — no prior conversation loaded.")
         return "\n".join(parts)
+
+    def _build_awareness_context(self) -> str:
+        """Deprecated compat shim — prefer the explicit stable/volatile split.
+
+        Kept so out-of-tree callers keep working; it returns the combined block
+        the way it always did. Nothing in navig calls it on the hot path.
+        """
+        return "\n".join(p for p in (self._build_turn_context(), self._build_session_context()) if p)
 
     def _build_skills_section(self, user_message: str) -> str:
         """Auto-activate matching SKILL.md skills for this turn and render them.
@@ -446,21 +678,19 @@ class ConversationalAgent:
         Bounded (``max_active``) and degrade-safe — never blocks a turn.
         """
         try:
-            from navig.agent.skills_context import SkillsContext
+            from navig.agent.skills_context import get_skills_context
             from navig.spaces.active import get_active_working_dir
 
             # Resolve the active space's working dir. In the daemon the process
-            # never chdirs (it serves many spaces via a session ContextVar), so
-            # relying on cwd would inject the wrong space's project skills.
-            wd = str(get_active_working_dir())
-            cached = self._skills_ctx
-            if cached is None or cached[0] != wd:
-                # include_installed=True → also match plugin-provided + block
-                # skills, not just project/global stores. Cache per working dir
-                # so load() runs once per space, not once per turn.
-                cached = (wd, SkillsContext(workspace_dir=wd, include_installed=True))
-                self._skills_ctx = cached
-            ctx = cached[1]
+            # never chdirs, so relying on cwd would resolve wherever the daemon was
+            # launched rather than the space the operator selected.
+            #
+            # The context is SHARED (one per workspace dir, process-wide) rather than
+            # private to this agent: `manage_skills` force-activates on the very same
+            # instance, and on a private copy that activation would change nothing here.
+            # include_installed=True → also match plugin-provided + block skills, not
+            # just project/global stores. Caching keeps load() off the per-turn path.
+            ctx = get_skills_context(str(get_active_working_dir()))
             active = ctx.activate(user_message=user_message)
             return ctx.format_for_system_prompt(active)
         except Exception as exc:  # noqa: BLE001
@@ -512,15 +742,33 @@ class ConversationalAgent:
                 lang_instruction=lang_instruction,
                 capabilities=self._capability_summary(compact=True),
             )
-        # NB: matched SKILL.md skills are injected into the *user turn* (see
-        # run_agentic), NOT here — they're query-specific, so appending them to
-        # the cached system block would bust the tools+system prompt cache every
-        # turn (same reason recall is prepended to the user turn).
-        return self._soul_loader.build_system_prompt(
-            soul=self._soul_loader.cached_content or "",
+        # NB: matched SKILL.md skills, recalled facts and the clock are injected
+        # into the *user turn* (see run_agentic and _build_turn_context), NOT here
+        # — they're query- or time-specific, so appending them to the cached system
+        # block would bust the tools+system prompt cache every turn.
+        ctx = self._soul_context()
+        return self._soul_loader.build_prompt(
+            ctx,
             lang_instruction=lang_instruction,
-            awareness=self._build_awareness_context(),
+            awareness=self._build_session_context(),
             capabilities=self._capability_summary(),
+        )
+
+    def _soul_context(self) -> "SoulContext":
+        """This session's resolved identity, falling back to the loader default.
+
+        The fallback covers the ``soul_content=`` constructor path (CLI, tests),
+        where identity was injected rather than resolved.
+        """
+        if self._soul_ctx is not None:
+            return self._soul_ctx
+        from navig.agent.conv.guardrails import guardrail_block  # noqa: PLC0415
+        from navig.agent.conv.soul import SoulContext  # noqa: PLC0415
+
+        return SoulContext(
+            condensed=self._soul_loader.cached_content or "",
+            source="override",
+            guardrails=guardrail_block(),
         )
 
     def _capability_summary(self, *, compact: bool = False) -> str:
@@ -634,7 +882,7 @@ class ConversationalAgent:
             create_client,
             get_builtin_provider,
         )
-        from navig.providers.clients import ToolDefinition
+        from navig.providers.clients import ToolDefinition, merge_tool_call_deltas
 
         if not self._agentic_tools_registered:
             try:
@@ -645,10 +893,11 @@ class ConversationalAgent:
 
         # Stable key for the stateful browser tool's per-chat persistent browser.
         # Callers (e.g. the Telegram channel) pass a chat-stable session_key; CLI
-        # falls back to this instance's ephemeral id (per-run scope). Injected into
-        # browser_tool args at dispatch — never declared in its schema, so the LLM
-        # never sees it.
-        _browser_session_key = session_key or self._session_id
+        # falls back to this instance's ephemeral id (per-run scope). Used for the
+        # approval gate's session scope, and injected as `_session_id` into any tool
+        # declaring `needs_session` — never declared in a tool schema, so the LLM never
+        # sees it and cannot spoof another conversation's state.
+        _session_key = session_key or self._session_id
 
         budget = IterationBudget(max_iterations=max_iterations)
         if (
@@ -668,25 +917,9 @@ class ConversationalAgent:
             except Exception as exc:
                 logger.debug("Exception suppressed: %s", exc)
 
-        explicit_toolsets = [toolset] if isinstance(toolset, str) else list(toolset)
-        try:
-            from navig.llm.router import suggest_toolsets
-
-            suggested = suggest_toolsets(user_input=message)
-            merged = list(explicit_toolsets)
-            for suggested_toolset in suggested:
-                if suggested_toolset not in merged:
-                    merged.append(suggested_toolset)
-            toolsets = merged
-            logger.debug(
-                "F-20 semantic routing: explicit=%s suggested=%s → merged=%s",
-                explicit_toolsets,
-                suggested,
-                toolsets,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("F-20 semantic routing failed, using explicit toolsets (%s)", exc)
-            toolsets = explicit_toolsets
+        toolsets = default_turn_toolsets(
+            message, toolset=toolset, tier_override=tier_override
+        )
 
         raw_schemas = _AGENT_REGISTRY.get_openai_schemas(toolsets=toolsets)
         tool_defs: list[ToolDefinition] = [
@@ -704,12 +937,24 @@ class ConversationalAgent:
         # below AND the plan-context skip further down. Computed once.
         _stripped_msg = message.strip()
         _short_chat = len(_stripped_msg) < 80 and len(_stripped_msg.split()) < 12
+        # The research tier is an EXPLICIT "answer this properly" signal. It must
+        # never be treated as short chat regardless of message length, or a terse
+        # question ("info about Fight Club") would still get the minimal prompt,
+        # the 256-token cap, skipped skills/recall and the 35s timeout — i.e. all
+        # the shallow-answer shortcuts the depth path exists to bypass.
+        if (tier_override or "").strip() == "research":
+            _short_chat = False
 
         provider_name = _AGENTIC_DEFAULT_PROVIDER
         model_name = _AGENTIC_DEFAULT_MODEL
         temperature = _AGENTIC_DEFAULT_TEMP
-        # Short messages get the tight chat budget; tool work keeps the
-        # generous default so multi-step ReAct turns aren't truncated.
+        # Short messages get the tight chat budget; tool work keeps the generous
+        # default so multi-step ReAct turns aren't truncated. NOTE this is only
+        # the FALLBACK: resolve_llm() below overwrites max_tokens with the mode's
+        # configured value, so these two constants apply only when resolution
+        # raises. Either way the run opens on a chat-sized budget and the
+        # tool-call escalation further down lifts it — read that, not this line,
+        # for what a tool-using turn actually gets.
         max_tokens = _AGENTIC_CHAT_MAXTOK if _short_chat else _AGENTIC_DEFAULT_MAXTOK
         base_url: str | None = None
         # Mode selection: short chat-feel messages ("Hey", "thanks", "ok")
@@ -723,11 +968,22 @@ class ConversationalAgent:
         # where a simple question, padded past the short-chat cutoff (REASON
         # appends an explore suffix + web context), silently fell into the 480B
         # CODER model — 40s and thousands of tokens for a one-line answer.
+        # "research" is the depth tier for real information questions asked from a
+        # chat surface: tool-using and web-grounded. It maps to the big_tasks MODEL
+        # (not the "research" llm_mode) on purpose: big_tasks is the tier users
+        # actually configure for smart work and is already wired to Claude Opus, so
+        # a deep Telegram answer reaches the same model class as the desktop. The
+        # standalone "research" llm_mode defaults to niche providers (nvidia/deepseek)
+        # most users have never keyed — routing there silently degraded a deep answer
+        # to a failed call → fast-retry → shallow model. The research TOOLSETS
+        # (search/web_fetch/wiki/browser) are still seeded above off tier_override,
+        # so grounding is unaffected by this model choice.
         _TIER_TO_MODE = {
             "small": "small_talk",
             "big": "big_tasks",
             "coder_big": "coding",
             "coder": "coding",
+            "research": "big_tasks",
         }
         _forced_mode = _TIER_TO_MODE.get((tier_override or "").strip())
         _resolve_mode = _forced_mode or ("small_talk" if _short_chat else "coding")
@@ -747,8 +1003,11 @@ class ConversationalAgent:
         # Only the heavy tiers (big_tasks/coding) and only when an ANTHROPIC key
         # actually resolves — keyless users keep the existing OpenRouter chain, so
         # this never introduces a failing default. Direct anthropic provider is
-        # required for caching + effort/thinking to take effect.
-        if _resolve_mode in ("big_tasks", "coding") and (provider_name or "").lower() != "anthropic":
+        # required for caching + effort/thinking to take effect. The Telegram depth
+        # tier reaches this via big_tasks (see _TIER_TO_MODE above).
+        if _resolve_mode in ("big_tasks", "coding") and (
+            provider_name or ""
+        ).lower() != "anthropic":
             try:
                 from navig.providers.inference import resolve_provider_credential
 
@@ -769,6 +1028,10 @@ class ConversationalAgent:
         # else auto-detect from the message. Only the direct Anthropic provider
         # honours these params, so gate extra_body on provider == "anthropic".
         _effort_extra: dict | None = None
+        # A short *character count* does not mean a shallow *question*: "info about
+        # Fight Club" is 21 chars but wants real reasoning. The research tier already
+        # cleared _short_chat above precisely so it escapes the LOW-effort floor and
+        # gets real thinking; chit-chat keeps LOW effort for speed.
         try:
             if _short_chat:
                 from navig.agent.effort import EffortLevel
@@ -848,16 +1111,21 @@ class ConversationalAgent:
         # query-specific, so injecting them into `system` would invalidate the
         # tools+system cache every turn). Skipped on short chat for latency.
         _user_content = message
+        # Time- and query-specific context rides the *user turn* (not the cached
+        # system block). The clock goes first: it is unconditional (a short "what
+        # time is it" previously had no clock at all, because the slim prompt
+        # carried no awareness block) and recency is highest at the front.
+        prefix_parts: list[str] = []
+        if now_block := self._build_turn_context():
+            prefix_parts.append(f"## Now\n{now_block}")
         if not _short_chat:
-            # Query-specific context rides the *user turn* (not the cached system
-            # block): matched SKILL.md skills first, then recalled facts.
-            prefix_parts: list[str] = []
+            # matched SKILL.md skills first, then recalled facts.
             if skills_block := self._build_skills_section(message):
                 prefix_parts.append(skills_block)
             if recall := self._recall_block(message):
                 prefix_parts.append(recall)
-            if prefix_parts:
-                _user_content = "\n\n".join([*prefix_parts, message])
+        if prefix_parts:
+            _user_content = "\n\n".join([*prefix_parts, message])
 
         history_messages = list(self.conversation_history)
         working_messages: list[Message] = [
@@ -877,6 +1145,25 @@ class ConversationalAgent:
         final_response = ""
         turn = 0
         past_tool_calls_this_turn: list[list[tuple[str, str]]] = []
+        #: Set once the run makes its first tool call — see the escalation below.
+        _budget_escalated = False
+
+        # Per-run id ties every StatusEvent of this turn together so a renderer can
+        # group them. Emissions are best-effort and no-op without a callback, so a
+        # surface that wants live progress (Telegram debug X-ray, the minimal
+        # progress line) just registers on_status_update; nothing else changes.
+        _run_task_id = uuid.uuid4().hex[:8]
+        _tool_step = 0
+        await self._emit(
+            "task_start",
+            _run_task_id,
+            "Working…",
+            provider=provider_name,
+            model=model_name,
+            tier=(tier_override or _resolve_mode),
+            toolsets=list(toolsets),
+            effort=getattr(locals().get("_effort_level", None), "name", ""),
+        )
 
         compressor = None
         try:
@@ -901,6 +1188,8 @@ class ConversationalAgent:
             return {}
 
         async def _dispatch_single(tool_call_item):
+            from navig.agent.agent_tool_registry import is_failure_result
+
             try:
                 args = (
                     json.loads(tool_call_item.arguments)
@@ -920,7 +1209,7 @@ class ConversationalAgent:
                 denial = await gate_agent_tool_call(
                     tool_call_item.name,
                     parameters=args,
-                    session_key=_browser_session_key,
+                    session_key=_session_key,
                 )
             except Exception as exc:  # noqa: BLE001 — interlock unavailable → deny
                 logger.error(
@@ -939,9 +1228,16 @@ class ConversationalAgent:
             # the verdict as the tool result so the agent can adapt instead of executing
             # an unsafe action. Best-effort; the verifier no-ops when disabled.
             try:
-                from navig.tools.approval import DESTRUCTIVE_TOOLS
+                # `is_destructive_tool`, not raw `in DESTRUCTIVE_TOOLS`: the set can
+                # only ever hold names core knows at import time, and three other kinds
+                # of tool are destructive — generated connector writes
+                # (`connector_*_act`), a plugin's self-declared `safety = "dangerous"`,
+                # and anything an external MCP server offers. Reading the set directly
+                # meant the verifier skipped every one of them while the approval gate
+                # held them, so the two disagreed about what "destructive" means.
+                from navig.tools.approval import is_destructive_tool
 
-                if tool_call_item.name in DESTRUCTIVE_TOOLS:
+                if is_destructive_tool(tool_call_item.name):
                     from navig.agent.verifier import get_verifier
 
                     verifier = get_verifier()
@@ -962,26 +1258,108 @@ class ConversationalAgent:
             except Exception as exc:  # noqa: BLE001
                 logger.debug("tool verification skipped: %s", exc)
 
-            # Inject the stable per-chat session key for the stateful browser tool
-            # so its persistent per-chat browser is keyed correctly. Undeclared in
-            # the tool schema ⇒ invisible to the LLM; both dispatch paths forward it.
-            if tool_call_item.name == "browser_tool":
-                args = {**args, "_session_id": _browser_session_key}
+            # Inject the stable per-chat session key for any tool that declares it keeps
+            # per-conversation state (`BaseTool.needs_session`). Undeclared in the tool
+            # schema ⇒ invisible to the LLM; both dispatch paths forward it.
+            #
+            # Read from the tool's own declaration rather than a hardcoded name: this was
+            # `if name == "browser_tool"`, so every future session-scoped tool needed
+            # another line here — and the todo tools, which are per-chat by nature, could
+            # not be wired at all without one.
+            if _tool_needs_session(tool_call_item.name):
+                args = {**args, "_session_id": _session_key}
 
+            nonlocal _tool_step
+            _tool_step += 1
+            _my_step = _tool_step
+            _arg_summary = _summarize_tool_args(args)
+            _t_tool = time.monotonic()
+            await self._emit(
+                "step_start",
+                _run_task_id,
+                f"{tool_call_item.name}",
+                step_index=_my_step,
+                tool=tool_call_item.name,
+                args_summary=_arg_summary,
+            )
             try:
                 from navig.agent.speculative import get_speculative_executor
 
                 spec = get_speculative_executor()
+                # dispatch()/spec.execute() are SYNCHRONOUS and can block for a
+                # long time on live infra (SSH/DB/HTTP). Run them OFF the event
+                # loop so a slow tool can't freeze it — and, with it, every
+                # concurrent session and the "parallel" batch (which otherwise
+                # isn't parallel at all). wait_for abandons a hung tool at
+                # _TOOL_DISPATCH_TIMEOUT instead of wedging the turn forever.
+                # (spec.aexecute keeps cache-check + speculation ON the loop while
+                # offloading only the blocking dispatch; mirrors plan_execute.py.)
                 if spec is not None:
-                    result_str = spec.execute(tool_call_item.name, args)
-                else:
-                    result_str = _AGENT_REGISTRY.dispatch(
-                        tool_call_item.name,
-                        args,
-                        vault_injector=_vault_injector,
+                    result_str = await asyncio.wait_for(
+                        spec.aexecute(tool_call_item.name, args),
+                        timeout=_TOOL_DISPATCH_TIMEOUT,
                     )
+                else:
+                    result_str = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            _AGENT_REGISTRY.dispatch,
+                            tool_call_item.name,
+                            args,
+                            _vault_injector,
+                        ),
+                        timeout=_TOOL_DISPATCH_TIMEOUT,
+                    )
+            except (TimeoutError, asyncio.TimeoutError):
+                # to_thread can't cancel the worker thread, but the loop is freed
+                # here so the turn + every concurrent session proceed. The model
+                # is told honestly the tool was abandoned (not a phantom success).
+                result_str = (
+                    f"[Tool error: {tool_call_item.name} exceeded "
+                    f"{_TOOL_DISPATCH_TIMEOUT:.0f}s and was abandoned]"
+                )
+                await self._emit(
+                    "step_failed",
+                    _run_task_id,
+                    f"{tool_call_item.name} timed out",
+                    step_index=_my_step,
+                    tool=tool_call_item.name,
+                    args_summary=_arg_summary,
+                    error=f"timeout after {_TOOL_DISPATCH_TIMEOUT:.0f}s",
+                    duration_ms=int((time.monotonic() - _t_tool) * 1000),
+                )
+                return (tool_call_item.id, result_str)
             except Exception as exc:
                 result_str = f"[Tool error: {exc}]"
+                await self._emit(
+                    "step_failed",
+                    _run_task_id,
+                    f"{tool_call_item.name} failed",
+                    step_index=_my_step,
+                    tool=tool_call_item.name,
+                    args_summary=_arg_summary,
+                    error=str(exc),
+                    duration_ms=int((time.monotonic() - _t_tool) * 1000),
+                )
+                return (tool_call_item.id, result_str)
+            # "[ERROR" = the registry's marker for a ToolResult(success=False)
+            # non-raising tool failure (navig_run exit!=0, a failed db query or
+            # dump, a permission-denied write). Without it, those render as a
+            # green step_done in the /trace X-ray — a false-green over a failed
+            # live-infra op, which NAVIG's own doctor-honesty doctrine forbids.
+            # The prefix list lives in agent_tool_registry beside the code that
+            # PRODUCES it: this call site used to keep a private copy, and the two
+            # other consumers (plan_execute, speculative) had none at all.
+            _failed = is_failure_result(result_str)
+            await self._emit(
+                "step_failed" if _failed else "step_done",
+                _run_task_id,
+                f"{tool_call_item.name}",
+                step_index=_my_step,
+                tool=tool_call_item.name,
+                args_summary=_arg_summary,
+                result_summary=_summarize_tool_result(result_str),
+                duration_ms=int((time.monotonic() - _t_tool) * 1000),
+            )
             return (tool_call_item.id, result_str)
 
         async def _sem_dispatch(tool_call_item):
@@ -1059,6 +1437,7 @@ class ConversationalAgent:
             try:
                 if on_partial_cb is not None and hasattr(fb_client, "complete_stream"):
                     _acc: list[str] = []
+                    _tc: list[Any] = []
                     _fin: str | None = None
                     _usg: dict | None = None
                     _mdl: str | None = None
@@ -1073,6 +1452,13 @@ class ConversationalAgent:
                                     await on_partial_cb("".join(_acc))
                                 except Exception:  # noqa: BLE001
                                     pass
+                            # Same contract as the main streamed turn: the
+                            # fallback request carries tools too, so dropping
+                            # tool-call deltas here would resurrect the empty
+                            # reply on exactly the path taken when the primary
+                            # model already failed.
+                            if getattr(ch, "tool_call_delta", None) is not None:
+                                _tc.append(ch)
                             if getattr(ch, "finish_reason", None):
                                 _fin = ch.finish_reason
                             if getattr(ch, "usage", None):
@@ -1083,7 +1469,7 @@ class ConversationalAgent:
                     await asyncio.wait_for(_drive_fb(), timeout=_AGENTIC_CHAT_TIMEOUT)
                     result = CompletionResponse(
                         content="".join(_acc) or None,
-                        tool_calls=None,
+                        tool_calls=merge_tool_call_deltas(_tc) or None,
                         finish_reason=_fin,
                         usage=_usg,
                         model=_mdl or fb.model,
@@ -1162,14 +1548,15 @@ class ConversationalAgent:
                 try:
                     if stream and on_partial is not None and hasattr(acct_client, "complete_stream"):
                         _acc: list[str] = []
+                        _tc: list[Any] = []
                         _fin: str | None = None
                         _usg: dict | None = None
                         _mdl: str | None = None
 
-                        # Bind the loop-varying client + accumulator as defaults so the
+                        # Bind the loop-varying client + accumulators as defaults so the
                         # closure captures THIS iteration's values (ruff B023), even though
                         # it is awaited immediately below.
-                        async def _drive_acct(_client=acct_client, _out=_acc) -> None:
+                        async def _drive_acct(_client=acct_client, _out=_acc, _calls=_tc) -> None:
                             nonlocal _fin, _usg, _mdl
                             async for ch in _client.complete_stream(req):
                                 d = getattr(ch, "delta", None)
@@ -1179,6 +1566,10 @@ class ConversationalAgent:
                                         await on_partial("".join(_out))
                                     except Exception:  # noqa: BLE001
                                         pass
+                                # Rotating to a sibling account must not cost the
+                                # turn its tool calls — same contract as above.
+                                if getattr(ch, "tool_call_delta", None) is not None:
+                                    _calls.append(ch)
                                 if getattr(ch, "finish_reason", None):
                                     _fin = ch.finish_reason
                                 if getattr(ch, "usage", None):
@@ -1188,7 +1579,8 @@ class ConversationalAgent:
 
                         await asyncio.wait_for(_drive_acct(), timeout=_client_timeout)
                         resp = CompletionResponse(
-                            content="".join(_acc) or None, tool_calls=None,
+                            content="".join(_acc) or None,
+                            tool_calls=merge_tool_call_deltas(_tc) or None,
                             finish_reason=_fin, usage=_usg,
                             model=_mdl or model_name, provider=provider_name,
                         )
@@ -1224,6 +1616,17 @@ class ConversationalAgent:
             turn += 1
             budget.consume(1)
 
+            # One "thinking" beat per ReAct turn. The renderer shows a calm
+            # "thinking…" in normal mode and a numbered turn in the debug X-ray.
+            await self._emit(
+                "thinking",
+                _run_task_id,
+                "Thinking…",
+                step_index=turn,
+                provider=provider_name,
+                model=model_name,
+            )
+
             if compressor is not None and turn > _COMPRESS_AFTER_TURN:
                 try:
                     msg_dicts = [
@@ -1246,6 +1649,46 @@ class ConversationalAgent:
                             )
                             for msg_dict in compressed
                         ]
+                        # Compaction just dropped older turns. Hand back the slice of
+                        # what was dropped that is still relevant to the current ask —
+                        # "" when the feature is off or nothing matched, so this is a
+                        # no-op by default (memory.session_index.enabled).
+                        from navig.memory.session_index import (
+                            recover_context,
+                            session_index_enabled,
+                        )
+
+                        # Flag first (see the tool-result site): off by default, and then
+                        # this costs nothing. When on it runs off the loop thread — a BM25
+                        # search over a long session is tens of milliseconds, mid-turn.
+                        if session_index_enabled():
+                            # Query from the PRE-compaction list. `recover_context` picks
+                            # the newest user message to search for, and compaction is
+                            # precisely what removes it: measured under a full-suite run,
+                            # a 12-message compaction left 7 messages with no user turn
+                            # among them, so the query was empty and recovery returned ""
+                            # every time — the feature silently doing nothing in exactly
+                            # the case it exists for. `msg_dicts` is the same conversation
+                            # one step earlier and always still contains the current ask.
+                            # Its own handler. The compaction above has ALREADY been
+                            # applied to working_messages by this point, so a failure here
+                            # is not "compression skipped" — that succeeded. Reporting it
+                            # under the outer message described a step that had worked and
+                            # sent anyone reading the log to the wrong subsystem.
+                            try:
+                                _recovered = await asyncio.to_thread(
+                                    recover_context, self._session_id, msg_dicts
+                                )
+                                if _recovered:
+                                    working_messages.append(
+                                        Message(role="system", content=_recovered)
+                                    )
+                            except Exception as exc:  # noqa: BLE001
+                                logger.debug(
+                                    "Context compaction succeeded; recovering dropped "
+                                    "context failed (%s) — continuing without it",
+                                    exc,
+                                )
                 except Exception as exc:
                     logger.debug("Context compression skipped: %s", exc)
 
@@ -1275,13 +1718,22 @@ class ConversationalAgent:
                 extra_body=_effort_extra,
             )
 
-            # Streaming path: only enabled when the caller passed an
-            # on_partial callback AND this is a chat-feel turn (no tool
-            # use). For agentic tool turns we stick to the blocking
-            # `complete()` path because tool_call deltas can't be cleanly
-            # surfaced as plain text mid-stream. The accumulated text is
+            # Streaming path: enabled when the caller passed an on_partial
+            # callback AND this is a chat-feel turn. The accumulated text is
             # passed to on_partial each chunk; the caller (Telegram) is
             # expected to debounce edit calls itself.
+            #
+            # "Chat-feel" is a guess about SHAPE, never a guarantee of NO TOOL
+            # USE — the request still advertises the full toolset with
+            # tool_choice="auto", so the model may answer a short message with a
+            # tool call. This branch used to hardcode `tool_calls=None`, so it
+            # did: a one-line message like a bare TikTok URL made the model call
+            # a tool, every tool_call delta was dropped on the floor, and the
+            # turn came back with empty content and no calls — which the loop
+            # below reads as "the model had nothing to say" and ends. The reply
+            # then blamed a turn limit that was nowhere near reached (1 turn of
+            # 90). Tool-call deltas are reassembled instead; the transport has
+            # always carried them.
             _can_stream = (
                 on_partial is not None
                 and _short_chat
@@ -1290,6 +1742,7 @@ class ConversationalAgent:
             try:
                 if _can_stream:
                     _accum: list[str] = []
+                    _tool_chunks: list[Any] = []
                     _final_finish: str | None = None
                     _final_usage: dict | None = None
                     _final_model: str | None = None
@@ -1307,6 +1760,12 @@ class ConversationalAgent:
                                         "on_partial callback raised %r; continuing",
                                         exc,
                                     )
+                            # Keep tool-call fragments — they are reassembled
+                            # after the stream ends. Never surfaced to
+                            # on_partial: a half-built JSON argument is not text
+                            # a user should see.
+                            if getattr(chunk, "tool_call_delta", None) is not None:
+                                _tool_chunks.append(chunk)  # noqa: B023 — same
                             if getattr(chunk, "finish_reason", None):
                                 _final_finish = chunk.finish_reason
                             if getattr(chunk, "usage", None):
@@ -1315,17 +1774,33 @@ class ConversationalAgent:
                                 _final_model = chunk.model
 
                     await asyncio.wait_for(_drive_stream(), timeout=_client_timeout)
+                    _streamed_calls = merge_tool_call_deltas(_tool_chunks)
                     # Synthesise a CompletionResponse so the rest of the
                     # loop (usage tracking, history append, finish_reason
                     # handling) keeps working unchanged.
                     response = CompletionResponse(
                         content="".join(_accum) or None,
-                        tool_calls=None,
+                        tool_calls=_streamed_calls or None,
                         finish_reason=_final_finish,
                         usage=_final_usage,
                         model=_final_model or model_name,
                         provider=provider_name,
                     )
+                    if not _accum and not _streamed_calls:
+                        # Neither text nor a tool call: there is nothing to reply
+                        # with and nothing to execute, so the turn is a dead end
+                        # for the caller. Retry it ONCE unstreamed rather than
+                        # surfacing the void — this also covers any provider
+                        # whose delta shape we don't parse. Bounded: one extra
+                        # call, only when the stream produced literally nothing.
+                        logger.warning(
+                            "run_agentic: streamed turn %d yielded no text and no "
+                            "tool calls (%s/%s) — retrying unstreamed",
+                            turn, provider_name, model_name,
+                        )
+                        response = await asyncio.wait_for(
+                            client.complete(request), timeout=_client_timeout
+                        )
                 else:
                     response = await asyncio.wait_for(
                         client.complete(request), timeout=_client_timeout
@@ -1430,6 +1905,28 @@ class ConversationalAgent:
                 break
             past_tool_calls_this_turn.append(current_calls)
 
+            # The moment the model reaches for a tool, this run stopped being
+            # small talk — whatever the message LOOKED like. The chat budget
+            # (256 tokens, 35s) is sized for "hey"/"thanks", and it was decided
+            # once, from message shape, before anyone knew a tool was coming: a
+            # bare link is 33 characters, so a link → fetch → summarise run got
+            # 256 tokens to answer in and was cut off mid-sentence. Escalate to
+            # the tool-work budget for the REST of the run (once — the flag makes
+            # it idempotent, and it never lowers a budget the caller already set
+            # higher).
+            if not _budget_escalated:
+                _budget_escalated = True
+                if max_tokens < _AGENTIC_DEFAULT_MAXTOK:
+                    logger.debug(
+                        "run_agentic: tool call on turn %d — raising max_tokens "
+                        "%d→%d and timeout %.0fs→%.0fs for the rest of the run",
+                        turn, max_tokens, _AGENTIC_DEFAULT_MAXTOK,
+                        _client_timeout, _AGENTIC_CLIENT_TIMEOUT,
+                    )
+                    max_tokens = _AGENTIC_DEFAULT_MAXTOK
+                if _client_timeout < _AGENTIC_CLIENT_TIMEOUT:
+                    _client_timeout = _AGENTIC_CLIENT_TIMEOUT
+
             assistant_tool_calls_raw = [
                 {
                     "id": tool_call.id,
@@ -1458,7 +1955,17 @@ class ConversationalAgent:
                 else:
                     sequential_batch.append(tool_call)
 
-            collected_results: list[tuple[str, str]] = []
+            # Route each result back by the tool-call OBJECT, never the provider
+            # id string. Some OpenAI-compatible providers omit or duplicate
+            # tool-call ids (ToolCall.id defaults to "" in providers/clients), and
+            # an id-keyed dict(collected_results) then collapses: every call
+            # sharing that id reads the one surviving result, so the model is
+            # handed tool A's live-infra output labeled as tool B's (e.g. host A's
+            # disk usage reported for host B) with no error — the [result missing]
+            # fallback can't even fire because the "" key exists. id() is unique
+            # per live pending call (all are referenced for this whole block, so
+            # none can be GC'd and have its address reused).
+            results_by_call: dict[int, str] = {}
 
             if parallel_batch:
                 par_results = await asyncio.gather(
@@ -1468,29 +1975,78 @@ class ConversationalAgent:
                     return_exceptions=True,
                 )
                 for idx, result in enumerate(par_results):
+                    tc = parallel_batch[idx]
                     if isinstance(result, BaseException):
-                        collected_results.append((parallel_batch[idx].id, f"[Tool error: {result}]"))
+                        results_by_call[id(tc)] = f"[Tool error: {result}]"
                     else:
-                        collected_results.append(result)
+                        # _dispatch_single -> (tool_call.id, result_str); keep the text
+                        results_by_call[id(tc)] = result[1]
 
             for tool_call in sequential_batch:
-                collected_results.append(await _dispatch_single(tool_call))
+                _res = await _dispatch_single(tool_call)
+                results_by_call[id(tool_call)] = _res[1]
 
-            id_to_result = dict(collected_results)
             for tool_call in pending_calls:
+                _tool_result = results_by_call.get(id(tool_call), "[Tool error: result missing]")
                 working_messages.append(
                     Message(
                         role="tool",
-                        content=id_to_result.get(tool_call.id, "[Tool error: result missing]"),
+                        content=_tool_result,
+                        # Echo the provider's own id back (even if empty/duplicate)
+                        # so id-correlating providers can still match; the content
+                        # routing above never depends on it.
                         tool_call_id=tool_call.id,
                     )
                 )
+                # Index the result so a later compaction can hand back the parts that
+                # still matter. Never raises.
+                # The flag is checked HERE, not just inside record_event, so the default
+                # (disabled) path costs one cached dict lookup and nothing else — an
+                # unconditional `await asyncio.to_thread(...)` would add a thread hop to
+                # every tool result whether or not the feature is on, which is real
+                # latency in the hot loop. When enabled it runs off the loop thread: the
+                # write is sub-millisecond, but a contended database waits out its
+                # busy_timeout, and that must not stall the turn.
+                from navig.memory.session_index import (
+                    event_kind_for_tool,
+                    record_event,
+                    session_index_enabled,
+                )
+
+                try:
+                    if session_index_enabled():
+                        await asyncio.to_thread(
+                            record_event,
+                            self._session_id,
+                            event_kind_for_tool(tool_call.name),
+                            _tool_result,
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    # Memory is an augmentation, so a failure here must never take the
+                    # user's turn with it — the same contract memory_auto_extractor
+                    # states ("errors never interrupt the conversation"), and the shape
+                    # the compaction block above already has. record_event is best-effort
+                    # for the sqlite errors it expects, but it is reached through
+                    # to_thread, which re-raises into this coroutine: without this, one
+                    # UNexpected error aborts a turn that had already done its work.
+                    logger.debug("session index recording skipped: %s", exc)
 
         if not final_response:
-            final_response = (
-                f"Agent reached the {turn}-turn limit without a final answer. "
-                "Try a more specific request."
-            )
+            # Two unrelated failures used to share one message, and only one of
+            # them was ever a turn limit. Blaming the limit when the budget was
+            # untouched (the operator saw "the 1-turn limit" with 89 of 90 turns
+            # still available) points at the user's phrasing for something no
+            # rephrasing can fix, and hides the real event. Say which happened.
+            if budget.is_exhausted():
+                final_response = (
+                    f"Agent reached the {turn}-turn limit without a final answer. "
+                    "Try a more specific request."
+                )
+            else:
+                final_response = (
+                    f"No answer came back — {provider_name}/{model_name} returned "
+                    f"an empty response on turn {turn}. Try again, or switch model."
+                )
 
         # Persist both turns through the canonical add() path so JSONL is always updated.
         # Previously the setter path was used which bypassed JSONL persistence entirely.
@@ -1546,6 +2102,27 @@ class ConversationalAgent:
 
         cost = tracker.session_cost()
         logger.info("run_agentic completed: %s", cost.summary_str())
+
+        # Final beat with the totals a debug X-ray shows. All of this was already
+        # collected (CostTracker) and previously just logged and discarded; now a
+        # subscribed surface can render it. Best-effort as ever.
+        try:
+            _fb = self._last_account_fallback or {}
+            await self._emit(
+                "task_done",
+                _run_task_id,
+                cost.summary_str(),
+                total_steps=_tool_step,
+                turns=turn,
+                tools_run=_tool_step,
+                model=model_name,
+                provider=provider_name,
+                total_tokens=getattr(cost, "total_tokens", 0),
+                cost_usd=round(float(getattr(cost, "total_usd", 0.0)), 6),
+                account_fallback=(_fb.get("to") if _fb else ""),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("task_done emit skipped: %s", exc)
         return final_response
 
     @staticmethod
@@ -1641,6 +2218,14 @@ class ConversationalAgent:
         other_ctx = {k: v for k, v in self.context.items() if k != "plan_context"}
         if other_ctx:
             msgs[0]["content"] += f"\nContext: {json.dumps(other_ctx)}"
+        # The clock lives on the user turn in run_agentic, but this single-shot
+        # path builds no user turn of its own — the message is already in history.
+        # Append it LAST so the stable sections above keep their order, and so it
+        # stays after any future cache breakpoint. This path sets no
+        # ``cache_control`` (it predates the agentic loop), so the volatility is
+        # free here; without it a fallback turn has no idea what day it is.
+        if now_block := self._build_turn_context():
+            msgs[0]["content"] += f"\n\n## Now\n{now_block}"
         tier = self._tier_override
         await self._emit_event(
             StatusEvent(

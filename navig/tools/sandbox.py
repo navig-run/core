@@ -19,6 +19,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from navig.core.aio_subprocess import communicate_or_kill
 from navig.core.yaml_io import atomic_write_text
 from navig.debug_logger import get_debug_logger
 
@@ -238,10 +239,7 @@ class DockerSandbox:
                 )
 
                 try:
-                    stdout, stderr = await asyncio.wait_for(
-                        proc.communicate(),
-                        timeout=exec_timeout,
-                    )
+                    stdout, stderr = await communicate_or_kill(proc, exec_timeout)
 
                     execution_time = (datetime.now() - start_time).total_seconds()
 

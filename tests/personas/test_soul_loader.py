@@ -1,10 +1,7 @@
 """Tests for navig.personas.soul_loader — _try_read, load_soul priority chain."""
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 import navig.personas.soul_loader as soul_mod
 from navig.personas.soul_loader import _try_read, load_soul

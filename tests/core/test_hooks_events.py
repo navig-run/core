@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from navig.hooks.events import HookContext, HookEvent, HookResult
 
 

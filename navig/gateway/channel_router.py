@@ -10,6 +10,7 @@ Handles:
 
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from navig.console_helper import strip_ansi
@@ -33,6 +34,41 @@ def _format_account_rotation_notice(fb: dict[str, Any]) -> str:
     to = str(fb.get("to") or "another account").strip()
     why = describe_category(fb.get("reason"))
     return f"↻ Primary account was {why} — answered with {to}."
+
+
+def _stored_persona(metadata: dict[str, Any]) -> str:
+    """The operator's persisted persona choice for this chat, or ``""``.
+
+    Best-effort in every direction: a non-numeric user id, a locked runtime store
+    or a missing selection all degrade to "no persona", which resolves to the
+    shipped identity. Never blocks a reply.
+    """
+    raw = str(metadata.get("user_id", "") or "").strip()
+    if not raw.lstrip("-").isdigit():
+        return ""
+    try:
+        from navig.personas.store import get_active_persona
+
+        return get_active_persona(int(raw)) or ""
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("stored persona lookup skipped: %s", exc)
+        return ""
+
+
+def _session_working_dir() -> "Path | None":
+    """Active space working dir, used for folder-space identity + project personas.
+
+    The daemon never chdirs, so ``Path.cwd()`` would resolve wherever it was launched
+    rather than the selected space. ``None`` when unavailable,
+    which skips the folder-space step entirely rather than guessing a root.
+    """
+    try:
+        from navig.spaces.active import get_active_working_dir
+
+        return Path(get_active_working_dir())
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("active working dir unavailable: %s", exc)
+        return None
 
 
 class ChannelRouter:
@@ -212,10 +248,19 @@ class ChannelRouter:
                 username=metadata.get("username", ""),
             )
 
-        # Apply transient runtime persona from channel metadata (e.g., Telegram auto mode)
+        # Bind this session's identity: persona (transient from channel metadata,
+        # else the operator's stored choice) + active space + working dir. This
+        # used to pass the persona NAME only, so a persona's soul.md, tone and
+        # banned_phrases never reached the prompt.
         runtime_persona = str(metadata.get("auto_reply_persona", "") or "").strip()
+        if not runtime_persona:
+            runtime_persona = _stored_persona(metadata)
         if hasattr(agent, "set_active_persona"):
-            agent.set_active_persona(runtime_persona)
+            agent.set_active_persona(
+                runtime_persona,
+                space=str(metadata.get("space", "") or ""),
+                cwd=_session_working_dir(),
+            )
 
         detected_language = str(metadata.get("detected_language", "") or "").strip().lower()
         last_detected_language = str(metadata.get("last_detected_language", "") or "")
@@ -226,9 +271,26 @@ class ChannelRouter:
                 last_detected_language=last_detected_language,
             )
 
-        # Set up status callback to send updates via WebSocket
-        async def send_status(msg):
-            await self._broadcast_status(session_key, msg)
+        # Set up status callback to send updates via WebSocket AND to any
+        # per-request status sink a channel registered (e.g. the Telegram deep-path
+        # progress / debug renderer). The parameter is annotated non-str/non-empty
+        # so the on_status_update setter's string-compat shim does NOT unwrap it —
+        # the sink needs the FULL StatusEvent (tool, tokens, cost), not just
+        # event.message. The WebSocket path stays string-based as before.
+        _status_sink = metadata.get("_status_sink")
+
+        async def send_status(event: object):
+            try:
+                await self._broadcast_status(session_key, getattr(event, "message", str(event)))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("ws status broadcast skipped: %s", exc)
+            if _status_sink is not None:
+                try:
+                    _res = _status_sink(event)
+                    if hasattr(_res, "__await__"):
+                        await _res
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("status sink skipped: %s", exc)
 
         agent.on_status_update = send_status
 
@@ -274,22 +336,16 @@ class ChannelRouter:
         )
 
     def _get_conversational_agent(self, session_key: str):
-        """Get or create conversational agent for session."""
+        """Get or create conversational agent for session.
+
+        NB: identity is NOT pre-loaded here. A single ``self._soul_content``
+        shared by every constructed agent made per-session identity structurally
+        impossible — two Telegram users on different personas got the same soul.
+        Each agent resolves its own via ``set_active_persona`` (see ``handle``),
+        which is cached per ``(persona, space, cwd)`` in the SoulLoader.
+        """
         if not hasattr(self, "_conv_agents"):
             self._conv_agents = {}
-            # Pre-load soul content once for all agents
-            self._soul_content = None
-            try:
-                from navig.agent.conv import ConversationalAgent
-
-                self._soul_content = ConversationalAgent.load_soul_content()
-                if self._soul_content:
-                    logger.info(
-                        "SOUL.md loaded for conversational agents (%d chars)",
-                        len(self._soul_content),
-                    )
-            except Exception as e:
-                logger.warning("Could not load SOUL.md: %s", e)
 
         if session_key not in self._conv_agents:
             from navig.agent.conv import ConversationalAgent
@@ -303,9 +359,28 @@ class ChannelRouter:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
+            # Durable history MUST be per-session. Omitting `history=` makes
+            # ConversationalAgent fall back to ConversationHistory(user_id="default"),
+            # so EVERY chat and EVERY user on every channel appended to — and reloaded
+            # from — the single shared file <config_dir>/history/default.jsonl. That
+            # leaked one user's conversation into another's context and made replies
+            # incoherent whenever two people used the bot. The in-memory _conv_agents
+            # cache hid it (each session kept its own object), but any cold construction
+            # re-read the shared file. session_key is sanitised into a filename by
+            # ConversationHistory itself, so "telegram:user:123" → telegram_user_123.jsonl.
+            history = None
+            try:
+                from navig.agent.conv.history import ConversationHistory
+
+                history = ConversationHistory(user_id=session_key or "default")
+            except Exception as exc:  # noqa: BLE001
+                # Never block a reply on history construction; the agent's own
+                # fallback still applies (shared file) but the turn survives.
+                logger.warning("Per-session history unavailable for %s: %s", session_key, exc)
+
             self._conv_agents[session_key] = ConversationalAgent(
                 ai_client=ai_client,
-                soul_content=self._soul_content,
+                history=history,
             )
 
         return self._conv_agents[session_key]

@@ -1,9 +1,7 @@
 """Batch 108: tests for llm_router and llm_generate pure functions."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 # ---------------------------------------------------------------------------
 # llm_router

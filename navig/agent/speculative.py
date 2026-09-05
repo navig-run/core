@@ -26,6 +26,8 @@ from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
 from typing import Any
 
+from navig.core.coerce import coerce_bool
+
 logger = logging.getLogger(__name__)
 
 
@@ -434,7 +436,7 @@ class SpeculativeExecutor:
     ) -> None:
         cfg = config or {}
         self._dispatch_fn = dispatch_fn
-        self._enabled: bool = cfg.get("enabled", True)
+        self._enabled: bool = coerce_bool(cfg.get("enabled", True), default=True)
         self._min_hit_rate: float = _env_float(
             "NAVIG_SPEC_MIN_HIT_RATE",
             cfg.get("min_hit_rate", self.DEFAULT_MIN_HIT_RATE),
@@ -475,7 +477,19 @@ class SpeculativeExecutor:
         self.prediction.record(tool, args)
 
         # Check cache — speculative hit path (read-only tools only).
+        #
+        # The operator's block is consulted BEFORE the cache. Every other route here goes
+        # through `_dispatch_fn` (= AgentToolRegistry.dispatch), which enforces the policy —
+        # but a cache hit returns without ever calling it. `web_fetch` is both read-only and
+        # one of the two names shared with the ToolRouter registry, so blocking it would
+        # otherwise still hand the model a page body out of this cache.
         if is_read_only:
+            from navig.agent.tool_permissions import ToolPermissionDenied, operator_blocks
+
+            if operator_blocks(tool):
+                raise ToolPermissionDenied(
+                    tool, reason="blocked by the operator's tools.blocked_tools policy"
+                )
             cached = self.cache.get(tool, args)
             if cached is not None:
                 logger.debug("Speculative HIT: %s", tool)
@@ -491,6 +505,56 @@ class SpeculativeExecutor:
             logger.debug("Speculative cache cleared after mutating tool: %s", tool)
 
         # Trigger speculation in background (fire-and-forget).
+        if self._should_speculate():
+            self._launch_speculation(tool)
+
+        return result_str
+
+    async def aexecute(self, tool: str, args: dict[str, Any]) -> str:
+        """Async variant of :meth:`execute` — same result contract.
+
+        Offloads the (synchronous, potentially slow) tool dispatch to a worker
+        thread via ``asyncio.to_thread`` so the caller's event loop stays free
+        during tool I/O. The cache check and the background-speculation launch
+        still run ON the loop: ``_launch_speculation`` needs a running loop to
+        ``create_task`` (a worker thread has none and would silently skip it), so
+        wrapping the whole method in ``to_thread`` would disable speculation.
+        """
+        is_read_only = tool in READ_ONLY_TOOLS
+
+        # Always record for future prediction.
+        self.prediction.record(tool, args)
+
+        # Check cache — speculative hit path (read-only tools only).
+        #
+        # The operator's block is consulted BEFORE the cache. Every other route here goes
+        # through `_dispatch_fn` (= AgentToolRegistry.dispatch), which enforces the policy —
+        # but a cache hit returns without ever calling it. `web_fetch` is both read-only and
+        # one of the two names shared with the ToolRouter registry, so blocking it would
+        # otherwise still hand the model a page body out of this cache.
+        if is_read_only:
+            from navig.agent.tool_permissions import ToolPermissionDenied, operator_blocks
+
+            if operator_blocks(tool):
+                raise ToolPermissionDenied(
+                    tool, reason="blocked by the operator's tools.blocked_tools policy"
+                )
+            cached = self.cache.get(tool, args)
+            if cached is not None:
+                logger.debug("Speculative HIT: %s", tool)
+                return cached
+
+        # Cache miss — run the blocking dispatch OFF the loop so it can't freeze
+        # the event loop (and, with it, every concurrent session).
+        result_str: str = await asyncio.to_thread(self._dispatch_fn, tool, args)
+
+        # Strict correctness: any mutating tool clears speculative reads.
+        if not is_read_only:
+            self._cancel_inflight_speculations_no_wait()
+            self.cache.clear()
+            logger.debug("Speculative cache cleared after mutating tool: %s", tool)
+
+        # Trigger speculation in background (fire-and-forget) — on the loop.
         if self._should_speculate():
             self._launch_speculation(tool)
 
@@ -542,11 +606,24 @@ class SpeculativeExecutor:
 
     async def _speculative_run(self, pred: Prediction) -> None:
         """Execute one predicted tool call with timeout."""
+        # Lazy, like every other agent_tool_registry import here — the registry
+        # imports this module back.
+        from navig.agent.agent_tool_registry import is_failure_result
+
         try:
             result = await asyncio.wait_for(
                 asyncio.to_thread(self._dispatch_fn, pred.tool, pred.args),
                 timeout=self.SPECULATION_TIMEOUT,
             )
+            # A tool that RAN and FAILED does not raise — dispatch returns
+            # "[ERROR] …" — so the `except` below never saw it and the failure
+            # was cached like any answer. It would then be served as a
+            # speculative HIT for the cache's whole TTL: one transient blip
+            # pinned as a permanent result the agent never retried. Speculation
+            # is an optimisation; caching only successes costs a re-run at worst.
+            if is_failure_result(result):
+                logger.debug("Speculative discarded (tool reported failure): %s", pred.tool)
+                return
             self.cache.put(pred.tool, pred.args, result)
             logger.debug(
                 "Speculative pre-exec: %s (conf=%.0f%%)",
@@ -615,7 +692,9 @@ def get_speculative_executor(
             agent_cfg = {}
 
         spec_cfg = agent_cfg.get("speculative", {})
-        if not spec_cfg.get("enabled", True):
+        # coerce_bool: `navig config set agent.speculative.enabled false` stores the
+        # string "false" (truthy), which would leave speculative decoding ON.
+        if not coerce_bool(spec_cfg.get("enabled", True), default=True):
             return None
 
         if dispatch_fn is None:
@@ -650,7 +729,9 @@ def get_speculative_runtime_snapshot() -> dict[str, Any]:
         agent_cfg = {}
 
     spec_cfg = agent_cfg.get("speculative", {})
-    enabled = bool(spec_cfg.get("enabled", True))
+    # coerce_bool, not bool(): bool("false") is True — a disabled speculative
+    # config would otherwise report as enabled in this status helper.
+    enabled = coerce_bool(spec_cfg.get("enabled", True), default=True)
 
     try:
         min_hit_rate = float(spec_cfg.get("min_hit_rate", SpeculativeExecutor.DEFAULT_MIN_HIT_RATE))

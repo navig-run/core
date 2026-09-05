@@ -179,6 +179,7 @@ class WhatsAppChannel:
 
         self._session: aiohttp.ClientSession | None = None
         self._ws: Any | None = None  # WebSocket connection
+        self._ws_task: asyncio.Task | None = None  # WebSocket listener loop
         self._running = False
         self._reconnect_delay = 5
         self._max_reconnect_delay = 60
@@ -263,14 +264,31 @@ class WhatsAppChannel:
 
             # Send response
             reply_to = message.group_id if message.is_group else message.from_number
-            await self._send_message(reply_to, response)
+            # `_send_message` returns False for a bridge error, a non-200, or a
+            # timeout. Dropping that bool made a failed reply indistinguishable
+            # from a delivered one: the user simply got silence and nothing here
+            # recorded that the answer we computed never reached them.
+            if not await self._send_message(reply_to, response):
+                logger.error(
+                    "WhatsApp reply was NOT delivered to %s (%d chars); "
+                    "the handler ran and its answer is lost",
+                    reply_to,
+                    len(response or ""),
+                )
 
         except Exception as e:
             logger.error("Error handling WhatsApp message: %s", e)
             reply_to = message.group_id if message.is_group else message.from_number
-            await self._send_message(
+            # Worse in the error path: if this send also fails the user gets total
+            # silence — no answer AND no apology — so it must be visible.
+            if not await self._send_message(
                 reply_to, "❌ Sorry, I encountered an error processing your request."
-            )
+            ):
+                logger.error(
+                    "WhatsApp error notice was NOT delivered to %s — the user got "
+                    "no reply at all",
+                    reply_to,
+                )
 
     def _should_respond(self, message: WhatsAppMessage) -> bool:
         """Check if we should respond to this message."""
@@ -396,13 +414,25 @@ class WhatsAppChannel:
         logger.info("Starting WhatsApp channel...")
         self._running = True
 
-        # Start WebSocket listener
-        asyncio.create_task(self._connect_websocket())
+        # Start WebSocket listener. Hold the handle on self: a discarded
+        # create_task can be GC-collected before the loop starts (weak ref),
+        # and stop() must cancel it — flipping _running alone can't interrupt
+        # the reconnect `await asyncio.sleep(...)`, so teardown could hang for
+        # up to _max_reconnect_delay seconds.
+        self._ws_task = asyncio.create_task(self._connect_websocket())
 
     async def stop(self):
         """Stop the WhatsApp channel."""
         logger.info("Stopping WhatsApp channel...")
         self._running = False
+
+        if self._ws_task is not None:
+            self._ws_task.cancel()
+            try:
+                await self._ws_task
+            except asyncio.CancelledError:
+                pass
+            self._ws_task = None
 
         if self._ws:
             await self._ws.close()

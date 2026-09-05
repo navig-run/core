@@ -31,6 +31,7 @@ from navig.platform.paths import (
     is_windows,
     is_wsl,
     log_dir,
+    vault_dir,
     workspace_dir,
 )
 
@@ -425,10 +426,19 @@ class TestRuntimeAssetsResolveInsidePackage:
         assert templates.is_dir(), "AHK templates missing from the builtin store"
         assert (templates / "primitives").is_dir()
 
-    def test_speedtest_worker_ships_and_actually_loads(self) -> None:
-        """Not just 'the path exists' — import it, which is what `navig net speedtest` does."""
+    def test_speedtest_worker_ships_and_actually_loads(self, monkeypatch) -> None:
+        """Not just 'the path exists' — import it, which is what `navig net speedtest` does.
+
+        `sys.path` is restored because loading the worker inserts its `_lib` directory (that
+        is how the worker finds `common` when run standalone) and never removes it. Left
+        behind, a bare `import common` or `import worker` anywhere later in this xdist worker
+        would resolve there — and those names are generic enough to shadow something real.
+        Found by auditing process globals across a full suite run.
+        """
         from navig.commands.net import _backend
         from navig.platform.paths import builtin_store_dir
+
+        monkeypatch.setattr(sys, "path", list(sys.path))
 
         worker = (builtin_store_dir() / "tools" / "speedtest" / "worker.py").resolve()
         assert worker.is_relative_to(self._pkg_root())
@@ -440,3 +450,41 @@ class TestRuntimeAssetsResolveInsidePackage:
 
         tm = TemplateManager()
         assert Path(tm.templates_dir).resolve().is_relative_to(self._pkg_root())
+
+
+class TestVaultDir:
+    """`NAVIG_VAULT_DIR`, and why the override lives in core rather than only in the plugin.
+
+    The vault is meant to be SHARED: navig and a standalone `navig-vault` install must
+    resolve the same directory. If only the plugin honoured this variable, setting it
+    would silently give a user two vaults — secrets written through one invisible to the
+    other. So core reads it, and the extracted package mirrors core's resolution.
+    """
+
+    def test_env_override(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("NAVIG_VAULT_DIR", str(tmp_path))
+        assert vault_dir() == tmp_path
+
+    def test_override_beats_config_dir(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The specific override wins over the general one — otherwise pointing a whole
+        # config dir elsewhere would silently drag the vault with it.
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "cfg"))
+        monkeypatch.setenv("NAVIG_VAULT_DIR", str(tmp_path / "v"))
+        assert vault_dir() == tmp_path / "v"
+
+    def test_default_is_under_config_dir(self, monkeypatch: pytest.MonkeyPatch,
+                                         tmp_path: Path) -> None:
+        monkeypatch.delenv("NAVIG_VAULT_DIR", raising=False)
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        assert vault_dir() == tmp_path / "vault"
+
+    def test_resolved_at_call_time(self, monkeypatch: pytest.MonkeyPatch,
+                                   tmp_path: Path) -> None:
+        # Never freeze this at import: a daemon or a test that imports before
+        # NAVIG_VAULT_DIR is finalised would otherwise keep pointing at the real vault.
+        monkeypatch.setenv("NAVIG_VAULT_DIR", str(tmp_path / "a"))
+        first = vault_dir()
+        monkeypatch.setenv("NAVIG_VAULT_DIR", str(tmp_path / "b"))
+        assert vault_dir() != first

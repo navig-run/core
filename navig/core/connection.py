@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from navig.core.proc_text import decode_console_result
+
 if TYPE_CHECKING:
     pass
 
@@ -228,16 +230,24 @@ class LocalConnection(ConnectionAdapter):
             cwd = str(self._working_directory) if self._working_directory else None
             if self._os_type == "windows":
                 # On Windows, use PowerShell for better compatibility.
-                # Use explicit encoding + errors="replace" instead of text=True to
-                # prevent UnicodeDecodeError in subprocess readerthread when
-                # PowerShell outputs non-UTF-8 bytes (fixes #48).
-                result = subprocess.run(
-                    ["powershell", "-NoProfile", "-Command", command],
-                    capture_output=capture_output,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=cmd_timeout,
-                    cwd=cwd,
+                #
+                # Captured as BYTES and decoded afterwards, never via text=True or a fixed
+                # `encoding=`. Bytes also keep decoding out of subprocess's reader thread,
+                # where an undecodable byte kills the thread rather than the call (#48).
+                # This runs an ARBITRARY user command, and PowerShell passes its child's
+                # bytes through untouched — measured: `git log` arrives as raw UTF-8 while
+                # `whoami /groups` arrives in the console code page (866 here).
+                # Any single codec is therefore wrong for one of them: UTF-8 turned every
+                # non-ASCII byte of console output into U+FFFD, and the console page turns
+                # git's em dash into mojibake. decode_console_result tries UTF-8 strictly,
+                # then the console page — the only reading correct for both.
+                result = decode_console_result(
+                    subprocess.run(
+                        ["powershell", "-NoProfile", "-Command", command],
+                        capture_output=capture_output,
+                        timeout=cmd_timeout,
+                        cwd=cwd,
+                    )
                 )
             else:
                 # On Unix-like systems, use platform-default shell dispatch.

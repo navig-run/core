@@ -5,8 +5,6 @@ import sys
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from navig.cli.selector import CommandEntry, _hint, _numbered_prompt, fzf_or_fallback
 
 # ── helpers ──────────────────────────────────────────────────

@@ -3,12 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import uuid
-from dataclasses import fields
 from datetime import datetime, timezone
 from pathlib import Path
-
-import pytest
 
 # ──────────────────────────────────────────────────────────────────────────────
 # vault/migrate.py — MigrationReport dataclass

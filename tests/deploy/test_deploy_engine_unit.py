@@ -4,8 +4,6 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from navig.deploy.engine import DeployEngine
 from navig.deploy.models import (
     ApplyConfig,

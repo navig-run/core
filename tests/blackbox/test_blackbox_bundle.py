@@ -7,8 +7,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from navig.blackbox.bundle import (
     _BUNDLE_EXT,
     _LOG_TAIL_LINES,

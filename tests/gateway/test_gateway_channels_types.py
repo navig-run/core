@@ -1,8 +1,6 @@
 """Tests for navig.gateway.channels.types — ContextMessage, MessageMetadata."""
 from __future__ import annotations
 
-import pytest
-
 from navig.gateway.channels.types import ContextMessage, MessageMetadata
 
 

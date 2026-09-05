@@ -137,29 +137,29 @@ async def _run_provider(
             VideoProvider,
         )
 
-        cfg = VideoGenerationConfig.from_env()
-        cfg.output_dir = str(out_dir)
-        gen = VideoGenerator(cfg)
+        vcfg = VideoGenerationConfig.from_env()
+        vcfg.output_dir = str(out_dir)
+        vgen = VideoGenerator(vcfg)
         try:
-            vid = await gen.generate(
+            vid = await vgen.generate(
                 enriched_prompt,
                 provider=VideoProvider(provider) if provider else None, seed=seed,
             )
             return [vid]
         finally:
-            await gen.close()
+            await vgen.close()
 
     if modality == "audio":
         from navig.tools.audio_generation import AudioGenerationConfig, AudioGenerator
 
-        cfg = AudioGenerationConfig.from_env()
-        cfg.output_dir = str(out_dir)
-        gen = AudioGenerator(cfg)
+        acfg = AudioGenerationConfig.from_env()
+        acfg.output_dir = str(out_dir)
+        agen = AudioGenerator(acfg)
         try:
-            aud = await gen.generate(enriched_prompt, kind=kind, duration_s=duration_s)
+            aud = await agen.generate(enriched_prompt, kind=kind, duration_s=duration_s)
             return [aud]
         finally:
-            await gen.close()
+            await agen.close()
 
     raise ValueError(f"unknown modality: {modality}")
 

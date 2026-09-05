@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import re
 import sqlite3
 import threading
 from collections.abc import Iterator
@@ -24,7 +26,12 @@ if TYPE_CHECKING:
     from navig.memory.vector import VectorIndex
 
 
-from navig.memory._util import _debug_log
+from navig.memory._util import _debug_log, safe_json_loads
+
+# A failed self-heal has to be visible, so it gets a real logger rather than _debug_log
+# (which is DEBUG level and off by default — the level you use for "indexed 12 chunks",
+# not for "this store's search index is wrong and I could not fix it").
+logger = logging.getLogger("navig.memory.storage")
 
 
 @dataclass
@@ -63,10 +70,10 @@ class MemoryChunk:
             line_start=data["line_start"],
             line_end=data["line_end"],
             token_count=data.get("token_count", 0),
-            embedding=json.loads(data["embedding"]) if data.get("embedding") else None,
+            embedding=safe_json_loads(data.get("embedding"), None),
             metadata=(
-                json.loads(data["metadata"])
-                if isinstance(data["metadata"], str)
+                safe_json_loads(data["metadata"], {})
+                if isinstance(data.get("metadata"), str)
                 else data.get("metadata", {})
             ),
             created_at=data.get("created_at", datetime.now().isoformat()),
@@ -132,6 +139,10 @@ class MemoryStorage:
     """
 
     SCHEMA_VERSION = 1
+    # Bumped when the chunks_fts triggers change in a way that requires an existing
+    # index to be regenerated. Tracked in PRAGMA user_version, independent of
+    # SCHEMA_VERSION (which versions the tables, not the search index).
+    FTS_SCHEMA_VERSION = 1
 
     def __init__(self, db_path: Path, *, embedding_dimensions: int = 1536):
         self.db_path = db_path
@@ -141,11 +152,23 @@ class MemoryStorage:
         self._embedding_dim = embedding_dimensions
         self._vec: VectorIndex | None = None
 
+        # Whether this store already existed decides whether a later FTS rebuild is a
+        # REPAIR (worth an incident — the operator's search results may have been wrong)
+        # or merely initialisation. Must be read before _init_schema creates the file.
+        pre_existing = db_path.exists()
+
         # Ensure directory exists
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Whether the index actually NEEDS regenerating, read before _init_schema replaces
+        # the triggers it is judging. Every store predating FTS_SCHEMA_VERSION has
+        # user_version 0, so without this the first open after an upgrade would rebuild
+        # and cry "unsafe triggers were corrected" on installs whose triggers were fine.
+        damaged = self._chunks_triggers_unsafe() if pre_existing else False
+
         # Initialize schema
         self._init_schema()
+        self._repair_fts_index_once(pre_existing=pre_existing, damaged=damaged)
 
     def _get_conn(self) -> sqlite3.Connection:
         """Get thread-local connection."""
@@ -158,6 +181,7 @@ class MemoryStorage:
             self._local.conn.execute("PRAGMA journal_mode=WAL")
             self._local.conn.execute("PRAGMA synchronous=NORMAL")
             self._local.conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
+            self._local.conn.execute("PRAGMA busy_timeout=5000")  # wait for a lock, don't error instantly
         return self._local.conn
 
     def _init_schema(self) -> None:
@@ -213,18 +237,30 @@ class MemoryStorage:
                 content_rowid=rowid
             );
 
-            -- Triggers to keep FTS in sync
-            CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
+            -- Triggers to keep FTS in sync.
+            -- DROP-then-CREATE, never "CREATE IF NOT EXISTS": chunks_fts is an
+            -- external-content fts5 index, so a trigger that maintains it with plain DML
+            -- silently desyncs the index and eventually raises "database disk image is
+            -- malformed". "IF NOT EXISTS" never replaces a trigger that already exists,
+            -- so a database created by an older schema would keep the broken definition
+            -- forever and the corrected text below would only ever apply to brand-new
+            -- stores. Dropping first is what makes reopening the store an actual repair
+            -- (the remedy `navig doctor` prints for this defect), and it is idempotent.
+            DROP TRIGGER IF EXISTS chunks_ai;
+            DROP TRIGGER IF EXISTS chunks_ad;
+            DROP TRIGGER IF EXISTS chunks_au;
+
+            CREATE TRIGGER chunks_ai AFTER INSERT ON chunks BEGIN
                 INSERT INTO chunks_fts(rowid, content, file_path)
                 VALUES (NEW.rowid, NEW.content, NEW.file_path);
             END;
 
-            CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
+            CREATE TRIGGER chunks_ad AFTER DELETE ON chunks BEGIN
                 INSERT INTO chunks_fts(chunks_fts, rowid, content, file_path)
                 VALUES('delete', OLD.rowid, OLD.content, OLD.file_path);
             END;
 
-            CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
+            CREATE TRIGGER chunks_au AFTER UPDATE ON chunks BEGIN
                 INSERT INTO chunks_fts(chunks_fts, rowid, content, file_path)
                 VALUES('delete', OLD.rowid, OLD.content, OLD.file_path);
                 INSERT INTO chunks_fts(rowid, content, file_path)
@@ -258,6 +294,90 @@ class MemoryStorage:
 
         conn.commit()
         _debug_log(f"MemoryStorage initialized at {self.db_path}")
+
+    _UNSAFE_CHUNKS_DML = re.compile(
+        r"\b(?:UPDATE\s+chunks_fts\b|DELETE\s+FROM\s+chunks_fts\b)", re.I
+    )
+
+    def _chunks_triggers_unsafe(self) -> bool:
+        """Do this database's existing chunks_fts triggers maintain it with plain DML?
+
+        The question the rebuild decision turns on, and it can only be asked BEFORE
+        ``_init_schema`` replaces the triggers. Anything unreadable answers "no": a
+        rebuild is a repair, and repairing on a guess would report damage that was never
+        observed — the exact dishonesty this store's health reporting exists to avoid.
+        """
+        try:
+            rows = self._get_conn().execute(
+                "SELECT sql FROM sqlite_master WHERE type='trigger' "
+                "AND name IN ('chunks_ai','chunks_ad','chunks_au')"
+            ).fetchall()
+        except sqlite3.DatabaseError:
+            return False
+        return any(self._UNSAFE_CHUNKS_DML.search(r[0] or "") for r in rows)
+
+    def _rebuild_fts(self) -> None:
+        """Regenerate chunks_fts from the content table (the documented fts5 repair)."""
+        self._get_conn().execute("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')")
+
+    def _repair_fts_index_once(self, *, pre_existing: bool = True, damaged: bool = False) -> None:
+        """Rebuild chunks_fts once, for databases written by superseded triggers.
+
+        Replacing the triggers only stops NEW damage. A database maintained by a trigger
+        that used plain DML against an external-content fts5 table already holds an index
+        that disagrees with ``chunks``, and ``'rebuild'`` is the documented repair for
+        exactly that. Gated on ``PRAGMA user_version`` so it runs once, not on every open
+        — ``schema_version`` is a table this store owns for its own migrations, and
+        reusing it here would conflate "the tables changed" with "the index was repaired".
+
+        ``damaged`` is what keeps that gate honest. EVERY store predating
+        ``FTS_SCHEMA_VERSION`` has ``user_version`` 0, so the version gate alone cannot
+        tell "was maintained by a broken trigger" from "has simply never been stamped" —
+        and this store's triggers were correct all along. Treating the whole existing
+        population as damaged would rebuild every operator's index and record a repair
+        claiming their triggers were corrected, which is a false alarm in `navig doctor`
+        for everyone: a warning that describes damage nobody had. An undamaged store is
+        therefore stamped and left alone.
+
+        A genuine repair of an EXISTING store is recorded as an incident: that is
+        self-healing, and a daemon that heals itself and tells nobody is the failure mode
+        `navig.core.incidents` exists to kill. ``pre_existing=False`` records nothing —
+        a database this call just created was never damaged.
+        """
+        from navig.core import incidents
+
+        conn = self._get_conn()
+        row = conn.execute("PRAGMA user_version").fetchone()
+        if row is not None and int(row[0]) >= self.FTS_SCHEMA_VERSION:
+            return
+        if not damaged:
+            # Baseline an undamaged store: record where it stands, touch nothing else.
+            conn.execute(f"PRAGMA user_version = {self.FTS_SCHEMA_VERSION}")
+            conn.commit()
+            return
+        try:
+            self._rebuild_fts()
+        except sqlite3.DatabaseError:
+            # Never brick the store over its search index: indexing and file listing do
+            # not need FTS. Loud, because a silent self-heal that failed is
+            # indistinguishable from a healthy install.
+            logger.warning(
+                "memory: could not rebuild the FTS index for %s — keyword search may "
+                "return stale results until it is repaired",
+                self.db_path,
+                exc_info=True,
+            )
+            if pre_existing:
+                incidents.record(
+                    incidents.FTS_INDEX_UNREPAIRABLE, store="memory", path=str(self.db_path)
+                )
+            return
+        conn.execute(f"PRAGMA user_version = {self.FTS_SCHEMA_VERSION}")
+        conn.commit()
+        if pre_existing:
+            incidents.record(
+                incidents.FTS_INDEX_REPAIRED, store="memory", path=str(self.db_path)
+            )
 
     # ---------- File Operations ----------
 
@@ -514,7 +634,7 @@ class MemoryStorage:
             (content_hash, model_name),
         )
         row = cursor.fetchone()
-        return json.loads(row["embedding"]) if row else None
+        return safe_json_loads(row["embedding"], None) if row else None
 
     def cache_embedding(
         self,
@@ -626,7 +746,7 @@ class MemoryStorage:
         conn = self._get_conn()
         cursor = conn.execute("SELECT value FROM metadata WHERE key = ?", (key,))
         row = cursor.fetchone()
-        return json.loads(row["value"]) if row else None
+        return safe_json_loads(row["value"], None) if row else None
 
     def get_stats(self) -> dict[str, Any]:
         """Get storage statistics."""

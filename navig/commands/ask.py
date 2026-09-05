@@ -355,7 +355,11 @@ def copilot_status(
             ch.info(f"  Latency: {info['latency_ms']}ms")
             ch.info(f"  Auth:    {'configured' if info['auth'] else 'NONE'}")
         else:
-            ch.error("navig-bridge MCP is OFFLINE")
+            # "Offline" is the VERIFIED answer to what this command was asked, so it
+            # exits 0 — the same rule the gateway `*_status` commands follow. A failure
+            # sink here would claim the check itself failed; it did not, it looked and
+            # found the bridge down. (`--json` carries `available` for scripts.)
+            ch.warning("navig-bridge MCP is OFFLINE")
             ch.info(f"  URL:  {info['url']}")
             ch.info(f"  Auth: {'configured' if info['auth'] else 'NONE'}")
             ch.info("")

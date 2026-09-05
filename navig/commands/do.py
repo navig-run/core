@@ -13,6 +13,8 @@ Safeguards (Stage-B, folded from the plan's risks):
 
 from __future__ import annotations
 
+from typing import NoReturn
+
 import typer
 
 from navig.lazy_loader import lazy_import
@@ -26,8 +28,13 @@ do_app = typer.Typer(
 )
 
 
-def _print_no_profile_help(profiles_mod) -> None:
-    """Help text when no profile can be resolved — lists existing ones if any."""
+def _exit_no_profile(profiles_mod) -> NoReturn:
+    """Explain that no profile can be resolved, list any that exist, and exit non-zero.
+
+    It ends the command rather than returning: the caller had exactly one thing to do
+    afterwards, and a printer that announces a failure but leaves the exit code to its
+    caller is how `navig do` came to print "No profile yet" at exit 0 in the first place.
+    """
     existing = [p.name for p in profiles_mod.list_profiles()]
     if existing:
         ch.error("You have profiles but none is active. Pick one:")
@@ -39,6 +46,7 @@ def _print_no_profile_help(profiles_mod) -> None:
         ch.info('  navig cdp profile new cybesis --note "Cybesis"')
         ch.info("  navig cdp open cybesis      # sign into your accounts in the window")
         ch.info('Then: navig do "<task>"   (or add --headless for a throwaway browser)')
+    raise typer.Exit(1)
 
 
 def _guardrail(dry_run: bool, yes: bool) -> str:
@@ -108,8 +116,7 @@ def _prepare_bridge(profile_name: str | None, headless: bool) -> tuple[str, str 
                      f"navig cdp profile new {profile_name}")
             raise typer.Exit(1)
         if not headless:
-            _print_no_profile_help(profiles_mod)
-            raise typer.Exit(1)
+            _exit_no_profile(profiles_mod)
         return session_key, None  # headless: agent uses its own throwaway browser, no bridge
 
     r = cdp_actions.profile_open(prof.name, headless=headless)

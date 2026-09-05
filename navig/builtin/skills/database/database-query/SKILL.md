@@ -4,7 +4,7 @@ description: Query and manage databases on remote servers via NAVIG
 user-invocable: true
 navig-commands:
   - navig db query "{sql}" -d {database}
-  - navig db databases
+  - navig db list
   - navig db tables {database}
   - navig db dump {database}
 examples:
@@ -27,7 +27,7 @@ Query and manage MySQL/PostgreSQL/SQLite databases on remote servers using NAVIG
 - "What databases exist?"
 - "List databases on production"
 
-**Command:** `navig db databases`
+**Command:** `navig db list`
 
 **Response format:**
 ```

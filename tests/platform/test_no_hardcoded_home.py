@@ -85,6 +85,41 @@ def _is_home_navig_literal(node: ast.AST) -> bool:
     return arg.value.startswith("~/.navig") or arg.value.startswith("~\\.navig")
 
 
+def _home_bound_names(tree: ast.AST) -> set[str]:
+    """Locals assigned straight from ``<x>.home()`` — ``home = Path.home()``.
+
+    Binding it to a name first evaded the detector entirely, because
+    :func:`_is_home_navig` requires the left operand to BE the call. Three real split-brains
+    were sitting behind that one-line dodge, including `navig gateway stop` reading a
+    hardcoded ``~/.navig/gateway.pid`` whose writer uses ``config_dir()`` — so under
+    NAVIG_CONFIG_DIR it read the OPERATOR'S pid and force-killed their live daemon.
+
+    Module-scoped on purpose: a name bound to ``.home()`` anywhere in a module and then
+    joined with ``".navig"`` is the bug regardless of which function does the joining, and
+    keeping it coarse avoids pretending to do scope analysis the AST alone cannot do.
+    """
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)):
+            continue
+        func = node.value.func
+        if isinstance(func, ast.Attribute) and func.attr == "home" and not node.value.args:
+            names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+    return names
+
+
+def _is_bound_home_navig(node: ast.AST, home_names: set[str]) -> bool:
+    """``home / ".navig"`` where *home* was bound from ``.home()`` earlier in the module."""
+    return (
+        isinstance(node, ast.BinOp)
+        and isinstance(node.op, ast.Div)
+        and isinstance(node.right, ast.Constant)
+        and node.right.value == ".navig"
+        and isinstance(node.left, ast.Name)
+        and node.left.id in home_names
+    )
+
+
 # Sites that may legitimately reach for the real home, and why. Everything else must use
 # navig.platform.paths (config_dir / store_dir / log_dir / …).
 ALLOWED: dict[str, str] = {
@@ -98,10 +133,19 @@ ALLOWED: dict[str, str] = {
     # Defensive last resort, only after paths.* and the config manager have both failed —
     # the logger must never be the thing that raises.
     "debug_logger.py": "last-resort fallback after paths.debug_log_path() and the config manager both fail",
-    # Already env-aware: reads NAVIG_CONFIG_DIR and only falls back to the home default.
-    "agent/proactive/eve_log.py": "reads NAVIG_CONFIG_DIR first; home is the documented default",
-    # Migrating the pre-spaces layout, which by definition lived in the real home.
-    "main.py": "one-time migration of the legacy ~/.navig workspace layout",
+    # An exemption is a CLAIM, and two of them were wrong — see
+    # test_the_startup_migration_targets_the_configured_dir below. Both read plausibly:
+    #   * main.py — "migrating the pre-spaces layout, which by definition lived in the real
+    #     home". It did not: the legacy layout lived at `<config_dir>/workspace`, and the
+    #     migration rewrites `<root>/config.yaml` + `<root>/cache/active_space.txt`, which
+    #     are config-dir files by definition. Hardcoding the home split ONE function across
+    #     two roots and conjured `~/.navig` on machines that do not use it.
+    #   * eve_log.py — "reads NAVIG_CONFIG_DIR first; home is the documented default". True
+    #     but incomplete: the hand-rolled `environ.get(...) or home` misses the
+    #     system-service case (`/etc/navig`) that `config_dir()` handles.
+    # When adding an entry, state the reason as a FACT about the file, then check the file
+    # says the same thing.
+    #
     # The TODO backlog is CLOSED — every remaining entry below is deliberate, and each one
     # was resolved by the same method: find the WRITER, make the reader agree. Fixed and
     # removed from this list: commands/service.py · commands/wire.py ·
@@ -134,10 +178,13 @@ def _offenders() -> dict[str, list[int]]:
             tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
         except (OSError, UnicodeDecodeError, SyntaxError):  # pragma: no cover
             continue
+        home_names = _home_bound_names(tree)
         hits = sorted({
             getattr(n, "lineno", 0)
             for n in ast.walk(tree)
-            if _is_home_navig(n) or _is_home_navig_literal(n)
+            if _is_home_navig(n)
+            or _is_home_navig_literal(n)
+            or _is_bound_home_navig(n, home_names)
         })
         if hits:
             found[py.relative_to(PKG).as_posix()] = hits
@@ -196,8 +243,6 @@ _HOME_PATCH_TARGET = "pathlib.Path.home"
 # operator's real config. A test that WRITES must be hermetic (patch pathlib.Path.home)
 # instead of being added here.
 ALLOWED_TESTS: dict[str, str] = {
-    "settings/test_settings_resolver_paths.py":
-        "asserts the resolver does NOT return ~/.navig — read-only",
     "wave/test_wave10_paths.py":
         "asserts the default global_config_dir equals ~/.navig — read-only",
     "workspace/test_workspace.py":
@@ -369,3 +414,183 @@ def test_the_192_debug_log_leftover_is_gone() -> None:
         and "debug.log" in str(n.args[0].value)
     ]
     assert not bad, "a ~/.navig/debug.log literal is back in telegram_commands.py"
+
+
+# ── the detector must see the dodge that hid three real bugs ─────────────────
+
+
+def test_binding_home_to_a_local_does_not_evade_the_detector() -> None:
+    """`home = Path.home()` then `home / ".navig"` — the exact shape the guard used to miss.
+
+    Green over a real offender is worse than no guard: `navig gateway stop` read a hardcoded
+    ~/.navig/gateway.pid for months while this suite passed.
+    """
+    src = 'home = Path.home()\nf = home / ".navig" / "gateway.pid"\n'
+    tree = ast.parse(src)
+    names = _home_bound_names(tree)
+    assert names == {"home"}
+    assert any(_is_bound_home_navig(n, names) for n in ast.walk(tree))
+
+
+def test_the_direct_spelling_is_still_caught() -> None:
+    """Anti-vacuity for the widening: the original shape must not have been lost."""
+    tree = ast.parse('f = Path.home() / ".navig" / "x"\n')
+    assert any(_is_home_navig(n) for n in ast.walk(tree))
+
+
+def test_an_unrelated_local_joined_with_navig_is_not_flagged() -> None:
+    """Precision: only names actually bound from .home() count, or the guard cries wolf."""
+    src = 'base = Path(user_supplied)\nf = base / ".navig" / "x"\n'
+    tree = ast.parse(src)
+    names = _home_bound_names(tree)
+    assert names == set()
+    assert not any(_is_bound_home_navig(n, names) for n in ast.walk(tree))
+
+
+def test_a_home_bound_name_joined_with_something_else_is_not_flagged() -> None:
+    """`home / "Documents"` is an ordinary home path, not a navig split-brain."""
+    src = 'home = Path.home()\nf = home / "Documents"\n'
+    tree = ast.parse(src)
+    assert not any(_is_bound_home_navig(n, _home_bound_names(tree)) for n in ast.walk(tree))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# THE REGRESSION the two removed ALLOWED entries were hiding.
+#
+# `_run_startup_migrations()` runs on EVERY `navig` invocation and passed
+# `Path.home() / ".navig"` as the migration root. The root is not a home path — it is
+# the config root: the migration rewrites `<root>/config.yaml`, writes
+# `<root>/cache/active_space.txt` (the active-space pointer that `config.py`'s
+# `active_space_file` docstring calls "the single location that all three agree on"),
+# and `shutil.move`s `<root>/workspace` into `<root>/spaces/default/legacy-workspace`.
+#
+# Under a custom NAVIG_CONFIG_DIR that hardcoded home produced three distinct faults:
+#   1. It split ONE function across two roots — the payload moved into
+#      `~/.navig/spaces/default/`, while `_ensure_default_space()`, called inside the
+#      same function, scaffolds `config_dir()/spaces/default/`.
+#   2. It rewrote a `config.yaml` this install does not own, and derived the active
+#      space by reading that foreign file.
+#   3. On a machine with no `~/.navig` at all it CREATED one (`mkdir(parents=True)` for
+#      the config file and the cache dir) — a startup path conjuring a config tree the
+#      operator does not use. Same shape as `navig init` creating a vault in the user's
+#      project (34002599a).
+# The configured dir, meanwhile, was never migrated: it kept the legacy layout forever.
+
+
+def test_the_startup_migration_targets_the_configured_dir(tmp_path, monkeypatch) -> None:
+    """The root handed to the migration must be `config_dir()`, never the raw home."""
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+
+    import navig.main as main_mod
+    from navig.migrations import workspace_to_spaces
+    from navig.platform.paths import config_dir
+
+    seen: list[Path] = []
+    monkeypatch.setattr(
+        workspace_to_spaces, "migrate_workspace_to_spaces",
+        lambda root, **kw: seen.append(Path(root)),
+    )
+    monkeypatch.setattr(
+        workspace_to_spaces, "ensure_no_stale_spaces_registration", lambda: None
+    )
+
+    main_mod._run_startup_migrations()
+
+    # Anti-vacuity: `_run_startup_migrations` swallows every exception at DEBUG level, so a
+    # wrong patch target (or an import error) would leave `seen` empty and the equality
+    # assertions below would never run.
+    assert seen, "the migration was never invoked — this test proved nothing"
+    assert seen[0] == config_dir() == tmp_path, (
+        f"startup migration targets {seen[0]}, but this install's config dir is {config_dir()}"
+    )
+
+
+def test_the_migration_never_touches_the_real_home(tmp_path, monkeypatch) -> None:
+    """End to end: with a custom config dir, `~/.navig` is neither read nor created.
+
+    Hermetic — `pathlib.Path.home` is redirected into the sandbox, so "the real home" here
+    is an empty tmp dir. Before the fix this test found `<home>/.navig/config.yaml` and
+    `<home>/.navig/cache/active_space.txt` conjured out of nothing.
+    """
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    cfg_dir = tmp_path / "configured"
+    cfg_dir.mkdir()
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(cfg_dir))
+
+    from navig.config import reset_config_manager
+
+    reset_config_manager()
+    monkeypatch.setattr(
+        "navig.migrations.workspace_to_spaces.ensure_no_stale_spaces_registration",
+        lambda: None,
+    )
+
+    # A legacy payload in the CONFIGURED dir — the layout that actually needs migrating.
+    legacy = cfg_dir / "workspace"
+    legacy.mkdir()
+    (legacy / "SOUL.md").write_text("identity", encoding="utf-8")
+
+    try:
+        import navig.main as main_mod
+
+        main_mod._run_startup_migrations()
+
+        moved = cfg_dir / "spaces" / "default" / "legacy-workspace" / "SOUL.md"
+        assert moved.is_file(), (
+            "the configured dir's legacy workspace was not migrated — the migration ran "
+            "against some other root"
+        )
+        assert not (fake_home / ".navig").exists(), (
+            "startup created a ~/.navig tree on a machine that uses a different config dir: "
+            f"{sorted(p.name for p in (fake_home / '.navig').rglob('*'))}"
+        )
+    finally:
+        reset_config_manager()
+
+
+def test_the_migration_uses_one_root_for_payload_and_scaffolding(tmp_path, monkeypatch) -> None:
+    """Payload move and `_ensure_default_space()` must land in the SAME spaces root.
+
+    `migrate_workspace_to_spaces` moves the payload under `<root>/spaces/…` from its
+    argument, but calls `_ensure_default_space()`, which resolves through
+    `config_dir()`. Those agree only when the argument IS the config dir — otherwise one
+    "default" space is scaffolded in one tree while the migrated payload lands in another.
+    """
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    cfg_dir = tmp_path / "configured"
+    cfg_dir.mkdir()
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(cfg_dir))
+
+    from navig.config import reset_config_manager
+
+    reset_config_manager()
+    monkeypatch.setattr(
+        "navig.migrations.workspace_to_spaces.ensure_no_stale_spaces_registration",
+        lambda: None,
+    )
+
+    legacy = cfg_dir / "workspace"
+    legacy.mkdir()
+    (legacy / "notes.md").write_text("x", encoding="utf-8")
+
+    try:
+        import navig.main as main_mod
+        from navig.commands.space import _spaces_dir
+
+        main_mod._run_startup_migrations()
+
+        scaffold_root = _spaces_dir(create=False) / "default"
+        payload_root = cfg_dir / "spaces" / "default"
+        assert scaffold_root == payload_root, (
+            f"the default space is scaffolded at {scaffold_root} but the migrated payload "
+            f"lands at {payload_root} — one migration, two roots"
+        )
+        assert (payload_root / "legacy-workspace" / "notes.md").is_file()
+    finally:
+        reset_config_manager()

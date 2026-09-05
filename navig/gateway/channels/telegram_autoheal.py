@@ -457,6 +457,14 @@ class AutoHealMixin:
             )
             task = asyncio.create_task(self._autofix_with_report(ctx, progress_msg))
             self._active_heals[dedup_key] = task
+            # Drop the entry when the heal finishes, else `_active_heals` keeps one completed
+            # Task per (user, host) pair for the daemon's life. Identity guard: don't evict a
+            # newer heal that already reused this key (its predecessor was done()).
+            task.add_done_callback(
+                lambda t, k=dedup_key: (
+                    self._active_heals.pop(k, None) if self._active_heals.get(k) is t else None
+                )
+            )
         else:
             # Manual mode: show error badge + 3-button keyboard
             self._pending_heal_ctx[ctx.user_id] = ctx
@@ -579,10 +587,13 @@ class AutoHealMixin:
                 should_retry=False,
             )
 
-        # Hive Mind enabled → attempt PR submission
-        try:
-            from navig.selfheal.heal_pr_submitter import HealPRSubmitter
+        # Hive Mind enabled → attempt PR submission.
+        # Imported BEFORE the try: the handler below names MissingGitHubTokenError, and an
+        # except clause is evaluated when an exception propagates — if the import lived inside
+        # the try and failed, evaluating that name would raise NameError and mask the real error.
+        from navig.selfheal.heal_pr_submitter import HealPRSubmitter, MissingGitHubTokenError
 
+        try:
             submitter = HealPRSubmitter()
             patch_text = f"# Observed error\n{ctx.stderr[:1000]}"
             pr_url = submitter.submit_heal_pr(
@@ -601,8 +612,12 @@ class AutoHealMixin:
                 pr_url=pr_url,
                 should_retry=False,
             )
-        except ValueError as exc:
-            # NAVIG_GITHUB_TOKEN not set
+        except MissingGitHubTokenError as exc:
+            # ONLY the missing-token case. This used to catch bare ValueError, but
+            # git_manager._github_request raises ValueError for EVERY non-2xx GitHub response
+            # (403 rate limit, 422 bad head branch, 404 …) — so a healthy install with a valid
+            # token was told its token was missing, AND the patch was never stored locally
+            # because this branch returns before the fallback below.
             return HealResult(
                 status="failed",
                 message=f"🐝 <b>Hive Mind</b> is enabled but <code>NAVIG_GITHUB_TOKEN</code> is not set.\n<i>{html.escape(str(exc))}</i>",
@@ -626,9 +641,12 @@ class AutoHealMixin:
                 return HealResult(
                     status="partial",
                     message=(
-                        "🐝 <b>Hive Mind</b> could not reach GitHub (API may be down).\n"
+                        "🐝 <b>Hive Mind</b> could not open a GitHub PR.\n"
                         f"Patch saved locally: <code>{html.escape(patch_path.name)}</code>\n"
-                        "It will be retried on next bot restart."
+                        # No automatic retry exists — store_pending_patch() writes a record and
+                        # nothing resubmits it. Promising a retry the code never performs is the
+                        # phantom-delivery class; say what actually happened instead.
+                        f"<i>{html.escape(str(exc)[:160])}</i>"
                     ),
                     should_retry=False,
                     detail=str(exc),

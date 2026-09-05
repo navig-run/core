@@ -339,6 +339,129 @@ class TestCredentialsVault:
         assert cred is not None
         assert cred.data["api_key"] == "sk-test123"
 
+    def test_get_returns_none_when_secret_is_unreadable(self, vault, monkeypatch):
+        """An UNREADABLE secret (CryptoError / corrupt blob / transient sqlite lock) must
+        surface as None — not a phantom empty-but-ENABLED credential. Pre-fix, get()/
+        get_by_id() swallowed every exception into ``data={}``, so a live key was reported
+        absent (provider silently unconfigured) while list_creds still showed it connected,
+        and a read-then-write caller would persist the {} over the real secret."""
+        cred_id = vault.add(
+            provider="openai",
+            credential_type="api_key",
+            data={"api_key": "sk-live-secret"},
+            profile_id="default",
+        )
+        # Readable before the induced failure.
+        assert vault.get("openai").data["api_key"] == "sk-live-secret"
+
+        def _unreadable(label):
+            raise RuntimeError("decrypt failed (simulated CryptoError / db lock)")
+
+        monkeypatch.setattr(vault, "get_bytes", _unreadable)
+
+        # PRE-FIX: both returned Credential(enabled=True, data={}); the fix returns None.
+        assert vault.get("openai") is None
+        assert vault.get_by_id(cred_id) is None
+
+    def test_unreadable_credential_never_shadows_a_readable_one(self, vault, monkeypatch):
+        """Two credentials tagged with one provider, one of them CORRUPT: the pick
+        must fall through to the readable sibling.
+
+        get() only ranks when there is no direct label hit, and it used to take
+        ranked[0] unconditionally. That makes a corrupt credential sticky rather
+        than merely broken: get_bytes() audits the access BEFORE decryption fails,
+        so every failed read bumps that item's last_used_at and re-elects it as
+        "most recently used" next time. One dead item would then hide a perfectly
+        good key for the same provider forever.
+
+        Latent rather than observed on the real vault (2026-08-25: its two corrupt
+        items carry no provider tag, so they never entered this branch) - but three
+        providers there DO hold sibling credentials, which is one corruption away.
+        """
+        from navig.vault.types import VaultItemKind
+
+        # Neither is at the bare label "acme", so get("acme") must rank.
+        vault.put(
+            "acme/one",
+            json.dumps({"api_key": "sk-good"}).encode(),
+            kind=VaultItemKind.PROVIDER,
+            provider="acme",
+        )
+        vault.put(
+            "acme/two",
+            json.dumps({"api_key": "sk-corrupt"}).encode(),
+            kind=VaultItemKind.PROVIDER,
+            provider="acme",
+        )
+
+        real_get_bytes = vault.get_bytes
+
+        def _corrupt_two(label):
+            if label == "acme/two":
+                raise RuntimeError("decrypt failed (simulated corrupt blob)")
+            return real_get_bytes(label)
+
+        monkeypatch.setattr(vault, "get_bytes", _corrupt_two)
+
+        # "acme/two" was written last, so it ranks first - and must still lose.
+        assert vault._store.get("acme") is None, "fixture must exercise the ranked branch"
+        cred = vault.get("acme")
+        assert cred is not None, "a readable sibling exists; get() must not return None"
+        assert cred.data.get("api_key") == "sk-good"
+        assert vault.get_api_key("acme") == "sk-good"
+
+        # When NOTHING is readable the honest answer is still None: the fallback
+        # must not invent a credential out of an unreadable one.
+        monkeypatch.setattr(
+            vault,
+            "get_bytes",
+            lambda label: (_ for _ in ()).throw(RuntimeError("all dead")),
+        )
+        assert vault.get("acme") is None
+
+    def test_legacy_raw_string_payload_is_not_discarded(self, vault, monkeypatch):
+        """A payload that DECRYPTS but is not JSON is a legacy bare-string secret —
+        it must be returned, not degraded to {}.
+
+        The vault predates the JSON-object payload convention: its oldest items store
+        the secret as a plain UTF-8 string (an API key, a session blob, a hash). Those
+        decrypt perfectly and only ``json.loads`` refuses them, so the old
+        ``except json.JSONDecodeError: data = {}`` branch silently threw a LIVE secret
+        away — the same phantom-empty-credential bug as the unreadable branch, through
+        the other door: get_api_key() reported the provider unconfigured while the
+        listing still showed it connected. Found on a real vault, 2026-08-25: six items
+        (an openai-compat connection, the telegram user session/api_hash/2fa) read as
+        empty for exactly this reason."""
+        cred_id = vault.add(
+            provider="legacyprov",
+            credential_type="api_key",
+            data={"api_key": "placeholder"},
+            profile_id="default",
+        )
+
+        # The pre-JSON storage shape: the secret itself, as bare bytes.
+        monkeypatch.setattr(vault, "get_bytes", lambda label: b"sk-legacy-raw-secret")
+
+        cred = vault.get("legacyprov")
+        assert cred is not None, "a readable legacy secret must not vanish"
+        assert cred.data.get("value") == "sk-legacy-raw-secret"
+        assert vault.get_by_id(cred_id).data.get("value") == "sk-legacy-raw-secret"
+        # …and it resolves through the normal accessor, which already reads `value`.
+        assert vault.get_api_key("legacyprov") == "sk-legacy-raw-secret"
+
+        # A JSON *scalar* is legacy too — wrapped, never cast into a dict.
+        monkeypatch.setattr(vault, "get_bytes", lambda label: b'"sk-json-scalar"')
+        assert vault.get("legacyprov").data.get("value") == "sk-json-scalar"
+
+        # A genuinely empty payload is still honestly empty…
+        monkeypatch.setattr(vault, "get_bytes", lambda label: b"")
+        assert vault.get("legacyprov").data == {}
+        # …but bytes that aren't even text are UNREADABLE, not empty: reporting {}
+        # there would be the very phantom-credential bug this guards against.
+        # (Binary belongs to FILE/CERT items, which never take this path.)
+        monkeypatch.setattr(vault, "get_bytes", lambda label: b"\xff\xfe\x00binary")
+        assert vault.get("legacyprov") is None
+
     def test_get_secret(self, vault):
         """Test getting secrets as SecretStr."""
         from navig.vault import SecretStr
@@ -426,6 +549,33 @@ class TestCredentialsVault:
         cred = vault.get_by_id(cred_id)
         assert cred.data["api_key"] == "new-key"
         assert cred.label == "New Label"
+
+    def test_update_refuses_partial_write_when_secret_unreadable(self, vault):
+        """A transient store/decrypt failure during a DATA update must NOT write a partial
+        blob that drops the credential's OTHER secret fields. It refuses (returns False)
+        and leaves the stored secret intact — the "never overwrite what you couldn't read"
+        class (the store is SQLite/WAL; a transient sharing-violation lock raises here)."""
+        cred_id = vault.add(
+            provider="test",
+            credential_type="api_key",
+            data={"api_key": "keep-me", "extra": "also-keep"},
+        )
+
+        real_get_bytes = vault.get_bytes
+
+        def _locked(_label):
+            raise OSError("simulated transient sqlite sharing violation")
+
+        vault.get_bytes = _locked
+        try:
+            # existing secret unreadable + a data update requested → must refuse
+            assert vault.update(cred_id, data={"api_key": "NEW"}) is False
+        finally:
+            vault.get_bytes = real_get_bytes  # lock cleared — read back
+
+        cred = vault.get_by_id(cred_id)
+        # both fields survive; the partial {"api_key": "NEW"} was never written over them
+        assert cred.data == {"api_key": "keep-me", "extra": "also-keep"}
 
     def test_disable_enable(self, vault):
         """Test disabling and re-enabling credentials."""

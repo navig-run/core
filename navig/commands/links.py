@@ -312,8 +312,14 @@ def delete_link(
     if not force:
         if not _ch.confirm_action(f"Delete bookmark for {link.url}?"):
             raise typer.Abort()
-    if db.delete(link_id):
-        _ch.success(f"Link {link_id} deleted.")
+    # A success-only branch makes a FAILED delete print nothing at all and exit 0 —
+    # the bookmark is still there and the command looks like it worked. Inconsistent
+    # with the rest of this very function, which exits 1 on not-found and aborts on a
+    # declined confirm.
+    if not db.delete(link_id):
+        _ch.error(f"Failed to delete link {link_id}.")
+        raise typer.Exit(1)
+    _ch.success(f"Link {link_id} deleted.")
 
 
 # ─────────────────────────── import ──────────────────────────────────────────
@@ -367,6 +373,12 @@ def import_links(
                 for item in imported
                 if item.type == "bookmark"
             ]
+            # A source that could not be READ yields no items and would drop into the JSON
+            # fallback below, which then fails on a *different* error (a places.sqlite is
+            # not JSON) — burying the real cause. Name it while we still know it.
+            if not normalized_items and engine.errors:
+                for src, reason in sorted(engine.errors.items()):
+                    _ch.error(f"{src}: could not read source — {reason}")
         except Exception as exc:
             _ch.warning(f"Universal importer unavailable ({exc}); falling back to JSON parser")
 
@@ -389,12 +401,22 @@ def import_links(
                 }
             )
 
+    repaired = 0
     for item in normalized_items:
         url = item.get("url")
         if not url:
             continue
-        if db.get_by_url(url):
-            skipped += 1
+        existing = db.get_by_url(url)
+        if existing is not None:
+            # Same self-repair as `navig import` — a bookmark stored by the pre-fix Safari
+            # parser carries its own URL as its title, and dedupe-on-url would otherwise
+            # keep it broken forever. Only that exact signature is touched.
+            new_title = str(item.get("title") or "").strip()
+            if new_title and new_title != url and existing.title == url:
+                db.update(existing.id, title=new_title)
+                repaired += 1
+            else:
+                skipped += 1
             continue
         tags = item.get("tags") or []
         if isinstance(tags, str):
@@ -408,4 +430,7 @@ def import_links(
         )
         added += 1
 
-    _ch.success(f"Import complete: {added} added, {skipped} duplicates skipped.")
+    _summary = f"Import complete: {added} added, {skipped} duplicates skipped"
+    if repaired:
+        _summary += f", {repaired} title(s) repaired"
+    _ch.success(f"{_summary}.")

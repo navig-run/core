@@ -28,6 +28,43 @@ def scaffold_callback(ctx: typer.Context):
         raise typer.Exit()
 
 
+def _show_preview(
+    scaffolder: Scaffolder,
+    template_data: dict,
+    variables: dict,
+    template_path: Path,
+) -> None:
+    """Print what `--dry-run` would create, or explain why it cannot.
+
+    This used to iterate ``template_data.get("files", [])`` — a key the template schema
+    does not have; `validate_template` requires ``structure``, and "files" appeared
+    nowhere else in the subsystem. So the loop was always empty and every dry run
+    printed the header "Files to be created:" followed by nothing, for every template.
+
+    `Scaffolder.preview` renders for real into a staging directory, so the list
+    reflects conditions and rendered path names, and a template that would fail says so
+    here — which is the whole reason to run `--dry-run` before committing to a target.
+    """
+    try:
+        entries = scaffolder.preview(
+            template_data, variables, template_dir=template_path.parent
+        )
+    except Exception as e:
+        ch.error(f"Generation would fail: {e}")
+        raise typer.Exit(1) from e
+
+    if not entries:
+        ch.warning(
+            "This template would create nothing — every item's condition evaluated "
+            "to false for these variables."
+        )
+        return
+
+    ch.info("\nFiles to be created:")
+    for relative_path, kind in entries:
+        ch.info(f"  - {relative_path} ({kind})")
+
+
 @scaffold_app.command("apply")
 def apply(
     template_path: Path = typer.Argument(..., help="Path to YAML template file", exists=True),
@@ -77,11 +114,7 @@ def apply(
 
         if dry_run:
             ch.info(f"[DRY RUN] Would generate to: {target_path}")
-            ch.info("\nFiles to be created:")
-            for file_spec in template_data.get("files", []):
-                file_path = file_spec.get("path", "unknown")
-                file_type = file_spec.get("type", "file")
-                ch.info(f"  - {file_path} ({file_type})")
+            _show_preview(scaffolder, template_data, variables, template_path)
             return
 
         ch.step(f"Generating locally at {target_path}...")
@@ -100,7 +133,15 @@ def apply(
 
         if dry_run:
             ch.info(f"[DRY RUN] Would generate to {host}:{target_dir}")
+            _show_preview(scaffolder, template_data, variables, template_path)
             return
+
+        # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+        # Placed AFTER the dry-run return: a dry run writes nothing, so it must not
+        # contend for the lock. Below this line we upload, mkdir, untar and rm on the host.
+        from navig.core import host_lock  # noqa: PLC0415
+
+        host_lock.guard_remote(config_manager, host, f"navig scaffold apply: {target_dir}")
 
         ch.step(f"Preparing scaffold for remote host {host}...")
 

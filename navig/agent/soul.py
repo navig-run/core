@@ -291,33 +291,34 @@ class Soul(Component):
         """
         Load SOUL.md personality file.
 
-        Priority:
-        1. ~/.navig/workspace/SOUL.md (user customization)
-        2. navig/resources/SOUL.default.md (bundled default)
-        3. None (fall back to built-in personality profile)
+        Resolution goes through ``navig.personas.soul_loader.resolve_soul()`` —
+        the ONE chain every surface shares (persona → space → folder-space →
+        ``IDENTITY.md`` → workspace ``SOUL.md`` → package default → fallback).
+        This component used to carry a private two-entry chain, so an operator's
+        persona, space soul or ``IDENTITY.md`` applied on the chat and gateway
+        paths and silently did nothing under ``navig agent start``.
+
+        Falls back to the built-in personality profile only when the chain
+        resolves nothing at all.
         """
-        # Try user SOUL.md first
-        if self.SOUL_FILE.exists():
-            try:
-                self._soul_content = self.SOUL_FILE.read_text(encoding="utf-8")
-                self._soul_loaded_from = self.SOUL_FILE
-                logger.debug("Soul: Loaded SOUL.md from %s", self.SOUL_FILE)
-                return
-            except Exception as e:
-                logger.warning("Soul: Failed to load user SOUL.md: %s", e)
+        try:
+            from navig.personas.soul_loader import resolve_soul  # noqa: PLC0415
 
-        # Try bundled default
-        if self.SOUL_DEFAULT.exists():
-            try:
-                self._soul_content = self.SOUL_DEFAULT.read_text(encoding="utf-8")
-                self._soul_loaded_from = self.SOUL_DEFAULT
-                logger.debug("Soul: Loaded default SOUL.md from %s", self.SOUL_DEFAULT)
-                return
-            except Exception as e:
-                logger.warning("Soul: Failed to load default SOUL.md: %s", e)
+            resolution = resolve_soul()
+        except Exception as exc:  # noqa: BLE001 — identity must never break boot
+            logger.warning("Soul: identity resolution failed (%s)", exc)
+            resolution = None
 
-        # No SOUL.md found - will use built-in profile
-        logger.debug("Soul: No SOUL.md found, using built-in personality profile")
+        if resolution is not None and resolution.raw:
+            self._soul_content = resolution.raw
+            self._soul_loaded_from = resolution.path
+            logger.debug(
+                "Soul: identity from %s (%s)", resolution.source, resolution.path or "composed"
+            )
+            return
+
+        # Nothing resolved — use the built-in personality profile.
+        logger.debug("Soul: no identity resolved, using built-in personality profile")
         self._soul_content = None
         self._soul_loaded_from = None
 
@@ -550,27 +551,42 @@ I am your autonomous operations companion. I help manage both your computer syst
         """
         Get system prompt for AI, personalized with SOUL.md.
 
-        If SOUL.md is present, it becomes the primary personality source.
-        Otherwise, uses built-in PersonalityProfile settings.
+        If SOUL.md is present it supplies voice and manner; otherwise the built-in
+        PersonalityProfile does. Either way the compiled-in guardrail floor is
+        emitted FIRST and the identity is demoted beneath it. This surface
+        (``navig agent start`` → ``Brain``) previously injected a user-authored
+        SOUL.md under "You are the agent described above. Embody this
+        personality" — the exact inversion of the rule the chat and gateway paths
+        enforce. A SOUL.md written to rename the agent must not be able to remove
+        its boundaries on any surface.
         """
-        base_prompt = self.config.system_prompt or ""
+        from navig.agent.conv.guardrails import (  # noqa: PLC0415
+            SOUL_DEMOTION_NOTE,
+            guardrail_block,
+            load_guardrails_extra,
+        )
 
-        # If SOUL.md is loaded, use it as the primary personality source
+        base_prompt = self.config.system_prompt or ""
+        extra, _paths = load_guardrails_extra()
+        floor = guardrail_block(extra)
+
+        # If SOUL.md is loaded, it is the personality source — bounded by the floor.
         if self._soul_content:
             soul_section = f"""# Agent Identity
+
+{SOUL_DEMOTION_NOTE}
 
 {self._soul_content}
 
 ---
 
-You are the agent described above. Embody this personality in all your responses.
 When users ask conversational questions (greetings, identity, how you're doing),
 respond according to the Conversational Guidelines in your SOUL.md.
 
 When handling technical tasks, maintain your personality while being precise
 and helpful. Balance warmth with competence.
 """
-            return f"{base_prompt}\n\n{soul_section}".strip()
+            return f"{floor}\n\n{base_prompt}\n\n{soul_section}".strip()
 
         # Fall back to built-in personality profile
         personality_context = f"""
@@ -596,7 +612,10 @@ Conversational responses:
             rules = "\n".join([f"- {rule}" for rule in self.config.behavioral_rules])
             personality_context += f"\nBehavioral rules:\n{rules}"
 
-        return f"{base_prompt}\n\n{personality_context}".strip()
+        # The floor applies to the profile path too: a config-supplied
+        # `system_prompt` / `behavioral_rules` is just as capable of describing an
+        # agent without boundaries as a SOUL.md is.
+        return f"{floor}\n\n{base_prompt}\n\n{personality_context}".strip()
 
     def switch_profile(self, profile_name: str) -> bool:
         """Switch to a different personality profile."""

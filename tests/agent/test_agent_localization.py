@@ -81,7 +81,10 @@ class TestLocalizationStoreCache:
 class TestLocalizationStoreInit:
     def test_default_root_is_set(self):
         store = LocalizationStore()
-        assert store._root.exists() or not store._root.exists()  # no crash
+        # Was `_root.exists() or not _root.exists()` -- true for every value, so the
+        # "is set" in the name was never checked. The default root is the locales dir
+        # bundled in the package, so its absence is a real packaging regression.
+        assert store._root.exists(), f"bundled locales root missing: {store._root}"
 
     def test_custom_root(self, tmp_path):
         store = LocalizationStore(locales_root=tmp_path)

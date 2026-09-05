@@ -1,10 +1,7 @@
 """Tests for navig.identity.sigil_store — persist_entity, load_entity, etc."""
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 import navig.identity.sigil_store as store_mod
 from navig.identity.sigil_store import (

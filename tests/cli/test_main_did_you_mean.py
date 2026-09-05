@@ -21,6 +21,9 @@ class _DummyCliModule:
 
 
 def test_main_did_you_mean_uses_first_non_global_token(monkeypatch):
+    # The code under test sets NAVIG_INVOCATION_CWD directly, so hand the key to monkeypatch or
+    # it survives teardown into every later test in this xdist worker.
+    monkeypatch.setenv("NAVIG_INVOCATION_CWD", "")
     called: dict[str, str] = {}
 
     monkeypatch.setattr(main_mod, "_normalize_help_compat_args", lambda argv: argv)

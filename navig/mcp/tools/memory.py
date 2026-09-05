@@ -95,6 +95,22 @@ def register(server: Any) -> None:
         }
     )
 
+    # See navig.mcp_server._gate_tool — unlisted defaults to "safe".
+    # A module's register() must be self-sufficient: register_all_tools creates this
+    # dict, but a direct `module.register(server)` call (tests, a plugin host) does not,
+    # and assuming it exists raised AttributeError. cdp.py already guarded; these did not.
+    if not hasattr(server, "_tool_safety"):
+        server._tool_safety = {}
+    server._tool_safety.update({
+        "memory_key_facts_remember": "moderate",
+        "memory_key_facts_update": "moderate",
+        "memory_key_facts_forget": "moderate",   # soft delete — recoverable
+        # read-only — recorded explicitly so a missing entry is a build failure,
+        # not a silent default to "safe".
+        "memory_key_facts_retrieve": "safe",
+        "memory_key_facts_stats": "safe",
+    })
+
 
 def _tool_memory_remember(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Store a key fact via KeyFactStore.upsert()."""

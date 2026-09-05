@@ -585,7 +585,19 @@ class TestSkillToolSchema:
 
 
 class TestSkillToolHandler:
-    def test_not_initialised(self):
+    def test_not_initialised(self, monkeypatch):
+        """No explicit context now means "resolve the active space", not "give up".
+
+        Breaking resolution is what reaches the branch — and it is also what keeps this
+        hermetic: unpatched, the handler reads the operator's real ``~/.navig/skills``.
+        """
+
+        def _boom(*_a, **_kw):
+            raise RuntimeError("no active space")
+
+        monkeypatch.setattr(
+            "navig.agent.skills_context.get_skills_context", _boom, raising=False
+        )
         old_ctx = skill_tools_mod._skills_ctx
         try:
             skill_tools_mod._skills_ctx = None

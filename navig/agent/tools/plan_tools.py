@@ -89,7 +89,7 @@ class PlanAddStepTool(BaseTool):
     async def run(
         self,
         args: dict[str, Any],
-        status_callback: StatusCallback | None = None,
+        on_status: StatusCallback | None = None,
     ) -> ToolResult:
         from navig.agent.plan_mode import PlanStep
 
@@ -142,7 +142,7 @@ class PlanShowTool(BaseTool):
     async def run(
         self,
         args: dict[str, Any],
-        status_callback: StatusCallback | None = None,
+        on_status: StatusCallback | None = None,
     ) -> ToolResult:
         interceptor = _get_interceptor()
         text = interceptor.format_plan()
@@ -168,7 +168,7 @@ class PlanApproveTool(BaseTool):
     async def run(
         self,
         args: dict[str, Any],
-        status_callback: StatusCallback | None = None,
+        on_status: StatusCallback | None = None,
     ) -> ToolResult:
         interceptor = _get_interceptor()
         try:
@@ -216,7 +216,7 @@ class GetPlanContextTool(BaseTool):
     async def run(
         self,
         args: dict[str, Any],
-        status_callback: StatusCallback | None = None,
+        on_status: StatusCallback | None = None,
     ) -> ToolResult:
         try:
             from navig.plans.context import PlanContext

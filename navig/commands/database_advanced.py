@@ -6,10 +6,12 @@ import re
 import subprocess
 from typing import Any
 
+import typer
 from rich.table import Table
 
 from navig import console_helper as ch
 from navig.commands._db_utils import create_mysql_config_file, get_db_host_port
+from navig.core.proc_text import decode_console_result
 
 
 def _validate_sql_identifier(identifier: str, identifier_type: str = "identifier") -> bool:
@@ -88,113 +90,6 @@ def _escape_sql_identifier(identifier: str) -> str:
 
 
 
-def list_databases_cmd(options: dict[str, Any]):
-    """List all databases with sizes.
-
-    SECURITY: No SQL injection risk - uses parameterized query via information_schema.
-    Credentials passed via secure config file, not command line.
-
-    Args:
-        options: Command options (app, json)
-    """
-    from navig.config import get_config_manager
-    from navig.tunnel import TunnelManager
-
-    config_manager = get_config_manager()
-    tunnel_manager = TunnelManager(config_manager)
-
-    from navig.cli.recovery import require_active_server  # noqa: PLC0415
-    server_name = require_active_server(options, config_manager)
-
-    server_config = config_manager.load_server_config(server_name)
-    db = server_config["database"]
-
-    tunnel_info = None
-    if not db.get("direct_host"):
-        tunnel_info = tunnel_manager.get_tunnel_status(server_name)
-        if not tunnel_info:
-            ch.warning("Starting tunnel...")
-            tunnel_info = tunnel_manager.start_tunnel(server_name)
-
-    db_host, db_port = get_db_host_port(db, tunnel_info)
-
-    # Query for database sizes (safe - no user input)
-    query = """
-    SELECT
-        table_schema AS 'database',
-        ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'size_mb'
-    FROM information_schema.tables
-    GROUP BY table_schema
-    ORDER BY size_mb DESC;
-    """
-
-    # Create secure config file for credentials
-    config_file = None
-    try:
-        config_file = create_mysql_config_file(db["user"], db["password"])
-
-        mysql_cmd = [
-            "mysql",
-            f"--defaults-file={config_file}",  # Secure credential passing
-            "-h",
-            db_host,
-            "-P",
-            str(db_port),
-            "-e",
-            query,
-        ]
-
-        result = subprocess.run(mysql_cmd, capture_output=True, text=True)
-
-        if result.returncode != 0:
-            ch.error(f"Query failed: {result.stderr}")
-            return
-
-        # Parse output
-        lines = result.stdout.strip().split("\n")
-        if len(lines) < 2:
-            ch.warning("No databases found.")
-            return
-
-        # Skip header
-        data_lines = lines[1:]
-        databases = []
-
-        for line in data_lines:
-            parts = line.split("\t")
-            if len(parts) >= 2:
-                databases.append(
-                    {
-                        "name": parts[0],
-                        "size_mb": float(parts[1]) if parts[1] != "NULL" else 0.0,
-                    }
-                )
-
-        # Output
-        if options.get("json"):
-            ch.raw_print(json.dumps({"databases": databases, "count": len(databases)}))
-        else:
-            table = Table(title=f"Databases on {server_name}")
-            table.add_column("Database", style="cyan")
-            table.add_column("Size (MB)", justify="right", style="green")
-
-            for db_info in databases:
-                table.add_row(db_info["name"], f"{db_info['size_mb']:.2f}")
-
-            ch.console.print(table)
-            ch.dim(f"\nTotal: {len(databases)} databases")
-
-    except FileNotFoundError:
-        ch.error("mysql client not found. Please install MySQL client tools.")
-    finally:
-        # Always delete secure config file
-        if config_file and os.path.exists(config_file):
-            try:
-                os.unlink(config_file)
-            except OSError:
-                pass  # Cleanup - file deletion failed
-
-
 def optimize_table_cmd(table: str, options: dict[str, Any]):
     """Optimize database table.
 
@@ -264,7 +159,7 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
             query,
         ]
 
-        result = subprocess.run(mysql_cmd, capture_output=True, text=True)
+        result = decode_console_result(subprocess.run(mysql_cmd, capture_output=True))
 
         if result.returncode == 0:
             if options.get("json"):
@@ -360,7 +255,7 @@ def repair_table_cmd(table: str, options: dict[str, Any]):
             query,
         ]
 
-        result = subprocess.run(mysql_cmd, capture_output=True, text=True)
+        result = decode_console_result(subprocess.run(mysql_cmd, capture_output=True))
 
         if result.returncode == 0:
             if options.get("json"):
@@ -433,11 +328,16 @@ def list_users_cmd(options: dict[str, Any]):
             query,
         ]
 
-        result = subprocess.run(mysql_cmd, capture_output=True, text=True)
+        result = decode_console_result(subprocess.run(mysql_cmd, capture_output=True))
 
         if result.returncode != 0:
+            # `list_users_cmd` returns nothing, so its callers cannot inspect a result —
+            # returning here reported success for a query that never ran. (Its siblings
+            # optimize/repair DO return a bool, and their wrappers check it; a function
+            # that returns nothing has to raise.) A genuinely empty listing is a
+            # `ch.warning` + exit 0 below, which is a different thing entirely.
             ch.error(f"Query failed: {result.stderr}")
-            return
+            raise typer.Exit(1)
 
         # Parse output
         lines = result.stdout.strip().split("\n")
@@ -477,123 +377,3 @@ def list_users_cmd(options: dict[str, Any]):
             except OSError:
                 pass  # Cleanup - file deletion may fail
 
-
-def list_tables_cmd(database: str, options: dict[str, Any]):
-    """List tables in a database.
-
-    SECURITY:
-    - Validates database name to prevent SQL injection
-    - Uses parameterized query with escaped identifier
-    - Uses secure config file for credentials
-
-    Args:
-        database: Database name
-        options: Command options (app, json)
-    """
-    from navig.config import get_config_manager
-    from navig.tunnel import TunnelManager
-
-    config_manager = get_config_manager()
-    tunnel_manager = TunnelManager(config_manager)
-
-    from navig.cli.recovery import require_active_server  # noqa: PLC0415
-    server_name = require_active_server(options, config_manager)
-
-    # SECURITY: Validate database name
-    try:
-        _validate_sql_identifier(database, "database")
-    except ValueError as e:
-        ch.error(str(e))
-        return
-
-    server_config = config_manager.load_server_config(server_name)
-    db = server_config["database"]
-
-    tunnel_info = None
-    if not db.get("direct_host"):
-        tunnel_info = tunnel_manager.get_tunnel_status(server_name)
-        if not tunnel_info:
-            tunnel_info = tunnel_manager.start_tunnel(server_name)
-
-    db_host, db_port = get_db_host_port(db, tunnel_info)
-
-    # SECURITY: Use backtick escaping for database name in WHERE clause
-    safe_database = _escape_sql_identifier(database)  # noqa: F841 - validates input; value embedded below via {database}
-
-    # Note: We can't use backticks in string comparison, so we validate heavily first
-    # Then use single quotes which is safe after validation
-    query = f"""
-    SELECT
-        table_name,
-        ROUND((data_length + index_length) / 1024 / 1024, 2) AS size_mb,
-        table_rows
-    FROM information_schema.tables
-    WHERE table_schema = '{database}'
-    ORDER BY size_mb DESC;
-    """
-
-    config_file = None
-    try:
-        config_file = create_mysql_config_file(db["user"], db["password"])
-
-        mysql_cmd = [
-            "mysql",
-            f"--defaults-file={config_file}",
-            "-h",
-            db_host,
-            "-P",
-            str(db_port),
-            "-e",
-            query,
-        ]
-
-        result = subprocess.run(mysql_cmd, capture_output=True, text=True)
-
-        if result.returncode != 0:
-            ch.error(f"Query failed: {result.stderr}")
-            return
-
-        # Parse output
-        lines = result.stdout.strip().split("\n")
-        if len(lines) < 2:
-            ch.warning(f"No tables found in database: {database}")
-            return
-
-        # Skip header
-        data_lines = lines[1:]
-        tables = []
-
-        for line in data_lines:
-            parts = line.split("\t")
-            if len(parts) >= 3:
-                tables.append(
-                    {
-                        "name": parts[0],
-                        "size_mb": float(parts[1]) if parts[1] != "NULL" else 0.0,
-                        "rows": int(parts[2]) if parts[2] != "NULL" else 0,
-                    }
-                )
-
-        # Output
-        if options.get("json"):
-            ch.raw_print(json.dumps({"database": database, "tables": tables, "count": len(tables)}))
-        else:
-            table = Table(title=f"Tables in {database}")
-            table.add_column("Table", style="cyan")
-            table.add_column("Size (MB)", justify="right", style="green")
-            table.add_column("Rows", justify="right", style="yellow")
-
-            for tbl in tables:
-                table.add_row(tbl["name"], f"{tbl['size_mb']:.2f}", f"{tbl['rows']:,}")
-
-            ch.console.print(table)
-            ch.dim(f"\nTotal: {len(tables)} tables")
-
-    except FileNotFoundError:
-        ch.error("mysql client not found.")
-    finally:
-        if config_file and os.path.exists(config_file):
-            try:
-                os.unlink(config_file)
-            except OSError:
-                pass  # Cleanup - file deletion may fail

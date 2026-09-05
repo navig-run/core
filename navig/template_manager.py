@@ -18,6 +18,65 @@ import yaml
 from navig import console_helper as ch
 
 
+def _enabled_state_file() -> Path:
+    """Where template enablement is persisted: user content, never the builtin store.
+
+    `builtin_store_dir()` is documented read-only at runtime — "user content is written to
+    store_dir, never here" — because it lives INSIDE the package so it can reach a wheel.
+    `enable()`/`disable()` wrote `enabled: true` straight into the shipped
+    `navig/builtin/templates/<name>/template.yaml`, i.e. into site-packages, which means:
+
+      * a `pip install --upgrade` silently discards every template the operator enabled;
+      * a system-wide or read-only install cannot enable one at all;
+      * running the command dirties a tracked file in a dev checkout (observed: enabling
+        `caddy` left `core/navig/builtin/templates/caddy/template.yaml` modified in git).
+
+    The state is a per-install overlay keyed by template name.
+    """
+    from navig.platform.paths import store_dir
+
+    return store_dir() / "templates" / "enabled.json"
+
+
+def _read_enabled_state() -> dict[str, bool]:
+    """The overlay, or {} when absent/unreadable.
+
+    A failed READ must not be reported as "everything is disabled" by a caller — see
+    `Template.is_enabled`, which falls back to the shipped metadata rather than to False.
+    """
+    try:
+        path = _enabled_state_file()
+        if not path.exists():
+            return {}
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return {str(k): bool(v) for k, v in data.items()} if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_enabled_state(name: str, enabled: bool) -> None:
+    """Record one template's enablement. Raises if it cannot be persisted.
+
+    Deliberately NOT best-effort: `enable()` reports success to the operator, so a state
+    change that did not persist must surface rather than print a tick for nothing.
+    """
+    path = _enabled_state_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    state = _read_enabled_state()
+    state[name] = enabled
+
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    tmp_path = Path(tmp)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(state, fh, indent=2, sort_keys=True)
+        os.replace(tmp_path, path)
+        tmp_path = None
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+
+
 class TemplateSchema:
     """Schema for template metadata validation (supports both JSON and YAML)."""
 
@@ -106,7 +165,15 @@ class Template:
         return metadata
 
     def save_metadata(self):
-        """Save template metadata to file (preserving original format)."""
+        """Write this template's metadata back to its own file, preserving the format.
+
+        ⚠ NOT used for enablement any more. `enable()`/`disable()` called this, which wrote
+        into `builtin_store_dir()` — documented read-only at runtime — so state landed in
+        site-packages and an upgrade discarded it. Enablement now goes to the overlay in
+        `store_dir()`. This stays for a template that legitimately owns its own file (a
+        user-authored one under a writable templates_dir); calling it on a builtin is the
+        bug that was just removed.
+        """
         _tmp_path: Path | None = None
         try:
             _fd, _tmp = tempfile.mkstemp(dir=self.metadata_file.parent, suffix=".tmp")
@@ -123,7 +190,16 @@ class Template:
                 _tmp_path.unlink(missing_ok=True)
 
     def is_enabled(self) -> bool:
-        """Check if template is enabled."""
+        """Check if template is enabled.
+
+        The user-space overlay wins when it has an entry; otherwise the shipped metadata
+        answers. That fallback IS the migration: an install that already carries
+        `enabled: true` in its builtin template.yaml (written by the previous behaviour)
+        keeps reporting enabled, and the next enable/disable moves it to the overlay.
+        """
+        state = _read_enabled_state()
+        if self.name in state:
+            return state[self.name]
         return self.metadata.get("enabled", False)
 
     def enable(self):
@@ -131,7 +207,7 @@ class Template:
         if not self.is_enabled():
             self.metadata["enabled"] = True
             self.metadata["last_enabled"] = datetime.now().isoformat()
-            self.save_metadata()
+            _write_enabled_state(self.name, True)
             self._call_hook("onEnable")
 
     def disable(self):
@@ -139,7 +215,7 @@ class Template:
         if self.is_enabled():
             self.metadata["enabled"] = False
             self.metadata["last_disabled"] = datetime.now().isoformat()
-            self.save_metadata()
+            _write_enabled_state(self.name, False)
             self._call_hook("onDisable")
 
     def load(self):

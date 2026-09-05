@@ -13,6 +13,7 @@ class _FakeAgent:
         self.current_task = None
         self.identity_calls = []
         self.persona_calls = []
+        self.persona_kwargs = []
         self.language_calls = []
         self.on_status_update = None
         # Real ConversationalAgent exposes this; set it to simulate a rotation.
@@ -24,8 +25,13 @@ class _FakeAgent:
     def set_runtime_persona(self, persona=""):
         self.persona_calls.append(persona)
 
-    def set_active_persona(self, persona=""):
+    def set_active_persona(self, persona="", soul_content=None, *, space="", cwd=None):
+        # Mirror the real ConversationalAgent.set_active_persona signature. A fake
+        # that accepts fewer parameters than the thing it stands in for reports a
+        # green router while the real call would TypeError — so the extra kwargs
+        # are recorded, not swallowed, and asserted below.
         self.persona_calls.append(persona)
+        self.persona_kwargs.append({"soul_content": soul_content, "space": space, "cwd": cwd})
 
     def set_language_preferences(self, detected_language="", last_detected_language=""):
         self.language_calls.append((detected_language, last_detected_language))
@@ -61,9 +67,19 @@ async def test_handle_message_applies_runtime_persona_from_metadata(monkeypatch)
     assert response == "ok"
     assert fake_agent.identity_calls[-1] == ("42", "operator")
     assert fake_agent.persona_calls[-1] == "teacher"
+    # Identity is resolved per session, so the space and working dir travel with
+    # the persona name — passing the name alone is what left persona souls, tone
+    # and banned_phrases unreachable.
+    assert set(fake_agent.persona_kwargs[-1]) == {"soul_content", "space", "cwd"}
 
 
-async def test_handle_message_clears_runtime_persona_when_not_present(monkeypatch):
+async def test_handle_message_falls_back_to_the_stored_persona(monkeypatch):
+    """No channel persona → use the one the operator actually chose.
+
+    ``auto_reply_persona`` is only set by Telegram auto mode. An ordinary turn
+    must still honour a `/persona tyler` selection, which lives in the runtime
+    store — otherwise choosing a persona does nothing outside auto mode.
+    """
     gateway = SimpleNamespace(
         config_manager=SimpleNamespace(global_config={}),
         config=SimpleNamespace(default_agent="default"),
@@ -74,6 +90,63 @@ async def test_handle_message_clears_runtime_persona_when_not_present(monkeypatc
     fake_agent = _FakeAgent()
     monkeypatch.setattr(router, "_get_conversational_agent", lambda _key: fake_agent)
     monkeypatch.setattr(router, "_check_quick_commands", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        "navig.personas.store.get_active_persona", lambda user_id, chat_id=None: "tyler"
+    )
+
+    response = await router._handle_message(
+        agent_id="default",
+        session_key="telegram:dm:42",
+        message="hello again",
+        metadata={"user_id": 42, "username": "operator"},
+    )
+
+    assert response == "ok"
+    assert fake_agent.persona_calls[-1] == "tyler"
+
+
+async def test_channel_persona_outranks_the_stored_one(monkeypatch):
+    gateway = SimpleNamespace(
+        config_manager=SimpleNamespace(global_config={}),
+        config=SimpleNamespace(default_agent="default"),
+        run_agent_turn=AsyncMock(return_value="fallback"),
+    )
+    router = ChannelRouter(gateway)
+
+    fake_agent = _FakeAgent()
+    monkeypatch.setattr(router, "_get_conversational_agent", lambda _key: fake_agent)
+    monkeypatch.setattr(router, "_check_quick_commands", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        "navig.personas.store.get_active_persona", lambda user_id, chat_id=None: "tyler"
+    )
+
+    await router._handle_message(
+        agent_id="default",
+        session_key="telegram:dm:42",
+        message="hello",
+        metadata={"user_id": 42, "auto_reply_persona": "teacher"},
+    )
+
+    assert fake_agent.persona_calls[-1] == "teacher"
+
+
+async def test_unreadable_persona_store_degrades_to_no_persona(monkeypatch):
+    """A locked/corrupt store must never block a reply."""
+    gateway = SimpleNamespace(
+        config_manager=SimpleNamespace(global_config={}),
+        config=SimpleNamespace(default_agent="default"),
+        run_agent_turn=AsyncMock(return_value="fallback"),
+    )
+    router = ChannelRouter(gateway)
+
+    fake_agent = _FakeAgent()
+    monkeypatch.setattr(router, "_get_conversational_agent", lambda _key: fake_agent)
+    monkeypatch.setattr(router, "_check_quick_commands", AsyncMock(return_value=None))
+
+    def _boom(user_id, chat_id=None):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr("navig.personas.store.get_active_persona", _boom)
 
     response = await router._handle_message(
         agent_id="default",

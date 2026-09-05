@@ -9,8 +9,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from navig.workspace import WorkspaceManager
 from navig.workspace_ownership import (
     GENERATED_DEFAULT_FILES,
@@ -31,6 +29,7 @@ class TestClassifyWorkspaceFile:
 
     def test_personal_only_files_return_personal(self):
         personal_only = PERSONAL_STATE_FILES - GENERATED_DEFAULT_FILES
+        assert personal_only, "personal_only was empty, so the loop below asserted nothing"
         for f in personal_only:
             assert classify_workspace_file(f) == "personal_customized"
 

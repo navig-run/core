@@ -1,9 +1,7 @@
 """Tests for memory/_util.py, memory/paths.py, comms/types.py, vault/secret_str.py."""
 from __future__ import annotations
 
-import logging
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 

@@ -1,8 +1,6 @@
 """Tests for navig.gateway.auth_guard — AuthGuard."""
 from __future__ import annotations
 
-import pytest
-
 from navig.gateway.auth_guard import AuthGuard
 
 

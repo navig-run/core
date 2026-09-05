@@ -1,4 +1,6 @@
+import asyncio
 import os
+import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -275,3 +277,35 @@ async def test_probe_llm_sync_in_loop():
     with patch("navig.agent.llm_probe.probe_llm", mock_coro):
         res = probe_llm_sync()
         assert res.tier == "T3"
+
+
+# ---------------------------------------------------------------------------
+# The cap must actually fire — a slow/unreachable endpoint must not wedge the caller.
+# (Regression: `with ThreadPoolExecutor() as ex: future.result(timeout=5)` defeated it,
+#  because the with-exit's shutdown(wait=True) joins the hung probe thread.)
+# ---------------------------------------------------------------------------
+
+
+async def _hang_probe(prefer_local=True):
+    await asyncio.sleep(30)  # cancelled by the cap's wait_for — no orphaned thread
+    return ProbeResult(True, "T3", "m", "n")
+
+
+async def test_probe_llm_sync_times_out_in_loop(monkeypatch):
+    monkeypatch.setattr("navig.agent.llm_probe._PROBE_TIMEOUT_S", 0.2)
+    monkeypatch.setattr("navig.agent.llm_probe.probe_llm", _hang_probe)
+    t0 = time.monotonic()
+    res = probe_llm_sync()  # in-loop (worker-thread) branch
+    elapsed = time.monotonic() - t0
+    assert res.reachable is False and res.tier == "none"
+    assert elapsed < 5, "the cap must fire; it hung past 5s before the fix"
+
+
+def test_probe_llm_sync_times_out_no_loop(monkeypatch):
+    # No running loop → asyncio.run(_run()); the cap (previously absent here) must bound it.
+    monkeypatch.setattr("navig.agent.llm_probe._PROBE_TIMEOUT_S", 0.2)
+    monkeypatch.setattr("navig.agent.llm_probe.probe_llm", _hang_probe)
+    t0 = time.monotonic()
+    res = probe_llm_sync()
+    assert res.reachable is False and res.tier == "none"
+    assert time.monotonic() - t0 < 5

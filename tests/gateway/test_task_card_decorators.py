@@ -1,7 +1,6 @@
 """Unit tests for gateway/channels/task_card.py and gateway/channels/utils/decorators.py."""
 from __future__ import annotations
 
-import asyncio
 import time
 
 import pytest

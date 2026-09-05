@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from navig.adapters.automation.types import ExecutionResult, WindowInfo
+from navig.core.proc_text import decode_console_result
 
 
 @dataclass
@@ -110,13 +111,12 @@ class AHKAdapter:
             # Running a tiny script to print version
             # A_AhkVersion
             cmd = [str(exe_path), "/ErrorStdOut", "*"]
-            process = subprocess.run(  # noqa: S603
+            process = decode_console_result(subprocess.run(  # noqa: S603
                 cmd,
                 input='FileAppend A_AhkVersion, "*"',
                 capture_output=True,
-                text=True,
-                timeout=2,
-            )
+                                timeout=2,
+            ))
             if process.returncode == 0:
                 return process.stdout.strip()
         except Exception:  # noqa: BLE001,S110,S110

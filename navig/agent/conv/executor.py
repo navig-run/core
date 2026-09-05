@@ -189,6 +189,25 @@ class TaskExecutor:
                     )
                     last_err = None
                     break
+                except PermissionError as denied:
+                    # A refusal is an answer, not a transient fault. Retrying would
+                    # re-prompt the operator `_max_attempts` times for the step they
+                    # just declined — which is how someone learns to click "yes" to
+                    # make the prompts stop. Ordered before the generic arm because
+                    # PermissionError IS an Exception.
+                    last_err = denied
+                    await self._emit_event(
+                        StatusEvent(
+                            type="step_failed",
+                            task_id=task.id,
+                            message=step.description,
+                            timestamp=datetime.now(),
+                            step_index=i,
+                            total_steps=len(task.plan),
+                            metadata={"error": str(denied), "denied": True, "is_final": True},
+                        )
+                    )
+                    break
                 except Exception as exc:
                     last_err = exc
                     await self._emit_event(
@@ -364,6 +383,46 @@ class TaskExecutor:
     async def _execute_step(self, step: ExecutionStep) -> object:
         """Dispatch a single step via ActionRegistry; unknown actions fall through to ToolRouter."""
         action, params = step.action, step.params
+
+        # Per-step approval interlock — FAIL CLOSED.
+        #
+        # This is NAVIG's fourth tool dispatcher and the last one without a gate. It is
+        # reached from `ConversationalAgent.chat()`'s fallback branch (tool registration
+        # failed, or no tools configured), where the model's own extracted plan runs —
+        # and the ToolRouter fallthrough below reaches `bash_exec`, "Execute a shell
+        # command", registered DANGEROUS. That router has no approval gate of its own:
+        # its only protection is `safety_mode == "strict"`, and the default is
+        # "standard". So the same tool name was gated through the agent registry and
+        # ungated here.
+        #
+        # `execute_plan` does honour a `confirmation_needed` flag, but that flag comes
+        # from the PLAN — the model decides whether its own plan needs a human. A gate
+        # the gated party can switch off is not a gate.
+        #
+        # Placed here rather than in either branch so it covers ActionRegistry actions
+        # (whose `command` handler has the catastrophic-command guard but no approval
+        # prompt) and the ToolRouter fallthrough alike.
+        try:
+            from navig.tools.approval import gate_agent_tool_call
+
+            denial = await gate_agent_tool_call(
+                action, parameters=params, reason="plan-step"
+            )
+        except Exception as exc:  # noqa: BLE001 — interlock unavailable → deny
+            logger.error(
+                "TaskExecutor: approval interlock unavailable for %r"
+                " — failing closed: %s",
+                action,
+                exc,
+            )
+            denial = f"[Denied: approval interlock unavailable for '{action}']"
+
+        if denial is not None:
+            # PermissionError, not a generic failure: `execute()` retries a failed step
+            # up to `_max_attempts` times, and re-asking a human who already said no —
+            # three times, with a backoff between — is how an operator learns to click
+            # "yes" to make the prompts stop.
+            raise PermissionError(denial)
 
         # ── ActionRegistry dispatch ─────────────────────────────────────────
         # All built-in actions (wait, command, evolve.workflow, workflow.run,

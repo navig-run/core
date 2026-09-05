@@ -4,8 +4,7 @@ Batch 95 — tests for navig.core.dict_utils, safe_eval, tokens, and yaml_io
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import datetime
 
 import pytest
 

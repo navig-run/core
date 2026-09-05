@@ -35,7 +35,7 @@ def repo_root() -> Path:
 def _git_rc(args: list[str], cwd: Path | str) -> tuple[int, str]:
     try:
         res = subprocess.run(
-            ["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=10
+            ["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=10, encoding="utf-8", errors="replace"
         )
     except (OSError, subprocess.SubprocessError):
         return -1, ""
@@ -148,6 +148,25 @@ def briefing(root: Path) -> str:
                 else ""
             )
             lines.append(f"* extra worktree: {p}{marker}")
+
+        # Orphaned worktree dirs: physical dirs under .dev/worktrees that git no
+        # longer tracks (git worktree remove often can't delete them on Windows),
+        # so they pile up unseen by `git worktree list`. Surface a count so the
+        # pile does not grow silently; clean it with: navig repo prune.
+        registered = {os.path.normcase(pp) for pp in paths}
+        try:
+            orphans = [
+                d
+                for d in (root / ".dev" / "worktrees").iterdir()
+                if d.is_dir() and os.path.normcase(str(d)) not in registered
+            ]
+        except OSError:
+            orphans = []
+        if orphans:
+            lines.append(
+                f"* {len(orphans)} orphaned worktree dir(s) in .dev/worktrees "
+                "(untracked by git) - clean: navig repo prune"
+            )
 
     lines.extend(conflict_lines(root))
 

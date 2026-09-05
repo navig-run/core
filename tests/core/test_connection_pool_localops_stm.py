@@ -3,9 +3,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 # ---------------------------------------------------------------------------
 # connection_pool — SSHConnection (no real SSH needed)
@@ -108,7 +106,11 @@ class TestGetParamiko:
     def test_returns_module_or_false(self):
         from navig.connection_pool import _get_paramiko
         result = _get_paramiko()
-        assert result is not False or result is False  # always returns something
+        # Was `result is not False or result is False` -- true for every value, including
+        # None or a stub. The contract in the name is "a module OR False", so check it.
+        assert result is False or hasattr(result, "SSHClient"), (
+            f"_get_paramiko() returned neither False nor a paramiko module: {result!r}"
+        )
 
 
 # ---------------------------------------------------------------------------

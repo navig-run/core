@@ -123,40 +123,49 @@ async def handle_deck_context(request: "web.Request") -> "web.Response":
             "recent": [],
             "stats": {},
         })
-    try:
+    def _build() -> dict[str, Any]:
+        """list_files()/get_stats() are synchronous SQLite reads (+ formatting a potentially
+        large index) — run off the event loop so a big memory bank can't stall the gateway.
+        MemoryStorage keeps a per-thread connection (threading.local, check_same_thread=False,
+        WAL), so a worker-thread read is safe — the same reason index_async runs off-loop."""
         files_raw = list(mgr.list_files() or [])
         stats = dict(mgr.get_stats() or {})
+
+        formatted = [_format_file(f) for f in files_raw]
+        by_source: dict[str, int] = {}
+        for f in formatted:
+            by_source[f["source"]] = by_source.get(f["source"], 0) + 1
+
+        # Sort by indexed_at DESC for "recent" — top 10
+        try:
+            recent = sorted(formatted, key=lambda x: x.get("indexed_at") or "", reverse=True)[:10]
+        except Exception:
+            recent = formatted[:10]
+
+        return {
+            "ready": True,
+            "file_count": int(stats.get("file_count") or len(formatted)),
+            "chunk_count": int(stats.get("chunk_count") or 0),
+            "total_tokens": int(stats.get("total_tokens") or 0),
+            "by_source": by_source,
+            "recent": recent,
+            "stats": {
+                "database_size_mb": float(stats.get("database_size_mb") or 0.0),
+                "embedded_chunks": int(stats.get("embedded_chunks") or 0),
+                "embeddings_enabled": bool(stats.get("embeddings_enabled") or False),
+                "embedding_model": str(stats.get("embedding_model") or ""),
+                "memory_dir": str(stats.get("memory_dir") or ""),
+            },
+        }
+
+    try:
+        payload = await asyncio.to_thread(_build)
     except Exception as exc:
         logger.exception("context engine read failed")
         return _err(str(exc))
 
-    formatted = [_format_file(f) for f in files_raw]
-    by_source: dict[str, int] = {}
-    for f in formatted:
-        by_source[f["source"]] = by_source.get(f["source"], 0) + 1
-
-    # Sort by indexed_at DESC for "recent" — top 10
-    try:
-        recent = sorted(formatted, key=lambda x: x.get("indexed_at") or "", reverse=True)[:10]
-    except Exception:
-        recent = formatted[:10]
-
-    return _ok({
-        "ready": True,
-        "file_count": int(stats.get("file_count") or len(formatted)),
-        "chunk_count": int(stats.get("chunk_count") or 0),
-        "total_tokens": int(stats.get("total_tokens") or 0),
-        "by_source": by_source,
-        "recent": recent,
-        "stats": {
-            "database_size_mb": float(stats.get("database_size_mb") or 0.0),
-            "embedded_chunks": int(stats.get("embedded_chunks") or 0),
-            "embeddings_enabled": bool(stats.get("embeddings_enabled") or False),
-            "embedding_model": str(stats.get("embedding_model") or ""),
-            "memory_dir": str(stats.get("memory_dir") or ""),
-        },
-        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-    })
+    payload["ts"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return _ok(payload)
 
 
 async def handle_deck_context_files(request: "web.Request") -> "web.Response":
@@ -165,12 +174,17 @@ async def handle_deck_context_files(request: "web.Request") -> "web.Response":
     if mgr is None:
         return _ok({"files": [], "total": 0, "next_offset": None})
 
+    # Bad pagination params are a client error (400), not a server error (500).
     try:
         offset = max(0, int(request.query.get("offset", 0)))
         limit = max(1, min(200, int(request.query.get("limit", 100))))
-        source_filter = request.query.get("source", "").strip()
-        search = request.query.get("q", "").strip().lower()
+    except (ValueError, TypeError):
+        return _err("offset and limit must be integers", 400)
+    source_filter = request.query.get("source", "").strip()
+    search = request.query.get("q", "").strip().lower()
 
+    def _page() -> dict[str, Any]:
+        """SQLite read + format + filter + sort off the event loop (see handle_deck_context)."""
         files_raw = list(mgr.list_files() or [])
         formatted = [_format_file(f) for f in files_raw]
 
@@ -183,8 +197,10 @@ async def handle_deck_context_files(request: "web.Request") -> "web.Response":
         total = len(formatted)
         page = formatted[offset:offset + limit]
         next_offset = offset + limit if offset + limit < total else None
+        return {"files": page, "total": total, "next_offset": next_offset}
 
-        return _ok({"files": page, "total": total, "next_offset": next_offset})
+    try:
+        return _ok(await asyncio.to_thread(_page))
     except Exception as exc:
         logger.exception("context files read failed")
         return _err(str(exc))

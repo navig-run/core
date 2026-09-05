@@ -46,17 +46,51 @@ _TOOLS_KEYS = Path(__file__).resolve().parents[2] / "tools" / "license_keys"
 _DEV_KEY_ID = "k0_dev"
 
 
-@pytest.fixture(scope="module")
-def dev_private_key() -> bytes:
-    """Load the committed dev private key. Used to sign all test payloads.
+@pytest.fixture()
+def dev_private_key(monkeypatch) -> bytes:
+    """The dev private key when present; else an ephemeral keypair whose public half is
+    monkeypatched into the verifier.
 
-    The matching public bytes are baked into navig.license._public_keys.PUBLIC_KEYS
-    under the key_id ``k0_dev``.
+    ``tools/license_keys/`` is gitignored and nothing is tracked there -- correctly, a
+    signing key cannot be published. But gating on it meant these 23 verifier tests ran
+    only on a machine that happened to hold the founder's key, and skipped everywhere
+    else: measured 2026-09-01, 18 skips on this developer's own box, the single largest
+    group in the suite. What they cover is licence verification -- expiry, tampering,
+    an unknown key id, tier capabilities -- so "skipped" there means the paid boundary
+    is asserted nowhere.
+
+    The signature scheme does not care WHICH Ed25519 key signs, only that the verifier
+    is asked about the matching public half, so an ephemeral pair exercises exactly the
+    same code path. Lifted verbatim from tests/license/test_item_capabilities.py, which
+    already solved this; this file simply never adopted it.
+
+    Function-scoped, not module-scoped: monkeypatch is function-scoped, and a
+    module-scoped fixture cannot use it.
     """
     priv_path = _TOOLS_KEYS / f"{_DEV_KEY_ID}.priv"
-    if not priv_path.is_file():
-        pytest.skip(f"dev signing key missing at {priv_path}; cannot run verifier tests")
-    return priv_path.read_bytes()
+    if priv_path.is_file():
+        return priv_path.read_bytes()
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding,
+        NoEncryption,
+        PrivateFormat,
+        PublicFormat,
+    )
+
+    sk = Ed25519PrivateKey.generate()
+    priv = sk.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+    pub = sk.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+
+    import navig.license.keys as keys_mod
+
+    orig = keys_mod.get_public_key
+    monkeypatch.setattr(
+        keys_mod, "get_public_key",
+        lambda kid: pub if kid == _DEV_KEY_ID else orig(kid),
+    )
+    return priv
 
 
 def _sign(payload: dict, private_bytes: bytes, key_id: str = _DEV_KEY_ID) -> str:

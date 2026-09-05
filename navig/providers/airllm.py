@@ -7,7 +7,6 @@ Uses the airllm library for memory-efficient model loading and generation.
 
 import asyncio
 import os
-from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -382,17 +381,13 @@ class AirLLMClient(BaseProviderClient):
                 retryable=True,
             ) from e
 
-    async def complete_stream(
-        self, request: CompletionRequest
-    ) -> AsyncIterator[CompletionResponse]:
-        """
-        Streaming is not natively supported by AirLLM.
-        Falls back to non-streaming completion.
-        """
-        # AirLLM doesn't support streaming natively
-        # Return single response
-        response = await self.complete(request)
-        yield response
+    # `complete_stream` is deliberately NOT overridden. AirLLM has no native streaming,
+    # and `BaseProviderClient.complete_stream` already implements exactly that fallback —
+    # correctly. The override removed here was strictly worse in three ways: it yielded a
+    # `CompletionResponse` where every consumer expects a `StreamChunk` (different shape —
+    # `.delta` / `.finish_reason`), it never set `request.stream = False`, and it DROPPED
+    # tool calls, which is the defect the base implementation's own comment warns about (a
+    # tool-using turn would stream as an empty one).
 
     def get_available_models(self) -> list[ModelDefinition]:
         """

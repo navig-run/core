@@ -183,6 +183,21 @@ async def _cmd_currency(channel, chat_id, bcid, arg, **_):
     await _send(channel, chat_id, bcid, await biz_lookups.currency(arg))
 
 
+async def _cmd_smart_convert(channel, chat_id, bcid, arg, **_):
+    """Amount-aware conversion across fiat + crypto (arg = "AMOUNT FROM TO"). Used by
+    the natural-language crypto path, e.g. "0.5 btc to usd"."""
+    from navig.telegram import biz_lookups
+
+    parts = (arg or "").split()
+    if len(parts) < 3:
+        return
+    try:
+        amount = float(parts[0])
+    except ValueError:
+        return
+    await _send(channel, chat_id, bcid, await biz_lookups.smart_convert(amount, parts[1], parts[2]))
+
+
 async def _cmd_whois(channel, chat_id, bcid, arg, **_):
     from navig.telegram import biz_lookups
 
@@ -239,6 +254,67 @@ async def _run_countdown(channel, chat_id, bcid, message_id: int, total: int) ->
         _TIMERS.pop(chat_id, None)
 
 
+# ── natural conversion phrasing ("10 eur to usd", "0.5 btc to usd") — no command ─
+# Business chats never route text to the AI agent, so a bare conversion phrase has to
+# be recognised here or it does nothing. Guarded hard: an amount, two KNOWN assets
+# (fiat currency/symbol OR crypto symbol), and a conversion word/symbol between them —
+# so ordinary chat ("see you in 10 min", "10 cats and dogs") is never hijacked. Any
+# exotic fiat code is still reachable via the explicit `convert <from> <to>` command.
+
+_CUR_SYMBOLS = {
+    "$": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "₽": "RUB",
+    "₹": "INR", "₩": "KRW", "₺": "TRY", "₴": "UAH", "₪": "ILS", "฿": "THB",
+}
+
+_KNOWN_CURRENCIES = frozenset({
+    "AED", "ARS", "AUD", "BGN", "BRL", "CAD", "CHF", "CLP", "CNY", "COP", "CZK",
+    "DKK", "EGP", "EUR", "GBP", "HKD", "HUF", "IDR", "ILS", "INR", "ISK", "JPY",
+    "KRW", "MXN", "MYR", "NOK", "NZD", "PHP", "PLN", "RON", "RUB", "SAR", "SEK",
+    "SGD", "THB", "TRY", "TWD", "UAH", "USD", "VND", "ZAR",
+})
+
+# 3–5 letters covers fiat (exactly 3) AND crypto symbols (btc…shib, matic). The
+# both-sides-must-be-known check below rejects any 4–5 letter word that isn't an asset.
+_CUR_TOKEN = r"[$€£¥₽₹₩₺₴₪฿]|[A-Za-z]{3,5}"
+_NL_CONVERT_RE = re.compile(
+    rf"^\s*(?P<fsym>[$€£¥₽₹₩₺₴₪฿])?\s*(?P<amt>\d+(?:[.,]\d+)?)\s*(?P<from>{_CUR_TOKEN})?\s*"
+    rf"(?:to|in|into|as|=|->|→|>)\s*(?P<to>{_CUR_TOKEN})\s*[?!.]*$",
+    re.IGNORECASE,
+)
+
+
+def _nl_convert(text: str) -> tuple[str, str] | None:
+    """Detect a bare "N XXX to YYY" phrase → ``(kind, "AMOUNT FROM TO")`` where *kind*
+    is ``"fiat"`` (both sides fiat) or ``"crypto"`` (a coin on either side), else None.
+    Both sides must be a KNOWN fiat currency/symbol or a known crypto symbol, so
+    ordinary chat is never hijacked."""
+    m = _NL_CONVERT_RE.match(text or "")
+    if not m:
+        return None
+    from navig.telegram import biz_lookups  # lazy: cheap module, no aiohttp at import
+
+    cryptos = biz_lookups.CRYPTO_SYMBOLS
+
+    def _norm(tok: str | None) -> tuple[str, str] | None:
+        if not tok:
+            return None
+        if tok in _CUR_SYMBOLS:
+            return ("fiat", _CUR_SYMBOLS[tok])
+        up, low = tok.upper(), tok.lower()
+        if up in _KNOWN_CURRENCIES:
+            return ("fiat", up)
+        if low in cryptos:
+            return ("crypto", up)
+        return None
+
+    a = _norm(m.group("from") or m.group("fsym"))
+    b = _norm(m.group("to"))
+    if not a or not b or a[1] == b[1]:
+        return None
+    kind = "crypto" if "crypto" in (a[0], b[0]) else "fiat"
+    return kind, f"{m.group('amt').replace(',', '.')} {a[1]} {b[1]}"
+
+
 # ── registry + dispatch ──────────────────────────────────────────────────────
 
 _COMMANDS: dict[str, dict[str, Any]] = {
@@ -276,14 +352,25 @@ async def dispatch(channel: Any, msg: dict, *, is_owner: bool, owner_id: int | N
         return False
     name = head[0]
     cmd = _COMMANDS.get(name)
-    if not cmd:
-        return False
+    arg = head[1] if len(head) > 1 else ""
+    if cmd is None:
+        # No command word — recognise a natural conversion phrase ("10 eur to usd",
+        # "0.5 btc to usd"). None → genuinely not a command.
+        conv = _nl_convert(text)
+        if conv is None:
+            return False
+        kind, conv_arg = conv
+        if kind == "crypto":
+            cmd = {"perm": "all", "fn": _cmd_smart_convert, "typing": True}
+            name, arg = "convert", conv_arg
+        else:
+            cmd = _COMMANDS["currency"]
+            name, arg = "currency", conv_arg
     if cmd["perm"] == "owner" and not is_owner:
         return False
 
     chat_id = (msg.get("chat") or {}).get("id")
     bcid = msg.get("business_connection_id")
-    arg = head[1] if len(head) > 1 else ""
 
     if is_owner:
         await _delete(channel, chat_id, bcid, msg.get("message_id"))

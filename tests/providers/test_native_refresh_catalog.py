@@ -8,8 +8,6 @@ from __future__ import annotations
 import json
 import time
 
-import pytest
-
 from navig.providers import claude_oauth
 from navig.providers.drivers.native import NativeDriver
 

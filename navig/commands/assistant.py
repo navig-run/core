@@ -8,6 +8,7 @@ import json
 from typing import Any
 
 import pyperclip
+import typer
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
@@ -22,12 +23,35 @@ def status_cmd(ctx_obj: dict[str, Any]):
 
     ch.header("🤖 Proactive Assistant Status")
 
-    # Configuration
+    # Configuration. Each row names the key that changes it: these are real toggles
+    # that were unreachable in practice — undocumented AND read as raw strings, so
+    # `navig config set proactive_assistant.auto_analysis false` appeared to do nothing and the
+    # status view gave no hint about what to set.
     ch.info("\n📋 Configuration:")
-    ch.dim(f"  Enabled: {assistant.is_enabled()}")
-    ch.dim(f"  Suggestion Level: {assistant.get_suggestion_level()}")
-    ch.dim(f"  Auto Analysis: {assistant.should_auto_analyze()}")
-    ch.dim(f"  Confirmation Required: {assistant.requires_confirmation()}")
+    from navig.console_helper import Table
+
+    cfg_table = Table(box=None, show_header=True, padding=(0, 2))
+    cfg_table.add_column("Setting", no_wrap=True)
+    cfg_table.add_column("Value", no_wrap=True)
+    cfg_table.add_column("Config key", no_wrap=True)
+    for label, value, key in (
+        ("Enabled", assistant.is_enabled(), "proactive_assistant.enabled"),
+        ("Suggestion level", assistant.get_suggestion_level(), "proactive_assistant.suggestion_level"),
+        ("Auto analysis", assistant.should_auto_analyze(), "proactive_assistant.auto_analysis"),
+        (
+            "Confirm destructive",
+            assistant.requires_confirmation(),
+            "proactive_assistant.confirmation_required",
+        ),
+    ):
+        rendered = (
+            f"[green]on[/green]" if value is True
+            else "[dim]off[/dim]" if value is False
+            else str(value)
+        )
+        cfg_table.add_row(label, rendered, f"[dim]{key}[/dim]")
+    ch.console.print(cfg_table)
+    ch.dim("  change one with: navig config set <config key> <value>")
 
     # Statistics
     ch.info("\n📊 Statistics:")
@@ -60,6 +84,11 @@ def status_cmd(ctx_obj: dict[str, Any]):
     ch.success("\n✓ Assistant is operational")
 
 
+# The checks `analyze_cmd` attempts. Named here so the closing summary can say
+# which ones were SKIPPED rather than claim the whole analysis completed.
+_ANALYSIS_CHECKS = ("metrics", "issues")
+
+
 def analyze_cmd(ctx_obj: dict[str, Any]):
     """Manually trigger comprehensive system analysis."""
     # void: manual analysis. because sometimes you need to see it yourself.
@@ -68,26 +97,29 @@ def analyze_cmd(ctx_obj: dict[str, Any]):
 
     ch.header("🔍 Running System Analysis...")
 
+    # Which of the checks actually ran, so the closing line can tell the truth.
+    checks_done: list[str] = []
+
     try:
         # Get active server
         server_name = config.get_active_server()
         if not server_name:
             ch.error("No active server. Use 'navig host use <name>' first")
-            return
+            raise typer.Exit(1)
 
         # Load server configuration
         try:
             server_config = config.load_server_config(server_name)
         except Exception as e:
             ch.error(f"Failed to load server configuration: {e}")
-            return
+            raise typer.Exit(1) from e
 
         # Initialize remote operations
         try:
             remote_ops = RemoteOperations(config)
         except Exception as e:
             ch.error(f"Failed to initialize remote operations: {e}")
-            return
+            raise typer.Exit(1) from e
 
         # Collect performance metrics
         ch.info("\n📊 Collecting performance metrics...")
@@ -109,6 +141,7 @@ def analyze_cmd(ctx_obj: dict[str, Any]):
             # Update baseline
             ch.info("\n💾 Updating performance baseline...")
             assistant.auto_detection.update_performance_baseline(server_name, metrics)
+            checks_done.append("metrics")
         except Exception as e:
             ch.warning(f"Could not collect metrics: {e}")
 
@@ -124,16 +157,31 @@ def analyze_cmd(ctx_obj: dict[str, Any]):
                 if active_issues:
                     ch.warning(f"\n⚠️  Found {len(active_issues)} active issue(s):")
                     for issue in active_issues[:5]:
-                        ch.warning(f"  - [{issue.get('severity')}] {issue.get('description')}")
+                        ch.warning(f"  - \\[{issue.get('severity')}] {issue.get('description')}")
                 else:
                     ch.success("\n✓ No active issues detected")
+            checks_done.append("issues")
         except Exception as e:
             ch.warning(f"Could not check issues: {e}")
 
-        ch.success("\n✓ Analysis complete")
+        # "✓ Analysis complete" used to print unconditionally. Both inner steps
+        # degrade to a warning on failure, so an analysis that collected no metrics
+        # AND read no issues still announced itself as complete — a green tick over
+        # nothing, which is the whole reason this command exists.
+        if not checks_done:
+            ch.error("Analysis produced nothing — every check failed (see above)")
+            raise typer.Exit(1)
+        if len(checks_done) < len(_ANALYSIS_CHECKS):
+            missed = sorted(set(_ANALYSIS_CHECKS) - set(checks_done))
+            ch.warning(f"\n⚠️  Analysis incomplete — skipped: {', '.join(missed)}")
+        else:
+            ch.success("\n✓ Analysis complete")
 
+    except typer.Exit:
+        raise  # deliberate exit; the catch-all below would rewrite its code
     except Exception as e:
         ch.error(f"Analysis failed: {e}")
+        raise typer.Exit(1) from e
 
 
 def context_cmd(ctx_obj: dict[str, Any], clipboard: bool = False, file_path: str | None = None):
@@ -159,7 +207,7 @@ def context_cmd(ctx_obj: dict[str, Any], clipboard: bool = False, file_path: str
             context = assistant.context_generator.generate_context_summary(config, remote_ops)
         except Exception as e:
             ch.error(f"Failed to generate context: {e}")
-            return
+            raise typer.Exit(1) from e
 
         # Format as JSON
         context_json = json.dumps(context, indent=2)
@@ -171,7 +219,10 @@ def context_cmd(ctx_obj: dict[str, Any], clipboard: bool = False, file_path: str
                 pyperclip.copy(context_json)
                 ch.success("✓ Context copied to clipboard")
             except Exception as e:
-                ch.error(f"Could not copy to clipboard: {e}")
+                # A warning, not an error: the caller still receives the context on
+                # stdout, so this degraded successfully and exits 0. An ✗ glyph over
+                # a zero exit is the same disagreement, pointing the other way.
+                ch.warning(f"Could not copy to clipboard: {e}")
                 ch.info("\nContext JSON:")
                 print(context_json)
         elif file_path:
@@ -180,7 +231,10 @@ def context_cmd(ctx_obj: dict[str, Any], clipboard: bool = False, file_path: str
                     f.write(context_json)
                 ch.success(f"✓ Context saved to {file_path}")
             except Exception as e:
+                # `navig ai show --context --file x.json && upload x.json` used to
+                # upload a file that was never written.
                 ch.error(f"Could not save to file: {e}")
+                raise typer.Exit(1) from e
         else:
             # Display to console
             ch.info("\nContext JSON:")
@@ -189,8 +243,11 @@ def context_cmd(ctx_obj: dict[str, Any], clipboard: bool = False, file_path: str
             ch.info("\n💡 Tip: Use --clipboard to copy to clipboard")
             ch.info("💡 Tip: Use --file <path> to save to file")
 
+    except typer.Exit:
+        raise  # deliberate exit; the catch-all below would rewrite its code
     except Exception as e:
         ch.error(f"Unexpected error: {e}")
+        raise typer.Exit(1) from e
 
 
 def reset_cmd(ctx_obj: dict[str, Any]):
@@ -210,8 +267,10 @@ def reset_cmd(ctx_obj: dict[str, Any]):
 
         confirm = input("\nType 'yes' to confirm: ")
         if confirm.lower() != "yes":
-            ch.info("Reset cancelled")
-            return
+            ch.warning("Reset cancelled — nothing was deleted")
+            # Exit 1, matching `database restore`: the requested operation did not
+            # happen, and a wrapper cannot otherwise tell "reset" from "declined".
+            raise typer.Exit(1)
 
     try:
         # Clear JSON files
@@ -223,11 +282,13 @@ def reset_cmd(ctx_obj: dict[str, Any]):
             "workflow_patterns.json",
         ]
 
+        cleared: list[str] = []
         for filename in files_to_clear:
             file_path = assistant.ai_context_dir / filename
             if file_path.exists():
                 with open(file_path, "w", encoding="utf-8") as f:
                     json.dump([], f)
+                cleared.append(filename)
 
         # Clear baselines directory
         baselines_dir = assistant.navig_dir / "baselines"
@@ -239,6 +300,14 @@ def reset_cmd(ctx_obj: dict[str, Any]):
 
     except Exception as e:
         ch.error(f"Reset failed: {e}")
+        # This loop mutates file by file, so a failure part-way leaves some data
+        # cleared and some intact. Exiting 0 without saying so left the operator
+        # unable to tell which.
+        if cleared:
+            ch.warning(
+                f"  Partially reset before the failure: {', '.join(cleared)}"
+            )
+        raise typer.Exit(1) from e
 
 
 def config_cmd(ctx_obj: dict[str, Any]):

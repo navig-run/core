@@ -17,14 +17,13 @@ import math
 import re
 import time
 from collections import defaultdict
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import RLock
 from typing import Any
 
 from navig.core.yaml_io import atomic_write_text as _atomic_write_text
-from navig.tools.registry import BaseTool, ToolResult
+from navig.tools.registry import BaseTool, StatusCallback, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -289,7 +288,7 @@ class MemoryStoreTool(BaseTool):
     async def run(
         self,
         args: dict[str, Any],
-        on_status: Callable[[str], None] | None = None,
+        on_status: StatusCallback | None = None,
     ) -> ToolResult:
         t0 = time.monotonic()
         key = args.get("key", "").strip()
@@ -378,7 +377,7 @@ class MemoryFetchTool(BaseTool):
     async def run(
         self,
         args: dict[str, Any],
-        on_status: Callable[[str], None] | None = None,
+        on_status: StatusCallback | None = None,
     ) -> ToolResult:
         t0 = time.monotonic()
         store: MemoryStore = args.get("_store") or _default_store

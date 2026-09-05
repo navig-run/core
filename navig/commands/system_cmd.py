@@ -13,12 +13,15 @@ system_app = typer.Typer(help="System information and maintenance", no_args_is_h
 console = get_console()
 
 
-@system_app.callback(invoke_without_command=True)
-def system_default(ctx: typer.Context):
-    """Show system overview."""
-    if ctx.invoked_subcommand:
-        return
+def _render_system_overview() -> None:
+    """Print the system overview table.
 
+    Split out of the Typer callback so `system info` can reuse it. It used to call
+    ``system_default(None)`` — with a ``# type: ignore[arg-type]`` over the very mismatch
+    that made it crash: the callback's first statement dereferences ``ctx``, so
+    ``navig system info`` raised ``AttributeError: 'NoneType' object has no attribute
+    'invoked_subcommand'`` every single time.
+    """
     table = Table(title="System Information")
     table.add_column("Key", style="cyan")
     table.add_column("Value")
@@ -37,10 +40,18 @@ def system_default(ctx: typer.Context):
     console.print(table)
 
 
+@system_app.callback(invoke_without_command=True)
+def system_default(ctx: typer.Context):
+    """Show system overview."""
+    if ctx.invoked_subcommand:
+        return
+    _render_system_overview()
+
+
 @system_app.command("info")
 def system_info():
     """Show detailed system information."""
-    system_default(None)  # type: ignore[arg-type]
+    _render_system_overview()
 
 
 @system_app.command("clean")

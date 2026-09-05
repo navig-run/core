@@ -48,3 +48,44 @@ def test_prompt_caching_safety():
     assert stats.cache_creation_tokens == 50
     assert stats.cache_read_tokens == 25
     assert stats.api_calls == 2
+
+
+def test_agent_config_bool_toggles_coerce_config_set_strings():
+    """`navig config set agent.<section>.enabled false` stores the STRING "false"
+    (truthy). The agent-config from_dicts must coerce their booleans so a config-set
+    toggle actually takes effect — a raw `.get("enabled", True)` read it as ON."""
+    from navig.agent.config import (
+        AgentConfig,
+        MCPConfig,
+        PersonalityConfig,
+        TelegramConfig,
+    )
+
+    # a config-set string "false"/"off"/"0" disables; "true"/"on" enables
+    assert TelegramConfig.from_dict({"enabled": "true"}).enabled is True
+    assert MCPConfig.from_dict({"enabled": "false"}).enabled is False
+    assert AgentConfig.from_dict({"agent": {"enabled": "false"}}).enabled is False
+    p = PersonalityConfig.from_dict({"emoji_enabled": "off", "proactive": "0"})
+    assert p.emoji_enabled is False and p.proactive is False
+    # real bools pass through; missing keys keep each field's default
+    assert MCPConfig.from_dict({"enabled": False}).enabled is False
+    assert MCPConfig.from_dict({}).enabled is True  # MCPConfig default True
+    assert TelegramConfig.from_dict({}).enabled is False  # TelegramConfig default False
+
+
+def test_hands_safety_gates_honor_config_set_strings():
+    """The command-execution safety gates must honor `navig config set` too. The
+    critical case: `config set agent.hands.sudo_allowed false` (string "false") must
+    DISABLE sudo — a raw read left it truthy (sudo silently stayed on)."""
+    from navig.agent.config import HandsConfig
+
+    # sudo_allowed: the string "false" now actually disables sudo (was left ON before)
+    assert HandsConfig.from_dict({"sudo_allowed": "false"}).sudo_allowed is False
+    assert HandsConfig.from_dict({"sudo_allowed": "true"}).sudo_allowed is True
+    # safe_mode: config-set string now matches a direct-YAML edit
+    assert HandsConfig.from_dict({"safe_mode": "off"}).safe_mode is False
+    assert HandsConfig.from_dict({"safe_mode": "on"}).safe_mode is True
+    # real bools pass through; defaults unchanged (safe_mode=True, sudo_allowed=False)
+    assert HandsConfig.from_dict({"sudo_allowed": True}).sudo_allowed is True
+    assert HandsConfig.from_dict({}).safe_mode is True
+    assert HandsConfig.from_dict({}).sudo_allowed is False

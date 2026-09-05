@@ -4,8 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 import navig.personas.resolver as res_mod
 from navig.personas.resolver import discover_persona_paths, resolve_persona
 

@@ -20,7 +20,17 @@ import re
 import time
 from typing import Any
 
-from navig.net.ssrf import SsrfBlockedError, check_url, policy_from_config
+# The Playwright redirect/subresource route-guard lives in navig.browser.ssrf_guard so the
+# agent's interactive browser tool shares the exact same re-validation. Re-exported under
+# the original private name so existing call sites / tests are unchanged.
+from navig.browser.ssrf_guard import install_ssrf_route_guard as _install_ssrf_route_guard
+from navig.net.ssrf import (
+    SsrfBlockedError,
+    SsrfPolicy,
+    check_url,
+    policy_from_config,
+    safe_fetch,
+)
 from navig.tools.registry import BaseTool, StatusCallback, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -128,8 +138,10 @@ def _extract_text(html: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+
+
 async def _browser_fetch(
-    url: str, on_status: StatusCallback | None
+    url: str, on_status: StatusCallback | None, policy: SsrfPolicy | None = None
 ) -> tuple[str, str, bytes | None]:
     """Use navig BrowserController to render the page.  Returns (html, method_used, screenshot)."""
     if on_status:
@@ -147,6 +159,9 @@ async def _browser_fetch(
     browser = BrowserController(config=config)
     try:
         await browser.start()
+        # Guard BEFORE any navigation — redirects and in-page requests never got the
+        # entry check that stage 1 applied.
+        await _install_ssrf_route_guard(browser._page, policy or policy_from_config())
         await browser._page.goto(url, wait_until="networkidle")
         html = await browser._page.content()
         screenshot_bytes = None
@@ -194,8 +209,11 @@ class BrowserFetchTool(BaseTool):
         # the local daemon, or a private host. Validate before ANY network I/O;
         # both the httpx and Playwright stages below fetch this same url. DNS
         # resolution is blocking, so run the check off the event loop.
+        # Resolved ONCE and reused by every stage: re-reading config per stage would
+        # let a mid-fetch change leave the entry check and the browser guard disagreeing.
+        policy = policy_from_config()
         try:
-            await asyncio.to_thread(check_url, url, policy_from_config())
+            await asyncio.to_thread(check_url, url, policy)
         except SsrfBlockedError:
             return ToolResult(
                 name=self.name,
@@ -220,20 +238,30 @@ class BrowserFetchTool(BaseTool):
         html = ""
         elapsed_ms = 0.0
 
-        # Stage 1 — httpx
+        # Stage 1 — httpx via safe_fetch (re-validates every redirect hop, so a
+        # 302 to a private/internal address is blocked, not followed unchecked).
         try:
-            async with httpx.AsyncClient(
-                follow_redirects=True,
+            t0 = time.monotonic()
+            resp = await safe_fetch(
+                url,
+                policy,
                 timeout=httpx.Timeout(_HTTPX_TIMEOUT),
                 headers={"User-Agent": _USER_AGENT},
-            ) as client:
-                t0 = time.monotonic()
-                resp = await client.get(url)
-                elapsed_ms = (time.monotonic() - t0) * 1000
-                status_code = resp.status_code
-                html = resp.text
-                final_url = str(resp.url)
+            )
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            status_code = resp.status_code
+            html = resp.text
+            final_url = str(resp.url)
 
+        except SsrfBlockedError:
+            return ToolResult(
+                name=self.name,
+                success=False,
+                error=(
+                    f"Blocked: {url} redirects to a private/internal address (SSRF guard). "
+                    "To allow: navig config set net.ssrf.allow_private_network true"
+                ),
+            )
         except httpx.TimeoutException:
             return ToolResult(name=self.name, success=False, error="request timed out (15s)")
         except httpx.ConnectError as exc:
@@ -255,7 +283,9 @@ class BrowserFetchTool(BaseTool):
             await self._emit(on_status, "JS-gated — launching browser…", url[:70], 50)
             try:
                 t0 = time.monotonic()
-                html, method_used, screenshot_bytes = await _browser_fetch(url, on_status)
+                html, method_used, screenshot_bytes = await _browser_fetch(
+                    url, on_status, policy
+                )
                 elapsed_ms += (time.monotonic() - t0) * 1000
                 final_url = url
                 logger.debug("browser_fetch: upgraded to Playwright for %s", url)

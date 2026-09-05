@@ -73,6 +73,20 @@ def register(server: Any) -> None:
         }
     )
 
+    # See navig.mcp_server._gate_tool — unlisted defaults to "safe".
+    # A module's register() must be self-sufficient: register_all_tools creates this
+    # dict, but a direct `module.register(server)` call (tests, a plugin host) does not,
+    # and assuming it exists raised AttributeError. cdp.py already guarded; these did not.
+    if not hasattr(server, "_tool_safety"):
+        server._tool_safety = {}
+    server._tool_safety.update({
+        "navig_block_apply": "dangerous",  # runs the block's ordered steps, incl. commands
+        # read-only — recorded explicitly so a missing entry is a build failure,
+        # not a silent default to "safe".
+        "navig_block_list": "safe",
+        "navig_block_show": "safe",
+    })
+
 
 def _input_schema(block) -> list[dict]:
     return [

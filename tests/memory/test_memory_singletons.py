@@ -200,9 +200,6 @@ class TestLinksDbSingleton:
         monkeypatch.setattr(mod, "_db_instance", None)
         monkeypatch.setattr(mod, "LinksDB", SlowLinksDB)
 
-        # Patch get_config so no real config is needed
-        fake_cfg = type("Cfg", (), {"data_dir": str(tmp_path)})()
-        monkeypatch.setattr("navig.config.get_config", lambda: fake_cfg, raising=False)
 
         results = _collect(mod.get_links_db)
 
@@ -217,9 +214,6 @@ class TestLinksDbSingleton:
         import navig.memory.links_db as mod
 
         monkeypatch.setattr(mod, "_db_instance", None)
-
-        fake_cfg = type("Cfg", (), {"data_dir": str(tmp_path)})()
-        monkeypatch.setattr("navig.config.get_config", lambda: fake_cfg, raising=False)
 
         first = mod.get_links_db()
         mod.reset_links_db()
@@ -255,9 +249,6 @@ class TestKnowledgeGraphSingleton:
         monkeypatch.setattr(mod, "_kg_instance", None)
         monkeypatch.setattr(mod, "KnowledgeGraph", SlowKG)
 
-        fake_cfg = type("Cfg", (), {"data_dir": str(tmp_path)})()
-        monkeypatch.setattr("navig.config.get_config", lambda: fake_cfg, raising=False)
-
         results = _collect(mod.get_knowledge_graph)
 
         assert len(set(id(r) for r in results)) == 1, "Multiple instances created"
@@ -271,9 +262,6 @@ class TestKnowledgeGraphSingleton:
         import navig.memory.knowledge_graph as mod
 
         monkeypatch.setattr(mod, "_kg_instance", None)
-
-        fake_cfg = type("Cfg", (), {"data_dir": str(tmp_path)})()
-        monkeypatch.setattr("navig.config.get_config", lambda: fake_cfg, raising=False)
 
         first = mod.get_knowledge_graph()
         mod.reset_knowledge_graph()

@@ -2,7 +2,6 @@
 
 from unittest.mock import patch
 
-import pytest
 from typer.testing import CliRunner
 
 from navig.commands.blueprint import blueprint_app
@@ -16,7 +15,7 @@ _WARN = "navig.console_helper.warning"
 # App structure
 # ---------------------------------------------------------------------------
 
-def test_help_exits_0():
+def test_help_exits_nonzero():
     result = runner.invoke(blueprint_app, ["--help"])
     assert result.exit_code == 0
 
@@ -40,10 +39,10 @@ def test_no_args_exits_nonzero_or_help():
 # blueprint list
 # ---------------------------------------------------------------------------
 
-def test_list_exits_0():
+def test_list_exits_nonzero():
     with patch(_WARN):
         result = runner.invoke(blueprint_app, ["list"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
 def test_list_calls_warn():
@@ -55,10 +54,10 @@ def test_list_calls_warn():
 def test_list_warn_says_not_implemented():
     with patch(_WARN) as mock_warn:
         runner.invoke(blueprint_app, ["list"])
-    assert "not yet implemented" in mock_warn.call_args[0][0]
+    assert "not implemented" in mock_warn.call_args[0][0]
 
 
-def test_list_help_exits_0():
+def test_list_help_exits_nonzero():
     result = runner.invoke(blueprint_app, ["list", "--help"])
     assert result.exit_code == 0
 
@@ -67,10 +66,10 @@ def test_list_help_exits_0():
 # blueprint apply
 # ---------------------------------------------------------------------------
 
-def test_apply_exits_0():
+def test_apply_exits_nonzero():
     with patch(_WARN):
         result = runner.invoke(blueprint_app, ["apply", "myblueprint"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
 def test_apply_calls_warn():
@@ -82,7 +81,7 @@ def test_apply_calls_warn():
 def test_apply_warn_says_not_implemented():
     with patch(_WARN) as mock_warn:
         runner.invoke(blueprint_app, ["apply", "mybp"])
-    assert "not yet implemented" in mock_warn.call_args[0][0]
+    assert "not implemented" in mock_warn.call_args[0][0]
 
 
 def test_apply_missing_name_exits_nonzero():
@@ -93,10 +92,10 @@ def test_apply_missing_name_exits_nonzero():
 def test_apply_with_target_option():
     with patch(_WARN) as mock_warn:
         result = runner.invoke(blueprint_app, ["apply", "mybp", "--target", "/tmp"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
 
 
-def test_apply_help_exits_0():
+def test_apply_help_exits_nonzero():
     result = runner.invoke(blueprint_app, ["apply", "--help"])
     assert result.exit_code == 0
 

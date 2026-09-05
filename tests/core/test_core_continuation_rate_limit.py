@@ -3,8 +3,6 @@ Batch 79: navig/core/continuation.py, navig/core/rate_limit_tracker.py
 """
 from __future__ import annotations
 
-import time
-
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -12,14 +10,10 @@ import pytest
 # ---------------------------------------------------------------------------
 from navig.core.continuation import (
     ContinuationPolicy,
-    apply_busy_suppression,
-    busy_window_seconds,
     classify_continuation_state,
     consume_skip,
     decision_sensitivity_for_profile,
-    get_busy_suppression,
     is_decision_point,
-    is_decision_point_for_profile,
     mark_continued,
     merge_policy,
     normalize_profile_name,

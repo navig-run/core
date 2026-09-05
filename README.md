@@ -518,7 +518,7 @@ navig/
 │   ├── daemon/          # Background service entry point
 │   ├── core/            # Config loader, migrations, crash handler
 │   └── resources/       # Default prompts, personas, assets
-├── sdk/                 # Python SDK package
+├── sdk/                 # Pointer to the SDK in navig-run/community
 ├── scripts/             # Install and deployment scripts
 ├── deploy/              # Docker, systemd, hardening configs
 ├── docs/                # Documentation

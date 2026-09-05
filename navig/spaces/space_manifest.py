@@ -101,6 +101,37 @@ class SpaceManifest:
         return self._id_list("apps")
 
     @property
+    def app_sections(self) -> dict[str, dict[str, list[str]]]:
+        """The space's per-app SECTION layouts (desktop sidebar view-filter).
+
+        Shape: ``{"finance": {"order": ["Ledger", ...], "hidden": ["Leaks"]}}``.
+        Absent/empty ⇒ every app renders its declared sections in registry order.
+
+        A view-filter, exactly like :attr:`app_allowlist` — it can only reorder
+        or hide sections an app already declares, never add one or change what
+        the app can do. Malformed entries are DROPPED rather than raised on: a
+        hand-edited manifest must not be able to break the sidebar, and an id
+        that no longer matches simply stops applying.
+        """
+        val = self.data.get("app_sections")
+        if not isinstance(val, dict):
+            return {}
+        out: dict[str, dict[str, list[str]]] = {}
+        for app_id, layout in val.items():
+            if not isinstance(app_id, str) or not app_id.strip() or not isinstance(layout, dict):
+                continue
+            entry: dict[str, list[str]] = {}
+            for key in ("order", "hidden"):
+                ids = layout.get(key)
+                if isinstance(ids, list):
+                    clean = [s.strip() for s in ids if isinstance(s, str) and s.strip()]
+                    if clean:
+                        entry[key] = clean
+            if entry:
+                out[app_id.strip()] = entry
+        return out
+
+    @property
     def books(self) -> str | None:
         """The finance BOOK this space works in (locked rule #6: Default space →
         personal books; Company space → company books).
@@ -128,8 +159,43 @@ def find_manifest_file(space_dir: Path) -> Path | None:
     return None
 
 
+# Manifests already reported as unreadable this process. `load_space_manifest` runs
+# once per space on EVERY scan (dozens of spaces, many times a minute), so without
+# this a single bad file would bury the incident log in duplicates of itself.
+# Per-process, so a daemon restart re-reports — which is what you want if it's
+# still broken.
+_reported_unreadable: set[str] = set()
+
+
+def _report_unreadable(path: Path, reason: str) -> None:
+    """Record that a manifest degraded to EMPTY. Never raises, never duplicates.
+
+    The degradation itself is deliberate — a bad manifest must not break a space
+    switch — but it is exactly the shape of failure this codebase keeps getting
+    burned by: everything stays green while the space quietly loses its name, its
+    pinned apps, and its finance ``books`` (so Finance silently starts writing to
+    the personal ledger). Surviving it is right; hiding it is not.
+    """
+    key = str(path)
+    if key in _reported_unreadable:
+        return
+    _reported_unreadable.add(key)
+    try:
+        from navig.core import incidents  # noqa: PLC0415 — keep the import off the scan path
+
+        incidents.record(incidents.SPACE_MANIFEST_UNREADABLE, path=key, reason=reason)
+    except Exception:  # noqa: BLE001 — an observation must never break the observed
+        pass
+
+
 def load_space_manifest(space_dir: Path) -> SpaceManifest:
-    """Parse the space manifest permissively. Never raises."""
+    """Parse the space manifest permissively. Never raises.
+
+    A manifest that cannot be parsed degrades to an EMPTY manifest (so a switch
+    never breaks) **and** records a ``space_manifest_unreadable`` incident, which
+    surfaces in ``navig doctor`` → Config Health and pushes through the
+    config-incidents monitor. See :func:`_report_unreadable`.
+    """
     path = find_manifest_file(space_dir)
     if path is None:
         return SpaceManifest()  # bare .navig/ — still a valid space
@@ -141,13 +207,17 @@ def load_space_manifest(space_dir: Path) -> SpaceManifest:
         else:
             data = json.loads(text)
         if not isinstance(data, dict):
+            # Parsed, but not an object — a list or scalar at the top level. Same
+            # empty-manifest outcome as a parse error, so report it the same way.
+            _report_unreadable(path, f"top level is {type(data).__name__}, not an object")
             return SpaceManifest(source_path=path)
         # Some schemas nest everything under a top-level "space:" key.
         inner = data.get("space")
         if isinstance(inner, dict) and "id" not in data and "space_id" not in data:
             data = {**data, **inner}
         return SpaceManifest(data, source_path=path)
-    except Exception:  # noqa: BLE001 — permissive: a bad manifest must not break a switch
+    except Exception as exc:  # noqa: BLE001 — permissive: a bad manifest must not break a switch
+        _report_unreadable(path, f"{type(exc).__name__}: {exc}")
         return SpaceManifest(source_path=path)
 
 
@@ -179,6 +249,18 @@ def set_manifest_field(
     :class:`ManifestNotWritable` instead of being overwritten — a failed read
     must never become a destructive write (see the config-layer rule in
     CLAUDE.md). Writes pretty JSON with a trailing newline, matching the scaffold.
+
+    The write is ATOMIC (temp-file + fsync + replace, via
+    ``navig.core.json_io.atomic_write_json``). It used to truncate-then-write in
+    place, which was survivable while this was an admin-frequency writer — but
+    the desktop sidebar now calls it on every app/section drag, hide and
+    reorder, so a crash, a full disk, or a sync client locking the file
+    mid-write became a realistic way to leave ``space.json`` truncated. That
+    matters more than it looks: :func:`load_space_manifest` deliberately
+    swallows a corrupt manifest and returns an EMPTY one, so the space would
+    silently lose its ``name``, its pinned ``apps``, and — worst — its
+    ``books``, re-pointing Finance at the default personal ledger with every
+    surface still green.
     """
     nav = space_dir / ".navig"
     path = find_manifest_file(space_dir)
@@ -199,5 +281,12 @@ def set_manifest_field(
         data.pop(key, None)
     else:
         data[key] = value
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    # atomic_write_TEXT, not atomic_write_json: the json helper emits no trailing
+    # newline, and this function's contract (and the scaffold it has to match) is
+    # pretty JSON *with* one. Same atomicity, byte-identical output.
+    from navig.core.yaml_io import (
+        atomic_write_text,  # noqa: PLC0415 — keep import cost off the hot path
+    )
+
+    atomic_write_text(path, json.dumps(data, indent=2) + "\n")
     return path

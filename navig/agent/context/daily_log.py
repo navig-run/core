@@ -136,6 +136,7 @@ class DailyLog:
         """Get database connection with auto-commit."""
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout=5000")  # wait for a lock, don't error instantly
         try:
             yield conn
             conn.commit()

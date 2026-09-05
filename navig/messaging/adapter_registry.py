@@ -1,7 +1,14 @@
 """
 AdapterRegistryManager — Manages messaging adapters with compliance gating.
 
-Wraps the gateway :class:`ChannelRegistry` to add:
+Modelled on the gateway's :class:`ChannelRegistry`, but INDEPENDENT of it — it does not
+wrap, hold, or consult one. The old "Wraps the gateway ChannelRegistry" wording is part
+of why `gateway/server.py` reached for a `ChannelRegistry.instance()` that has never
+existed in order to hand this registry's Telegram adapter its bot; the branch was
+unreachable, so the adapter went bot-less on every install. The bot now comes straight
+from the live channel (``gateway.channels["telegram"]``).
+
+Adds:
 - Adapter instance lifecycle (register / lookup / availability)
 - Compliance mode tracking per adapter
 - Experimental gating (disabled adapters refuse send)

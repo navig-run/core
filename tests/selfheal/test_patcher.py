@@ -165,3 +165,113 @@ class TestPatchIsValidUnifiedDiff:
         """An empty findings list must return an empty string without raising."""
         result = build_patch([], tmp_repo)
         assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# Structural validity — `suggested_fix` and `description` are LLM free text
+# ---------------------------------------------------------------------------
+
+
+def _assert_structurally_valid(patch_str: str) -> None:
+    """Every line of a unified diff must carry a diff prefix.
+
+    A newline inside `suggested_fix`/`description` used to land INSIDE one element of the line
+    list, so difflib counted one line where the file had two: the extra physical line was emitted
+    with NO prefix and `git apply` rejected the whole patch as corrupt.
+    """
+    for line in patch_str.splitlines():
+        if line.startswith(("---", "+++", "@@")) or not line:
+            continue
+        assert line[0] in " +-\\", f"line without a diff prefix (corrupt patch): {line!r}"
+
+
+def _write(repo: Path, rel: str, text: str) -> Path:
+    path = repo / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+class TestLLMTextCannotCorruptTheDiff:
+    """`suggested_fix` and `description` come from an LLM — newlines must not break the patch."""
+
+    def test_multiline_fix_is_spliced_into_separate_lines(self, tmp_repo: Path) -> None:
+        _write(tmp_repo, "navig/commands/example.py", "def f():\n    x = 1\n    return x\n")
+        finding = _make_finding(severity="high", line=2, suggested_fix="x = 1\nassert x")
+
+        patch_str = build_patch([finding], tmp_repo)
+
+        _assert_structurally_valid(patch_str)
+        added = [ln for ln in patch_str.splitlines() if ln.startswith("+") and ln[1:2] != "+"]
+        assert any("assert x" in ln for ln in added), "the second row must be its own + line"
+        # difflib must see the real line count: 3 lines in, 4 out.
+        assert "@@ -1,3 +1,4 @@" in patch_str
+
+    def test_newline_in_description_collapses_to_one_comment(self, tmp_repo: Path) -> None:
+        _write(tmp_repo, "navig/commands/example.py", "x = old\n")
+        finding = _make_finding(severity="critical", line=1, suggested_fix="x = new")
+        finding.description = "first line\nsecond line"
+
+        patch_str = build_patch([finding], tmp_repo)
+
+        _assert_structurally_valid(patch_str)
+        assert "NAVIG-HEAL: first line second line" in patch_str
+
+    def test_whitespace_only_fix_does_not_delete_the_line(self, tmp_repo: Path) -> None:
+        _write(tmp_repo, "navig/commands/example.py", "keep_me = 1\n")
+        finding = _make_finding(severity="critical", line=1, suggested_fix="   \n  ")
+
+        patch_str = build_patch([finding], tmp_repo)
+
+        _assert_structurally_valid(patch_str)
+        assert "keep_me = 1" in patch_str
+
+
+class TestBuildPatchIsPure:
+    """Building a patch must not mutate the working tree.
+
+    `_append_requirement` used to write requirements.txt during generation — before the caller's
+    final "Submit this patch?" confirmation, and outside the returned diff. Since
+    `commit_and_push` runs `git add --all`, an LLM-suggested dependency reached the PR without
+    ever appearing in the diff a human approved.
+    """
+
+    def test_requirements_file_is_not_modified_on_disk(self, tmp_repo: Path) -> None:
+        _write(tmp_repo, "navig/commands/example.py", "x = 1\n")
+        req = _write(tmp_repo, "requirements.txt", "httpx==0.27\n")
+        before = req.read_text(encoding="utf-8")
+
+        build_patch([_make_finding(suggested_fix="pip install tenacity")], tmp_repo)
+
+        assert req.read_text(encoding="utf-8") == before
+
+    def test_new_dependency_rides_in_the_diff(self, tmp_repo: Path) -> None:
+        _write(tmp_repo, "navig/commands/example.py", "x = 1\n")
+        _write(tmp_repo, "requirements.txt", "httpx==0.27\n")
+
+        patch_str = build_patch([_make_finding(suggested_fix="pip install tenacity")], tmp_repo)
+
+        _assert_structurally_valid(patch_str)
+        assert "+++ b/requirements.txt" in patch_str
+        assert "+tenacity" in patch_str
+
+    def test_existing_dependency_is_not_duplicated(self, tmp_repo: Path) -> None:
+        _write(tmp_repo, "navig/commands/example.py", "x = 1\n")
+        _write(tmp_repo, "requirements.txt", "httpx==0.27\n")
+
+        patch_str = build_patch([_make_finding(suggested_fix="pip install httpx")], tmp_repo)
+
+        assert "requirements.txt" not in patch_str
+
+    def test_install_instruction_does_not_replace_source_code(self, tmp_repo: Path) -> None:
+        """"pip install X" is an instruction, not a line of Python — it must never be written
+        into the source file (the dependency hunk carries the change instead)."""
+        _write(tmp_repo, "navig/commands/example.py", "import json\n")
+        _write(tmp_repo, "requirements.txt", "httpx==0.27\n")
+
+        patch_str = build_patch(
+            [_make_finding(line=1, suggested_fix="pip install tenacity")], tmp_repo
+        )
+
+        _assert_structurally_valid(patch_str)
+        assert "+pip install tenacity" not in patch_str

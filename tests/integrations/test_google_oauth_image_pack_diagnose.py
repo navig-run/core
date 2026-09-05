@@ -162,7 +162,6 @@ def test_image_pack_declares_no_single_required_key():
 
 def test_image_pack_has_prompt_parameter():
     from navig.tools.domains.image_pack import register_tools
-    from navig.tools.router import ToolMeta
 
     registry = _make_registry()
     register_tools(registry)
@@ -172,7 +171,6 @@ def test_image_pack_has_prompt_parameter():
 
 def test_image_pack_has_size_parameter():
     from navig.tools.domains.image_pack import register_tools
-    from navig.tools.router import ToolMeta
 
     registry = _make_registry()
     register_tools(registry)
@@ -182,7 +180,6 @@ def test_image_pack_has_size_parameter():
 
 def test_image_pack_default_size():
     from navig.tools.domains.image_pack import register_tools
-    from navig.tools.router import ToolMeta
 
     registry = _make_registry()
     register_tools(registry)
@@ -192,7 +189,6 @@ def test_image_pack_default_size():
 
 def test_image_pack_tags_include_image():
     from navig.tools.domains.image_pack import register_tools
-    from navig.tools.router import ToolMeta
 
     registry = _make_registry()
     register_tools(registry)

@@ -28,7 +28,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
+from navig.notify.delivery import all_channels_failed
+from navig.notify.producers import spawn
 from navig.notify.producers.self_errors import _Throttle
 
 logger = logging.getLogger("navig.notify")
@@ -59,10 +62,28 @@ class ConfigIncidentReporter:
             if not self._throttle.allow(event, now):
                 return
             title, body = self._render(event)
+            suppressed = self._throttle.drain_suppressed()
+            if suppressed:
+                body += f"\n\n(+{suppressed} further incident(s) suppressed by the rate limit)"
             # record() may run on any thread (write-batcher, boot) — hop to the loop.
-            self._loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self._sink(title, body)))
+            # spawn() keeps a strong ref so the push can't be GC'd before it runs —
+            # a dropped task here would silently lose the very incident alert this
+            # producer exists to deliver.
+            self._loop.call_soon_threadsafe(lambda: spawn(self._deliver(event, title, body)))
         except Exception:  # noqa: BLE001 — a push must never break record()
             pass
+
+    async def _deliver(self, event: str, title: str, body: str) -> None:
+        """Send, then reconcile the throttle reservation with what actually happened.
+
+        ``allow()`` is consulted before the send (to avoid a storm), so a push that
+        reached zero channels would otherwise burn this event's cooldown and suppress
+        the next identical incident — losing a config rescue twice over, which is the
+        precise silent failure this producer exists to prevent.
+        """
+        outcome = await self._sink(title, body)
+        if all_channels_failed(outcome):
+            self._throttle.rollback(event)
 
     @staticmethod
     def _render(event: str) -> tuple[str, str]:
@@ -73,14 +94,19 @@ class ConfigIncidentReporter:
         # and the deck feed renders the type's own icon — a title emoji would double it.
         return "NAVIG config health", summary
 
-    async def _dispatch(self, title: str, body: str) -> None:
+    async def _dispatch(self, title: str, body: str) -> Any:
+        """Returns the dispatch outcome so ``_deliver`` can tell delivery from silence."""
         try:
             from navig.notify import dispatch
 
-            await dispatch(NOTIFY_TYPE, title, body, priority=_PRIORITY,
-                           data={"source": "navig"})
+            return await dispatch(NOTIFY_TYPE, title, body, priority=_PRIORITY,
+                                  data={"source": "navig"})
         except Exception:  # noqa: BLE001
             logger.debug("config-incident notify failed", exc_info=True)
+            # None, not an all-failed shape: a raising dispatch is a bug in the
+            # dispatch path, and rolling the throttle back would let a
+            # deterministically-failing incident storm. Keep the reservation.
+            return None
 
 
 _reporter: ConfigIncidentReporter | None = None

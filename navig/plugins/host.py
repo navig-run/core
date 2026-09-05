@@ -413,7 +413,7 @@ class PluginHost:
             try:
                 subprocess.run(
                     ["git", "clone", "--depth", "1", url, str(clone_dir)],
-                    check=True, capture_output=True, text=True,
+                    check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
                 )
             except (subprocess.CalledProcessError, FileNotFoundError) as exc:
                 detail = getattr(exc, "stderr", None) or str(exc)

@@ -13,11 +13,6 @@ Batch 102 — tests for:
 from __future__ import annotations
 
 import logging
-import tempfile
-from pathlib import Path
-from unittest.mock import patch
-
-import pytest
 
 # ============================================================================
 # navig.console_helper
@@ -197,7 +192,7 @@ class TestGetConsole:
         assert c is not None
 
     def test_console_singleton(self):
-        from navig.console_helper import console, get_console
+        from navig.console_helper import get_console
 
         # get_console() should return the same global console proxy
         c = get_console()

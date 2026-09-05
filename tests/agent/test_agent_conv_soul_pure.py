@@ -295,7 +295,9 @@ class TestScanSoulFilesPriority:
             if content is not None:
                 p.write_text(content, encoding="utf-8")
             entries.append((p, tag))
-        monkeypatch.setattr(soulmod, "_soul_candidates", lambda: entries)
+        # *_a/**_k: _soul_candidates now takes (persona, space, cwd) and delegates
+        # to the unified chain in navig.personas.soul_loader.
+        monkeypatch.setattr(soulmod, "_soul_candidates", lambda *_a, **_k: entries)
 
     def test_returns_three_tuple(self, tmp_path, monkeypatch):
         self._patch_candidates(tmp_path, monkeypatch, resources="default identity")
@@ -347,7 +349,9 @@ class TestScanSoulFilesPriority:
         bad.write_bytes(b"\xff\xfe not valid utf-8 \x80\x81")
         good = tmp_path / "resources_SOUL.md"
         good.write_text("good default identity", encoding="utf-8")
-        monkeypatch.setattr(soulmod, "_soul_candidates", lambda: [(bad, "workspace"), (good, "resources")])
+        monkeypatch.setattr(
+            soulmod, "_soul_candidates", lambda *_a, **_k: [(bad, "workspace"), (good, "resources")]
+        )
         raw, has_rich, source = soulmod._scan_soul_files()
         assert raw == "good default identity"
         assert source == "resources"

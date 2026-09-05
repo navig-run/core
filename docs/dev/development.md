@@ -168,7 +168,7 @@ pytest -v --tb=long
 ### Measuring Startup Time
 ```bash
 # Quick measurement
-python scripts/build.py --measure-startup
+python tools/build.py --measure-startup
 
 # Detailed import timing
 python -X importtime -c "import navig.cli" 2>&1 | head -30
@@ -217,7 +217,7 @@ def start_tunnel():
 For faster imports during development:
 ```bash
 # Pre-compile all modules
-python scripts/build.py --compile-bytecode
+python tools/build.py --compile-bytecode
 
 # Or manually
 python -m compileall navig/

@@ -227,21 +227,25 @@ def install_with_progress(
 def write_skills_lock(project: Path, picks: list[SkillPick]) -> None:
     """Record installed skills in `<project>/.navig/skills-lock.json` (parity with
     a project lock → reproducible + committable for the whole team)."""
-    import json
+    from navig.core.json_io import JsonReadError, atomic_write_json, load_json_for_update
 
     lock_path = project / ".navig" / "skills-lock.json"
     try:
-        data = json.loads(lock_path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict) or "skills" not in data:
-            data = {"version": 1, "skills": {}}
-    except Exception:  # noqa: BLE001
+        data = load_json_for_update(lock_path, default={"version": 1, "skills": {}})
+    except JsonReadError:
+        # The lock-file is present but transiently unreadable (a lock / a half-written
+        # read). Rewriting it now would DROP every previously-recorded skill — skip this
+        # update; the caller can re-run once the file is free.
+        _c.print("  [yellow]![/] skills-lock.json is locked — skipping the update so prior entries aren't lost")
+        return
+    if not isinstance(data, dict) or "skills" not in data:
         data = {"version": 1, "skills": {}}
     for p in picks:
         data["skills"][_skill_id(p)] = {"source": p.ref, "spec": p.spec, "tech": p.tech}
     data["skills"] = {k: data["skills"][k] for k in sorted(data["skills"])}
     try:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
-        lock_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        atomic_write_json(data, lock_path)
     except Exception:  # noqa: BLE001
         pass
 

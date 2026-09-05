@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.memory._util import safe_json_loads
 from navig.memory.paths import get_key_facts_db_path
 
 logger = logging.getLogger("navig.memory.key_facts")
@@ -123,7 +124,7 @@ class KeyFact:
             id=row["id"],
             content=row["content"],
             category=row["category"],
-            tags=json.loads(row["tags"]) if row["tags"] else [],
+            tags=safe_json_loads(row["tags"], []),
             confidence=row["confidence"],
             source_conversation_id=row["source_conversation_id"],
             source_platform=row["source_platform"],
@@ -133,8 +134,8 @@ class KeyFact:
             deleted=bool(row["deleted"]),
             access_count=row["access_count"],
             last_accessed=row["last_accessed"],
-            embedding=json.loads(row["embedding"]) if row["embedding"] else None,
-            metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+            embedding=safe_json_loads(row["embedding"], None),
+            metadata=safe_json_loads(row["metadata"], {}),
             # Guard against a row from a pre-migration db (column absent → approved).
             approved=(row["approved"] if "approved" in row.keys() else 1),
         )
@@ -513,7 +514,10 @@ class KeyFactStore:
                     (query, limit),
                 ).fetchall()
                 return [(KeyFact.from_row(r), abs(r["rank"])) for r in rows]
-            except sqlite3.OperationalError:
+            except sqlite3.DatabaseError:
+                # DatabaseError, not OperationalError: a damaged index raises the PARENT
+                # class ("database disk image is malformed"), so catching only the child
+                # let search hard-fail on exactly the databases that needed the fallback.
                 pass  # fall through to LIKE fallback
         # LIKE fallback
         like = f"%{query}%"
@@ -634,12 +638,24 @@ class KeyFactStore:
         # Approximation: check updated_at
         with self._write_lock:
             conn = self._conn()
+            stale = """deleted = 1
+                     AND julianday('now') - julianday(updated_at) > ?"""
+            # `key_facts_fts` is a standalone FTS table kept in sync by hand (there is no
+            # delete trigger), so a hard delete here would strand the purged facts' text
+            # in the index forever: it grows unboundedly with every purge and skews BM25
+            # ranking with documents that no longer exist. search_keyword INNER JOINs
+            # key_facts, so orphans can't surface as results — this is hygiene, not a
+            # correctness leak. Collect the ids BEFORE the delete; afterwards they're gone.
+            purged = [
+                r["id"]
+                for r in conn.execute(
+                    f"SELECT id FROM key_facts WHERE {stale}", (older_than_days,)
+                ).fetchall()
+            ]
             cursor = conn.execute(
-                """DELETE FROM key_facts
-                   WHERE deleted = 1
-                     AND julianday('now') - julianday(updated_at) > ?""",
-                (older_than_days,),
+                f"DELETE FROM key_facts WHERE {stale}", (older_than_days,)
             )
+            self._delete_fts_conn(conn, purged)
             conn.commit()
             return cursor.rowcount
 
@@ -750,6 +766,22 @@ class KeyFactStore:
             )
         except sqlite3.OperationalError as exc:
             logger.debug("FTS update failed: %s", exc)
+
+    def _delete_fts_conn(self, conn: sqlite3.Connection, fact_ids: list[str]) -> None:
+        """Drop *fact_ids* from the FTS index on *conn* without committing.
+
+        The caller must collect the ids BEFORE hard-deleting the rows — once they are
+        gone from ``key_facts`` there is nothing left to derive them from.
+        """
+        if not self._fts_available or not fact_ids:
+            return
+        try:
+            conn.executemany(
+                "DELETE FROM key_facts_fts WHERE fact_id = ?",
+                [(fid,) for fid in fact_ids],
+            )
+        except sqlite3.OperationalError as exc:
+            logger.debug("FTS delete failed: %s", exc)
 
     @staticmethod
     def _cosine_similarity(a: list[float], b: list[float]) -> float:

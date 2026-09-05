@@ -24,6 +24,8 @@ import subprocess
 import urllib.parse
 from typing import TYPE_CHECKING
 
+from navig.core.proc_text import decode_console_result
+
 from .events import HookContext, HookEvent, HookResult
 from .registry import HookDefinition, HookRegistry
 
@@ -117,14 +119,13 @@ class HookExecutor:
         )
 
         try:
-            proc = subprocess.run(  # noqa: S602
+            proc = decode_console_result(subprocess.run(  # noqa: S602
                 defn.command,
                 shell=True,
                 input=stdin_payload,
                 capture_output=True,
-                text=True,
-                timeout=defn.timeout_seconds,
-            )
+                                timeout=defn.timeout_seconds,
+            ))
         except subprocess.TimeoutExpired:
             logger.warning(
                 "hooks.executor: hook '%s' timed out after %ds",

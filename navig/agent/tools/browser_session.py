@@ -81,6 +81,20 @@ class BrowserSession:
 
 _SESSIONS: dict[str, BrowserSession] = {}
 
+# Per-key open lock: get_or_open() does get→miss→`await _open_controller()`→insert, and the
+# await is a yield point — two coroutines racing the same key would BOTH launch a browser and
+# the first one, overwritten in _SESSIONS, becomes untracked (never GC'd/closed) → a leaked
+# headless Chromium. The lock serialises the miss→open→insert window per key.
+_KEY_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _key_lock(key: str) -> asyncio.Lock:
+    lock = _KEY_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _KEY_LOCKS[key] = lock
+    return lock
+
 
 # session_key -> CDP endpoint of a *visible* browser (e.g. navig-os's WebView2
 # pane) that navig-os has advertised. When set, the agent ATTACHES to that
@@ -97,6 +111,31 @@ def _port_from_endpoint(cdp_url: str) -> int | None:
         return int(host_port.rsplit(":", 1)[-1])
     except (ValueError, IndexError):
         return None
+
+
+async def _guard_controller(ctrl: Any) -> None:
+    """Install the SSRF route-guard on an AGENT browser controller (started).
+
+    The agent navigates to model-chosen URLs; after the entry URL passes ``check_url``
+    the page can still be steered to an internal host by a redirect / ``<meta refresh>`` /
+    JS ``location=`` / subresource. The guard re-validates every in-page request and aborts
+    the blocked ones. Installed on the browser *context* so it covers every tab the agent
+    opens. Scoped to agent sessions only — the operator's own ``navig cdp`` browsers use a
+    different path and are untouched; local/LAN targets are reachable only with
+    ``net.ssrf.allow_private_network``.
+
+    Best-effort: if route interception is unavailable we log and continue — the per-navigate
+    ``check_url`` on the entry URL (in ``browser_tools``) is still a backstop.
+    """
+    try:
+        from navig.browser.ssrf_guard import install_ssrf_route_guard
+        from navig.net.ssrf import policy_from_config
+
+        target = getattr(ctrl, "_context", None) or getattr(ctrl, "_page", None)
+        if target is not None:
+            await install_ssrf_route_guard(target, policy_from_config())
+    except Exception as exc:  # noqa: BLE001 — never block opening the browser on the guard
+        logger.warning("[browser] could not install SSRF route guard: %s", exc)
 
 
 async def _open_controller(stealth: bool, cdp_url: str | None = None) -> Any:
@@ -123,6 +162,7 @@ async def _open_controller(stealth: bool, cdp_url: str | None = None) -> Any:
 
         ctrl = CDPBridge(debug_port=port)
         await ctrl.start()  # attaches to the existing browser — no new window
+        await _guard_controller(ctrl)
         return ctrl
 
     if stealth:
@@ -135,6 +175,7 @@ async def _open_controller(stealth: bool, cdp_url: str | None = None) -> Any:
     else:
         ctrl = BrowserController(BrowserConfig(headless=True, timeout_ms=30_000))
     await ctrl.start()
+    await _guard_controller(ctrl)
     return ctrl
 
 
@@ -144,25 +185,33 @@ async def get_or_open(key: str, stealth: bool = False) -> BrowserSession:
     If navig-os has registered a desktop CDP endpoint for *key*, attach to that
     visible pane instead of launching a headless browser.
     """
+    # Fast path — a live session needs no lock.
     sess = _SESSIONS.get(key)
     if sess is not None and getattr(sess.controller, "is_running", False):
         sess.last_used = time.monotonic()
         return sess
 
-    _SESSIONS.pop(key, None)  # stale/closed → drop
-    if len(_SESSIONS) >= MAX_SESSIONS:
-        oldest = min(_SESSIONS.items(), key=lambda kv: kv[1].last_used)[0]
-        await _close(oldest)
+    async with _key_lock(key):
+        # Re-check under the lock: a coroutine that raced us may have just opened it.
+        sess = _SESSIONS.get(key)
+        if sess is not None and getattr(sess.controller, "is_running", False):
+            sess.last_used = time.monotonic()
+            return sess
 
-    cdp_url = _DESKTOP_ENDPOINTS.get(key)
-    ctrl = await _open_controller(stealth, cdp_url=cdp_url)
-    sess = BrowserSession(controller=ctrl)
-    _SESSIONS[key] = sess
-    logger.info(
-        "[browser] opened session %r via %s (total=%d)",
-        key, "desktop-pane CDP" if cdp_url else "headless", len(_SESSIONS),
-    )
-    return sess
+        _SESSIONS.pop(key, None)  # stale/closed → drop
+        if len(_SESSIONS) >= MAX_SESSIONS:
+            oldest = min(_SESSIONS.items(), key=lambda kv: kv[1].last_used)[0]
+            await _close(oldest)
+
+        cdp_url = _DESKTOP_ENDPOINTS.get(key)
+        ctrl = await _open_controller(stealth, cdp_url=cdp_url)
+        sess = BrowserSession(controller=ctrl)
+        _SESSIONS[key] = sess
+        logger.info(
+            "[browser] opened session %r via %s (total=%d)",
+            key, "desktop-pane CDP" if cdp_url else "headless", len(_SESSIONS),
+        )
+        return sess
 
 
 async def _close(key: str) -> bool:

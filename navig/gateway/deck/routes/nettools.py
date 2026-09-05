@@ -12,9 +12,10 @@ import logging
 import re
 import socket
 import ssl
-import subprocess
 from datetime import datetime, timezone
 from typing import Any
+
+from navig.core.aio_subprocess import communicate_or_kill
 
 try:
     from aiohttp import web
@@ -60,7 +61,7 @@ async def handle_deck_net_server(request: "web.Request") -> "web.Response":
             "curl", "-sS", "--max-time", "4", "https://api.ipify.org",
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
         )
-        out, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+        out, _ = await communicate_or_kill(proc, 5)
         public_ip = (out or b"").decode().strip()
     except Exception:
         pass
@@ -100,7 +101,7 @@ async def handle_deck_net_dns(request: "web.Request") -> "web.Response":
                 *argv,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             )
-            out, err = await asyncio.wait_for(proc.communicate(), timeout=8)
+            out, err = await communicate_or_kill(proc, 8)
             text = (out or b"").decode(errors="replace")
             payload: dict[str, Any] = {"domain": domain, "type": record_type, "raw": text}
             if resolver:
@@ -207,7 +208,7 @@ async def handle_deck_net_weather(request: "web.Request") -> "web.Response":
             "curl", "-sS", "--max-time", "8", url,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
         )
-        out, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+        out, _ = await communicate_or_kill(proc, 10)
         import json
         data = json.loads((out or b"{}").decode(errors="replace"))
         current = (data.get("current_condition") or [{}])[0]

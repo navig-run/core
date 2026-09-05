@@ -6,8 +6,6 @@ Tests focus on the pure static methods (no key derivation → no slow KDF).
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from navig.vault.crypto import (

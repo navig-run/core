@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import typer
+
 from navig import console_helper as ch
 from navig.commands._db_utils import (
     calculate_file_checksum,
@@ -14,6 +16,7 @@ from navig.commands._db_utils import (
     get_db_host_port,
     run_mysql_query,
 )
+from navig.core.proc_text import decode_console_result
 
 
 def execute_sql(query: str, options: dict[str, Any]):
@@ -79,18 +82,24 @@ def execute_sql(query: str, options: dict[str, Any]):
                 }
             )
         )
+    elif success:
+        ch.raw_print(stdout)
     else:
-        if success:
-            ch.raw_print(stdout)
-        else:
-            ch.error(f"SQL Error: {stderr}")
+        ch.error(f"SQL Error: {stderr}")
+
+    if not success:
+        # Checked outside the json/human split so BOTH modes exit non-zero — the
+        # --json payload already said `"success": false` while the process said 0,
+        # so `navig db query "UPDATE …" && <next>` ran the next step on a statement
+        # that never applied.
+        raise typer.Exit(1)
 
 
 def execute_sql_file(file: Path, options: dict[str, Any]):
     """Execute SQL file through tunnel."""
     if not file.exists():
         ch.error(f"File not found: {file}")
-        return
+        raise typer.Exit(2)  # bad input, not a runtime failure
 
     query = file.read_text(encoding="utf-8")
     execute_sql(query, options)
@@ -163,7 +172,7 @@ def backup_database(path: Path | None, options: dict[str, Any]):
 
         try:
             with open(path, "w", encoding="utf-8") as f:
-                result = subprocess.run(mysqldump_cmd, stdout=f, stderr=subprocess.PIPE, text=True)
+                result = decode_console_result(subprocess.run(mysqldump_cmd, stdout=f, stderr=subprocess.PIPE))
 
             if result.returncode == 0:
                 size = path.stat().st_size
@@ -185,7 +194,10 @@ def backup_database(path: Path | None, options: dict[str, Any]):
                     ch.raw_print(json.dumps({"success": False, "error": result.stderr}))
                 else:
                     ch.error(f"Backup failed: {result.stderr}")
-        except FileNotFoundError:
+                # A backup that did not happen must not report success — `restore`
+                # below calls this for its SAFETY backup and needs to know.
+                raise typer.Exit(1)
+        except FileNotFoundError as exc:
             if json_enabled:
                 ch.raw_print(json.dumps({"success": False, "error": "mysqldump not found"}))
             else:
@@ -198,6 +210,7 @@ def backup_database(path: Path | None, options: dict[str, Any]):
             ch.info("  CentOS:  sudo yum install mysql")
             ch.info("")
             ch.info("After installation, restart your terminal.")
+            raise typer.Exit(1) from exc
     finally:
         # Always cleanup temp config file
         try:
@@ -213,7 +226,7 @@ def restore_database(file: Path, options: dict[str, Any]):
 
     if not file.exists():
         ch.error(f"File not found: {file}")
-        return
+        raise typer.Exit(2)
 
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
@@ -260,7 +273,10 @@ def restore_database(file: Path, options: dict[str, Any]):
                             ch.error(f"Actual: {actual_checksum[:16]}...")
                             if not options.get("force"):
                                 ch.error("Restore cancelled. Use --force to override.")
-                                return
+                                # The restore did NOT happen. Exiting 0 here told a
+                                # recovery script the database had been restored from
+                                # a backup this command had just refused to use.
+                                raise typer.Exit(1)
                         else:
                             ch.success("✓ Backup integrity verified")
                         break
@@ -279,7 +295,10 @@ def restore_database(file: Path, options: dict[str, Any]):
                 ch.raw_print(json.dumps({"success": False, "cancelled": True}))
             else:
                 ch.warning("Restore cancelled.")
-            return
+            # The --json payload already reported `"success": false` while the
+            # process reported 0. That contradiction is what settles the exit
+            # code: the requested operation did not happen.
+            raise typer.Exit(1)
 
     server_config = config_manager.load_server_config(server_name)
     db = server_config["database"]
@@ -299,7 +318,21 @@ def restore_database(file: Path, options: dict[str, Any]):
         ch.info("Creating safety backup of current database...")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safety_backup = config_manager.backups_dir / f"{server_name}_pre_restore_{timestamp}.sql"
-        backup_database(safety_backup, options)
+        # `✓ Safety backup created` used to print UNCONDITIONALLY, and
+        # `backup_database` used to return normally after a failed mysqldump. So a
+        # failed safety backup announced itself as created and the restore then
+        # OVERWROTE the database with no rollback in existence — the one path where
+        # a phantom success destroys data rather than merely misreporting it.
+        try:
+            backup_database(safety_backup, options)
+        except typer.Exit as exc:
+            if getattr(exc, "exit_code", 1) != 0:
+                ch.error("Refusing to restore: the safety backup FAILED.")
+                ch.info(
+                    "   Restoring now would overwrite the database with no rollback "
+                    "available. Fix the backup problem first."
+                )
+                raise typer.Exit(1) from exc
         ch.success(f"✓ Safety backup created: {safety_backup.name}")
 
     ch.info("Restoring database...")
@@ -321,7 +354,7 @@ def restore_database(file: Path, options: dict[str, Any]):
 
         try:
             with open(file, encoding='utf-8') as f:
-                result = subprocess.run(mysql_cmd, stdin=f, capture_output=True, text=True)
+                result = decode_console_result(subprocess.run(mysql_cmd, stdin=f, capture_output=True))
 
             if result.returncode == 0:
                 if json_enabled:
@@ -346,12 +379,14 @@ def restore_database(file: Path, options: dict[str, Any]):
                     ch.error(f"Error: {result.stderr}")
                     if not options.get("no_backup"):
                         ch.warning(f"You can rollback using: navig restore {safety_backup}")
+                raise typer.Exit(1)
 
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             if json_enabled:
                 ch.raw_print(json.dumps({"success": False, "error": "mysql client not found"}))
             else:
                 ch.error("mysql client not found. Please install MySQL client tools.")
+            raise typer.Exit(1) from exc
     finally:
         # Always cleanup temp config file
         try:

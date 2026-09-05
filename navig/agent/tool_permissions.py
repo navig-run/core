@@ -37,6 +37,48 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def operator_blocked_tools() -> frozenset[str]:
+    """Tool names the operator put in `tools.blocked_tools`, in canonical form.
+
+    `ToolPermissionContext` is a *per-session* filter a caller opts into. This is the
+    *operator's* standing policy, and it has to be consulted by the code itself rather than
+    passed in — the config key is documented as blocking a tool "entirely", and a control
+    that only applies where somebody remembered to thread an argument through is the shape
+    of bug this exists to close.
+
+    Canonicalised with the router's `canonical_tool_key`, deliberately the same function the
+    `ToolRouter` gate uses: NAVIG has two tool registries and the operator writes ONE list
+    of names for both. A second spelling rule here would mean `blocked_tools: ["web-fetch"]`
+    stopping the tool in one registry and not the other — #813 again, one registry over.
+
+    Read fresh on every call rather than memoised. Measured at ~2µs (ConfigManager caches
+    underneath), so there is nothing to buy with a module global except the chance of it
+    going stale — and an operator's edit takes effect without restarting the daemon.
+
+    Returns an empty set if the policy cannot be read. That is fail-open, and it is the only
+    coherent behaviour for a *blocklist*: "no policy" and "an unreadable policy" both mean
+    "no names to block", whereas failing closed would disable every tool the agent has.
+    """
+    try:
+        from navig.tools.router import canonical_tool_key, load_safety_policy
+
+        names = load_safety_policy().get("blocked_tools", []) or []
+        return frozenset(key for key in (canonical_tool_key(n) for n in names) if key)
+    except Exception as exc:  # noqa: BLE001 — policy read must not break dispatch
+        logger.debug("Could not read operator blocked_tools: %s", exc)
+        return frozenset()
+
+
+def operator_blocks(tool_name: str) -> bool:
+    """True if *tool_name* is blocked by the operator's `tools.blocked_tools`."""
+    try:
+        from navig.tools.router import canonical_tool_key
+
+        return canonical_tool_key(tool_name) in operator_blocked_tools()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 class ToolPermissionDenied(Exception):
     """Raised when a tool call is attempted for a blocked tool.
 

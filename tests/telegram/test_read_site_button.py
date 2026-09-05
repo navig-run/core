@@ -23,6 +23,23 @@ from navig.gateway.channels.telegram_keyboards import (
 pytestmark = pytest.mark.integration
 
 
+@pytest.fixture(autouse=True)
+def _stub_browser_fetch(monkeypatch):
+    """Keep the read-site tests off the real network. The two-stage fetch upgrades to
+    a headless browser when the HTTP text is thin — and the callback tests use toy
+    short content that trips that gate. Stub the browser stage to 'unavailable' so it
+    degrades to the HTTP text; the SPA-fallback tests override this with rich content."""
+    from navig.tools.registry import ToolResult
+
+    class _NoBrowser:
+        async def run(self, args, on_status=None):
+            return ToolResult(
+                name="browser_fetch", success=False, error="stubbed: no browser in tests"
+            )
+
+    monkeypatch.setattr("navig.tools.browser_fetch.BrowserFetchTool", _NoBrowser)
+
+
 def test_build_read_site_button_stores_url_and_query_and_labels_by_domain():
     store = CallbackStore()
     btn = build_read_site_button(
@@ -38,6 +55,44 @@ def test_build_read_site_button_stores_url_and_query_and_labels_by_domain():
     payload = store.get(_WEBFETCH_STORE_PREFIX + key)
     # The user's original question rides along so the on-tap summary answers it.
     assert payload == {"url": "https://www.cybesis.com/about", "query": "what games do they make"}
+
+
+def test_two_searches_same_url_different_query_do_not_collide():
+    """Two searches that surface the SAME url with DIFFERENT queries must not clobber
+    each other. The payload now carries the per-search query/siblings, so the button
+    key must be (url, query) — not the URL alone. With a URL-only key the later
+    search's put() overwrote the earlier button's payload (identical callback_data),
+    so tapping the earlier still-visible button summarized against the wrong question."""
+    store = CallbackStore()
+    url = "https://example.com/pixel9"
+    a = build_read_site_button(url, store=store, query="battery life")
+    b = build_read_site_button(url, store=store, query="camera review")
+
+    assert a is not None and b is not None
+    # Distinct queries → distinct callback_data (so the two buttons are addressable).
+    assert a["callback_data"] != b["callback_data"]
+
+    ka = a["callback_data"][len(_WEBFETCH_CB_PREFIX):]
+    kb = b["callback_data"][len(_WEBFETCH_CB_PREFIX):]
+    pa = store.get(_WEBFETCH_STORE_PREFIX + ka)
+    pb = store.get(_WEBFETCH_STORE_PREFIX + kb)
+
+    # Each payload survives independently — no overwrite.
+    assert pa is not None and pb is not None
+    assert pa["query"] == "battery life"
+    assert pb["query"] == "camera review"
+    assert pa["url"] == pb["url"] == url  # same page, both read it
+
+
+def test_same_url_same_query_is_stable_key():
+    """The same (url, query) is deterministic — a re-render of the same search reuses
+    the same key (so the summary cache and re-taps line up)."""
+    store = CallbackStore()
+    url = "https://example.com/x"
+    a = build_read_site_button(url, store=store, query="q")
+    b = build_read_site_button(url, store=store, query="q")
+    assert a is not None and b is not None
+    assert a["callback_data"] == b["callback_data"]
 
 
 def test_build_read_site_button_rejects_non_http():
@@ -285,3 +340,173 @@ async def test_webfetch_callback_reports_expired_link(monkeypatch):
     # Answered with an "expired" toast; no message body sent.
     channel._api_call.assert_awaited()
     channel.send_message.assert_not_awaited()
+
+
+# ── Two-stage fetch (HTTP → headless browser for JS-rendered SPA pages) ──────────
+
+
+async def test_read_url_content_uses_http_when_rich(monkeypatch):
+    """A content-rich HTTP fetch is used as-is — the browser stage is never invoked."""
+    from navig.tools.registry import ToolResult
+    from navig.tools.web import WebFetchResult
+
+    monkeypatch.setattr(
+        web, "web_fetch", lambda url, **kw: WebFetchResult(success=True, text="A" * 500, title="Rich")
+    )
+    browser_calls = {"n": 0}
+
+    class _Tool:
+        async def run(self, args, on_status=None):
+            browser_calls["n"] += 1
+            return ToolResult(name="browser_fetch", success=True, output={"content": "B" * 999})
+
+    monkeypatch.setattr("navig.tools.browser_fetch.BrowserFetchTool", _Tool)
+
+    text, title, method = await kb._read_url_content("https://rich.example/article")
+    assert text == "A" * 500
+    assert title == "Rich"
+    assert method == "http"
+    assert browser_calls["n"] == 0  # rich HTTP content → no browser needed
+
+
+async def test_read_url_content_upgrades_to_browser_on_thin(monkeypatch):
+    """Thin HTTP text (a client-rendered SPA shell) upgrades to the browser, whose
+    JS-rendered content is preferred."""
+    from navig.tools.registry import ToolResult
+    from navig.tools.web import WebFetchResult
+
+    monkeypatch.setattr(
+        web, "web_fetch", lambda url, **kw: WebFetchResult(success=True, text="hi", title="Shell")
+    )
+
+    class _Tool:
+        async def run(self, args, on_status=None):
+            assert args.get("url") == "https://spa.example/app"
+            return ToolResult(
+                name="browser_fetch",
+                success=True,
+                output={"content": "R" * 800, "method": "playwright"},
+            )
+
+    monkeypatch.setattr("navig.tools.browser_fetch.BrowserFetchTool", _Tool)
+
+    text, title, method = await kb._read_url_content("https://spa.example/app")
+    assert text == "R" * 800
+    assert method == "playwright"
+
+
+async def test_read_url_content_keeps_http_text_when_browser_returns_less(monkeypatch):
+    """The browser upgrade never regresses: if it returns less than the HTTP stage,
+    the HTTP text is kept."""
+    from navig.tools.registry import ToolResult
+    from navig.tools.web import WebFetchResult
+
+    # 150 chars — under the JS threshold, so the browser stage runs, but the browser
+    # returns even less, so the HTTP text must win.
+    http_text = "x" * 150
+    monkeypatch.setattr(
+        web, "web_fetch", lambda url, **kw: WebFetchResult(success=True, text=http_text, title="T")
+    )
+
+    class _Tool:
+        async def run(self, args, on_status=None):
+            return ToolResult(name="browser_fetch", success=True, output={"content": "tiny"})
+
+    monkeypatch.setattr("navig.tools.browser_fetch.BrowserFetchTool", _Tool)
+
+    text, _title, method = await kb._read_url_content("https://spa.example/app")
+    assert text == http_text
+    assert method == "http"
+
+
+async def test_read_url_content_survives_browser_unavailable(monkeypatch):
+    """If the browser stage raises (Playwright not installed), the helper degrades to
+    the HTTP text instead of propagating the error."""
+    from navig.tools.web import WebFetchResult
+
+    monkeypatch.setattr(
+        web, "web_fetch", lambda url, **kw: WebFetchResult(success=True, text="thin", title="T")
+    )
+
+    class _Tool:
+        async def run(self, args, on_status=None):
+            raise RuntimeError("playwright not installed")
+
+    monkeypatch.setattr("navig.tools.browser_fetch.BrowserFetchTool", _Tool)
+
+    text, _title, method = await kb._read_url_content("https://spa.example/app")
+    assert text == "thin"  # kept the HTTP text, no crash
+    assert method == "http"
+
+
+async def test_read_url_content_empty_when_both_stages_fail(monkeypatch):
+    """Both stages failing yields empty text — the callback turns this into an
+    honest 'no readable content' message."""
+    from navig.tools.registry import ToolResult
+    from navig.tools.web import WebFetchResult
+
+    monkeypatch.setattr(
+        web, "web_fetch", lambda url, **kw: WebFetchResult(success=False, error="boom")
+    )
+
+    class _Tool:
+        async def run(self, args, on_status=None):
+            return ToolResult(name="browser_fetch", success=False, error="no browser")
+
+    monkeypatch.setattr("navig.tools.browser_fetch.BrowserFetchTool", _Tool)
+
+    text, _title, _method = await kb._read_url_content("https://dead.example/x")
+    assert text == ""
+
+
+async def test_webfetch_callback_reads_spa_via_browser_fallback(monkeypatch):
+    """End-to-end: an empty SPA shell over HTTP is rendered by the browser stage, and
+    THAT content (not the empty shell) reaches the LLM summary — so 🔎 Read works on a
+    JavaScript site instead of answering 'no readable content'."""
+    from navig.gateway.channels.telegram import TelegramChannel
+    from navig.tools.registry import ToolResult
+    from navig.tools.web import WebFetchResult
+
+    channel = TelegramChannel(bot_token="1:FAKE")
+    channel._keep_typing = AsyncMock()
+    channel._api_call = AsyncMock(return_value={"ok": True})
+    sent: dict = {}
+
+    async def _send(chat_id, text, **kw):
+        sent["text"] = text
+        return {"message_id": 1}
+
+    channel.send_message = _send
+
+    # HTTP returns an empty SPA shell; the browser renders the real content.
+    monkeypatch.setattr(
+        web, "web_fetch", lambda url, **kw: WebFetchResult(success=True, text="", title="")
+    )
+
+    class _Tool:
+        async def run(self, args, on_status=None):
+            return ToolResult(
+                name="browser_fetch",
+                success=True,
+                output={"content": "SPA RENDERED CONTENT about widgets", "method": "playwright"},
+            )
+
+    monkeypatch.setattr("navig.tools.browser_fetch.BrowserFetchTool", _Tool)
+
+    async def _on_message(**kwargs):
+        msg = kwargs.get("message", "")
+        assert "SPA RENDERED CONTENT" in msg  # browser content reached the summary
+        return "SUMMARY: it's about widgets."
+
+    channel.on_message = _on_message
+
+    handler = kb.CallbackHandler(channel)
+    handler.store.put(
+        _WEBFETCH_STORE_PREFIX + "spakey",
+        {"url": "https://spa.example/app", "query": "what is it"},
+        ttl=60,
+    )
+    await handler._handle_webfetch_callback(
+        cb_id="cb", chat_id=1, user_id=2, url_key=_WEBFETCH_STORE_PREFIX + "spakey"
+    )
+    assert "SUMMARY" in sent["text"]

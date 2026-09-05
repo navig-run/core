@@ -160,3 +160,98 @@ def test_monitor_is_wired_in_the_gateway_and_the_deck():
 
     assert "config_incidents" in NavigGateway.MONITOR_KEYS, "gateway must know the monitor"
     assert "config_incidents" in _MONITOR_KEYS, "the deck Monitors card must offer the toggle"
+
+
+# ── The throttle reservation must settle on VERIFIED delivery ─────────────────
+#
+# `allow()` runs before the send, so a push that reached zero channels used to burn
+# this incident's cooldown and suppress the NEXT identical one — losing a config
+# rescue twice over. That is precisely the silent failure this default-ON producer
+# exists to prevent: a daemon that heals itself at 3am and tells nobody.
+
+
+def _failed_fanout() -> dict:
+    return {"type": ci.NOTIFY_TYPE, "channels": [{"channel": "telegram", "ok": False}]}
+
+
+def _delivered_fanout() -> dict:
+    return {"type": ci.NOTIFY_TYPE, "channels": [{"channel": "deck", "ok": True}]}
+
+
+async def _run_scheduled(loop) -> None:
+    """Execute every callback the reporter handed to call_soon_threadsafe."""
+    for fn, args in list(loop.scheduled):
+        task = fn(*args)
+        if task is not None:
+            await task
+
+
+async def test_a_push_that_reached_nobody_lets_the_incident_fire_again():
+    loop = _DummyLoop()
+    sent: list[str] = []
+
+    async def failing_sink(title, body):
+        sent.append(body)
+        return _failed_fanout()
+
+    r = ci.ConfigIncidentReporter(loop, sink=failing_sink)
+    r.on_incident(incidents.DECK_KEY_REIDENTIFIED, {})
+    await _run_scheduled(loop)
+    assert len(sent) == 1
+
+    r.on_incident(incidents.DECK_KEY_REIDENTIFIED, {})
+    assert len(loop.scheduled) == 2, (
+        "the incident reached nobody, so it must not stay suppressed for the cooldown"
+    )
+
+
+async def test_a_delivered_incident_stays_deduped():
+    loop = _DummyLoop()
+    sent: list[str] = []
+
+    async def delivering_sink(title, body):
+        sent.append(body)
+        return _delivered_fanout()
+
+    r = ci.ConfigIncidentReporter(loop, sink=delivering_sink)
+    r.on_incident(incidents.DECK_KEY_REIDENTIFIED, {})
+    await _run_scheduled(loop)
+    assert len(sent) == 1
+
+    r.on_incident(incidents.DECK_KEY_REIDENTIFIED, {})
+    assert len(loop.scheduled) == 1, "a delivered incident must still be deduped"
+
+
+async def test_a_muted_fanout_counts_as_delivered():
+    """An empty channel list is an intentional mute, not a failure — do not churn."""
+    loop = _DummyLoop()
+
+    async def muted_sink(title, body):
+        return {"type": ci.NOTIFY_TYPE, "skipped": "master_off", "channels": []}
+
+    r = ci.ConfigIncidentReporter(loop, sink=muted_sink)
+    r.on_incident(incidents.DECK_KEY_REIDENTIFIED, {})
+    await _run_scheduled(loop)
+
+    r.on_incident(incidents.DECK_KEY_REIDENTIFIED, {})
+    assert len(loop.scheduled) == 1, "a deliberately silenced reporter must not churn"
+
+
+def test_suppressed_incidents_are_reported_in_the_next_push():
+    from navig.notify.producers.self_errors import _Throttle
+
+    loop = _DummyLoop()
+    r = ci.ConfigIncidentReporter(loop, sink=lambda *_: None)
+    r._throttle = _Throttle(window_s=1000.0, max_per_window=1, cooldown_s=0.0)
+
+    r.on_incident(incidents.DECK_KEY_REIDENTIFIED, {})   # allowed
+    r.on_incident(incidents.WIPE_REFUSED, {})     # suppressed — window full
+    assert len(loop.scheduled) == 1
+
+    r._throttle.max_per_window = 5
+    r.on_incident(incidents.WIPE_REFUSED, {})
+    assert len(loop.scheduled) == 2
+
+    # The body is captured in the closure the reporter scheduled; re-render to check.
+    _, body = r._render(incidents.WIPE_REFUSED)
+    assert r._throttle.drain_suppressed() == 0, "the count was already drained into the push"

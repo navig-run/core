@@ -7,13 +7,10 @@ Batch 90 — tests for:
 
 from __future__ import annotations
 
-import os
-import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 import yaml
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
@@ -131,7 +128,6 @@ class TestIsEnabled:
         """A capability with config_key=None is off even if tier==OPTIONAL."""
         from navig.core.capability_registry import (
             REGISTRY,
-            CapabilityEntry,
             CapabilityTier,
             is_enabled,
         )
@@ -172,10 +168,14 @@ class TestWorkflowEngineWorkflowsDir:
     """
 
     def test_construction_creates_no_directory(self, monkeypatch, tmp_path):
-        from navig.core import automation_engine
         from navig.core.automation_engine import WorkflowEngine
+        from navig.platform import paths
 
-        monkeypatch.setattr(automation_engine, "config_dir", lambda: tmp_path)
+        # Patch `paths.config_dir`, not `automation_engine.config_dir`: the engine
+        # resolves through `paths.workflows_dir()` (= config_dir()/workflows) and never
+        # imported `config_dir` itself, so patching that name raised AttributeError and
+        # this guard had been failing instead of guarding.
+        monkeypatch.setattr(paths, "config_dir", lambda: tmp_path)
         WorkflowEngine()  # six real call sites do exactly this
         assert not (tmp_path / "workflows").exists(), (
             "constructing WorkflowEngine created a workflows/ dir — the old __init__ "
@@ -183,12 +183,12 @@ class TestWorkflowEngineWorkflowsDir:
         )
 
     def test_default_dir_follows_config_dir_lazily(self, monkeypatch, tmp_path):
-        from navig.core import automation_engine
         from navig.core.automation_engine import WorkflowEngine
+        from navig.platform import paths
 
         engine = WorkflowEngine()
         # Resolved on ACCESS, not frozen at construction: set the config dir afterwards.
-        monkeypatch.setattr(automation_engine, "config_dir", lambda: tmp_path)
+        monkeypatch.setattr(paths, "config_dir", lambda: tmp_path)
         assert engine._workflows_dir == tmp_path / "workflows"
 
     def test_override_wins(self, tmp_path):
@@ -425,7 +425,7 @@ class TestNavigKernelParseMemoryParams:
 class TestNavigKernelResolveIntent:
     def _kernel_with_skill(self, tmp_path):
         from navig.core.kernel import NavigKernel
-        from navig.core.models import NavigCommand, SkillManifest
+        from navig.core.models import NavigCommand
 
         k = NavigKernel(str(tmp_path))
         cmd = NavigCommand(

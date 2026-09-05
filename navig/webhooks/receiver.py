@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from navig.core.coerce import coerce_bool
 from navig.debug_logger import get_debug_logger
 
 from .signatures import (
@@ -96,7 +97,9 @@ class WebhookReceiver:
     def __init__(self, config: dict | None = None):
         config = config or {}
         self.webhook_config = config.get("webhooks", {})
-        self.enabled = self.webhook_config.get("enabled", True)
+        # coerce_bool: `config set webhooks.enabled false` stores the STRING "false" (truthy),
+        # so a raw read would leave the receiver enabled when the operator meant to disable it.
+        self.enabled = coerce_bool(self.webhook_config.get("enabled", True), default=True)
         self.path_prefix = self.webhook_config.get("path_prefix", "/webhook")
 
         # Load source configs
@@ -150,12 +153,16 @@ class WebhookReceiver:
 
             self._sources[name] = WebhookSourceConfig(
                 name=name,
-                enabled=cfg.get("enabled", True),
+                # coerce_bool: a config-set string like "false" is truthy raw, which would
+                # leave a disabled source enabled, or (for verify_signature) reject a
+                # deliberately-unsigned source's legitimate webhooks (they'd be verified
+                # against a missing secret and rejected).
+                enabled=coerce_bool(cfg.get("enabled", True), default=True),
                 secret=secret,
                 signature_header=cfg.get("signature_header"),
                 signature_algo=cfg.get("signature_algo", "sha256"),
                 events=cfg.get("events"),
-                verify_signature=cfg.get("verify_signature", True),
+                verify_signature=coerce_bool(cfg.get("verify_signature", True), default=True),
             )
 
     def on_event(self, handler: Callable):
@@ -217,6 +224,15 @@ class WebhookReceiver:
             payload = json.loads(body) if body else {}
         except json.JSONDecodeError:
             return web.json_response({"error": "Invalid JSON"}, status=400)
+
+        # A valid but non-object body (`[]`, `42`, `"x"`, `true`) parses fine but is not a
+        # webhook envelope — extract_event_type / the handlers call payload.get(...), which
+        # would raise AttributeError and 500. This path is reachable UNAUTHENTICATED on the
+        # default `custom` source (verify_signature=False), so reject it as a 400 up front.
+        if not isinstance(payload, dict):
+            return web.json_response(
+                {"error": "Webhook payload must be a JSON object"}, status=400
+            )
 
         # Verify signature
         signature_valid = None
@@ -315,9 +331,13 @@ class WebhookReceiver:
             limit = int(request.query.get("limit", 20))
         except (ValueError, TypeError):
             limit = 20
+        # Clamp: a raw `[-limit:]` with limit<=0 mis-slices — `[-0:]` returns the ENTIRE
+        # buffer (every stored payload), and negatives slice from the front. Bound to
+        # [0, max_history] and treat 0 as "none".
+        limit = max(0, min(limit, self._max_history))
         source_filter = request.query.get("source")
 
-        events = self._recent_events[-limit:]
+        events = self._recent_events[-limit:] if limit else []
 
         if source_filter:
             events = [e for e in events if e.source == source_filter]

@@ -317,7 +317,6 @@ def get_debug_logger() -> logging.Logger:
     if not logger.handlers:
         logger.setLevel(logging.DEBUG)
         try:
-            from navig.config import get_config_manager
             from navig.platform.paths import debug_log_path
 
             log_path = debug_log_path()

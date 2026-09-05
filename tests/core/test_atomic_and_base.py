@@ -117,6 +117,7 @@ class TestUtf16SafeSplit:
         text = "word " * 1000
         max_utf16 = 200
         chunks = utf16_safe_split(text, max_utf16=max_utf16)
+        assert chunks, "chunks was empty, so the loop below asserted nothing"
         for chunk in chunks:
             assert utf16_len(chunk) <= max_utf16
 
@@ -130,6 +131,7 @@ class TestUtf16SafeSplit:
         # Force a split somewhere in the middle
         chunks = utf16_safe_split(text, max_utf16=20)
         # Each chunk should ideally not start mid-word (newline preference)
+        assert chunks, "chunks was empty, so the loop below asserted nothing"
         for chunk in chunks:
             assert utf16_len(chunk) <= 20
 
@@ -144,6 +146,7 @@ class TestUtf16SafeSplit:
     def test_max_chars_respected(self):
         text = "a" * 200
         chunks = utf16_safe_split(text, max_utf16=9999, max_chars=50)
+        assert chunks, "chunks was empty, so the loop below asserted nothing"
         for chunk in chunks:
             assert len(chunk) <= 50
 
@@ -205,5 +208,6 @@ class TestBasePlatformAdapter:
         adapter = LimitedAdapter()
         text = "word " * 10  # 50 chars, well over 20 UTF-16 units
         chunks = adapter.split_for_platform(text)
+        assert chunks, "chunks was empty, so the loop below asserted nothing"
         for chunk in chunks:
             assert utf16_len(chunk) <= 20

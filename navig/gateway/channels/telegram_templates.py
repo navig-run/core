@@ -29,8 +29,13 @@ GREETING_LIMIT = 120  # T1 base
 ACK_LIMIT = 80  # T7 acknowledgment
 TASK_DONE_LIMIT = 100  # T4 base
 BRIEFING_LIMIT = 300  # T5 base
-MAX_SINGLE_MSG = 2000  # Split above this
-SPLIT_THRESHOLD = 500  # Soft split target for multi-part
+# Telegram's hard sendMessage cap is 4096 UTF-16 units. These used to be 2000/500,
+# which shattered any substantial answer into ~5 messages of 500 chars — splitting
+# mid-blockquote and mid-list, and destroying the formatting the model composed.
+# A normal in-depth reply (~2.5k chars) must land as ONE message; only genuinely
+# oversized replies split, and then at a paragraph boundary near the real limit.
+MAX_SINGLE_MSG = 3800  # Split above this (safe margin under Telegram's 4096)
+SPLIT_THRESHOLD = 3500  # Soft split target for multi-part
 
 
 class TemplateID(str, Enum):
@@ -234,6 +239,8 @@ def enforce_response_limits(
     verbosity: str = "normal",
     max_single: int = MAX_SINGLE_MSG,
     split_at: int = SPLIT_THRESHOLD,
+    *,
+    is_deep: bool = False,
 ) -> FormattedMessage:
     """
     Post-process any AI response to obey char limits.
@@ -241,8 +248,14 @@ def enforce_response_limits(
     - brief: truncate to DEFAULT_LIMIT
     - normal: keep up to max_single, split if over
     - detailed: keep full, split at split_at boundaries
+
+    *is_deep* marks a researched, tool-grounded answer. The user asked a real
+    question and the agent spent tools and tokens answering it, so the "brief"
+    verbosity preference must NOT chop the result to 280 chars — that silently
+    undid the entire depth path at the very last step. Brevity still governs
+    ordinary chat replies.
     """
-    if verbosity == "brief":
+    if verbosity == "brief" and not is_deep:
         text = _enforce_limit(text, DEFAULT_LIMIT)
         return FormattedMessage(text=text)
 

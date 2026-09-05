@@ -60,6 +60,19 @@ def register(server: Any) -> None:
         }
     )
 
+    # See navig.mcp_server._gate_tool — all three read the wiki, recorded
+    # explicitly so the coverage guard can tell "considered" from "forgotten".
+    # A module's register() must be self-sufficient: register_all_tools creates this
+    # dict, but a direct `module.register(server)` call (tests, a plugin host) does not,
+    # and assuming it exists raised AttributeError. cdp.py already guarded; these did not.
+    if not hasattr(server, "_tool_safety"):
+        server._tool_safety = {}
+    server._tool_safety.update({
+        "navig_list_wiki_pages": "safe",
+        "navig_read_wiki_page": "safe",
+        "navig_search_wiki": "safe",
+    })
+
 
 def _tool_search_wiki(server: Any, args: dict[str, Any]) -> list[dict[str, Any]]:
     """Search wiki pages."""

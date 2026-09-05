@@ -25,6 +25,7 @@ from typing import Any
 from navig.agent.component import Component
 from navig.agent.config import EarsConfig
 from navig.agent.nervous_system import EventType, NervousSystem
+from navig.core.coerce import coerce_bool
 
 
 @dataclass
@@ -139,7 +140,7 @@ class MCPListener(InputListener):
 
     async def start(self) -> None:
         """Start MCP server."""
-        if not self.config.get("enabled", True):
+        if not coerce_bool(self.config.get("enabled", True), default=True):
             return
 
         try:

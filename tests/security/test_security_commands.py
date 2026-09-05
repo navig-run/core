@@ -1,3 +1,4 @@
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -72,7 +73,12 @@ def test_fail2ban_unban_rejects_invalid_ip(mock_remote_ops, mock_get_config_mana
 def test_fail2ban_unban_all_jails(mock_remote_ops, mock_get_config_manager):
     mock_get_config_manager.return_value = _mock_config_manager()
     remote_ops = mock_remote_ops.return_value
-    remote_ops.execute_command.side_effect = [{"exit_code": 0, "stdout": "", "stderr": ""}]
+    # execute_command returns a subprocess.CompletedProcess. This used to hand back a
+    # dict, which is the shape the command code wrongly assumed — so the one test that
+    # exercised the success path confirmed the bug instead of catching it.
+    remote_ops.execute_command.side_effect = [
+        subprocess.CompletedProcess(args=["ssh"], returncode=0, stdout="", stderr="")
+    ]
 
     security.fail2ban_unban("127.0.0.1", None, {})
 

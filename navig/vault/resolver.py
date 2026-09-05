@@ -176,7 +176,12 @@ def _fetch_secret(label: str) -> str:
     from navig.vault.core import get_vault  # type: ignore[import]
 
     vcore = get_vault()
-    return vcore.get_secret(label)
+    value = vcore.get_secret(label)
+    # get_vault().get_secret() returns a SecretStr. resolve_refs substitutes this via
+    # re.sub, which requires the replacement to be a plain `str` — returning the SecretStr
+    # raised `TypeError: expected str instance, SecretStr found`, breaking the entire
+    # ${VAULT:...} substitution API. Unwrap to plaintext, exactly as resolve_secret() does.
+    return value.reveal() if hasattr(value, "reveal") else str(value)
 
 
 def vault_labels_for_env(env_var: str) -> list[str]:

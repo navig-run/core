@@ -25,6 +25,7 @@ import json
 import logging
 import sys
 import threading
+from collections.abc import Mapping
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -240,7 +241,7 @@ class StructuredLogger(logging.Logger):
         self,
         level: int,
         msg: object,
-        args: tuple,
+        args: tuple[object, ...] | Mapping[str, object],
         exc_info=None,
         extra=None,
         stack_info: bool = False,
@@ -249,10 +250,28 @@ class StructuredLogger(logging.Logger):
         """Redact sensitive data from the message and any string format args."""
         msg = redact_sensitive_text(msg) if isinstance(msg, str) else str(msg)
 
+        # `Logger._log` accepts `tuple | Mapping`; this declared only `tuple`, which is a
+        # narrowing the supertype does not allow.
+        #
+        # ⚠ It was NOT a live bug on the normal path, and the difference is worth writing
+        # down: `logger.info("%(k)s", {...})` reaches `_log` with args already wrapped as
+        # `({...},)` — a one-element TUPLE — because stdlib unwraps the Mapping later, in
+        # `LogRecord.__init__`. Verified by probe. So the generator below iterated a tuple
+        # and passed the dict through untouched.
+        #
+        # The Mapping branch exists because the widened annotation now genuinely permits a
+        # caller to invoke `_log(level, msg, mapping)` directly — which the old generator
+        # would have flattened to its KEYS. Redact the values, keep it a mapping.
         if args:
-            args = tuple(
-                redact_sensitive_text(a) if isinstance(a, str) else a for a in args
-            )
+            if isinstance(args, Mapping):
+                args = {
+                    k: redact_sensitive_text(v) if isinstance(v, str) else v
+                    for k, v in args.items()
+                }
+            else:
+                args = tuple(
+                    redact_sensitive_text(a) if isinstance(a, str) else a for a in args
+                )
 
         super()._log(level, msg, args, exc_info, extra, stack_info, stacklevel)
 
@@ -328,6 +347,42 @@ def _configure_root_logger(
 
 
 # ---------------------------------------------------------------------------
+def bind_plugin_logging(package: str) -> None:
+    """Route a plugin package's loggers into NAVIG's handlers.
+
+    Plugins ship as their OWN distributions (``navig_download``, ``navig_social``,
+    …), so a module doing ``logging.getLogger(__name__)`` lands outside the
+    ``navig`` tree — and every handler in this module is attached to the ``navig``
+    logger, which has ``propagate = False``. The result: a plugin's records reach
+    neither ``navig.log`` nor the redacting formatter, they fall through to
+    Python's ``lastResort`` handler, and they are simply gone.
+
+    Measured on the operator's own machine: **zero** records from any ``navig_*``
+    package in 8.6 MB of ``navig.log``, across 17 plugins and 52 modules. The
+    TikTok engine's ``"yt-dlp refused … the browser tier served it"`` had never
+    appeared once. Diagnosing a plugin failure therefore meant reproducing it
+    against the live service, because the log genuinely knew nothing about it.
+
+    Re-parenting rather than adding a second set of handlers is what keeps this
+    free of double-logging: records flow ``navig_download.x.y`` →
+    ``navig_download`` → ``navig`` → handlers, and stop there. It also inherits
+    ``navig``'s level, so a plugin needs no logging setup of its own.
+
+    Safe after the plugin's modules have already imported: ``getLogger`` on a
+    package that currently exists only as a placeholder re-points the children
+    that were created under it.
+    """
+    if not package or package == "navig" or package.startswith("navig."):
+        return  # core is already inside the tree
+    try:
+        lg = logging.getLogger(package)
+        lg.parent = logging.getLogger("navig")  # type: ignore[assignment]
+        lg.propagate = True
+    except Exception:  # noqa: BLE001 — a plugin must never fail to load over logging
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Public factory
 # ---------------------------------------------------------------------------
 
@@ -360,8 +415,29 @@ def get_logger(subsystem: str = "core") -> StructuredLogger:
             _ROOT_CONFIGURED = True
             try:
                 from navig.config import get_config_manager
-                log_path = get_config_manager().base_dir / "navig.log"
-                _configure_root_logger(log_path)
+
+                # No auto-attached log FILE under pytest. `navig.log` correctly lives in
+                # `config_dir()` — which becomes the PROJECT `.navig/` whenever the cwd is
+                # inside a navig project (the deliberate debug.log→log_dir /
+                # navig.log→config_dir split, pinned by
+                # tests/platform/test_debug_log_single_source.py). pytest runs inside this
+                # checkout, and `core/.navig/` exists, so the first `get_logger()` call in
+                # a test session opened a log in the SOURCE TREE and every xdist worker
+                # appended to that one file: measured at 328 KB in a single full run.
+                #
+                # This suppresses only the LAZY auto-configuration. An explicit
+                # `_configure_root_logger(log_file=…)` still attaches a file handler, which
+                # is how the file-handler behaviour is actually tested — so nothing that
+                # asserts on it loses coverage. Console logging is untouched, so
+                # `caplog`/stderr assertions are unaffected.
+                #
+                # The same guard already governs colour and the rich traceback hook a few
+                # lines up; this is the third use of it in this function, not a new idea.
+                if "pytest" in sys.modules:
+                    _configure_root_logger()
+                else:
+                    log_path = get_config_manager().base_dir / "navig.log"
+                    _configure_root_logger(log_path)
             except Exception:
                 _configure_root_logger()
 

@@ -2,7 +2,8 @@
 
 The keyword trigger that replaced emoji reactions: reply to a message with a bare
 keyword → run the action on the replied-to message. Bot chats reply in-chat;
-business chats run a sandboxed subset and DM the owner privately.
+business chats run a sandboxed subset and post the result INTO the chat as the
+owner (save stays a private owner DM).
 """
 
 from __future__ import annotations
@@ -94,6 +95,27 @@ async def test_bot_llm_action_replies_in_chat(monkeypatch):
     ch.send_rich_message.assert_awaited()  # rich reply in-chat
     args, kwargs = ch.send_rich_message.call_args
     assert kwargs.get("reply_to_message_id") == 9
+
+
+async def test_bot_llm_action_falls_back_to_plain_when_rich_returns_none(monkeypatch):
+    # send_rich_message returns None when BOTH the rich send AND its HTML fallback were
+    # rejected (no exception raised). The result must still be delivered as plain text,
+    # not silently lost while the action "owns" the message (returns True).
+    ch = _channel()
+    ch.send_rich_message = AsyncMock(return_value=None)  # rich + HTML fallback both rejected
+
+    async def fake_run(tool, content, *, is_owner, arg=""):
+        return {"ok": True, "tool": tool, "result": f"[{tool}] {content}"}
+
+    monkeypatch.setattr("navig.telegram.ai_actions.run_text_action", fake_run)
+    handled = await ra.run_bot_reply(
+        ch, action="summarize", chat_id=555, user_id=777,
+        reply_to_msg=_reply(), reply_to_message_id=9, is_group=False,
+    )
+    assert handled is True
+    ch.send_rich_message.assert_awaited()          # tried rich first
+    ch.send_message.assert_awaited()               # then fell back to plain text
+    assert "[summarize]" in ch.send_message.call_args.args[1]
 
 
 async def test_bot_save_action(monkeypatch):
@@ -215,7 +237,7 @@ async def test_bot_llm_error_owns_message_with_notice(monkeypatch):
 # ── run_business_reply ───────────────────────────────────────────────────────
 
 
-async def test_business_llm_dms_owner_privately(monkeypatch):
+async def test_business_llm_posts_into_chat(monkeypatch):
     ch = _channel()
 
     async def fake_run(tool, content, *, is_owner, arg=""):
@@ -225,16 +247,63 @@ async def test_business_llm_dms_owner_privately(monkeypatch):
     monkeypatch.setattr("navig.telegram.ai_actions.run_text_action", fake_run)
     msg = {
         "chat": {"id": 555}, "message_id": 10, "business_connection_id": "bc1",
-        "text": "summarize", "reply_to_message": _reply("a long original message"),
+        "text": "context", "reply_to_message": _reply("a long original message"),
     }
     handled = await ra.run_business_reply(ch, msg, is_owner=True, owner_id=777)
     assert handled is True
-    # DM to the OWNER (777) as a rich message, never into the business chat (555).
+    # Result posted INTO the business chat (555) AS the owner (business connection),
+    # NOT a private DM to the owner.
+    sends = [c for c in ch._api_call.call_args_list if c.args and c.args[0] == "sendMessage"]
+    assert sends, "expected an in-chat sendMessage"
+    payload = sends[0].args[1]
+    assert payload["chat_id"] == 555
+    assert payload["business_connection_id"] == "bc1"
+    assert "[context]" in payload["text"]
+    # the owner's keyword trigger is deleted from the business chat.
+    assert any(c.args and c.args[0] == "deleteBusinessMessages" for c in ch._api_call.call_args_list)
+    # a content op is never DM'd privately.
+    ch.send_message.assert_not_called()
+
+
+async def test_business_private_modifier_dms_owner(monkeypatch):
+    # A trailing "?" ("context?") keeps the result private — DM'd (rich) to the owner,
+    # never posted into the business chat.
+    ch = _channel()
+
+    async def fake_run(tool, content, *, is_owner, arg=""):
+        return {"ok": True, "tool": tool, "result": f"[{tool}] {content}"}
+
+    monkeypatch.setattr("navig.telegram.ai_actions.run_text_action", fake_run)
+    msg = {
+        "chat": {"id": 555}, "message_id": 10, "business_connection_id": "bc1",
+        "text": "context?", "reply_to_message": _reply("a long original message"),
+    }
+    handled = await ra.run_business_reply(ch, msg, is_owner=True, owner_id=777)
+    assert handled is True
+    # DM'd to the OWNER (777) as rich markdown, NOT posted into the chat.
     ch.send_rich_message.assert_awaited()
     assert ch.send_rich_message.call_args.args[0] == 777
-    assert "**" in ch.send_rich_message.call_args.kwargs["markdown"]  # bold label
-    # keyword message best-effort deleted from the business chat.
+    sends = [c for c in ch._api_call.call_args_list if c.args and c.args[0] == "sendMessage"]
+    assert not sends, "private modifier must not post into the chat"
+    # trigger still deleted from the chat.
     assert any(c.args and c.args[0] == "deleteBusinessMessages" for c in ch._api_call.call_args_list)
+
+
+async def test_business_save_confirms_privately(monkeypatch):
+    # 'save' has no chat-facing output → confirmation is a private owner DM.
+    ch = _channel()
+    monkeypatch.setattr(ra, "_save_to_wiki", lambda chat_id, text: True)
+    msg = {
+        "chat": {"id": 555}, "message_id": 10, "business_connection_id": "bc1",
+        "text": "save", "reply_to_message": _reply("keep this"),
+    }
+    handled = await ra.run_business_reply(ch, msg, is_owner=True, owner_id=777)
+    assert handled is True
+    assert ch.send_message.call_args.args[0] == 777  # DM'd to the owner
+    assert "wiki" in ch.send_message.call_args.args[1].lower()
+    # no result was posted into the chat (only the delete of the trigger).
+    sends = [c for c in ch._api_call.call_args_list if c.args and c.args[0] == "sendMessage"]
+    assert not sends
 
 
 async def test_business_refine_not_allowed():

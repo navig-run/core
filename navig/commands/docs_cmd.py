@@ -14,7 +14,6 @@ def run_docs(
     json_output: bool,
 ) -> None:
     """Search NAVIG documentation — delegated from ``navig docs``."""
-    import json as jsonlib
     from pathlib import Path
 
     import typer
@@ -136,7 +135,6 @@ def run_fetch(
     json_output: bool,
 ) -> None:
     """Fetch and extract content from a URL — delegated from ``navig fetch``."""
-    import json as jsonlib
 
     import typer
     from rich.markdown import Markdown
@@ -193,6 +191,8 @@ def run_fetch(
     except ImportError as e:
         ch.error(f"Web tools not available: {e}")
         raise typer.Exit(1) from e
+    except typer.Exit:
+        raise  # deliberate exit; the catch-all below would rewrite its code
     except Exception as e:
         ch.error(f"Fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -207,7 +207,6 @@ def run_search(
     json_output: bool,
 ) -> None:
     """Search the web — delegated from ``navig search``."""
-    import json as jsonlib
 
     import typer
 
@@ -269,6 +268,8 @@ def run_search(
     except ImportError as e:
         ch.error(f"Web tools not available: {e}")
         raise typer.Exit(1) from e
+    except typer.Exit:
+        raise  # deliberate exit; the catch-all below would rewrite its code
     except Exception as e:
         ch.error(f"Search failed: {e}")
         raise typer.Exit(1) from e

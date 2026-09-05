@@ -17,6 +17,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from navig.core.json_io import safe_json_loads
 from navig.messaging.adapter import Thread
 from navig.store.base import BaseStore, _utcnow
 
@@ -83,7 +84,9 @@ class ThreadStore(BaseStore):
             status=row["status"],
             created_at=row["created_at"] or "",
             last_active=row["last_active"] or "",
-            meta=json.loads(row["meta_json"] or "{}"),
+            # safe_json_loads: this mapper runs inside `[_row_to_thread(r) for r in
+            # rows]`, so one corrupt meta blob would take out the whole thread list.
+            meta=safe_json_loads(row["meta_json"], {}),
         )
 
     # ── Core operations ───────────────────────────────────────
@@ -207,6 +210,9 @@ class ThreadStore(BaseStore):
         row = self._read_one("SELECT meta_json FROM threads WHERE id = ?", (thread_id,))
         if not row:
             return False
+        # NOT safe_json_loads: this is a read-MODIFY-write. Degrading a corrupt blob to
+        # {} here would persist the emptiness over the original — a failed READ must
+        # never become a destructive WRITE. Raising correctly ABORTS the update.
         existing = json.loads(row["meta_json"] or "{}")
         existing.update(meta)
         cursor = self._write(

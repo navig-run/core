@@ -7,7 +7,6 @@ Covers: HookEvent, HookRegistry, register_hook, unregister_hook,
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -152,7 +151,7 @@ class TestHookRegistry:
 
 class TestRegisterHook:
     def test_direct_call(self) -> None:
-        from navig.core.hooks import _registry, clear_hooks, register_hook
+        from navig.core.hooks import _registry, register_hook
         h = MagicMock()
         register_hook("test:evt", h)
         assert h in _registry.get_handlers("test:evt")
@@ -246,7 +245,6 @@ class TestTriggerHookSync:
         assert calls == [True]
 
     def test_async_handler_skipped_with_warning(self) -> None:
-        import logging
 
         from navig.core.hooks import register_hook, trigger_hook_sync
         async def h(event):

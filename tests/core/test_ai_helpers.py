@@ -6,8 +6,6 @@ import os
 import warnings
 from unittest.mock import patch
 
-import pytest
-
 from navig.ai import _DEFAULT_MODELS, _get_model_preference, _resolve_openrouter_api_key
 
 # ─── _get_model_preference ───────────────────────────────────────────────────

@@ -30,6 +30,22 @@ class UniversalImporter:
             SafariImporter(),
         ]
         self._by_source = {imp.SOURCE_NAME: imp for imp in self._importers}
+        #: source name → why it failed, for the last run_* call. Populated alongside the
+        #: results (which stay a plain ``{source: [items]}`` so no caller breaks): an
+        #: importer that could not READ its source yields an empty list exactly like a
+        #: source with nothing in it, so without this a failed import is indistinguishable
+        #: from an empty one and gets reported as a success.
+        self.errors: dict[str, str] = {}
+
+    def _record(self, source: str, importer: BaseImporter | None = None, exc: BaseException | None = None) -> None:
+        """Note why *source* produced nothing this run (or clear it when it succeeded)."""
+        reason = f"{type(exc).__name__}: {exc}" if exc is not None else (
+            importer.last_error if importer is not None else None
+        )
+        if reason:
+            self.errors[source] = reason
+        else:
+            self.errors.pop(source, None)
 
     def list_sources(self) -> list[str]:
         return sorted(self._by_source.keys())
@@ -77,12 +93,15 @@ class UniversalImporter:
 
     def run_all(self) -> dict[str, list[ImportedItem]]:
         results: dict[str, list[ImportedItem]] = {}
+        self.errors.clear()
         for importer in self._importers:
             try:
                 results[importer.SOURCE_NAME] = importer.run()
+                self._record(importer.SOURCE_NAME, importer=importer)
             except Exception as exc:
                 logger.warning("[%s] %s", importer.SOURCE_NAME, exc)
                 results[importer.SOURCE_NAME] = []
+                self._record(importer.SOURCE_NAME, exc=exc)
         return results
 
     def run_one(self, source: str, path: str | None = None) -> list[ImportedItem]:
@@ -93,10 +112,14 @@ class UniversalImporter:
             )
         if path is not None and not Path(path).exists():
             raise FileNotFoundError(f"Import path does not exist: {path}")
+        self.errors.pop(source.lower(), None)
         try:
-            return importer.run(path)
+            items = importer.run(path)
+            self._record(source.lower(), importer=importer)
+            return items
         except Exception as exc:
             logger.warning("[%s] %s", source, exc)
+            self._record(source.lower(), exc=exc)
             return []
 
     def run_path(self, path: str) -> tuple[str, list[ImportedItem]]:

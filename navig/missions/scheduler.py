@@ -73,15 +73,26 @@ class MissionScheduler:
             logger.debug("MissionScheduler list_missions failed: %s", exc)
             return
 
+        # Prune dispatched ids that are no longer queued/active so the set can't grow for the
+        # daemon's whole life — once a mission leaves QUEUED, executor.active (or its terminal
+        # state) already prevents re-dispatch, making the _dispatched entry dead weight.
+        self._dispatched &= {m.mission_id for m in queued} | set(self.executor.active)
+
         for m in queued:
             mid = m.mission_id
             # Skip missions already in-flight (incl. awaiting approval) or ones
             # we've already handed back to the executor this process lifetime.
             if mid in self.executor.active or mid in self._dispatched:
                 continue
-            self._dispatched.add(mid)
             try:
                 await self.executor.submit(m)
+                # Mark handed-back only AFTER a successful submit. Marking on the ATTEMPT
+                # stranded any mission whose resume transiently failed (a store flush /
+                # SSE emit blip): it stayed QUEUED yet was never retried this process
+                # lifetime — the exact orphan this safety net exists to recover.
+                self._dispatched.add(mid)
                 logger.info("MissionScheduler recovered orphaned mission %s", mid[:8])
             except Exception as exc:  # noqa: BLE001
+                # Leave mid OUT of _dispatched so a transient failure is retried next
+                # sweep (~interval_secs). A permanently-broken submit just re-logs slowly.
                 logger.warning("MissionScheduler failed to resume %s: %s", mid[:8], exc)

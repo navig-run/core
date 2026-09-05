@@ -7,14 +7,6 @@ updates:
     labels:
       - "dependencies"
       - "python"
-
-  - package-ecosystem: "cargo"
-    directory: "/host/_rust_legacy"
-    schedule:
-      interval: "weekly"
-    labels:
-      - "dependencies"
-      - "rust"
     ignore:
       - dependency-name: "glib"
         versions: [">=0.20.0"]

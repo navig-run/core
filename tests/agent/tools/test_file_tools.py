@@ -3,10 +3,7 @@ Tests for navig.agent.tools.file_tools
 """
 
 import asyncio
-import os
 from pathlib import Path
-
-import pytest
 
 from navig.agent.tools.file_tools import (
     _MAX_READ_CHARS,
@@ -148,6 +145,43 @@ class TestWriteFileTool:
         result = _run(self.tool.run({"path": str(f), "content": "abc"}))
         assert result.success is True
         assert "3" in result.output
+
+    def test_close_time_write_failure_is_reported_not_swallowed(self, tmp_path, monkeypatch):
+        """A disk-full / quota error surfaces at flush/close, not at write().
+
+        Text-mode writes buffer, so the OS write happens when the handle closes.
+        The tool must surface that as success=False — it must NOT return
+        "Written N chars" over a file whose bytes never reached disk. Before the
+        fix (an un-``with``'d ``open().write()``) the close ran at GC finalization,
+        which swallows the error, and the tool reported success.
+        """
+        target = tmp_path / "phantom.txt"
+
+        class _CloseFails:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                raise OSError(28, "No space left on device")
+
+            def write(self, data):  # buffered — succeeds, like the real handle
+                return len(data)
+
+            def close(self):
+                raise OSError(28, "No space left on device")
+
+        real_open = Path.open
+
+        def fake_open(self, *args, **kwargs):
+            if self.name == "phantom.txt":
+                return _CloseFails()
+            return real_open(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "open", fake_open)
+
+        result = _run(self.tool.run({"path": str(target), "content": "x" * 1000}))
+        assert result.success is False
+        assert "space" in (result.error or "").lower()
 
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -173,7 +172,6 @@ class TestAudioConfig:
     """Field count, asdict, and custom-value tests."""
 
     def test_default_provider(self):
-        from dataclasses import asdict, fields
 
         from navig.gateway.channels.audio_menu.state import AudioConfig
 

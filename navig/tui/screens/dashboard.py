@@ -186,7 +186,7 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
         badges: list[tuple[str, StatusBadge]] = []
         for section_key, resolver in SECTIONS:
             try:
-                badge = resolver(self._get_config())
+                badge = resolver()
             except Exception as exc:  # noqa: BLE001
                 badge = StatusBadge(
                     label=section_key,
@@ -236,7 +236,7 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
         if not resolver:
             return
         try:
-            badge = resolver(self._get_config())
+            badge = resolver()
         except Exception as exc:  # noqa: BLE001
             badge = StatusBadge(label=section_key, status="error", detail=str(exc))
 
@@ -335,14 +335,6 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
     # Helpers
     # ------------------------------------------------------------------
 
-    def _get_config(self) -> None:
-        """Return the loaded navig.json dict (may be None)."""
-        try:
-            from navig.tui.config_model import load_navig_json
-
-            return load_navig_json()
-        except Exception:  # noqa: BLE001
-            return None
 
     @staticmethod
     def _read_operator_name() -> str:

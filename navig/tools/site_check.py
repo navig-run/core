@@ -11,8 +11,9 @@ import logging
 import ssl
 import time
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
+from navig.net.ssrf import SsrfBlockedError, check_url, policy_from_config
 from navig.tools.registry import BaseTool, StatusCallback, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -51,17 +52,37 @@ class SiteCheckTool(BaseTool):
         status_code: int | None = None
         cert_expiry: str | None = None
 
+        # SSRF: validate the initial URL and re-validate EVERY redirect hop before any
+        # network I/O, so an agent can't point this tool at internal hosts / the cloud
+        # metadata endpoint (169.254.169.254) — directly or via a public URL that 302s inward.
+        policy = policy_from_config()
+        _MAX_REDIRECTS = 10
+
         try:
             await self._emit(on_status, "Establishing connection…", "", 40)
 
             async with httpx.AsyncClient(
-                follow_redirects=True,
+                follow_redirects=False,  # followed manually so each hop is SSRF-checked
                 timeout=httpx.Timeout(10.0),
                 verify=True,
             ) as client:
-                resp = await client.head(url)
-                status_code = resp.status_code
-                redirect_chain = [str(r.url) for r in resp.history] + [str(resp.url)]
+                current = url
+                for _ in range(_MAX_REDIRECTS + 1):
+                    check_url(current, policy)  # raises SsrfBlockedError on a blocked target
+                    resp = await client.head(current)
+                    status_code = resp.status_code
+                    redirect_chain.append(current)
+                    location = resp.headers.get("location")
+                    if resp.is_redirect and location:
+                        current = urljoin(current, location)
+                        continue
+                    break
+                else:
+                    return ToolResult(
+                        name=self.name,
+                        success=False,
+                        error=f"too many redirects (>{_MAX_REDIRECTS})",
+                    )
 
             latency_ms = (time.monotonic() - t0) * 1000
 
@@ -91,6 +112,12 @@ class SiteCheckTool(BaseTool):
             }
             return ToolResult(name=self.name, success=True, output=output)
 
+        except SsrfBlockedError as exc:
+            return ToolResult(
+                name=self.name,
+                success=False,
+                error=f"blocked by SSRF policy: {exc}",
+            )
         except httpx.ConnectError as exc:
             return ToolResult(
                 name=self.name,

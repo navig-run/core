@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
 from navig.messaging.registry import (
     _messaging_cfg,
     _telegram_config,

@@ -92,6 +92,13 @@ class TestGitHubSource:
             with pytest.raises(SourceError):
                 source.latest_version()
 
+    def test_default_repo_is_canonical(self):
+        # The default GitHub update source must point at the canonical release repo
+        # (navig-run/core) — matching latest.json's download/changelog URLs — not the
+        # pre-monorepo navig-os/navig-core.
+        assert GitHubSource()._repo == "navig-run/core"
+        assert "navig-run/core" in GitHubSource().label
+
 
 # ---------------------------------------------------------------------------
 # ArtifactURLSource

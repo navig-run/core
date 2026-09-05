@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 # ---------------------------------------------------------------------------
 # navig.tui.resolvers — StatusBadge (pure dataclass, no Textual)

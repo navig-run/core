@@ -95,6 +95,23 @@ def register(server: Any) -> None:
         }
     )
 
+    # See navig.mcp_server._gate_tool — unlisted defaults to "safe".
+    # A module's register() must be self-sufficient: register_all_tools creates this
+    # dict, but a direct `module.register(server)` call (tests, a plugin host) does not,
+    # and assuming it exists raised AttributeError. cdp.py already guarded; these did not.
+    if not hasattr(server, "_tool_safety"):
+        server._tool_safety = {}
+    server._tool_safety.update({
+        "navig_runtime_mission_action": "dangerous",  # advances/executes a mission
+        "navig_runtime_create_mission": "moderate",
+        # read-only — recorded explicitly so a missing entry is a build failure,
+        # not a silent default to "safe".
+        "navig_runtime_list_missions": "safe",
+        "navig_runtime_list_nodes": "safe",
+        "navig_runtime_list_receipts": "safe",
+        "navig_runtime_trust_score": "safe",
+    })
+
 
 def _tool_runtime_list_nodes(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """List registered Nodes."""

@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from navig.plans.scaffold import _DIRS, _TEMPLATE_FILES, scaffold_plans_structure
 
 # ---------------------------------------------------------------------------
@@ -73,6 +71,7 @@ class TestScaffoldPlansStructure:
 
     def test_created_paths_are_absolute(self, tmp_path):
         created = scaffold_plans_structure(tmp_path)
+        assert created, "created was empty, so the loop below asserted nothing"
         for p in created:
             assert p.is_absolute()
 

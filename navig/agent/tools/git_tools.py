@@ -49,7 +49,18 @@ def _find_git_root(start: Path | None = None) -> Path | None:
 
 
 def _run_git(args: list[str], cwd: Path) -> tuple[bool, str]:
-    """Run a git command and return ``(success, output)``."""
+    """Run a git command and return ``(success, output)``.
+
+    ``encoding="utf-8"`` is not optional here. Without it ``text=True`` decodes git's
+    stdout with ``locale.getpreferredencoding(False)`` — cp1251 on the operator's machine —
+    and git emits UTF-8, so every non-ASCII character in a commit subject, author name or
+    diff hunk arrives corrupted. Nothing raises, because cp1251 maps almost every byte.
+
+    Eight agent tools route through this one helper (status, diff, log, add, commit,
+    stash), so the corrupted text goes straight into the model's context as if it were
+    what the repository actually contains. ``errors="replace"`` keeps a repository with a
+    legacy non-UTF-8 commit encoding from turning a wrong answer into a crash.
+    """
     git_exe = shutil.which("git") or "git"
     cmd = [git_exe, *args]
     try:
@@ -57,6 +68,8 @@ def _run_git(args: list[str], cwd: Path) -> tuple[bool, str]:
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_GIT_TIMEOUT,
             cwd=str(cwd),
         )

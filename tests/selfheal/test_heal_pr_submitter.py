@@ -3,7 +3,6 @@ Tests for navig.selfheal.heal_pr_submitter — store/list patches, token, body b
 """
 
 import json
-import os
 from pathlib import Path
 from unittest.mock import patch
 

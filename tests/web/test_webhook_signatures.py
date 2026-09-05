@@ -5,14 +5,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 
-import pytest
-
 from navig.webhooks.signatures import (
     SignatureConfig,
     extract_event_type,
     verify_github_signature,
     verify_signature,
-    verify_stripe_signature,
 )
 
 

@@ -2,8 +2,15 @@
 Gmail — OAuth Provider Configuration
 
 Scopes and endpoint URLs for Google Gmail API v1.
-The ``GMAIL_OAUTH_CONFIG`` is registered into the global
-``OAUTH_PROVIDERS`` dict by :func:`register_gmail_oauth`.
+
+Registration path (neither of the two names this docstring used to give exists —
+there is no ``GMAIL_OAUTH_CONFIG`` constant and no ``register_gmail_oauth``):
+:func:`get_gmail_oauth_config` is called by ``connectors.bootstrap``, which walks
+its ``_oauth_loaders`` table and hands the result to
+``ConnectorAuthManager.register_provider("gmail", config)`` — that is what
+populates the global ``OAUTH_PROVIDERS`` dict. Returning ``None`` (no
+``GOOGLE_CLIENT_ID`` in the environment) skips registration silently, which is
+why an unconfigured install simply has no ``gmail`` provider rather than an error.
 """
 
 from __future__ import annotations

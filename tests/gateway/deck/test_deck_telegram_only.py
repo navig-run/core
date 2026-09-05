@@ -116,3 +116,30 @@ def test_accessors_reflect_config():
     assert deck_auth.deck_bot_token() == BOT_TOKEN
     _configure(telegram_only=False)
     assert deck_auth.deck_telegram_only() is False
+
+
+def test_string_config_booleans_are_coerced():
+    """`navig config set` stores raw STRINGS, and bool("false") is True — so a
+    deck.telegram_only / deck.dev_mode the operator disabled would silently stay ON.
+    configure_deck_auth must coerce these (both gate security behaviour)."""
+    # telegram_only: "false" must turn the remote lockdown OFF, not read truthy.
+    _configure(telegram_only="false")
+    assert deck_auth.deck_telegram_only() is False
+    _configure(telegram_only="true")
+    assert deck_auth.deck_telegram_only() is True
+    _configure(telegram_only="off")
+    assert deck_auth.deck_telegram_only() is False
+
+    # dev_mode: the local-bypass gate — same footgun, stored as a real bool.
+    def _cfg_dev(dev_mode):
+        configure_deck_auth(
+            bot_token=BOT_TOKEN, allowed_users=[], require_auth=True,
+            dev_mode=dev_mode, auth_max_age=3600, api_key=API_KEY, telegram_only=False,
+        )
+
+    _cfg_dev("false")
+    assert deck_auth._deck_config["dev_mode"] is False
+    _cfg_dev("on")
+    assert deck_auth._deck_config["dev_mode"] is True
+    _cfg_dev(True)  # real bools still pass through unchanged
+    assert deck_auth._deck_config["dev_mode"] is True

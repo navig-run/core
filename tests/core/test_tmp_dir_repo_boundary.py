@@ -1,7 +1,10 @@
 """Pins the tmp-dir boundary that has silently broken tests three times.
 
-``pytest.ini`` sets ``--basetemp=.pytest_tmp``, which lives INSIDE ``core/`` — inside the
-git checkout. So every ``tmp_path`` has a ``.git`` **ancestor** *and* a ``.navig``
+``core/conftest.py`` points ``PYTEST_DEBUG_TEMPROOT`` at ``core/.dev/tmp`` and pytest allocates
+``pytest-of-<user>/pytest-<n>/`` beneath it — INSIDE ``core/``, inside the git checkout.
+(``pytest.ini`` deliberately pins no ``--basetemp``; it WIPES its target, which let concurrent
+runs delete each other's temp dirs — see ``test_tmp_dir_concurrency.py``. Do not add one.)
+So every ``tmp_path`` has a ``.git`` **ancestor** *and* a ``.navig``
 **ancestor**. Anything that walks upward looking for one of those markers finds NAVIG's
 own repo, and a test that used ``tmp_path`` to mean "a directory that is not in a
 repo / not in a NAVIG project" silently asserted the opposite.

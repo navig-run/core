@@ -34,6 +34,8 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from navig.core.aio_subprocess import kill_descendants
+
 logger = logging.getLogger("navig.tools.proc")
 
 # Post-kill drain: how long to wait for a terminated process to flush remaining
@@ -323,6 +325,13 @@ async def run_process(
                 return
             if no_output_deadline and time.monotonic() > no_output_deadline:
                 no_output_timed_out = True
+                # Sweep the descendants first: on Windows a cmd.exe shell spawn (see
+                # _is_win_shell above) makes `proc` a SHELL, so killing it alone leaves
+                # the real command running. Descendants only — this path has its own
+                # draining/waiting and must not add a competing wait(). Suppressed
+                # separately so a failed sweep can never skip the kill below.
+                with contextlib.suppress(Exception):
+                    await kill_descendants(proc.pid)
                 try:
                     proc.kill()
                 except ProcessLookupError:
@@ -338,6 +347,10 @@ async def run_process(
 
     except asyncio.TimeoutError:
         timed_out = True
+        # The tree, not just the pid: a Windows cmd.exe shell spawn would otherwise keep
+        # running the real command long past the reported timeout.
+        with contextlib.suppress(Exception):
+            await kill_descendants(proc.pid)
         try:
             proc.kill()
         except ProcessLookupError:
@@ -359,6 +372,10 @@ async def run_process(
             await communicate_task
 
         if proc.returncode is None:
+            # Still alive here, so the tree is still walkable — sweep it before the kill,
+            # or a shell spawn's real command outlives run_process() entirely.
+            with contextlib.suppress(Exception):
+                await kill_descendants(proc.pid)
             with contextlib.suppress(ProcessLookupError, Exception):
                 proc.kill()
             with contextlib.suppress(asyncio.TimeoutError, Exception):

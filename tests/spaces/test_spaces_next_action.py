@@ -1,9 +1,6 @@
 """Tests for navig.spaces.next_action — first_pending_task, SpaceNextAction."""
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
 import pytest
 
 from navig.spaces.next_action import SpaceNextAction, first_pending_task

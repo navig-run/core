@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 import navig.installer.modules.service as svc_mod
 from navig.installer.contracts import InstallerContext, ModuleState
 

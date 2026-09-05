@@ -12,6 +12,7 @@ vault_audit  : append-only event log per item
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 from collections.abc import Iterator
@@ -53,6 +54,30 @@ CREATE TABLE IF NOT EXISTS vault_audit (
 """
 
 
+_logger = logging.getLogger(__name__)
+
+
+def _rows_isolated(rows, to_obj, what: str, logger):
+    """Map *rows* through *to_obj*, dropping ONLY the rows that fail to parse.
+
+    Deliberately not ``safe_json_loads`` inside the row converter. These objects are
+    round-tripped — the converter also feeds ``get()``, and the caller's documented flow is
+    fetch → mutate → save — so degrading a malformed blob to ``{}`` there would let the next
+    save PERSIST the degraded value over the real one. Read-side degrade is safe; a
+    read-modify-write must not.
+
+    Isolating per row keeps both properties: one corrupt row costs that row instead of the
+    whole listing, and ``get()`` still raises so nothing writes an emptied blob back.
+    """
+    out = []
+    for row in rows:
+        try:
+            out.append(to_obj(row))
+        except Exception as exc:  # noqa: BLE001 - one unreadable row must not sink the list
+            logger.warning("%s: skipping unreadable row: %s", what, exc)
+    return out
+
+
 class VaultStore:
     """SQLite-backed storage for :class:`~navig.vault.types.VaultItem` objects.
 
@@ -84,7 +109,10 @@ class VaultStore:
     def _connect(self) -> sqlite3.Connection:
         with self._lock:
             if self._conn is None:
-                self.vault_dir.mkdir(parents=True, exist_ok=True)
+                # mode=0o700: a fresh vault dir is owner-only (harmless on Windows). An
+                # already-existing dir keeps its mode (exist_ok), which the salt/legacy DB
+                # already live in.
+                self.vault_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
                 conn = sqlite3.connect(
                     str(self._db_path),
                     check_same_thread=False,
@@ -93,6 +121,14 @@ class VaultStore:
                 conn.row_factory = sqlite3.Row
                 conn.execute("PRAGMA journal_mode=WAL")
                 conn.execute("PRAGMA foreign_keys=ON")
+                # Wait up to 5s for an INTER-process lock instead of erroring instantly
+                # with "database is locked". The in-process RLock serialises threads, but
+                # a second PROCESS on the same vault.db (the CLI writing while the daemon
+                # writes; a backup / AV agent holding the file) is not behind it — and a
+                # transient lock on the SECRETS path surfaced as a live key reported absent
+                # (the phantom-empty class, #687). 5000ms matches the canonical store
+                # default (store/base.py · storage/pragma_profiles.py · memory/key_facts).
+                conn.execute("PRAGMA busy_timeout=5000")
                 conn.executescript(_CREATE_SQL)
                 # Add last_used_at column if upgrading from older schema
                 try:
@@ -100,7 +136,26 @@ class VaultStore:
                 except sqlite3.OperationalError:
                     pass  # Column already exists
                 self._conn = conn
+                # Lock the store owner-only (0600), like the salt (crypto.py) and the legacy
+                # DB (storage.py). WAL is on, so the -wal/-shm siblings hold pending rows too
+                # and must be locked alongside the main DB. Secret VALUES stay sealed with the
+                # master key regardless, but the credential inventory (labels, provider names,
+                # metadata: domain/username/url) and the access-audit log must not be readable
+                # by other local users on a multi-user host.
+                self._secure_store_files()
             return self._conn
+
+    def _secure_store_files(self) -> None:
+        """Best-effort owner-only permissions on the SQLite store files. Never raises —
+        a failed chmod must not break opening the vault."""
+        from navig.core.file_permissions import (  # noqa: PLC0415
+            set_owner_only_file_permissions,
+        )
+
+        for suffix in ("", "-wal", "-shm"):
+            sibling = Path(str(self._db_path) + suffix)
+            if sibling.exists():
+                set_owner_only_file_permissions(sibling)
 
     @contextmanager
     def _tx(self) -> Iterator[sqlite3.Connection]:
@@ -188,7 +243,7 @@ class VaultStore:
             rows = conn.execute(
                 f"SELECT * FROM vault_items {where} ORDER BY label", params
             ).fetchall()
-        return [self._row_to_item(r) for r in rows]
+        return _rows_isolated(rows, self._row_to_item, "vault list", _logger)
 
     def search(self, query: str) -> list[VaultItem]:
         """Full-text search over label and provider fields."""
@@ -199,7 +254,7 @@ class VaultStore:
                 "SELECT * FROM vault_items WHERE label LIKE ? OR provider LIKE ? ORDER BY label",
                 (pat, pat),
             ).fetchall()
-        return [self._row_to_item(r) for r in rows]
+        return _rows_isolated(rows, self._row_to_item, "vault search", _logger)
 
     def delete(self, label: str) -> bool:
         """Delete item by label.  Returns True if a row was deleted."""

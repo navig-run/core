@@ -145,4 +145,4 @@ navig run "tmux new -d -s migrate 'cd /var/www/app && php artisan migrate --forc
 
 - tmux is Linux/macOS only (not native on Windows)
 - Sessions persist across SSH disconnects
-- Use `tmux attach -t {name}` for interactive access (via `navig shell`)
+- Use `tmux attach -t {name}` for interactive access (via `navig run`)

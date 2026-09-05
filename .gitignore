@@ -1,248 +1,173 @@
 # ===============================================
-# NAVIG CLI - Git Ignore Configuration
+# NAVIG core — Git Ignore Configuration
 # ===============================================
-# This file specifies intentionally untracked files that Git should ignore.
-# See: https://git-scm.com/docs/gitignore
-
-# ===============================================
-# Private / local-only docs
-# ===============================================
-CHANGELOG.md
-.github/instructions/local-developer.instructions.md
-
-# ===============================================
-# IDE and Editor Files
-# ===============================================
-.vscode/
-.idea/
-*.swp                       # Vim swap files
-*.swo                       # Vim swap files
-*~                          # Backup files
-.DS_Store                   # macOS Finder metadata
-Thumbs.db                   # Windows thumbnail cache
-desktop.ini                 # Windows folder settings
-nul                         # Windows NUL device artifact
-
-# ===============================================
-# Dev scripts generated during agent sessions
-# ===============================================
-validate_prompts.py
-track_c_results.txt
+#
+# LAW: `#` starts a comment ONLY at the beginning of a line.
+#
+# A rule written as `.env    # secrets` is NOT the pattern `.env` — git matches the
+# whole literal string, spaces and "# secrets" included, so the rule silently
+# matches nothing. This file previously carried 80 such rules: `.env`, `.env.*`,
+# `*.pem`, `.coverage`, `.mypy_cache/` and `.pytest_cache/` were ALL dead, which is
+# how a 53 KB `.coverage` database ended up committed. Put every explanation on its
+# OWN line above the pattern it explains. Never append one after a pattern.
+#
+# Locally generated artifacts belong under `.dev/` — see pyproject.toml
+# ([tool.ruff] cache-dir, [tool.mypy] cache_dir, [tool.coverage.run] data_file)
+# and pytest.ini (cache_dir, --basetemp).
 
 # ===============================================
 # Python
 # ===============================================
-# Python bytecode cache
 __pycache__/
 **/__pycache__/
-**/__pycache__
-*.py[cod]                   # Compiled Python files
-*$py.class                  # Python class files
-*.so                        # Shared objects
-.Python                     # Python environment
-build/                      # Build directory
-develop-eggs/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+.Python
+
+# Build / packaging output
+build/
 dist/
+sdist/
+develop-eggs/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
 wheels/
+parts/
+var/
 *.egg-info/
-.installed.cfg
 *.egg
+.installed.cfg
 MANIFEST
+cython_debug/
 
-# Virtual Environments
+# Virtual environments
+.venv/
 venv/
-ENV/
 env/
-.venv
+ENV/
 pip-log.txt
 pip-delete-this-directory.txt
 
-# Linting and Type Checking
-.ruff_cache/                # Ruff linter cache
-.mypy_cache/                # mypy type checker cache
-.dmypy.json                 # dmypy metadata
+# ===============================================
+# Development artifacts — everything generated locally lives under .dev/
+# ===============================================
+# The bare cache patterns below are a safety net for a tool run with an explicit
+# config override, or for a checkout predating the .dev/ redirect.
+.dev/
+.local/
+.archive/
+.backup/
+.backups/
+
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
 dmypy.json
-.pyre/                      # Pyre type checker
-.pytype/                    # Pytype static analyzer
+.pytype/
+.pyre/
+.pytest_cache/
+.benchmarks/
+.hypothesis/
+.tox/
+.nox/
+
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.cover
+
+# pytest --basetemp dirs (all historical variants)
+.pytest_tmp/
+.pytest_tmp*/
+pytest_tmp*/
+*.pytest_tmp/
 
 # ===============================================
-# PowerShell
+# Secrets and credentials — NEVER commit
 # ===============================================
-*.ps1xml                    # PowerShell XML files (unless explicitly needed)
-*.psd1                      # PowerShell data files (config-dependent)
+.env
+.env.*
+!.env.example
+!.env.*.example
 
-# ===============================================
-# PHP and Composer
-# ===============================================
-vendor/                     # Composer dependencies
-composer.phar               # Composer executable
-composer.lock               # Lock file (uncomment if not needed for your workflow)
-*.cache                     # PHP cache files
-
-# ===============================================
-# Node.js (if used)
-# ===============================================
-node_modules/               # npm dependencies
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-package-lock.json           # npm lock file (uncomment if not needed)
-
-# ===============================================
-# Database Files
-# ===============================================
-*.sql                       # SQL dump files (except migrations)
-!migrations/*.sql           # Keep migration files
-*.sqlite
-*.sqlite3
-*.db
-*.dump                      # Database dumps
-
-# ===============================================
-# Logs and Temporary Files
-# ===============================================
-*.log                       # All log files
-*.tmp                       # Temporary files
-*.temp                      # Temporary files
-*.cache                     # Cache files
-logs/                       # Log directories
-*.pid                       # Process ID files
-
-# ===============================================
-# Sensitive Data and Credentials
-# ===============================================
-.env                        # Environment variables
-.env.*                      # Environment-specific files
-!.env.example               # Keep example env file
-!.env.*.example             # Keep example env files (e.g. .env.telegram.example)
-
-# ===============================================
-# Experimental and Lab Projects
-# ===============================================
-.lab/                       # Experimental projects and prototypes
-*.key                       # Private keys
-*.pem                       # SSL/TLS certificates
-*.crt                       # Certificate files
-*.p12                       # PKCS12 files
-*.pfx                       # Certificate files
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+*.token
 secrets.yaml
 credentials.json
 config/secrets.*
 *_credentials.*
+discord-webhooks.json
+discord-*.json
 
-# Discord Credentials (NEVER commit these)
-discord-webhooks.json       # Webhook URLs
-*.token                     # Bot tokens
-discord-*.json              # Discord config with secrets
+# NAVIG vault: AES-256 encrypted blobs + key material
+*.enc
+.blackbox/
+**/.blackbox/
+vault.salt
 
-# NAVIG Vault & Encrypted Data (NEVER commit)
-*.enc                       # AES-256 encrypted vault blobs
-.blackbox/                  # Vault key directory
-**/.blackbox/               # Vault key directory (any depth)
-vault.salt                  # Vault salt file
+# Ed25519 private keys for license signing / founder key material.
+tools/license_keys/
 
-# Cython compiled binaries (generated at build time, not committed)
-*.pyd                       # Cython/C extension - Windows
-# *.so compiled by Cython are already covered by *.so above
-
-# NAVIG Configuration
-# ~/.navig/ is the global user store - never in a repo
-~/.navig/                   # Global user NAVIG config (shouldn't be in repo anyway)
-# .navig/ is TRACKED - plans/, brand/, wiki/, agents/ all live here
-# Only runtime / credential files inside it are ignored (see list below)
-.archive/                   # Local archive folder
-.dev/                       # Local development folder
-nohup.out                   # Background process output
+# Local Cloudflare token sandbox
+cf.txt
 
 # ===============================================
-# Backups and Archives
+# Databases, logs, process state
 # ===============================================
-.backups/                   # Backup directory
-.backup/                    # Local backup folder (singular)
-*.backup                    # Backup files
-*.bak                       # Backup files
-*.INSECURE.bak              # Security-removed code backups
-*.zip                       # Archives
-*.tar.gz                    # Compressed archives
-*.tgz                       # Compressed archives
-*.rar                       # Archives
-*-upload.tgz                # Upload artifacts
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.log
+*.pid
+logs/
+nohup.out
 
 # ===============================================
-# Testing and Coverage
+# Editors and OS
 # ===============================================
-.pytest_cache/              # Pytest cache
-.coverage                   # Coverage data
-htmlcov/                    # HTML coverage reports
-.tox/                       # Tox testing
-.nox/                       # Nox sessions
-coverage.xml                # Coverage XML report
-*.cover                     # Coverage files
-.hypothesis/                # Hypothesis test data
-pytest*.txt                 # ad-hoc pytest text logs (store under .dev/)
-
-# ===============================================
-# Documentation Build Artifacts
-# ===============================================
-docs/_build/                # Sphinx build directory
-site/                       # MkDocs build directory
-
-# ===============================================
-# App-Specific
-# ===============================================
-
-# Documentation and Tests (tracked - essential to the project)
-# docs/
-# tests/
-
-# ===============================================
-# OS-Specific
-# ===============================================
-# macOS
+# `.vscode/*` (not `.vscode/`) so the shared settings file can be re-included —
+# git cannot re-include a file whose PARENT DIRECTORY is excluded.
+.vscode/*
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
 .AppleDouble
 .LSOverride
 ._*
-
-# Windows
+Thumbs.db
 [Dd]esktop.ini
 $RECYCLE.BIN/
-*.cab
-*.msi
-*.msix
-*.msm
-*.msp
-*.lnk
-
-# Linux
 .directory
 .Trash-*
+*.lnk
+nul
+$null
+
+# Merge / edit leftovers
+*.orig
+*.bak
+*.backup
 
 # ===============================================
-# Miscellaneous
+# Node (tooling only; core itself is pure Python)
 # ===============================================
-*.orig                      # Merge conflict originals
-cython_debug/               # Cython debug symbols
+node_modules/
 
 # ===============================================
-# END OF .gitignore
+# AI IDE configuration — per-developer overrides only
 # ===============================================
-
-# NAVIG runtime files inside
-.navig/
-.navig_worktrees/
-.backups/
-node_modules
-
-# AI IDE Configuration
-# Per-developer overrides only:
 .augment
 .clinerules
 .cursorrules
@@ -252,10 +177,20 @@ node_modules
 .claude/
 .codex/
 .gemini/
-.ruff_cache/
 
-# Archive (cleanup staging - never commit)
-.archive/
+# ===============================================
+# NAVIG runtime state
+# ===============================================
+# ~/.navig/ is the global user store and never belongs in a repo. The project
+# `.navig/` directory is runtime state here in core and is ignored wholesale.
+.navig/
+.navig_worktrees/
+userdata/
+temp_restore/
+
+# Private dev-only plugin
+navig/plugins/llm_bridge/
+navig/plugins/llm-bridge/
 
 # Bot stack (separate private repo)
 navig_ai.py
@@ -264,143 +199,41 @@ run_navig.py
 navig_harness.py
 requirements-bot.txt
 
-# Private files
+# Private local docs
 knowledge/
-.env.remote
+.github/instructions/local-developer.instructions.md
 
-# NAVIG reports (security scans, secret scans - never commit)
-.navig/reports/
+# Experimental reference corpus (never shipped)
+.lab/
 
-# Dev scratch / test output files in repo root (never commit)
-out*.txt
-exec_res.txt
-vault_res.txt
-debug.txt
-dev.log
-profile.txt
-cprof.log
-cumtime_profile.txt
-version_prof*.txt
-import_times.log
-test_out*.txt
-test_results*.txt
-test_failures*.txt
-pytest_*.txt
-test_run.log
-test_vault.log
-failed_test*.txt
-raw_out.txt
-cli_analysis.txt
+# Community mirror lives at the monorepo root under registry/
+navig-community/
 
-# Root-level dev scratch scripts (one-off, not part of package)
-analyze_cli.py
-clean_mcp.py
-fix_db_aliases.py
-fix_imports.py
-move_apps.py
-move_host.py
-run_test.py
-test_google.py
-test_json.py
-test_parse*.py
-patch_wizard.py
-patch2_wizard.py
-patch3_wizard.py
-fix_escapes.py
-fix_escapes2.py
-audit_prompts.py
-audit_slugs.py
-validate_prompts.py
-_msg_rewrite.py
-_rewrite_history.py
-audit_log.txt
+# icons/ moved to .navig/brand/; ignore any root-level recreation
+icons/
 
-# Root output / tracking files
-latest.json                 # Stale release metadata artifact
-pytest_fail.txt
-tC_out*.txt
-track_c_results.txt
-STABILITY_REPORT.md
+# NOTE: `latest.json` is deliberately NOT ignored. The old rule called it a "stale
+# release metadata artifact", but core/latest.json is the CANONICAL release manifest:
+# scripts/_version_sync.py writes it (config/latest.json is the mirror) and
+# .github/workflows/ci.yml guards its version against pyproject.toml. The rule was
+# dead (trailing `# comment`), which is the only reason it never broke a release.
 
-# Internal step-completion reports (not relevant to contributors)
-docs/.archive/
-test_vision.py
-
-temp_restore/
-
-# Runtime local data (user-specific, not for VCS)
-userdata/
-
-# host/ - compiled binaries and runtime logs
+# host/ build output — the tracked manifests stay, binaries and logs do not
 host/out.log
 host/build_errors.txt
 host/*.exe
-
-# Community stub folder (separate repo at navig-community/)
-navig-community/
-
-# There is NO `store/` ignore rule any more, on purpose. A bare `store/` used to sit
-# here to keep "runtime store" content out of VCS — but the runtime store lives in
-# ~/.navig/data/store (see platform.paths.store_dir), never in the repo. All the rule
-# ever did was SILENTLY swallow tracked content:
-#   * `navig/store/` (BaseStore source code) had to be rescued with a !negation;
-#   * 13 authored builtin blocks were dropped by `git add` and never shipped.
-# The built-in content store is now navig/builtin/ (tracked, and shipped in the wheel
-# via package-data). Do not re-add a bare `store/` rule.
-navig/store/**/__pycache__/
-
-# icons/ was moved to .navig/brand/ (tracked); ignore any root-level recreation
-icons/
-
-# Private dev-only plugin - never commit
-navig/plugins/llm_bridge/
-navig/plugins/llm-bridge/
-
-# Rust
 host/crates/**/target/
 **/target/
-
-# Local workspace policy
-# - .dev/: AI working folder (scripts/logs/outputs/scratch) — never commit
-# - .local/: backups/moved artifacts and local temp compatibility — never commit
-.dev/
-.local/
-.lab/
-$null
-
-# pytest local temp dirs (all variants land inside .local/)
-.pytest_tmp/
-.pytest_tmp_*/
-.pytest_tmp*/
-pytest_tmp*/
-*.pytest_tmp/
-.local/
-
-# Local CF token sandbox (NEVER commit)
-cf.txt
-
-
-# Local-only Ed25519 private keys for license signing (NEVER commit)
-tools/license_keys/*.priv
-
-
-# Founder license key material — NEVER ship in public core
-tools/license_keys/
-
-# scratch / one-off dev files — never commit
-.tmp_*
-fix_aiohttp.ps1
 
 # ===============================================
 # navig-os workspace scaffold (runtime state — NEVER commit)
 # ===============================================
-# When navig-os (apps/os) manages a directory as a "workspace" it scaffolds this exact
-# set of files/dirs at the workspace root — config.json (workspace metadata), events.jsonl
-# (automation log), a statuses/ + labels/ task system, skills/, and a .claude-plugin/
-# marker. Pointing navig-os at core/ (which is the Python package, NOT a workspace) littered
-# these here as untracked files that clutter every `git status`. The repo root already
-# ignores the same set (root .gitignore); these rules are the core/-scoped mirror. None of
-# these names is a legitimate core file — core's real config is pyproject.toml.
+# When navig-os (apps/os) manages a directory as a "workspace" it scaffolds this
+# exact set of files/dirs at the workspace root. Pointing navig-os at core/ — which
+# is the Python package, NOT a workspace — littered these here as untracked files
+# that cluttered every `git status`. The monorepo root ignores the same set; these
+# rules are the core/-scoped mirror. None of these names is a legitimate core file:
+# core's real config is pyproject.toml.
 /config.json
 /events.jsonl
 /install.json
@@ -408,10 +241,26 @@ fix_aiohttp.ps1
 /labels/
 /statuses/
 /sources/
+/sessions/
 /skills/
+# core/workflows/ is NOT a core directory either: the automation engine loads from
+# config_dir()/workflows (navig/core/automation_engine.py), never from the repo.
+/workflows/
 /.claude-plugin/
 /.inbox
 /.agents
 /plans/
 /AGENTS.md
 /GEMINI.md
+
+# ===============================================
+# Historical note — do NOT re-add a bare `store/` rule
+# ===============================================
+# A bare `store/` used to sit here to keep "runtime store" content out of VCS, but
+# the runtime store lives in ~/.navig/data/store (platform.paths.store_dir), never
+# in the repo. All the rule ever did was SILENTLY swallow tracked content:
+#   * `navig/store/` (BaseStore source code) had to be rescued with a !negation;
+#   * 13 authored builtin blocks were dropped by `git add` and never shipped.
+# The built-in content store is now navig/builtin/ (tracked, shipped in the wheel
+# via package-data).
+navig/store/**/__pycache__/

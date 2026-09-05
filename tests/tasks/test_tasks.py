@@ -238,3 +238,93 @@ class TestTaskWorker:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestWorkerShutdown:
+    """`TaskWorker.stop()` had no coverage at all. These pin what it guarantees.
+
+    On shutdown timeout it cancels every in-flight task. `Task.cancel()` only
+    *requests* cancellation, so "stop() returns while tasks are still unwinding" looks
+    like a real hazard — the daemon would tear down the queue underneath them.
+
+    It is not, and that is worth recording so nobody (including me) re-derives it:
+    measured, `stop()` takes ~370 ms with a task whose cancellation cleanup awaits
+    200 ms, and every task is `.done()` by the time it returns. Cancelling and awaiting
+    `_loop_task` afterwards yields enough for the cancelled tasks to unwind.
+
+    The guarantee is therefore INCIDENTAL rather than explicit — it falls out of the
+    ordering rather than being stated. These tests make it observable, so a future
+    reordering of stop() that breaks it fails here instead of silently shipping.
+    """
+
+    @staticmethod
+    def _worker(queue, **cfg):
+        return TaskWorker(queue, config=WorkerConfig(**cfg))
+
+    async def test_stop_waits_for_cancellations_to_land(self):
+        import asyncio
+
+        queue = TaskQueue()
+        worker = self._worker(queue, shutdown_timeout=0.05, max_concurrent=2)
+
+        unwound = asyncio.Event()
+
+        async def slow(_params):
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                # Cleanup that AWAITS. This is what makes the test non-vacuous: a
+                # handler that unwinds in one step gets its chance from the incidental
+                # yields inside stop() itself (cancelling and awaiting the loop task),
+                # so the old code passed by luck. Real cleanup does I/O — the queue's
+                # own fail()/complete() writes to disk — so it spans more than one tick.
+                await asyncio.sleep(0.2)
+                unwound.set()
+                raise
+
+        worker.register_handler("slow", slow)
+        await queue.add(Task(name="slow", handler="slow"))
+        await worker.start()
+
+        for _ in range(200):           # let the loop pick it up
+            if worker.active_count:
+                break
+            await asyncio.sleep(0.01)
+        assert worker.active_count == 1, "precondition: a task must be in flight"
+
+        await worker.stop(wait=True)   # drains, times out, cancels
+
+        assert unwound.is_set(), (
+            "stop() returned before the cancelled task had unwound — its cleanup would "
+            "race the daemon tearing down the queue"
+        )
+
+    async def test_stop_terminates_even_with_a_long_running_task(self):
+        """Shutdown must always finish — a 30s task must not hold the daemon open."""
+        import asyncio
+
+        queue = TaskQueue()
+        worker = self._worker(queue, shutdown_timeout=0.05, max_concurrent=2)
+
+        async def slow(_params):
+            await asyncio.sleep(30)
+
+        worker.register_handler("slow", slow)
+        await queue.add(Task(name="slow", handler="slow"))
+        await worker.start()
+
+        for _ in range(200):
+            if worker.active_count:
+                break
+            await asyncio.sleep(0.01)
+        assert worker.active_count == 1
+
+        await asyncio.wait_for(worker.stop(wait=True), timeout=10)
+        assert worker.is_running is False
+
+    async def test_stop_with_no_active_tasks_is_clean(self):
+        queue = TaskQueue()
+        worker = self._worker(queue, shutdown_timeout=0.05)
+        await worker.start()
+        await worker.stop(wait=True)
+        assert worker.is_running is False

@@ -20,6 +20,14 @@ def _cli_env(tmp_path: Path) -> dict[str, str]:
     env = os.environ.copy()
     env["HOME"] = str(tmp_path)
     env["USERPROFILE"] = str(tmp_path)
+    # The session-wide NAVIG_CONFIG_DIR (core/tests/conftest.py) is INHERITED by
+    # `os.environ.copy()` and WINS over HOME in `platform.paths.config_dir`, so
+    # without this the CLI reads a config this test never wrote — and falls back to
+    # the default port, where the operator's LIVE daemon answers. That is how
+    # `test_gateway_session_handles_missing_gateway_without_invalid_url` came to
+    # fail with HTTP 401 once #994 required a bearer token.
+    env["NAVIG_CONFIG_DIR"] = str(tmp_path / ".navig")
+    env["NAVIG_DATA_DIR"] = str(tmp_path / ".navig" / "data")
     env["NAVIG_SKIP_ONBOARDING"] = "1"
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"

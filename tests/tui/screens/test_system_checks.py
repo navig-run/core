@@ -1,8 +1,6 @@
 """Tests for navig/tui/screens/system_checks.py — SystemChecksScreen."""
 from __future__ import annotations
 
-import pytest
-
 # Textual is stubbed by tests/tui/conftest.py — no try/skip needed.
 
 

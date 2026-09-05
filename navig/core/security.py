@@ -19,6 +19,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from navig.core.coerce import coerce_bool
+
 # =============================================================================
 # Sensitive-data Redaction
 # =============================================================================
@@ -102,6 +104,11 @@ DEFAULT_REDACT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b(doo_v1_[A-Za-z0-9_-]{10,})\b"), r"doo_v1_***REDACTED***"),   # DigitalOcean OAuth
     (re.compile(r"\b(fc-[A-Za-z0-9_-]{10,})\b"), r"fc-***REDACTED***"),            # Firecrawl
     (re.compile(r"\b(fal_[A-Za-z0-9_-]{10,})\b"), r"fal_***REDACTED***"),          # fal.ai
+    # ElevenLabs uses `sk_` + hex — an UNDERSCORE, so the OpenAI `sk-` rule above does
+    # not cover it and the key was reaching logs and crash reports in full. Kept ahead
+    # of the Stripe `sk_live_` rule but harmless to it: `[A-Za-z0-9]` cannot cross the
+    # underscore in `sk_live_`, so a Stripe key never reaches the 24-char threshold here.
+    (re.compile(r"\b(sk_[A-Za-z0-9]{24,})\b"), r"sk_***REDACTED***"),               # ElevenLabs
     (re.compile(r"\b(bb_live_[A-Za-z0-9_-]{10,})\b"), r"bb_live_***REDACTED***"),  # Blackbird
     (re.compile(r"\bAKIA[A-Z0-9]{16}\b"), r"AKIA***REDACTED***"),                  # AWS access key
     (re.compile(r"\bsk_live_[A-Za-z0-9]{10,}\b"), r"sk_live_***REDACTED***"),      # Stripe live
@@ -523,7 +530,7 @@ def check_config_security(config: dict[str, Any]) -> list[SecurityFinding]:
     for key, value in config.items():
         _check_value(key, value, key)
 
-    if config.get("allow_insecure", False):
+    if coerce_bool(config.get("allow_insecure"), default=False):
         findings.append(
             SecurityFinding(
                 check_id="allow-insecure",

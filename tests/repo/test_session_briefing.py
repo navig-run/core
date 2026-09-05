@@ -73,3 +73,17 @@ def test_conflicting_pair_is_flagged_including_dirty_state(hook, repo: Path) -> 
 
     # and the full briefing carries the radar line
     assert "merge conflict brewing" in hook.briefing(repo)
+
+
+def test_briefing_counts_orphaned_worktree_dirs(hook, repo: Path) -> None:
+    """A physical .dev/worktrees dir git no longer tracks is surfaced as a count.
+
+    Registered worktrees are excluded; only the untracked leftover is counted.
+    """
+    wt = repo / ".dev" / "worktrees" / "live"
+    _git("worktree", "add", str(wt), "-b", "feat/live", cwd=repo)
+    (repo / ".dev" / "worktrees" / "dead").mkdir(parents=True)  # orphan leftover
+
+    out = hook.briefing(repo)
+    assert "1 orphaned worktree dir(s)" in out
+    assert "navig repo prune" in out

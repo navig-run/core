@@ -1,10 +1,6 @@
 """Tests for navig.connectors.google_calendar.mappers."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
-import pytest
-
 from navig.connectors.google_calendar.mappers import (
     _parse_event_time,
     calendar_event_to_resource,

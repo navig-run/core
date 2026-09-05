@@ -603,9 +603,14 @@ class ResponseKeyboardBuilder:
                 ctx = dict(state.get("context") or {})
                 ctx["eve_pending"] = {"active": True, "type": "shipped"}
                 store.set_ai_state(
+                    # `set_ai_state` has no `channel` parameter and REQUIRES `mode`; this call
+                    # raised TypeError every time. `persona` must be passed too — the UPSERT
+                    # does `persona = excluded.persona`, so omitting it erases the user's
+                    # persona. Shape matches the canonical callers in telegram.py.
                     user_id=user_id,
-                    channel="telegram",
-                    chat_id=str(chat_id),
+                    chat_id=chat_id,
+                    mode=state.get("mode") or "active",
+                    persona=state.get("persona") or "assistant",
                     context=ctx,
                 )
             except Exception as exc:
@@ -632,9 +637,14 @@ class ResponseKeyboardBuilder:
                 ctx = dict(state.get("context") or {})
                 ctx["eve_pending"] = {"active": True, "type": "priority"}
                 store.set_ai_state(
+                    # `set_ai_state` has no `channel` parameter and REQUIRES `mode`; this call
+                    # raised TypeError every time. `persona` must be passed too — the UPSERT
+                    # does `persona = excluded.persona`, so omitting it erases the user's
+                    # persona. Shape matches the canonical callers in telegram.py.
                     user_id=user_id,
-                    channel="telegram",
-                    chat_id=str(chat_id),
+                    chat_id=chat_id,
+                    mode=state.get("mode") or "active",
+                    persona=state.get("persona") or "assistant",
                     context=ctx,
                 )
             except Exception as exc:
@@ -830,6 +840,54 @@ _WEBFETCH_ASK_WITH_QUERY: str = (
 _WEBFETCH_ASK_GENERIC: str = (
     "Summarize what this site/page is, its key sections, and any notable specifics.\n\n"
 )
+# The read-site fetch is two-stage, like the agent's browser_fetch tool: plain HTTP
+# first (fast, cached), then a headless browser for JavaScript-rendered (SPA) pages
+# whose real content the HTTP fetch never runs. Without the upgrade, 🔎 Read answered
+# "no readable content" on React/Vue/Next sites — the very pages users most want read.
+_WEBFETCH_JS_MIN_CHARS: int = 200  # HTTP text shorter than this ⇒ likely a JS-gated SPA
+
+
+async def _read_url_content(url: str, *, max_chars: int = 6000) -> tuple[str, str, str]:
+    """Return ``(text, title, method)`` of readable content for *url*.
+
+    Tries the plain HTTP fetch first; if it fails or returns suspiciously thin content
+    (the signature of a client-rendered SPA), upgrades to the two-stage ``browser_fetch``
+    tool, which runs the page's JavaScript via headless Playwright and re-extracts. Both
+    stages are SSRF-guarded. ``text`` is empty only when the page could not be read at
+    all; ``method`` is ``"http"`` or the browser method used (e.g. ``"playwright"``).
+    """
+    text, title, method = "", "", "http"
+    try:
+        from navig.tools.web import web_fetch
+
+        result = await asyncio.to_thread(
+            web_fetch, url, extract_mode="text", max_chars=max_chars
+        )
+        if result.success:
+            text = (result.text or "").strip()
+            title = (result.title or "").strip()
+    except Exception as exc:  # noqa: BLE001 — HTTP fetch is best-effort; browser stage follows
+        logger.debug("read_url: HTTP fetch failed for %s: %s", url, exc)
+
+    if len(text) >= _WEBFETCH_JS_MIN_CHARS:
+        return text, title, method
+
+    # Thin/empty ⇒ the page likely renders client-side. Upgrade to browser_fetch, which
+    # re-fetches, detects the JS gate, and runs Playwright only when needed. Keep
+    # whichever stage returned more readable text (never regress on the HTTP result).
+    try:
+        from navig.tools.browser_fetch import BrowserFetchTool
+
+        res = await BrowserFetchTool().run({"url": url})
+        if res.success and isinstance(res.output, dict):
+            rendered = str(res.output.get("content") or "").strip()
+            if len(rendered) > len(text):
+                text = rendered[:max_chars]
+                method = str(res.output.get("method") or "browser")
+    except Exception as exc:  # noqa: BLE001 — no browser available ⇒ keep the HTTP text
+        logger.debug("read_url: browser fallback failed for %s: %s", url, exc)
+
+    return text, title, method
 
 
 def build_read_site_button(
@@ -854,7 +912,13 @@ def build_read_site_button(
     from urllib.parse import urlparse
 
     domain = (urlparse(u).netloc or u).replace("www.", "")
-    key = _short_hash(u, 12)
+    # Key on (url, query) — NOT the URL alone. The stored payload carries the
+    # per-search query + siblings, so two different searches that surface the SAME
+    # url must get distinct callback_data and distinct store keys. Keying on the URL
+    # alone let a later search overwrite an earlier button's payload, so tapping the
+    # earlier (still-visible) button summarized against the wrong question (and, being
+    # cross-chat, bled one user's query into another's button).
+    key = _short_hash(f"{u}\x00{(query or '').strip()}", 12)
     cb = _WEBFETCH_CB_PREFIX + key
     if len(cb.encode()) > MAX_CALLBACK_DATA:
         return None
@@ -1112,6 +1176,11 @@ def build_settings_hub_keyboard(session: Any = None) -> list[list[dict[str, Any]
             {"text": "🛠  Debug", "callback_data": "st_goto_debug"},
         ],
         [
+            # Someone hunting for a switch opens /settings first — this is the
+            # natural home for "turn a whole feature off".
+            {"text": "🧩  Extensions", "callback_data": "xt:r"},
+        ],
+        [
             {"text": "✕  Close", "callback_data": "st_close"},
         ],
     ]
@@ -1124,6 +1193,9 @@ class CallbackHandler:
         self.channel = channel
         self.store = get_callback_store()
         self._answered_callback_ids: set[str] = set()
+        # (chat_id, short_id, mode) of conversions running right now — see the
+        # audmsg speed/slowed branch for why callback-id dedupe is not enough.
+        self._audio_jobs_inflight: set[tuple[int, str, str]] = set()
 
     async def handle(self, callback_query: dict[str, Any]) -> None:
         cb_id = callback_query.get("id", "")
@@ -1176,9 +1248,50 @@ class CallbackHandler:
                 try:
                     from navig.telegram import tiktok_actions as _tt
 
-                    await _tt.handle_callback(self.channel, cb_data, chat_id, message_id, user_id)
+                    # The card replies to the user's message, so Telegram hands us
+                    # that original text right here. Pass it: the handler's other
+                    # route is a catalog lookup, which is absent when the operator
+                    # has telegram.catalog.enabled off — the buttons must not
+                    # depend on an unrelated subsystem being switched on.
+                    _src = message.get("reply_to_message") or {}
+                    await _tt.handle_callback(
+                        self.channel, cb_data, chat_id, message_id, user_id,
+                        source_text=_src.get("text") or _src.get("caption") or "",
+                    )
                 except Exception as _tk_exc:  # noqa: BLE001
                     logger.debug("tiktok callback error: %s", _tk_exc)
+                return
+
+            # ── Extensions card (xt:*) — switch bot features on and off ──
+            if cb_data.startswith("xt:"):
+                try:
+                    from navig.telegram import extension_actions as _xt
+
+                    toast = await _xt.handle_callback(
+                        self.channel, cb_data, chat_id, message_id, user_id
+                    )
+                except Exception as _xt_exc:  # noqa: BLE001
+                    logger.warning("extensions callback error: %s", _xt_exc)
+                    toast = "⚠️ Nothing changed"
+                # Answered AFTER the write: the toast is the only confirmation
+                # the tap landed, so it must report what actually happened.
+                await self._answer(cb_id, toast)
+                return
+
+            # ── Habit check-in card (hb:*) — one tap per habit, no typing ──
+            if cb_data.startswith("hb:"):
+                try:
+                    from navig.telegram import habit_actions as _hb
+
+                    toast = await _hb.handle_callback(
+                        self.channel, cb_data, chat_id, message_id, user_id
+                    )
+                except Exception as _hb_exc:  # noqa: BLE001
+                    logger.warning("habit check-in callback error: %s", _hb_exc)
+                    toast = "⚠️ Ошибка чек-ина"
+                # Answered AFTER the write, not before: the toast is the only
+                # confirmation the tap landed, so it must report what happened.
+                await self._answer(cb_id, toast)
                 return
 
             # ── Help Encyclopedia navigation (help:*) ──
@@ -3184,8 +3297,42 @@ class CallbackHandler:
         except Exception:
             meta = {}
 
+        # The card outlives the cache: `_af_cache` keeps the 500 most recent entries, so
+        # a button pressed on an older message finds nothing. The previous fallback used
+        # the short_id AS the file_id — a 12-hex string Telegram has never heard of — so
+        # an expired card failed deep inside getFile with an opaque error. Say what
+        # happened instead; the user's fix is to send the file again.
+        if not meta and action != "dismiss":
+            await self._answer(cb_id, "This card expired — send the file again.", show_alert=True)
+            return
+
         file_id = meta.get("file_id", short_id)
         is_speech = meta.get("is_speech", False)
+
+        if action in ("speed", "slowed"):
+            # One conversion per (chat, file, mode) at a time. Telegram issues a NEW
+            # callback id for every press, so `_answered_callback_ids` cannot deduplicate
+            # this: a double-tap would download the file twice, run ffmpeg twice and send
+            # two identical tracks back. The key includes the mode so ⏩ and 🐢 on the same
+            # file still run concurrently — they are different requests.
+            job = (chat_id, short_id, action)
+            if job in self._audio_jobs_inflight:
+                await self._answer(cb_id, "Already working on that one…", show_alert=False)
+                return
+            self._audio_jobs_inflight.add(job)
+            # Answer FIRST: Telegram spins the button until the callback is acknowledged,
+            # and re-encoding a long track takes far longer than that spinner tolerates.
+            await self._answer(cb_id, "⏩ Speeding up..." if action == "speed" else "🐢 Slowing down...")
+            try:
+                ok, detail = await self.channel._edit_audio_and_reply(
+                    chat_id, file_id, action, meta=meta, reply_to_message_id=message_id
+                )
+            finally:
+                # Always release: a raising conversion must not wedge the button forever.
+                self._audio_jobs_inflight.discard(job)
+            if not ok:
+                await self.channel.send_message(chat_id, f"⚠️ {detail}", parse_mode=None)
+            return
 
         if action == "dismiss":
             try:
@@ -3673,10 +3820,11 @@ class CallbackHandler:
                         followup_question,
                     )
                     followup_row = [{"text": _FOLLOWUP_BTN_LABEL, "callback_data": followup_cb}]
-                    if keyboard and "inline_keyboard" in (keyboard or {}):
-                        keyboard["inline_keyboard"].append(followup_row)
-                    else:
-                        keyboard = {"inline_keyboard": [followup_row]}
+                    # `keyboard` is a BARE list-of-rows from builder.build() (or None),
+                    # which send_message wraps as {"inline_keyboard": keyboard}. Append
+                    # the row to the list — building a dict here double-wrapped it →
+                    # Telegram 400 "inline_keyboard must be of type Array".
+                    keyboard = [*keyboard, followup_row] if keyboard else [followup_row]
 
             await self.channel.send_message(chat_id, display_response, keyboard=keyboard)
         finally:
@@ -3770,30 +3918,29 @@ class CallbackHandler:
             if cached_body:
                 body = cached_body
             else:
-                from navig.tools.web import web_fetch
-
-                result = await asyncio.to_thread(
-                    web_fetch, url, extract_mode="text", max_chars=6000
-                )
-                if not result.success or not (result.text or "").strip():
+                # Two-stage: plain HTTP, then a headless browser for JS-rendered
+                # (SPA) pages the HTTP fetch can't read. This is what lets 🔎 Read
+                # work on React/Vue/Next sites instead of "no readable content".
+                text, page_title, _method = await _read_url_content(url, max_chars=6000)
+                if not text:
                     await self.channel.send_message(
                         chat_id,
-                        f"❌ Couldn't read <b>{domain}</b>: {result.error or 'no readable content'}",
+                        f"❌ Couldn't read <b>{domain}</b>: no readable content",
                         parse_mode="HTML",
                     )
                     return
 
-                title = (result.title or domain).strip()
+                title = (page_title or domain).strip()
                 ask = (
                     _WEBFETCH_ASK_WITH_QUERY.format(query=query[:300])
                     if query
                     else _WEBFETCH_ASK_GENERIC
                 )
                 prompt = _WEBFETCH_SUMMARY_PROMPT.format(
-                    url=url, title=title, ask=ask, content=(result.text or "")[:6000]
+                    url=url, title=title, ask=ask, content=text[:6000]
                 )
                 summary = await self._get_ai_response(prompt, user_id)
-                body = (summary or "").strip() or (result.text or "")[:1500].strip()
+                body = (summary or "").strip() or text[:1500].strip()
                 if body:
                     self.store.put(sum_key, {"body": body}, ttl=_WEBFETCH_SUMMARY_TTL)
 

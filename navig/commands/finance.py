@@ -33,3 +33,4 @@ def finance_balance(
     from navig import console_helper as ch
 
     ch.warning("navig finance balance is not yet implemented in this build.")
+    raise typer.Exit(1)

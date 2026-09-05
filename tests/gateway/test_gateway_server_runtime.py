@@ -225,12 +225,9 @@ async def test_cors_and_core_handlers(gateway, monkeypatch: pytest.MonkeyPatch):
     health = await gw._handle_health(DummyRequest())
     assert response_json(health)["status"] == "ok"
 
-    created_tasks = []
-    monkeypatch.setattr(sv.asyncio, "create_task", lambda task: created_tasks.append(task) or task)
-    shutdown = await gw._handle_shutdown(DummyRequest(method="POST"))
-    assert response_json(shutdown)["status"] == "shutting_down"
-    assert len(created_tasks) == 1
-    created_tasks[0].close()
+    # The `_handle_*` twins these lines drove were unregistered copies of the live
+    # routes, with no auth check. Deleted; the registered handlers are covered over
+    # real HTTP in test_gateway_core_routes.py, including the 401 they now assert.
 
     gw.running = True
     gw.start_time = datetime.now()
@@ -293,23 +290,12 @@ async def test_message_event_session_and_ws_handlers(gateway):
     sessions = await gw._handle_list_sessions(DummyRequest())
     assert response_json(sessions)["total"] == 1
 
-    ws = SimpleNamespace(send_json=AsyncMock())
-    await gw._handle_ws_message(ws, {"action": "ping"})
-    await gw._handle_ws_message(ws, {"action": "subscribe", "topic": "heartbeat"})
-    await gw._handle_ws_message(ws, {"action": "subscribe"})
-    await gw._handle_ws_message(ws, {"action": "message"})
-    await gw._handle_ws_message(ws, {"action": "unknown"})
-    await gw._handle_ws_message(
-        ws, {"action": "message", "channel": "ws", "user_id": "u", "message": "hello"}
-    )
-    assert ws.send_json.await_count >= 6
+    # `_handle_ws_message` was a 5-line forwarder to routes.core._ws_dispatch, which
+    # every real caller uses directly. Deleted with the other unregistered twins.
 
 
 async def test_heartbeat_and_cron_handlers(gateway):
     gw, _sv = gateway
-
-    unavailable = await gw._handle_heartbeat_trigger(DummyRequest())
-    assert unavailable.status == 503
 
     hb_result = SimpleNamespace(
         success=True,
@@ -324,10 +310,8 @@ async def test_heartbeat_and_cron_handlers(gateway):
         get_status=lambda: {"running": True},
     )
 
-    trig = await gw._handle_heartbeat_trigger(DummyRequest())
     hist = await gw._handle_heartbeat_history(DummyRequest(query={"limit": "5"}))
     st = await gw._handle_heartbeat_status(DummyRequest())
-    assert response_json(trig)["success"] is True
     assert response_json(hist)["history"][0]["n"] == 5
     assert response_json(st)["running"] is True
 
@@ -431,6 +415,22 @@ async def test_autonomous_init_and_comms(gateway, monkeypatch: pytest.MonkeyPatc
         def register_handler(self, name, handler):
             self.handlers[name] = handler
 
+        async def request_approval(self, **kwargs):
+            """The real manager's gating entry point (approval/manager.py:173).
+
+            This fake omitted it, and `_init_autonomous_modules` binds the manager
+            into the PROCESS-GLOBAL ApprovalGate — so every later test in the same
+            worker that gated a dangerous tool hit
+            `AttributeError: 'ApprovalManager' object has no attribute
+            'request_approval'`, the backend failed closed, and an unrelated MCP test
+            went red. A fake that omits a method the caller actually invokes is not a
+            simplification; it is a different object wearing the name.
+
+            The leak itself is contained by the autouse reset in tests/conftest.py —
+            this keeps the fake honest so it cannot mislead through some other path.
+            """
+            return True
+
     approval_mod.ApprovalManager = ApprovalManager
     approval_mod.ApprovalPolicy = ApprovalPolicy
     monkeypatch.setitem(sys.modules, "navig.approval", approval_mod)
@@ -462,24 +462,18 @@ async def test_autonomous_init_and_comms(gateway, monkeypatch: pytest.MonkeyPatc
 
     webhooks_mod = ModuleType("navig.webhooks")
 
-    class WebhookSourceConfig:
-        def __init__(self, name, secret, provider):
-            self.name = name
-            self.secret = secret
-            self.provider = provider
-
     class WebhookReceiver:
-        def __init__(self):
-            self.sources = []
-
-        def configure_source(self, cfg):
-            self.sources.append(cfg)
+        # The server now constructs this with the global config (the real receiver reads
+        # config["webhooks"] to load sources in _load_sources) — NOT with no args plus a
+        # `configure_source(WebhookSourceConfig(provider=...))` loop, which called a method
+        # that doesn't exist and passed a field WebhookSourceConfig doesn't have.
+        def __init__(self, config=None):
+            self.config = config
 
         def get_routes(self):
             return [("POST", "/wh", lambda _request: web.json_response({"ok": True}))]
 
     webhooks_mod.WebhookReceiver = WebhookReceiver
-    webhooks_mod.WebhookSourceConfig = WebhookSourceConfig
     monkeypatch.setitem(sys.modules, "navig.webhooks", webhooks_mod)
 
     tasks_mod = ModuleType("navig.tasks")
@@ -518,6 +512,9 @@ async def test_autonomous_init_and_comms(gateway, monkeypatch: pytest.MonkeyPatc
     assert gw.browser_controller is not None
     assert gw.mcp_client_manager is not None
     assert gw.webhook_receiver is not None
+    # The receiver is constructed WITH the global config (so it can load the operator's
+    # `webhooks:` sources), not with no args + a broken configure_source loop.
+    assert gw.webhook_receiver.config is gw.config_manager.global_config
     assert gw.task_queue is not None
     assert gw.task_worker is not None
 
@@ -540,17 +537,17 @@ async def test_autonomous_init_and_comms(gateway, monkeypatch: pytest.MonkeyPatc
     dispatch_mod.configure = lambda **kwargs: configured.update(kwargs)
     monkeypatch.setitem(sys.modules, "navig.comms.dispatch", dispatch_mod)
 
-    registry_mod = ModuleType("navig.gateway.channels.registry")
-
-    class ChannelRegistry:
-        @staticmethod
-        def instance():
-            return SimpleNamespace(
-                get_adapter=lambda _name: SimpleNamespace(_notifier="telegram-notifier")
-            )
-
-    registry_mod.ChannelRegistry = ChannelRegistry
-    monkeypatch.setitem(sys.modules, "navig.gateway.channels.registry", registry_mod)
+    # The notifier comes off the LIVE channel — the only place it has ever come from.
+    #
+    # This used to inject a fake `navig.gateway.channels.registry` module whose
+    # ChannelRegistry had an `instance()` staticmethod, and assert the notifier arrived
+    # through it. The real ChannelRegistry has never had `instance()` — the accessor is
+    # the module-level `get_channel_registry()` — so the production call
+    # `... if hasattr(ChannelRegistry, "instance") else None` was permanently None and
+    # that fallback never ran once. The fake manufactured the very method whose absence
+    # was the bug, which is exactly why the absence went unnoticed: the suite was green
+    # on a path that could not exist outside it.
+    gw.channels["telegram"] = SimpleNamespace(_notifier="telegram-notifier")
 
     matrix_mod = ModuleType("navig.comms.matrix")
 
@@ -568,9 +565,14 @@ async def test_autonomous_init_and_comms(gateway, monkeypatch: pytest.MonkeyPatc
     assert configured["default_channel"] == "telegram"
     assert configured["telegram_notifier"] == "telegram-notifier"
 
-    gw._app = SimpleNamespace(router=SimpleNamespace(add_post=MagicMock(), add_get=MagicMock()))
+    # _setup_webhook_routes hands the receiver's RouteDefs straight to
+    # router.add_routes() (since #366 — the old per-route add_post loop crashed on
+    # non-iterable RouteDefs), so the mock router must expose add_routes.
+    gw._app = SimpleNamespace(
+        router=SimpleNamespace(add_post=MagicMock(), add_get=MagicMock(), add_routes=MagicMock())
+    )
     gw._setup_webhook_routes()
-    gw._app.router.add_post.assert_called_once()
+    gw._app.router.add_routes.assert_called_once()
 
 
 async def test_feature_handlers_and_agent_interface(
@@ -595,18 +597,9 @@ async def test_feature_handlers_and_agent_interface(
         request_approval=AsyncMock(return_value=True),
         respond=AsyncMock(return_value=True),
     )
-    assert (
-        response_json(await gw._handle_approval_pending(DummyRequest()))["pending"][0]["id"]
-        == "req1"
-    )
-    assert (
-        response_json(
-            await gw._handle_approval_request(
-                DummyRequest(payload={"action": "deploy", "description": "d"})
-            )
-        )["approved"]
-        is True
-    )
+    # The `_handle_*` twins these lines drove were unregistered copies of the live
+    # routes, with no auth check. Deleted; the registered handlers are covered over
+    # real HTTP in test_gateway_core_routes.py, including the 401 they now assert.
     assert (
         response_json(
             await gw._handle_approval_respond(
@@ -652,12 +645,17 @@ async def test_feature_handlers_and_agent_interface(
     )
     assert response_json(await gw._handle_browser_stop(DummyRequest()))["success"] is True
 
-    tool = SimpleNamespace(name="tool.echo", description="Echo", client_name="local")
+    # This fake must mirror the REAL objects: MCPClientManager exposes get_all_tools()
+    # (not list_tools), MCPClient exposes the `is_connected` property (not `connected`),
+    # and MCPTool carries `server_id` (not `client_name`). The old fake invented all
+    # three names, which is exactly why the routes could call APIs that do not exist
+    # and still pass this test — while 500ing against a real manager.
+    tool = SimpleNamespace(name="tool.echo", description="Echo", server_id="local")
     gw.mcp_client_manager = SimpleNamespace(
-        clients={"local": SimpleNamespace(connected=True)},
-        list_tools=lambda: [tool],
+        clients={"local": SimpleNamespace(is_connected=True)},
+        get_all_tools=lambda: [tool],
         call_tool=AsyncMock(return_value={"ok": True}),
-        add_client=AsyncMock(return_value=SimpleNamespace(connected=True)),
+        add_client=AsyncMock(return_value=SimpleNamespace(is_connected=True)),
         remove_client=AsyncMock(),
     )
     assert (
@@ -853,51 +851,10 @@ async def test_feature_handlers_and_agent_interface(
     )
     assert response_json(await gw._handle_memory_stats(DummyRequest()))["knowledge"]["entries"] == 4
 
-    result = SimpleNamespace(action=SimpleNamespace(value="nudge"), message="hi", priority=1)
-
-    class Stats:
-        total_messages = 1
-        total_commands = 1
-        features_used = {"a"}
-        last_greeting = None
-        last_checkin = None
-        last_capability_promo = None
-        last_feedback_ask = None
-
-    state = SimpleNamespace(
-        get_operator_state=lambda: SimpleNamespace(value="active"),
-        get_time_of_day=lambda: SimpleNamespace(value="morning"),
-        is_within_active_hours=lambda: True,
-        stats=Stats(),
-    )
-    coordinator = SimpleNamespace(
-        config=SimpleNamespace(enabled=True, max_proactive_per_day=5),
-        state=state,
-        _daily_sends=[1],
-        engagement_tick=lambda: result,
-    )
-    engine = SimpleNamespace(
-        running=False,
-        is_checking=False,
-        last_check=None,
-        last_check_status="idle",
-        last_error=None,
-        provider_status={"openai": "ok"},
-        start=AsyncMock(),
-        stop=AsyncMock(),
-        run_checks=AsyncMock(),
-        _get_engagement_coordinator=lambda: coordinator,
-    )
-    monkeypatch.setattr(sv, "get_proactive_engine", lambda: engine)
-
-    assert response_json(await gw._handle_proactive_status(DummyRequest()))["started"] is False
-    assert response_json(await gw._handle_proactive_start(DummyRequest()))["status"] == "started"
-    engine.running = True
-    assert response_json(await gw._handle_proactive_stop(DummyRequest()))["status"] == "stopped"
-    assert response_json(await gw._handle_proactive_check(DummyRequest()))["status"] == "triggered"
-    assert response_json(await gw._handle_engagement_status(DummyRequest()))["enabled"] is True
-    gw.channels["telegram"] = SimpleNamespace(send=AsyncMock())
-    assert response_json(await gw._handle_engagement_tick(DummyRequest()))["status"] == "sent"
+    # The proactive/engagement fixtures that stood here fed `_handle_proactive_*` and
+    # `_handle_engagement_*` — unregistered copies of the live routes, with no auth
+    # check, now deleted. The registered handlers are covered over real HTTP in
+    # test_gateway_core_routes.py, including the 401 they now assert.
 
     session = SimpleNamespace(messages=[{"role": "user", "content": "hello"}])
     gw.sessions = SimpleNamespace(
@@ -955,3 +912,20 @@ async def test_feature_handlers_and_agent_interface(
 
     gw._message_queue.put_nowait({"x": 1})
     assert gw.get_queue_size() == 1
+
+
+def test_missions_autonomous_enabled_coerces_config_string(gateway):
+    """The master kill-switch for autonomous missions must honor a config-set string. A raw
+    bool() left `missions.autonomous_enabled: "false"` truthy — autonomous missions kept
+    running when the operator meant to shut them off."""
+    gw, _ = gateway
+    cfg = gw.config_manager.global_config
+
+    cfg["missions"] = {"autonomous_enabled": "false"}  # config-set string, NOT a bool
+    assert gw._missions_autonomous_enabled() is False
+    cfg["missions"] = {"autonomous_enabled": "true"}
+    assert gw._missions_autonomous_enabled() is True
+    cfg["missions"] = {"autonomous_enabled": True}
+    assert gw._missions_autonomous_enabled() is True
+    cfg.pop("missions", None)
+    assert gw._missions_autonomous_enabled() is False  # default off

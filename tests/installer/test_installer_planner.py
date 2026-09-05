@@ -38,6 +38,7 @@ class TestPlan:
         ctx = InstallerContext(profile="node")
         with patch("navig.installer.planner._load_module", side_effect=ModuleNotFoundError("x")):
             actions = plan(ctx)
+        assert actions, "actions was empty, so the loop below asserted nothing"
         for a in actions:
             assert a.id.endswith(".placeholder")
 

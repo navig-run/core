@@ -5,9 +5,8 @@ Batch 94 — tests for navig.core.plugins
 from __future__ import annotations
 
 import sys
-from dataclasses import fields
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -282,7 +281,6 @@ class TestPluginRegistryLifecycle:
         from navig.core.plugins import (
             Plugin,
             PluginInfo,
-            PluginMetadata,
             PluginRegistry,
             PluginState,
             plugin,
@@ -307,7 +305,6 @@ class TestPluginRegistryLifecycle:
         module_name = "navig_plugins._test_lifecycle"
         module = MagicMock()
         module.__dict__["LifecyclePlugin"] = LifecyclePlugin
-        import inspect as _inspect
 
         # We'll just manually plant the class in a fake module
         import types

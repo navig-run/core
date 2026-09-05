@@ -1,8 +1,6 @@
 """Tests for navig.personas.renderer — render_persona_list, render_persona_info, render_switch_confirmation."""
 from __future__ import annotations
 
-import pytest
-
 from navig.personas.contracts import PersonaConfig
 from navig.personas.renderer import (
     render_persona_info,

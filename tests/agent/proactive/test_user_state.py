@@ -11,25 +11,30 @@ Covers:
 """
 
 import time
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-# Patch config_dir and debug logger before import
-with (
-    patch("navig.debug_logger.get_debug_logger"),
-    patch("navig.platform.paths.config_dir", return_value=Path("/tmp/navig_test_state")),
-):
-    from navig.agent.proactive.user_state import (
-        InteractionRecord,
-        OperatorState,
-        TimeOfDay,
-        UsageStats,
-        UserPreferences,
-        UserStateTracker,
-    )
-
+# Imported WITHOUT patching config_dir. This used to import inside
+# `patch("navig.platform.paths.config_dir", return_value=Path("/tmp/navig_test_state"))`,
+# which poisoned every module loaded for the first time inside that block: they bind the
+# function by value (`from navig.platform.paths import config_dir`), so the MagicMock stayed
+# bound in their namespace AFTER the patch exited. `navig.agent.soul` is one of them, and its
+# `SOUL_FILE` property then answered `/tmp/navig_test_state/workspace/SOUL.md` for the rest of
+# the xdist worker -- failing tests/core/test_call_time_paths.py::test_soul_file_property,
+# in a different file, whenever the two landed in the same worker.
+#
+# The patch was also unnecessary: user_state resolves `config_dir()` in
+# `UserStateTracker.__init__` (call time), not at import, and soul.py's SOUL_FILE is a
+# property for exactly that reason. Nothing here is frozen at import any more.
+from navig.agent.proactive.user_state import (
+    InteractionRecord,
+    OperatorState,
+    TimeOfDay,
+    UsageStats,
+    UserPreferences,
+    UserStateTracker,
+)
 
 # ─────────────────────────────────────────────────────────────
 # OperatorState

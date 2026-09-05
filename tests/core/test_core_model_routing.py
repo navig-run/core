@@ -2,7 +2,6 @@
 Batch 88 — navig/core/model_routing.py
 Tests for _coerce_bool, _coerce_int, is_simple_turn, choose_cheap_model_route.
 """
-import pytest
 
 from navig.core.model_routing import (
     _coerce_bool,

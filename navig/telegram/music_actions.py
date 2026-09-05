@@ -30,12 +30,15 @@ _CFG_ENABLED = "telegram.music_links.enabled"
 
 
 def _coerce_bool(value: object, default: bool) -> bool:
-    """Tolerate ``navig config set`` writing bools as raw strings ('false')."""
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return default
-    return str(value).strip().lower() not in ("false", "0", "no", "off", "")
+    """Tolerate ``navig config set`` writing bools as raw strings ('false').
+
+    Delegates to the canonical config-safe coercion so ``telegram.music_links.enabled``
+    resolves ``on/off/1/0/f/n`` identically to every other config flag (the old
+    blacklist read a bare ``f``/``n`` as *on* — the exact drift this consolidates away).
+    """
+    from navig.core.coerce import coerce_bool
+
+    return coerce_bool(value, default)
 
 
 def enabled() -> bool:
@@ -82,10 +85,14 @@ async def _resolve_and_send(channel, chat_id: int, url: str, reply_to_message_id
         logger.debug("music resolve failed: %s", exc)
         return False
     try:
-        await channel.send_message(
+        sent = await channel.send_message(
             chat_id, _format(data), parse_mode="HTML", reply_to_message_id=reply_to_message_id,
         )
-        return True
+        # send_message returns None on a rejected send WITHOUT raising. Only claim the
+        # message (a True return makes the DM caller `return` and SKIP the normal agent
+        # reply) when it actually landed — otherwise a failed card silently swallows the
+        # user's message and they get nothing back.
+        return sent is not None
     except Exception as exc:  # noqa: BLE001
         logger.debug("music send failed: %s", exc)
         return False

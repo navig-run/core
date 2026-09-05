@@ -33,6 +33,7 @@ from pathlib import Path
 import typer
 
 from navig import console_helper as ch
+from navig.core.json_io import safe_json_loads
 from navig.core.yaml_io import atomic_write_text
 
 _log = logging.getLogger(__name__)
@@ -282,7 +283,7 @@ def cmd_add(
     if json_out:
         _print_json({"id": item_id, "slug": slug, "notes_path": notes_path})
     else:
-        ch.success(f"Created work item [{item_id}] {slug!r}")
+        ch.success(f"Created work item \\[{item_id}] {slug!r}")
         if notes_path:
             ch.info(f"  Wiki note: {notes_path}")
         elif not no_wiki:
@@ -383,8 +384,10 @@ def cmd_show(
         _print_json(data)
         return
 
-    tags = json.loads(row["tags_json"] or "[]")
-    ch.info(f"[{row['id']}] {row['title']}")
+    # Display-only, so degrade rather than raise: a malformed tags blob should cost the
+    # tag line, not the whole `navig work show` output.
+    tags = safe_json_loads(row["tags_json"], [])
+    ch.info(f"\\[{row['id']}] {row['title']}")
     ch.raw_print(f"  Slug   : {row['slug']}")
     ch.raw_print(f"  Kind   : {row['kind']}")
     ch.raw_print(f"  Stage  : {row['stage']}")
@@ -400,7 +403,9 @@ def cmd_show(
         ch.raw_print("")
         ch.info("History")
         for ev in events:
-            payload = json.loads(ev["payload_json"] or "{}")
+            # Inside `for ev in events:` — one malformed payload used to abort the whole
+            # History section mid-render, hiding every later event too.
+            payload = safe_json_loads(ev["payload_json"], {})
             detail = ", ".join(f"{k}={v}" for k, v in payload.items()) if payload else ""
             ch.raw_print(
                 f"  {ev['created_at'][:19]}  {ev['event_type']}"

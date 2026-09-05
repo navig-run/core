@@ -343,12 +343,14 @@ class TestMatrixAdminClient:
         # Invalid input → defaults to 7 days
         assert MatrixAdminClient._parse_duration_ms("invalid") == 7 * 86400000
 
-    def test_get_admin_client_singleton(self):
+    def test_get_admin_client_singleton(self, monkeypatch):
         import navig.comms.matrix_admin as admin_mod
         from navig.comms.matrix_admin import get_admin_client
 
-        # Reset singleton
-        admin_mod._admin_client = None
+        # monkeypatch restores it on teardown; the old "# Cleanup" line at the bottom ran
+        # only when both asserts passed, so a failure left this test's admin client in the
+        # process singleton for everything that ran after it.
+        monkeypatch.setattr(admin_mod, "_admin_client", None)
 
         client = get_admin_client()
         assert client is not None
@@ -356,9 +358,6 @@ class TestMatrixAdminClient:
         # Second call returns same instance
         client2 = get_admin_client()
         assert client is client2
-
-        # Cleanup
-        admin_mod._admin_client = None
 
 
 # ============================================================================
@@ -1575,6 +1574,81 @@ class TestMatrixStoreRooms:
             got = store.get_room("!meta:t")
             assert got.metadata == {"bridge": "telegram", "channel": "#main"}
             store.close()
+
+
+class TestMatrixStoreSetPurpose:
+    """`purpose` finally has a writer.
+
+    The `rooms --purpose` filter and the Purpose column shipped with nothing able to set the
+    field, so every room read "general": the filter could only ever match the default and the
+    column was decorative. (A value set here would not have survived either until 9f4d7fea7 —
+    every room sync reset it to the dataclass default.)
+
+    Each test closes its store in a `finally`. Without it a failed assert skips close(), the
+    TemporaryDirectory cleanup then trips over the open sqlite handle, and the reported error
+    is a Windows WinError 32 instead of the assertion that actually failed.
+    """
+
+    def _make_store(self, tmp):
+        from navig.comms.matrix_store import MatrixStore
+
+        return MatrixStore(os.path.join(tmp, "test.db"))
+
+    def test_set_purpose_makes_the_filter_discriminate(self):
+        from navig.comms.matrix_store import MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            try:
+                store.upsert_room(MatrixRoom(room_id="!ops:t", name="Ops"))
+                store.upsert_room(MatrixRoom(room_id="!chat:t", name="Chat"))
+
+                assert store.set_room_purpose("!ops:t", "alerts") is True
+
+                assert [r.room_id for r in store.list_rooms(purpose="alerts")] == ["!ops:t"]
+                assert [r.room_id for r in store.list_rooms(purpose="general")] == ["!chat:t"]
+            finally:
+                store.close()
+
+    def test_an_unknown_room_reports_false_rather_than_pretending(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            try:
+                assert store.set_room_purpose("!ghost:t", "alerts") is False
+            finally:
+                store.close()
+
+    def test_an_invalid_purpose_raises_instead_of_being_stored(self):
+        """A value outside ROOM_PURPOSES would render in the table and match no filter."""
+        from navig.comms.matrix_store import MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            try:
+                store.upsert_room(MatrixRoom(room_id="!r:t", name="R"))
+                with pytest.raises(ValueError):
+                    store.set_room_purpose("!r:t", "not-a-purpose")
+                assert store.get_room("!r:t").purpose == "general", "the bad value was stored"
+            finally:
+                store.close()
+
+    def test_a_server_sync_does_not_undo_the_classification(self):
+        """The reason this writer is worth having: without 9f4d7fea7 the next sync wiped it."""
+        from navig.comms.matrix_store import MatrixRoom
+
+        with tempfile.TemporaryDirectory() as d:
+            store = self._make_store(d)
+            try:
+                store.upsert_room(MatrixRoom(room_id="!ops:t", name="Ops"))
+                store.set_room_purpose("!ops:t", "alerts")
+
+                store.sync_room_from_server("!ops:t", name="Ops renamed", topic="T")
+
+                room = store.get_room("!ops:t")
+                assert room.name == "Ops renamed" and room.topic == "T"
+                assert room.purpose == "alerts"
+            finally:
+                store.close()
 
 
 class TestMatrixStoreEvents:

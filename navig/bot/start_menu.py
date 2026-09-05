@@ -359,9 +359,9 @@ ACTION_COMMANDS: dict[str, dict] = {
         "type": "prompt",
         "prompt": "Which host? Send:\n`/use <hostname>`",
     },
-    "host_current": {"cmd": "host show --plain", "type": "navig"},
-    "host_test": {"cmd": "host test --plain", "type": "navig"},
-    "host_info": {"cmd": "host info --plain", "type": "navig"},
+    "host_current": {"cmd": "host show", "type": "navig"},
+    "host_test": {"cmd": "host test", "type": "navig"},
+    "host_info": {"cmd": "host show", "type": "navig"},
     "host_edit": {
         "cmd": None,
         "type": "prompt",
@@ -372,9 +372,9 @@ ACTION_COMMANDS: dict[str, dict] = {
         "type": "prompt",
         "prompt": "Clone which host? Send:\n`navig host clone <source> <new-name>`",
     },
-    "host_inspect": {"cmd": "host inspect --plain", "type": "navig"},
-    "host_maint": {"cmd": "host maintenance --plain", "type": "navig"},
-    "host_discover": {"cmd": "host discover --plain", "type": "navig"},
+    "host_inspect": {"cmd": "host status", "type": "navig"},
+    "host_maint": {"cmd": "host maintenance", "type": "navig"},
+    "host_discover": {"cmd": "host discover-local", "type": "navig"},
     "host_remove": {
         "cmd": None,
         "type": "prompt",
@@ -392,8 +392,8 @@ ACTION_COMMANDS: dict[str, dict] = {
         "type": "prompt",
         "prompt": "Which app? Send:\n`navig app use <name>`",
     },
-    "app_current": {"cmd": "app show --plain", "type": "navig"},
-    "app_info": {"cmd": "app info --plain", "type": "navig"},
+    "app_current": {"cmd": "app show", "type": "navig"},
+    "app_info": {"cmd": "app info", "type": "navig"},
     "app_edit": {
         "cmd": None,
         "type": "prompt",
@@ -415,7 +415,7 @@ ACTION_COMMANDS: dict[str, dict] = {
         "prompt": "Which app to remove? Send:\n`navig app remove <name>`",
     },
     # Tunnels
-    "tunnel": {"cmd": "tunnel list --plain", "type": "navig"},
+    "tunnel": {"cmd": "tunnel show", "type": "navig"},
     "tunnel_start": {
         "cmd": None,
         "type": "prompt",
@@ -431,8 +431,8 @@ ACTION_COMMANDS: dict[str, dict] = {
         "type": "prompt",
         "prompt": "Restart which tunnel? Send:\n`/tunnel restart <name>`",
     },
-    "tunnel_status": {"cmd": "tunnel status --plain", "type": "navig"},
-    "tunnel_auto": {"cmd": "tunnel auto --plain", "type": "navig"},
+    "tunnel_status": {"cmd": "tunnel show", "type": "navig"},
+    "tunnel_auto": {"cmd": "tunnel auto", "type": "navig"},
     # Files
     "file_upload": {
         "cmd": None,
@@ -481,7 +481,7 @@ ACTION_COMMANDS: dict[str, dict] = {
     },
     "df": {"cmd": "/df", "type": "slash"},
     # Docker
-    "docker": {"cmd": "docker ps --plain", "type": "navig"},
+    "docker": {"cmd": "docker ps", "type": "navig"},
     "docker_logs": {
         "cmd": None,
         "type": "prompt",
@@ -492,7 +492,7 @@ ACTION_COMMANDS: dict[str, dict] = {
         "type": "prompt",
         "prompt": "Execute in container:\n`navig docker exec <container> <command>`",
     },
-    "docker_stats": {"cmd": "docker stats --plain", "type": "navig"},
+    "docker_stats": {"cmd": "docker stats", "type": "navig"},
     "docker_start": {
         "cmd": None,
         "type": "prompt",
@@ -555,7 +555,7 @@ ACTION_COMMANDS: dict[str, dict] = {
         "type": "prompt",
         "prompt": "Repair which database?\n`navig db repair <database>`",
     },
-    "db_containers": {"cmd": "db containers --plain", "type": "navig"},
+    "db_containers": {"cmd": "db containers", "type": "navig"},
     # Tools
     "backup": {
         "cmd": None,

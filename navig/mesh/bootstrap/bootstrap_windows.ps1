@@ -1,4 +1,4 @@
-# bootstrap_windows.ps1 — Bootstrap Navig Mesh on Windows
+﻿# bootstrap_windows.ps1 — Bootstrap Navig Mesh on Windows
 # Usage: pwsh -File bootstrap_windows.ps1 [-MeshSecret <secret>] [-Formation <name>]
 param(
     [string]$MeshSecret = "",

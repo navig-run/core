@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 import yaml
 
 from navig import console_helper as ch
+from navig.core.proc_text import console_encoding
 
 # ============================================================================
 # ENUMS AND DATA CLASSES
@@ -355,6 +356,47 @@ class TriggerManager:
         # In-memory cache
         self._triggers: dict[str, Trigger] = {}
         self._loaded = False
+        # Set when a load could not be completed; `_save_triggers` refuses while it
+        # stands, so an unreadable file is never replaced by a partial one.
+        self._load_failed = False
+
+    @property
+    def load_failed(self) -> bool:
+        """True when the last load could not read or parse the store.
+
+        The distinction a caller needs: "you have no triggers" (an answer) versus
+        "I could not read your triggers" (not an answer). `list_triggers` returning
+        `[]` cannot tell them apart on its own.
+        """
+        self._ensure_loaded()
+        return self._load_failed
+
+    def _record_read_failure(self, exc: Exception) -> None:
+        """Record that the trigger store could not be read.
+
+        The CLI tells the user directly, but the proactive engine holds a
+        ``TriggerManager`` too — and there an unreadable file is silent: the manager
+        holds zero triggers, ``process_event`` matches nothing, and the operator's
+        automation simply stops firing with every light green. That is the exact shape
+        the config-incident log exists for, so it is recorded like every other
+        self-healing/degraded path and surfaces in ``navig doctor`` → Config Health and
+        through the ``config_incidents`` monitor.
+
+        Best-effort by contract: a health note must never be the thing that breaks a
+        load. ``incidents.record`` already swallows its own errors; the import is
+        guarded too, because this runs on the daemon's hot path.
+        """
+        try:
+            from navig.core import incidents
+
+            incidents.record(
+                incidents.STORE_READ_FAILED,
+                store="triggers",
+                path=str(self.triggers_file),
+                error=str(exc)[:200],
+            )
+        except Exception:  # noqa: BLE001 - never let a health note break the load
+            pass
 
     def _ensure_loaded(self):
         """Lazy-load triggers from disk."""
@@ -363,22 +405,73 @@ class TriggerManager:
             self._loaded = True
 
     def _load_triggers(self):
-        """Load triggers from YAML file."""
+        """Load triggers from YAML file.
+
+        A failed READ must never become a destructive WRITE. This used to clear
+        `_triggers`, warn, and leave the manager holding an EMPTY set — so the very
+        next `trigger add` wrote that empty set back over a populated file and
+        DESTROYED every existing trigger, atomically, at exit 0. One transient lock
+        (an antivirus or a read landing mid-`os.replace`) was enough; the only sign
+        was a ⚠ line above a ✓. Reproduced: 3 triggers in, 1 out.
+
+        So the failure is REMEMBERED rather than swallowed, and `_save_triggers`
+        refuses while it stands. `load_yaml_for_update` is the canonical reader for
+        a read-modify-write: it rides out transient locks and then distinguishes
+        "absent or genuinely empty" (safe to overwrite) from "has content but could
+        not be read" (never overwrite) — the distinction the raw parser cannot make.
+        """
+        from navig.core.yaml_io import ConfigReadError, load_yaml_for_update
+
         self._triggers = {}
+        self._load_failed = False
 
-        if self.triggers_file.exists():
+        if not self.triggers_file.exists():
+            return
+
+        try:
+            data = load_yaml_for_update(self.triggers_file)
+        except ConfigReadError as e:
+            self._load_failed = True
+            ch.warning(f"Failed to load triggers: {e}")
+            self._record_read_failure(e)
+            return
+
+        for trigger_data in data.get("triggers", []):
             try:
-                with open(self.triggers_file, encoding="utf-8") as f:
-                    data = yaml.safe_load(f) or {}
-
-                for trigger_data in data.get("triggers", []):
-                    trigger = Trigger.from_dict(trigger_data)
-                    self._triggers[trigger.id] = trigger
+                trigger = Trigger.from_dict(trigger_data)
             except Exception as e:
-                ch.warning(f"Failed to load triggers: {e}")
+                # A single malformed entry must not silently drop the REST of the
+                # file on the next save — that is the same wipe, one row at a time.
+                self._load_failed = True
+                ch.warning(f"Failed to load a trigger definition: {e}")
+                self._record_read_failure(e)
+                return
+            self._triggers[trigger.id] = trigger
 
-    def _save_triggers(self):
-        """Save triggers to YAML file."""
+    def _save_triggers(self) -> bool:
+        """Persist triggers to YAML. Returns False if the write failed.
+
+        This used to swallow the failure: it printed the error and returned None,
+        and all three callers did `self._save_triggers()` then `return True`
+        unconditionally — so `navig trigger add` reported a trigger it had not
+        persisted, and the next run simply did not have it. A write that cannot
+        report failure turns a disk error into silent data loss.
+        """
+        if getattr(self, "_load_failed", False):
+            from navig.core import incidents
+
+            incidents.record(
+                incidents.STORE_WRITE_REFUSED,
+                store="triggers",
+                path=str(self.triggers_file),
+            )
+            ch.error(
+                "Refusing to save triggers: the existing triggers.yaml could not be "
+                "read, so writing now would replace it with an incomplete set. "
+                f"Fix or move {self.triggers_file}, then retry."
+            )
+            return False
+
         data = {
             "version": 1,
             "triggers": [t.to_dict() for t in self._triggers.values()],
@@ -399,8 +492,10 @@ class TriggerManager:
             finally:
                 if tmp_path is not None and tmp_path.exists():
                     tmp_path.unlink(missing_ok=True)
+            return True
         except Exception as e:
             ch.error(f"Failed to save triggers: {e}")
+            return False
 
     def _log_history(self, result: TriggerResult):
         """Append result to history file."""
@@ -439,8 +534,7 @@ class TriggerManager:
         trigger.created_at = datetime.now().isoformat()
         trigger.updated_at = trigger.created_at
         self._triggers[trigger.id] = trigger
-        self._save_triggers()
-        return True
+        return self._save_triggers()
 
     def update_trigger(self, trigger: Trigger) -> bool:
         """Update an existing trigger."""
@@ -452,8 +546,7 @@ class TriggerManager:
 
         trigger.updated_at = datetime.now().isoformat()
         self._triggers[trigger.id] = trigger
-        self._save_triggers()
-        return True
+        return self._save_triggers()
 
     def remove_trigger(self, trigger_id: str) -> bool:
         """Remove a trigger by ID."""
@@ -464,8 +557,7 @@ class TriggerManager:
             return False
 
         del self._triggers[trigger_id]
-        self._save_triggers()
-        return True
+        return self._save_triggers()
 
     def get_trigger(self, trigger_id: str) -> Trigger | None:
         """Get a trigger by ID."""
@@ -584,7 +676,17 @@ class TriggerManager:
         trigger.last_fired = now.isoformat()
         trigger.fire_count += 1
         trigger.record_fire(now)  # feed the rolling max_fires_per_hour window
-        self.update_trigger(trigger)
+        # The in-memory trigger has already been mutated, so a discarded False
+        # here means the RATE LIMIT quietly stops being enforced across restarts:
+        # `record_fire` feeds `max_fires_per_hour`, and that window lives only in
+        # the saved file. A trigger that cannot persist its fire history is a
+        # trigger that can fire without limit after the next reload.
+        if not self.update_trigger(trigger):
+            logger.error(
+                "Trigger '%s' fired but its state could not be saved — fire_count "
+                "and the max_fires_per_hour window will be lost on reload",
+                trigger.id,
+            )
 
         duration_ms = int((time.time() - start_time) * 1000)
 
@@ -669,7 +771,7 @@ class TriggerManager:
         (by design: a trigger must not silently run a destructive outcome).
         """
         try:
-            from navig.blocks import find_block
+            from navig.blocks import find_block, validate_block
             from navig.blocks.runner import apply_block
         except Exception as exc:  # noqa: BLE001
             return False, f"blocks unavailable: {exc}"
@@ -680,6 +782,14 @@ class TriggerManager:
                 f"No block '{workflow_name}' (workflows migrated to Blocks; "
                 "author one with `navig block new`)"
             )
+        # `navig block apply` and the MCP tool both refuse an invalid manifest;
+        # this path did not, so the one caller with NO human watching was the one
+        # that would run a block the other two reject (a verify with no path, a
+        # secret in argv). A trigger fires unattended — it needs MORE checking
+        # than the interactive path, not less.
+        problems = validate_block(block)
+        if problems:
+            return False, f"block '{workflow_name}' is invalid: " + "; ".join(problems[:3])
         try:
             run = apply_block(block, dict(params or {}), yes=True)
         except Exception as exc:  # noqa: BLE001
@@ -821,7 +931,8 @@ class TriggerManager:
             result = subprocess.run(
                 cmd,
                 capture_output=True,
-                text=True,
+                encoding=console_encoding(),
+                errors="replace",
                 timeout=300,
                 env=env,
             )
@@ -946,6 +1057,30 @@ class TriggerManager:
 # ============================================================================
 
 
+def _readable_manager() -> "TriggerManager":
+    """A ``TriggerManager`` whose file was actually readable — or exit 1.
+
+    Every command that uses this answers a question about *what is configured*. When
+    ``triggers.yaml`` cannot be read the manager holds ZERO triggers, so "Trigger not
+    found", "No triggers configured" and "0 enabled" are not answers — they are the
+    same lie ``trigger list`` used to tell, and they point the user at re-creating
+    triggers that are still sitting on disk.
+
+    Note what does NOT use this: ``trigger history`` and ``trigger history --clear``
+    read ``history.jsonl``, a different file, and are perfectly answerable while
+    ``triggers.yaml`` is broken. Refusing them too would be a wider outage than the
+    fault.
+    """
+    manager = TriggerManager()
+    if manager.load_failed:
+        ch.error(
+            f"Could not read {manager.triggers_file} — this is NOT an empty list. "
+            "Your triggers are still on disk; fix or move that file to see them."
+        )
+        raise typer.Exit(1)
+    return manager
+
+
 def list_triggers(
     type_filter: str | None = None,
     status_filter: str | None = None,
@@ -956,7 +1091,7 @@ def list_triggers(
     """List all triggers."""
     from rich.table import Table
 
-    manager = TriggerManager()
+    manager = _readable_manager()
 
     # Convert filters
     tt = TriggerType(type_filter) if type_filter else None
@@ -1022,12 +1157,12 @@ def list_triggers(
 
 def show_trigger(trigger_id: str, plain: bool = False, json_out: bool = False):
     """Show detailed trigger information."""
-    manager = TriggerManager()
+    manager = _readable_manager()
     trigger = manager.get_trigger(trigger_id)
 
     if not trigger:
         ch.error(f"Trigger '{trigger_id}' not found")
-        return
+        raise typer.Exit(2)
 
     if json_out:
         import json
@@ -1084,7 +1219,7 @@ def show_trigger(trigger_id: str, plain: bool = False, json_out: bool = False):
     # Actions
     ch.console.print("\n[bold]Actions:[/bold]")
     for i, a in enumerate(trigger.actions, 1):
-        ch.console.print(f"  {i}. [{a.type.value}] {a.target}")
+        ch.console.print(f"  {i}. \\[{a.type.value}] {a.target}")
         if a.params:
             ch.console.print(f"     Params: {a.params}")
 
@@ -1108,7 +1243,7 @@ def add_trigger_interactive():
         trigger_type = TriggerType(type_str)
     except ValueError:
         ch.error(f"Invalid trigger type: {type_str}")
-        return
+        raise typer.Exit(2) from None
 
     # Description
     description = typer.prompt("Description (optional)", default="")
@@ -1158,11 +1293,15 @@ def add_trigger_interactive():
         ]
 
     # Save
-    manager = TriggerManager()
-    if manager.add_trigger(trigger):
-        ch.success(f"Created trigger: {trigger.id}")
-        ch.info(f"\nTest with: navig trigger test {trigger.id}")
-        ch.info(f"Fire with: navig trigger fire {trigger.id}")
+    # A success-only branch makes a FAILED add produce no output at all and exit 0 —
+    # quieter than a wrong answer, and just as untrue. Say so, and exit non-zero.
+    manager = _readable_manager()
+    if not manager.add_trigger(trigger):
+        ch.error(f"Failed to create trigger: {trigger.id}")
+        raise typer.Exit(1)
+    ch.success(f"Created trigger: {trigger.id}")
+    ch.info(f"\nTest with: navig trigger test {trigger.id}")
+    ch.info(f"Fire with: navig trigger fire {trigger.id}")
 
 
 def add_trigger_quick(
@@ -1177,10 +1316,10 @@ def add_trigger_quick(
     """Quick trigger creation from CLI."""
     try:
         tt = TriggerType(trigger_type)
-    except ValueError:
+    except ValueError as exc:
         ch.error(f"Invalid trigger type: {trigger_type}")
         ch.info(f"Valid types: {', '.join(t.value for t in TriggerType)}")
-        return
+        raise typer.Exit(2) from exc  # bad input, not a runtime failure
 
     # Parse action
     if action.startswith("workflow:"):
@@ -1227,48 +1366,56 @@ def add_trigger_quick(
                 )
             ]
 
-    manager = TriggerManager()
-    if manager.add_trigger(trigger):
-        ch.success(f"Created trigger: {trigger.id}")
+    manager = _readable_manager()
+    if not manager.add_trigger(trigger):
+        ch.error(f"Failed to create trigger: {trigger.id}")
+        raise typer.Exit(1)
+    ch.success(f"Created trigger: {trigger.id}")
 
 
 def remove_trigger(trigger_id: str, force: bool = False):
     """Remove a trigger."""
     import typer
 
-    manager = TriggerManager()
+    manager = _readable_manager()
     trigger = manager.get_trigger(trigger_id)
 
     if not trigger:
         ch.error(f"Trigger '{trigger_id}' not found")
-        return
+        raise typer.Exit(2)
 
     if not force:
         if not typer.confirm(f"Remove trigger '{trigger.name}'?", default=False):
             ch.info("Cancelled")
             return
 
-    if manager.remove_trigger(trigger_id):
-        ch.success(f"Removed trigger: {trigger.name}")
+    if not manager.remove_trigger(trigger_id):
+        ch.error(f"Failed to remove trigger: {trigger.name}")
+        raise typer.Exit(1)
+    ch.success(f"Removed trigger: {trigger.name}")
 
 
 def enable_trigger(trigger_id: str):
     """Enable a trigger."""
-    manager = TriggerManager()
-    if manager.enable_trigger(trigger_id):
-        ch.success(f"Enabled trigger: {trigger_id}")
+    manager = _readable_manager()
+    if not manager.enable_trigger(trigger_id):
+        ch.error(f"Failed to enable trigger: {trigger_id}")
+        raise typer.Exit(1)
+    ch.success(f"Enabled trigger: {trigger_id}")
 
 
 def disable_trigger(trigger_id: str):
     """Disable a trigger."""
-    manager = TriggerManager()
-    if manager.disable_trigger(trigger_id):
-        ch.success(f"Disabled trigger: {trigger_id}")
+    manager = _readable_manager()
+    if not manager.disable_trigger(trigger_id):
+        ch.error(f"Failed to disable trigger: {trigger_id}")
+        raise typer.Exit(1)
+    ch.success(f"Disabled trigger: {trigger_id}")
 
 
 def test_trigger(trigger_id: str):
     """Test a trigger (dry run)."""
-    manager = TriggerManager()
+    manager = _readable_manager()
     result = manager.fire_trigger(trigger_id, dry_run=True)
 
     if result:
@@ -1277,7 +1424,7 @@ def test_trigger(trigger_id: str):
 
 def fire_trigger(trigger_id: str):
     """Manually fire a trigger."""
-    manager = TriggerManager()
+    manager = _readable_manager()
     result = manager.fire_trigger(trigger_id, dry_run=False)
 
     if result:
@@ -1290,6 +1437,7 @@ def fire_trigger(trigger_id: str):
             ch.info(
                 f"Actions: {result.actions_succeeded} succeeded, {result.actions_failed} failed"
             )
+            raise typer.Exit(1)
 
 
 def show_trigger_history(
@@ -1371,7 +1519,7 @@ def clear_trigger_history(trigger_id: str | None = None, force: bool = False):
 def show_trigger_stats():
     """Show trigger statistics."""
 
-    manager = TriggerManager()
+    manager = _readable_manager()
     triggers = manager.list_triggers()
     history = manager.get_history(limit=1000)
 
@@ -1508,7 +1656,7 @@ def trigger_add_cmd(
             _ch.error(
                 "Action is required for quick mode. Use --action or run without args for interactive mode."
             )
-            return
+            raise typer.Exit(2)
         add_trigger_quick(
             name=name,
             action=action,

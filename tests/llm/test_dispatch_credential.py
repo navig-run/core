@@ -31,6 +31,7 @@ def test_resolve_dispatch_falls_back_to_authprofile(monkeypatch):
         def resolve_auth(self, provider):
             return ("sk-shared", "vault:openai")
 
+    monkeypatch.setattr("navig.providers.AuthProfileManager", _AP)
     monkeypatch.setattr("navig.providers.auth.AuthProfileManager", _AP)
     assert g._resolve_dispatch_credential("openai") == ("sk-shared", None)
 

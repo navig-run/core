@@ -18,6 +18,9 @@ import asyncio
 import logging
 from typing import Any
 
+from navig.core.aio_subprocess import communicate_or_kill
+from navig.core.coerce import coerce_bool
+
 try:
     from aiohttp import web
 except ImportError:
@@ -52,7 +55,7 @@ _TELEGRAM_ALLOWED_TYPING = {"instant", "message", "never"}
 # Commands that must remain enabled — disabling them would brick the bot UI.
 # Mirror this set in navig/gateway/channels/telegram_commands.py if expanded.
 _TELEGRAM_LOCKED_COMMANDS: frozenset[str] = frozenset(
-    {"start", "help", "settings", "status"}
+    {"start", "help", "settings", "status", "extensions", "ext"}
 )
 
 # Supported third-party adapters
@@ -100,6 +103,27 @@ _ADAPTER_STR_KEYS: dict[str, frozenset[str]] = {
 }
 
 
+def _extension_of(entry) -> str | None:
+    """Extension id owning a slash-command registry entry (None if unresolved)."""
+    try:
+        from navig.gateway.channels.telegram_extensions import extension_for_command
+
+        return extension_for_command(entry.command, getattr(entry, "category", None))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _extension_enabled_for(entry) -> bool:
+    """Whether the owning extension is switched on. Unresolved → True (fail open)."""
+    try:
+        from navig.gateway.channels.telegram_extensions import is_enabled
+
+        ext_id = _extension_of(entry)
+        return is_enabled(ext_id) if ext_id else True
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def _get_config_manager():
     try:
         from navig.config import get_config_manager  # type: ignore[import]
@@ -125,6 +149,16 @@ def _cfg_get(cfg, key: str, default=None):
         return val if val is not None else default
     except Exception:
         return default
+
+
+def _cfg_bool(cfg, key: str, default: bool = False) -> bool:
+    """Read a config boolean, coercing the raw value.
+
+    `navig config set adapters.telegram.enabled false` stores the STRING "false" (truthy),
+    so `bool(_cfg_get(...))` would report a disabled adapter as enabled. coerce_bool handles
+    real bools (what the deck writes via _cfg_set_path) and config-set strings alike.
+    """
+    return coerce_bool(_cfg_get(cfg, key, default), default=default)
 
 
 def _cfg_set_path(cfg, key: str, value) -> None:
@@ -196,7 +230,7 @@ async def handle_deck_social_status(request: "web.Request") -> "web.Response":
     }
 
     for network in _ADAPTERS:
-        enabled = bool(_cfg_get(cfg, f"adapters.{network}.enabled", False))
+        enabled = _cfg_bool(cfg, f"adapters.{network}.enabled")
         # "connected" for adapters means enabled + token present in vault
         token_key = _ADAPTER_VAULT_KEYS.get(network, "")
         net_connected = False
@@ -416,6 +450,12 @@ async def handle_deck_social_telegram_commands(request: "web.Request") -> "web.R
             "visible": bool(entry.visible),
             "locked": name in _TELEGRAM_LOCKED_COMMANDS,
             "enabled": name not in disabled,
+            # Which extension owns this command, and whether that extension is
+            # on. Without these the Commands tab offers a per-command toggle
+            # that the extension gate silently overrides — two switches
+            # disagreeing with no visible reason.
+            "extension": _extension_of(entry),
+            "extension_enabled": _extension_enabled_for(entry),
             "ai_capable": ai_capable,
             "ai_default": ai_default,
             "style": effective_style,
@@ -438,7 +478,7 @@ async def handle_deck_social_adapter_get(request: "web.Request") -> "web.Respons
         )
 
     cfg = _get_config_manager()
-    enabled = bool(_cfg_get(cfg, f"adapters.{network}.enabled", False))
+    enabled = _cfg_bool(cfg, f"adapters.{network}.enabled")
 
 # Non-secret display fields — read all _ADAPTER_STR_KEYS for this network
     extra: dict[str, Any] = {}
@@ -523,7 +563,7 @@ async def handle_deck_social_adapter_post(request: "web.Request") -> "web.Respon
     if errors and not updated:
         return web.json_response({"ok": False, "errors": errors}, status=400)
 
-    current_enabled = bool(_cfg_get(cfg, f"adapters.{network}.enabled", False))
+    current_enabled = _cfg_bool(cfg, f"adapters.{network}.enabled")
     return web.json_response(
         {"ok": True, "network": network, "enabled": current_enabled, "updated": updated, "errors": errors}
     )
@@ -549,7 +589,7 @@ _BRIDGE_DEFS: list[dict] = [
 
 def _matrix_connected(cfg: object | None) -> bool:
     """Return True when Matrix is enabled and a homeserver_url is configured."""
-    if not _cfg_get(cfg, "matrix.enabled", False):
+    if not _cfg_bool(cfg, "matrix.enabled"):
         return False
     url = _cfg_get(cfg, "matrix.homeserver_url", "")
     return bool(url)
@@ -562,7 +602,7 @@ async def handle_deck_social_matrix_get(request: "web.Request") -> "web.Response
         "homeserver_url": _cfg_get(cfg, "matrix.homeserver_url", ""),
         "user_id": _cfg_get(cfg, "matrix.user_id", ""),
         "server_name": _cfg_get(cfg, "matrix.server_name", ""),
-        "enabled": bool(_cfg_get(cfg, "matrix.enabled", False)),
+        "enabled": _cfg_bool(cfg, "matrix.enabled"),
         "connected": _matrix_connected(cfg),
     })
 
@@ -619,7 +659,7 @@ async def _async_docker_ps_filter(container_name: str) -> bool:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+        stdout, _ = await communicate_or_kill(proc, 5)
         return bool(stdout.strip())
     except Exception:
         return False
@@ -666,7 +706,7 @@ async def handle_deck_social_matrix_bridges_deploy(request: "web.Request") -> "w
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        _, stderr = await communicate_or_kill(proc, 30)
         if proc.returncode == 0:
             return web.json_response({"ok": True, "bridge": bridge_key, "started": True})
         return web.json_response(
@@ -679,3 +719,106 @@ async def handle_deck_social_matrix_bridges_deploy(request: "web.Request") -> "w
         )
     except Exception as exc:
         return web.json_response({"ok": False, "error": str(exc)}, status=500)
+
+
+# ── Telegram Extensions ──────────────────────────────────────────────────────
+
+
+async def handle_deck_social_telegram_extensions(request: "web.Request") -> "web.Response":
+    """GET /api/deck/social/telegram/extensions — the extension catalog + state.
+
+    Same producer as the /extensions card and `navig telegram extensions`
+    (``telegram_extensions.list_extensions``), so the three surfaces cannot drift.
+    """
+    try:
+        from navig.gateway.channels.telegram_extensions import list_extensions
+
+        payload = list_extensions()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("telegram extensions unavailable: %s", exc)
+        return web.json_response(
+            {"ok": False, "error": "extension registry unavailable"}, status=500
+        )
+    return web.json_response({"ok": True, **payload})
+
+
+async def handle_deck_social_telegram_extension_set(
+    request: "web.Request",
+) -> "web.Response":
+    """POST /api/deck/social/telegram/extensions — {"id": "tg:habits", "enabled": false}.
+
+    A dedicated route rather than reusing POST /api/deck/modules/toggle for two
+    reasons: this surface must REJECT a module id that is not a Telegram
+    extension (a Telegram tab that can silently disable `vault` is a trap), and
+    it returns the re-derived row so the panel does not need a second GET per
+    tap. It calls the same registry setter and the same broadcaster underneath —
+    a second write path would be how the two surfaces start disagreeing.
+    """
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return web.json_response({"ok": False, "error": "invalid JSON"}, status=400)
+
+    if not isinstance(body, dict):
+        return web.json_response({"ok": False, "error": "expected an object"}, status=400)
+    ext_id = body.get("id")
+    enabled = body.get("enabled")
+    if not isinstance(ext_id, str) or not isinstance(enabled, bool):
+        return web.json_response(
+            {"ok": False, "error": "id (string) and enabled (bool) are required"},
+            status=400,
+        )
+
+    try:
+        from navig.gateway.channels.telegram_extensions import get, list_extensions
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("telegram extensions unavailable: %s", exc)
+        return web.json_response(
+            {"ok": False, "error": "extension registry unavailable"}, status=500
+        )
+
+    ext = get(ext_id)
+    # Reject anything that is not a Telegram extension, and anything locked —
+    # `core` is never registered as a module, so this is belt-and-braces.
+    if ext is None or ext.locked:
+        return web.json_response(
+            {"ok": False, "error": "unknown telegram extension", "id": ext_id},
+            status=404,
+        )
+
+    try:
+        from navig.modules.registry import get_registry
+
+        if not get_registry().set_enabled(ext.module_id, enabled):
+            return web.json_response(
+                {"ok": False, "error": "unknown module", "id": ext.module_id},
+                status=404,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("extension toggle %s failed: %s", ext_id, exc)
+        return web.json_response({"ok": False, "error": "toggle failed"}, status=500)
+
+    # Reuse the modules broadcaster rather than hand-rolling a second one.
+    try:
+        from navig.gateway.deck.routes.modules import emit_modules_update
+
+        await emit_modules_update(request, {"id": ext.module_id, "enabled": enabled})
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("modules_update broadcast skipped: %s", exc)
+
+    # Re-publish the "/" autocomplete so a switched-off command disappears.
+    try:
+        gw = request.app.get("gateway")
+        channel = (getattr(gw, "channels", {}) or {}).get("telegram") if gw else None
+        register = getattr(channel, "_register_commands", None)
+        if register is not None:
+            await register()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("command re-registration after extension toggle skipped: %s", exc)
+
+    payload = list_extensions()
+    row = next((e for e in payload["extensions"] if e["id"] == ext.module_id), None)
+    return web.json_response(
+        {"ok": True, "id": ext.module_id, "enabled": enabled,
+         "extension": row, "counts": payload["counts"]}
+    )

@@ -13,8 +13,6 @@ import threading
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -35,6 +33,18 @@ def _write_ops(recorder, n: int, prefix: str = "cmd") -> None:
 
     for i in range(n):
         recorder.record(OperationRecord(command=f"{prefix}{i}"))
+
+
+def _flat(text: str) -> str:
+    """Collapse Rich's line wrapping before matching prose.
+
+    Rich hard-wraps to the terminal width, so a phrase can be split mid-sentence
+    ("nothing \\nrecorded yet") and a plain substring match then fails on output that
+    is perfectly correct. The wrap point MOVES with the message length — these views
+    print the ledger path, and under `-n auto` xdist lengthens tmp_path with the
+    worker id (`popen-gw6`), which is why this passed solo and failed in the full run.
+    """
+    return " ".join(text.split()).lower()
 
 
 def _lines(path: Path) -> list[str]:
@@ -424,7 +434,7 @@ class TestLedgerVerifyCli:
     def test_missing_ledger_exits_zero(self, tmp_path):
         result = self._invoke(["verify", "--path", str(tmp_path / "nope.jsonl")])
         assert result.exit_code == 0
-        assert "nothing recorded" in result.output.lower()
+        assert "nothing recorded" in _flat(result.output)
 
     def test_json_output_is_one_pure_document(self, tmp_path):
         rec = _make_recorder(tmp_path)

@@ -1,8 +1,6 @@
 """Batch 60 — memory/_util, ui/status, commands/paths_cmd."""
 from __future__ import annotations
 
-import logging
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

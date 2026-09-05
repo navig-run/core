@@ -331,6 +331,9 @@ _MATRIX: tuple[tuple[tuple[str, ...], frozenset[int]], ...] = (
     # tripwire (corrupt once any value outgrew the console width).
     (("connector", "list", "--json"), frozenset({0})),
     (("quick", "list", "--json"), frozenset({0})),
+    # Reads the module registry, which loads every entry-point plugin — the
+    # noisiest import chain any --json verb has, so it is worth pinning.
+    (("telegram", "extensions", "list", "--json"), frozenset({0})),
     # Error path stays pure too: without a docs/ dir this exits 1 — the --json
     # payload must still be a JSON document, not narration.
     (("docs", "--json"), frozenset({0, 1})),

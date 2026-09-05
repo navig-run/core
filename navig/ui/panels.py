@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import sys
 
+from rich.markup import escape
+
 from navig.ui.models import CauseScore, Metric
 from navig.ui.theme import SAFE_MODE, SEVERITY_STYLE, console
 
@@ -28,11 +30,11 @@ def render_primary_state(
     """Layer 2 — primary state line. Never raises."""
     try:
         ico = state_icon
-        lines = [f"[{style}]{ico}  {label}[/{style}]"]
+        lines = [f"[{style}]{ico}  {escape(label)}[/{style}]"]
         if detail:
-            lines.append(f"   [dim]{detail}[/dim]")
+            lines.append(f"   [dim]{escape(detail)}[/dim]")
         if hint:
-            lines.append(f"   [dim]{hint}[/dim]")
+            lines.append(f"   [dim]{escape(hint)}[/dim]")
         console.print("\n".join(lines))
     except Exception:
         try:
@@ -50,7 +52,7 @@ def render_explanation(
     try:
         if not causes:
             return
-        lines = [f"[bold]{title}[/bold]"]
+        lines = [f"[bold]{escape(title)}[/bold]"]
         for c in causes:
             bar_len = max(1, c.confidence // 10)
             bar = ("█" if not SAFE_MODE else "#") * bar_len + ("░" if not SAFE_MODE else ".") * (
@@ -60,7 +62,7 @@ def render_explanation(
             lines.append(
                 f"  [{sev_style}]{bar}[/{sev_style}] "
                 f"[{sev_style}]{c.confidence:3d}%[/{sev_style}]  "
-                f"[white]{c.description}[/white]"
+                f"[white]{escape(c.description)}[/white]"
             )
         console.print("\n".join(lines))
     except Exception:

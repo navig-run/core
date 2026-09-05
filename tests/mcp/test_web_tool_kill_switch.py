@@ -57,3 +57,47 @@ def test_fetch_enabled_true_string_does_not_block(force_web_config, monkeypatch)
     monkeypatch.setattr(web, "web_fetch", lambda *_a, **_k: _Result())
     out = sysmod._tool_web_fetch(_Server(), {"url": "http://example.com"})
     assert out.get("error") != "Web fetch is disabled in configuration"
+
+
+# ── end-to-end: config → get_web_config → the gate ──────────────────────────────
+#
+# Everything above stubs out `get_web_config` itself, so it can only ever prove that the
+# COERCION is right. It cannot see whether the configured value reaches the gate at all —
+# and it did not: `get_web_config` called `config_manager.get_global_config_value("web")`,
+# a method that has never existed, and swallowed the AttributeError into "return
+# default_config". The switch was therefore permanently ON while these tests stayed green.
+#
+# These two drive the real `get_web_config`, so the whole chain has to work.
+
+
+class _ConfigManager:
+    """Only what get_web_config uses: ConfigManager's dotted `get`."""
+
+    def __init__(self, config):
+        self._config = config
+
+    def get(self, dotted_key, default=None):
+        node = self._config
+        for part in dotted_key.split("."):
+            if not isinstance(node, dict) or part not in node:
+                return default
+            node = node[part]
+        return node
+
+
+def test_fetch_kill_switch_works_end_to_end_from_config():
+    server = _Server()
+    server._config = _ConfigManager({"web": {"fetch": {"enabled": "false"}}})
+
+    out = sysmod._tool_web_fetch(server, {"url": "http://example.com"})
+
+    assert out == {"error": "Web fetch is disabled in configuration"}
+
+
+def test_search_kill_switch_works_end_to_end_from_config():
+    server = _Server()
+    server._config = _ConfigManager({"web": {"search": {"enabled": False}}})
+
+    out = sysmod._tool_web_search(server, {"query": "hello"})
+
+    assert out == {"error": "Web search is disabled in configuration"}

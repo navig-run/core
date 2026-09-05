@@ -117,6 +117,24 @@ def _fetch_token(sa: dict, scope: str) -> tuple[str, int]:
 # ── Connector ────────────────────────────────────────────────────────────────
 
 
+def _payload_result(label: str, payload: dict, *, success: bool = True) -> ActionResult:
+    """Wrap an API payload in a VALID ``ActionResult``.
+
+    ``ActionResult`` has no ``data`` field — the previous code passed ``data=`` and raised
+    ``TypeError`` on every ``act()`` call. The payload now rides in ``resource.metadata``.
+    """
+    return ActionResult(
+        success=success,
+        resource=Resource(
+            id=label,
+            source="gcp_translate",
+            title=label,
+            preview=str(payload)[:400],
+            metadata=payload,
+        ),
+    )
+
+
 class GcpTranslateConnector(BaseConnector):
     """Connector for Google Cloud Translation API v2 (service account auth).
 
@@ -199,6 +217,19 @@ class GcpTranslateConnector(BaseConnector):
         self._token = None
         self._token_expiry = 0
         self._status = ConnectorStatus.DISCONNECTED
+
+    def _require_connected(self) -> None:
+        """Guard called at the top of every request path.
+
+        It was referenced but never defined, so every call raised ``AttributeError`` before doing
+        anything. Now it fails with a clear, catchable error when ``connect()`` was never called
+        (no service account loaded) instead of calling the API with no token.
+        """
+        if not self._sa:
+            raise ConnectorAuthError(
+                self.manifest.id,
+                "Not connected — call connect() first (needs a GCP service account).",
+            )
 
     # ── Internal helpers ─────────────────────────────────────────────────────
 
@@ -283,8 +314,10 @@ class GcpTranslateConnector(BaseConnector):
             List all supported languages, optionally with display names in `target` lang.
         """
         self._require_connected()
-        name = action.name
+        # The op comes from params — these ops don't map onto the generic ``ActionType`` enum, and
+        # ``Action`` has no ``name`` field (the previous code read ``action.name`` → AttributeError).
         p = action.params
+        name = p.get("op", "")
 
         if name == "translate":
             texts = p.get("text", "")
@@ -306,7 +339,7 @@ class GcpTranslateConnector(BaseConnector):
                 }
                 for orig, t in zip(texts, translations)
             ]
-            return ActionResult(success=True, data={"translations": out})
+            return _payload_result("translate", {"translations": out})
 
         if name == "detect":
             texts = p.get("text", "")
@@ -322,16 +355,13 @@ class GcpTranslateConnector(BaseConnector):
                 }
                 for orig, d in zip(texts, detections)
             ]
-            return ActionResult(success=True, data={"detections": out})
+            return _payload_result("detect", {"detections": out})
 
         if name == "languages":
             target = p.get("target", "en")
             result = self._api(f"/languages?target={target}")
             langs = result.get("data", {}).get("languages", [])
-            return ActionResult(
-                success=True,
-                data={"languages": langs, "count": len(langs)},
-            )
+            return _payload_result("languages", {"languages": langs, "count": len(langs)})
 
         return ActionResult(
             success=False, error=f"Unknown action '{name}'. Use: translate, detect, languages"
@@ -342,7 +372,7 @@ class GcpTranslateConnector(BaseConnector):
     async def health_check(self) -> HealthStatus:
         """Test a single-word translation to verify end-to-end connectivity."""
         if not self._sa:
-            return HealthStatus(healthy=False, message="Not connected", latency_ms=0)
+            return HealthStatus(ok=False, message="Not connected", latency_ms=0)
         t0 = time.monotonic()
         try:
             result = self._api("", method="POST", body={"q": ["hello"], "target": "es"})
@@ -351,13 +381,13 @@ class GcpTranslateConnector(BaseConnector):
             if translations:
                 translated = translations[0].get("translatedText", "")
                 return HealthStatus(
-                    healthy=True,
+                    ok=True,
                     message=f"Cloud Translation OK: 'hello' → '{translated}' (es)",
                     latency_ms=latency_ms,
                 )
             return HealthStatus(
-                healthy=False, message="Empty translation response", latency_ms=latency_ms
+                ok=False, message="Empty translation response", latency_ms=latency_ms
             )
         except Exception as exc:  # noqa: BLE001
             latency_ms = int((time.monotonic() - t0) * 1000)
-            return HealthStatus(healthy=False, message=str(exc), latency_ms=latency_ms)
+            return HealthStatus(ok=False, message=str(exc), latency_ms=latency_ms)

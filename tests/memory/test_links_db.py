@@ -12,9 +12,7 @@ Covers:
 - LinksDB.search (FTS and fallback)
 """
 
-import json
 from datetime import datetime
-from pathlib import Path
 
 import pytest
 
@@ -134,12 +132,37 @@ class TestLinksDBAdd:
 
 
 class TestLinksDBUpdate:
-    # NOTE: update() fires an FTS5 UPDATE trigger that raises
-    # "database disk image is malformed" on some SQLite builds (WAL + FTS5 content
-    # table UPDATE trigger limitation).  Only non-FTS-triggering paths are tested.
+    # This class used to carry a note claiming update() raising "database disk image is
+    # malformed" was a SQLite-build limitation, and tested "only non-FTS-triggering
+    # paths" — which left update(), a core public method, with no real coverage. It was
+    # never a build limitation: the FTS sync triggers issued plain UPDATE/DELETE against
+    # an external-content table, which corrupts the index. Fixed in 530c0a21, whose
+    # tests/memory/test_links_fts_integrity.py covers the corruption + repair. What
+    # belongs *here* is the ordinary update contract, which nothing covered.
 
     def test_update_nonexistent_returns_false(self, db):
         assert db.update("ghost", title="x") is False
+
+    def test_update_changes_the_field(self, db):
+        link_id = db.add("https://example.com", title="Before", notes="N0")
+        assert db.update(link_id, title="After", notes="N1") is True
+        rec = db.get(link_id)
+        assert (rec.title, rec.notes) == ("After", "N1")
+
+    def test_update_leaves_unsupplied_fields_untouched(self, db):
+        """update() binds COALESCE(?, col) so a None argument means 'don't change'."""
+        link_id = db.add(
+            "https://x.example", title="T", notes="N", tags=["keep"], vault_cred_id="c1"
+        )
+        db.update(link_id, title="T2")
+        rec = db.get(link_id)
+        assert (rec.title, rec.notes, rec.tags, rec.vault_cred_id) == ("T2", "N", ["keep"], "c1")
+
+    def test_update_can_clear_tags_explicitly(self, db):
+        """The COALESCE boundary: '[]' is not NULL, so an explicit empty list still clears."""
+        link_id = db.add("https://x.example", tags=["a", "b"])
+        assert db.update(link_id, tags=[]) is True
+        assert db.get(link_id).tags == []
 
 
 class TestLinksDBDelete:

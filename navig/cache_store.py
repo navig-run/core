@@ -84,6 +84,29 @@ def read_json_cache(
         return CacheReadResult(hit=False, expired=False, data=None, cached_at=None)
 
 
+def invalidate_json_cache(filename: str) -> bool:
+    """Drop a cache file so the next read recomputes. True if one was removed.
+
+    A cache over state the CLI itself MUTATES must be dropped when that state changes, or
+    the read surface contradicts the write. Measured before this existed: enabling a
+    template printed "OK Template 'caddy' enabled" and wrote `enabled: true` to disk, while
+    `navig flow template list` kept showing "Disabled" for the full hour of the TTL --
+    which reads as "the enable did not work".
+
+    Best-effort by design: failing to delete a cache must never fail the operation that
+    already succeeded. The next read simply serves stale data until the TTL expires, which
+    is exactly the state before this call existed.
+    """
+    try:
+        cache_path = global_cache_dir() / filename
+        if not cache_path.exists():
+            return False
+        cache_path.unlink()
+        return True
+    except OSError:
+        return False
+
+
 def write_json_cache(filename: str, data: Any) -> Path:
     """Write a cache file atomically (best effort)."""
 

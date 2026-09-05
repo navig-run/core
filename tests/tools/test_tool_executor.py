@@ -2,10 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import time
-from unittest.mock import MagicMock
-
-import pytest
 
 from navig.tools.executor import ToolExecutor
 from navig.tools.interfaces import (

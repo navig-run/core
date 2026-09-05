@@ -28,6 +28,27 @@ Usage:
     telegram = registry.get_channel("telegram")
     if telegram.is_available():
         adapter = telegram.get_adapter()
+
+NO PRODUCTION CONSUMER (verified 2026-08-01)
+-------------------------------------------
+Nothing in the running system reads this registry. Its only importers are the three
+thin wrappers in ``channels/__init__.py`` (``get_channel_registry`` / ``list_channels``
+/ ``get_channel``), and those have no callers either. The live gateway finds its
+channels through ``NavigGateway.channels`` — a plain dict populated by
+``_init_channels()``.
+
+This is worth knowing before extending it: ``gateway/server.py`` twice called
+``ChannelRegistry.instance()``, a classmethod that has never existed here (the accessor
+is the module-level ``get_channel_registry()``). Both calls were written as
+``... if hasattr(ChannelRegistry, "instance") else None``, so they silently evaluated to
+None forever — and one of them was the only place that handed the Telegram messaging
+adapter its bot, leaving it unable to send on every install. Both now use
+``NavigGateway.channels`` directly.
+
+Deliberately not deleted and not registered in ``tests/quality/test_dormant_modules.py``:
+that guard's reachability scan keys on the module STEM, and ``registry`` collides with
+``hooks/registry.py``, ``providers/registry.py``, ``connectors/registry.py`` and others.
+If you wire this up, delete this note.
 """
 
 from __future__ import annotations
@@ -222,7 +243,15 @@ DEFAULT_CHANNEL_META: dict[ChannelId, ChannelMeta] = {
         ],
         required_config=["telegram_bot_token"],
         module_path="navig.gateway.channels.telegram",
-        adapter_class="TelegramChannelAdapter",
+        # No registry-level adapter wrapper exists for this channel. It declared
+        # "TelegramChannelAdapter" — a class that has never been defined in that module,
+        # which only has `TelegramChannel`. `get_adapter()` did
+        # `getattr(module, adapter_class)`, caught the AttributeError, and marked
+        # this channel ERROR — so asking the registry for the flagship channel
+        # reported the CHANNEL as broken when only the missing wrapper was.
+        # None is the truth: reach these through the gateway's live channel
+        # instances (`gateway.channels["telegram"]`) until a wrapper exists.
+        adapter_class=None,
     ),
     ChannelId.WHATSAPP: ChannelMeta(
         id=ChannelId.WHATSAPP,
@@ -240,7 +269,15 @@ DEFAULT_CHANNEL_META: dict[ChannelId, ChannelMeta] = {
         ],
         required_config=["whatsapp_session_path"],
         module_path="navig.gateway.channels.whatsapp",
-        adapter_class="WhatsAppChannelAdapter",
+        # No registry-level adapter wrapper exists for this channel. It declared
+        # "WhatsAppChannelAdapter" — a class that has never been defined in that module,
+        # which only has `WhatsAppChannel`. `get_adapter()` did
+        # `getattr(module, adapter_class)`, caught the AttributeError, and marked
+        # this channel ERROR — so asking the registry for the flagship channel
+        # reported the CHANNEL as broken when only the missing wrapper was.
+        # None is the truth: reach these through the gateway's live channel
+        # instances (`gateway.channels["telegram"]`) until a wrapper exists.
+        adapter_class=None,
     ),
     ChannelId.DISCORD: ChannelMeta(
         id=ChannelId.DISCORD,
@@ -260,7 +297,15 @@ DEFAULT_CHANNEL_META: dict[ChannelId, ChannelMeta] = {
         ],
         required_config=["discord_bot_token"],
         module_path="navig.gateway.channels.discord",
-        adapter_class="DiscordChannelAdapter",
+        # No registry-level adapter wrapper exists for this channel. It declared
+        # "DiscordChannelAdapter" — a class that has never been defined in that module,
+        # which only has `DiscordChannel`. `get_adapter()` did
+        # `getattr(module, adapter_class)`, caught the AttributeError, and marked
+        # this channel ERROR — so asking the registry for the flagship channel
+        # reported the CHANNEL as broken when only the missing wrapper was.
+        # None is the truth: reach these through the gateway's live channel
+        # instances (`gateway.channels["telegram"]`) until a wrapper exists.
+        adapter_class=None,
     ),
     ChannelId.SLACK: ChannelMeta(
         id=ChannelId.SLACK,
@@ -540,7 +585,10 @@ class ChannelRegistry:
             adapter = adapter_cls()
             self._adapters[channel_id] = adapter
             return adapter
-        except (ImportError, AttributeError) as e:
+        except (ImportError, AttributeError, TypeError) as e:
+            # TypeError too: `adapter_cls()` takes no arguments, so a class that
+            # needs them (every *Channel* class here does) would otherwise raise
+            # straight through this loader into the caller.
             meta.status = ChannelStatus.ERROR
             meta.status_message = str(e)
             return None

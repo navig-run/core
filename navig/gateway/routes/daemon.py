@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 
+from navig.core.background import spawn
 from navig.debug_logger import get_debug_logger
 from navig.gateway.routes.common import (
     json_error_response,
@@ -118,8 +119,14 @@ def _daemon_status(gw):
         # 2. Active Nodes
         nodes = []
         try:
-            if hasattr(gw, "_mesh_discovery") and gw._mesh_discovery:
-                for p in gw._mesh_discovery.list_peers():
+            # list_peers() lives on NodeRegistry, NOT on MeshDiscovery — calling it on the
+            # discovery object raised AttributeError, which the `except Exception: pass`
+            # below swallowed, so this endpoint reported `nodes: []` on EVERY call no
+            # matter how many peers were online. server.py keeps the registry alongside
+            # the discovery loop as `_mesh_registry`.
+            registry = getattr(gw, "_mesh_registry", None)
+            if registry is not None:
+                for p in registry.list_peers():
                     nodes.append(
                         {
                             "id": p.node_id,
@@ -175,7 +182,7 @@ def _daemon_stop(gw):
                 start_new_session=True,
             )
 
-        asyncio.create_task(_d())
+        spawn(_d())
         return resp
 
     return h

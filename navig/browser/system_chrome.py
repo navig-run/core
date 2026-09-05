@@ -25,6 +25,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from navig.browser._paths import profile_dir
 from navig.debug_logger import get_debug_logger
 
 logger = get_debug_logger()
@@ -32,7 +33,9 @@ logger = get_debug_logger()
 __all__ = ["SystemChromeController", "SystemChromeUnavailable",
            "default_browser_profile", "capture_existing_cookies"]
 
-_DEFAULT_PROFILE = "~/.navig/browser/profiles/system-chrome"
+# Resolved per call, not frozen at import: config_dir() reads NAVIG_CONFIG_DIR live.
+def _default_profile() -> str:
+    return profile_dir("system-chrome")
 # Chromium browsers that accept --remote-debugging-port, in preference order.
 _CHROME_APPS = ("chrome", "edge", "brave", "chromium")
 
@@ -61,7 +64,7 @@ class SystemChromeController:
                  port: int | None = None):
         self.headless = headless
         self.proxy = proxy
-        self.user_data_dir = user_data_dir or _DEFAULT_PROFILE
+        self.user_data_dir = user_data_dir or _default_profile()
         self.app = app  # explicit app id, else auto-detect the first available
         self.port = port
         self.engine_name = "chrome"
@@ -120,7 +123,18 @@ class SystemChromeController:
                 "no system Chrome/Edge/Brave found to launch — install one, or use "
                 "`--engine firefox`.")
         self.engine_name = app or "chrome"
-        port = self.port or t.find_free_port() or 9222
+        # No `or 9222` fallback: find_free_port() already asks the OS for a port
+        # when the 9222+ window is unusable, so a None here means no port exists
+        # at all. Defaulting to 9222 in that case launches the browser on the one
+        # port we just proved cannot be bound — it starts, the debug port never
+        # comes up, and (because the Windows chrome.exe is a launcher that exits 0)
+        # it reads as a successful launch with a dead endpoint.
+        port = self.port or t.find_free_port()
+        if port is None:
+            raise SystemChromeUnavailable(
+                "no bindable local port for the CDP endpoint — on Windows check "
+                "`netsh interface ipv4 show excludedportrange protocol=tcp` for a "
+                "Hyper-V/WSL reserved range covering the debug ports.")
         Path(self.user_data_dir).expanduser().mkdir(parents=True, exist_ok=True)
         args = self._build_args(exe, port)
         logger.info("[system_chrome] launching %s on CDP port %d", self.engine_name, port)

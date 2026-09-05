@@ -26,14 +26,14 @@ def test_install_ps1_has_no_run_guard() -> None:
 
 
 def test_windows_installer_supports_telegram_token_bootstrap() -> None:
-    source = (_repo_root() / "scripts" / "install_navig_windows.ps1").read_text(encoding="utf-8")
+    source = (_repo_root() / "installers" / "install_navig_windows.ps1").read_text(encoding="utf-8")
     assert "NAVIG_TELEGRAM_BOT_TOKEN" in source
     assert "TELEGRAM_BOT_TOKEN" in source
     assert "SetEnvironmentVariable(\"TELEGRAM_BOT_TOKEN\"" in source
 
 
 def test_linux_installer_supports_telegram_token_bootstrap() -> None:
-    source = (_repo_root() / "scripts" / "install_navig_linux.sh").read_text(encoding="utf-8")
+    source = (_repo_root() / "installers" / "install_navig_linux.sh").read_text(encoding="utf-8")
     assert "NAVIG_TELEGRAM_BOT_TOKEN" in source
     assert "TELEGRAM_BOT_TOKEN" in source
     assert "printf 'TELEGRAM_BOT_TOKEN=%s" in source

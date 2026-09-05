@@ -27,6 +27,8 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
+from navig.core.coerce import coerce_bool
+
 if TYPE_CHECKING:
     pass
 
@@ -148,7 +150,7 @@ class TelegramChecklistMixin:
         the API call fails.
         """
         cfg = self._get_checklist_config()
-        if cfg.get("checklist_enabled", True) and should_send_as_checklist(text):
+        if coerce_bool(cfg.get("checklist_enabled", True), default=True) and should_send_as_checklist(text):
             tasks = extract_task_list(text)
             if tasks:  # guard against race between the two checks
                 title = _derive_checklist_title(text, original_query)
@@ -235,9 +237,21 @@ class TelegramChecklistMixin:
         """Return checklist config (best-effort)."""
         try:
             from navig.config import get_config_manager
+            from navig.core.coerce import coerce_bool
 
             cm = get_config_manager()
             tg = cm.get("telegram") or {}
-            return {"checklist_enabled": tg.get("checklist_enabled", True)}
+            # coerce_bool: `navig config set telegram.checklist_enabled false` stores
+            # the string "false" (bool("false") is True), so a raw read would leave
+            # the feature ON after the operator disabled it.
+            # AND with the Groups & forums extension: the per-feature key keeps
+            # meaning exactly what it meant before, so a feature that is off
+            # today stays off for two independent reasons.
+            from navig.gateway.channels.telegram_extensions import is_enabled
+
+            return {
+                "checklist_enabled": coerce_bool(tg.get("checklist_enabled", True), default=True)
+                and is_enabled("groups")
+            }
         except Exception:  # noqa: BLE001
             return {"checklist_enabled": True}

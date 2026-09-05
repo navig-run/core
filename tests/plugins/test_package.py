@@ -8,8 +8,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from navig.plugins.lifecycle import LifecycleTracker, State
 from navig.plugins.package import load_package
 

@@ -7,11 +7,11 @@ Works with Gmail, Outlook, Fastmail, self-hosted mail servers, etc.
 
 import asyncio
 import email
-from datetime import datetime
+from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from imaplib import IMAP4_SSL
-from smtplib import SMTP_SSL
+from smtplib import SMTP, SMTP_SSL
 
 from navig.agent.proactive.providers import EmailMessage, EmailProvider
 
@@ -72,7 +72,9 @@ class IMAPEmailProvider(EmailProvider):
 
             with IMAP4_SSL(self.imap_host, self.imap_port) as imap:
                 imap.login(self.email_address, self.password)
-                imap.select("INBOX")
+                # Open the mailbox READ-ONLY: listing unread mail must never mutate the
+                # user's real inbox. A read-write SELECT lets the FETCH below set \Seen.
+                imap.select("INBOX", readonly=True)
 
                 # Search for unread messages
                 status, data = imap.search(None, "UNSEEN")
@@ -83,7 +85,10 @@ class IMAPEmailProvider(EmailProvider):
 
                 # Get most recent messages up to limit
                 for msg_id in message_ids[-limit:][::-1]:
-                    status, msg_data = imap.fetch(msg_id, "(RFC822)")
+                    # BODY.PEEK[] returns the same raw bytes as RFC822 but, unlike
+                    # RFC822/BODY[], does NOT set the \Seen flag — so merely LISTING
+                    # unread mail can't silently mark it read on the server.
+                    status, msg_data = imap.fetch(msg_id, "(BODY.PEEK[])")
                     if status != "OK":
                         continue
 
@@ -97,7 +102,9 @@ class IMAPEmailProvider(EmailProvider):
 
                         received_at = parsedate_to_datetime(date_str)
                     except Exception:
-                        received_at = datetime.now()
+                        # Stay tz-aware to match parsedate_to_datetime's result — a naive
+                        # fallback here would crash any consumer that compares the two.
+                        received_at = datetime.now(timezone.utc)
 
                     # Extract snippet from body
                     snippet = self._extract_snippet(msg)
@@ -189,7 +196,17 @@ class IMAPEmailProvider(EmailProvider):
             if html_body:
                 msg.attach(MIMEText(html_body, "html"))
 
-            with SMTP_SSL(self.smtp_host, self.smtp_port) as smtp:
+            # Port 465 is implicit TLS (SMTP_SSL); 587/25 are plaintext ports that
+            # upgrade via explicit STARTTLS. Using SMTP_SSL against a STARTTLS-only
+            # port — Outlook/Office 365 submit on 587 — fails the TLS handshake, so
+            # Outlook (and any 587 provider) could never send.
+            if self.smtp_port == 465:
+                smtp_conn = SMTP_SSL(self.smtp_host, self.smtp_port)
+            else:
+                smtp_conn = SMTP(self.smtp_host, self.smtp_port)
+            with smtp_conn as smtp:
+                if self.smtp_port != 465:
+                    smtp.starttls()
                 smtp.login(self.email_address, self.password)
                 # send_message returns a dict of recipients the server REFUSED
                 # (it only raises when ALL are refused) — surface a partial refusal

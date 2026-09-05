@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from navig.gateway.routes.common import envelope_error, envelope_ok
 
 

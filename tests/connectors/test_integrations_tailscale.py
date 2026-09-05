@@ -5,8 +5,6 @@ import asyncio
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from navig.integrations.tailscale import Tailscale, TailscalePeer, TailscaleStatus
 
 # ---------------------------------------------------------------------------
@@ -242,7 +240,6 @@ class TestTailscaleIp:
         mock_status = TailscaleStatus(available=True, running=True, peers=[peer])
         with patch.object(ts, "status", return_value=mock_status):
             # Need to wrap the coroutine properly
-            import asyncio as _asyncio
 
             async def _mock_status():
                 return mock_status

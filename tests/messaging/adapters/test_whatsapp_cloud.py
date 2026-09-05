@@ -1,10 +1,7 @@
 """Tests for navig/messaging/adapters/whatsapp_cloud.py — WhatsAppCloudAdapter."""
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
+from unittest.mock import AsyncMock, patch
 
 
 class TestWhatsAppCloudAdapterProperties:
@@ -78,3 +75,51 @@ class TestWhatsAppSendMessage:
         sig = inspect.signature(WhatsAppCloudAdapter.send_message)
         assert "thread_id" in sig.parameters
         assert "text" in sig.parameters
+
+
+class TestWhatsAppMediaHonesty:
+    """WhatsApp Cloud must NOT silently drop media and report success — it fetches media by
+    public link and sends one media object per message, so a local (bytes/path) attachment or
+    extra attachments are refused rather than sent as text-only with a success() receipt.
+
+    The refuse guard returns before any HTTP call, so these tests need no network mock. Before
+    the fix, `_whatsapp_payload` fell through to a text payload and send_message returned
+    success()."""
+
+    def _adapter(self):
+        from navig.messaging.adapters.whatsapp_cloud import WhatsAppCloudAdapter
+        return WhatsAppCloudAdapter({})
+
+    async def test_bytes_attachment_is_refused_and_nothing_is_sent(self):
+        adapter = self._adapter()
+        # If the guard failed to fire, send_message would await _get_session() and POST a
+        # (media-stripped) text message. Prove it never gets there.
+        with patch.object(adapter, "_get_session", new=AsyncMock()) as mock_session:
+            r = await adapter.send_message(
+                "+15550001234", "hi", attachments=[{"data": b"\x89PNG", "kind": "photo"}]
+            )
+        assert r.ok is False
+        assert "url" in (r.error or "").lower()
+        mock_session.assert_not_awaited()  # no network — refused before the POST
+
+    async def test_local_path_attachment_is_refused(self):
+        adapter = self._adapter()
+        with patch.object(adapter, "_get_session", new=AsyncMock()) as mock_session:
+            r = await adapter.send_message(
+                "+15550001234", "hi", attachments=[{"path": "/tmp/a.png", "kind": "photo"}]
+            )
+        assert r.ok is False
+        assert "url" in (r.error or "").lower()
+        mock_session.assert_not_awaited()
+
+    async def test_multiple_url_attachments_are_refused_not_partially_sent(self):
+        adapter = self._adapter()
+        with patch.object(adapter, "_get_session", new=AsyncMock()) as mock_session:
+            r = await adapter.send_message(
+                "+15550001234",
+                "hi",
+                attachments=[{"url": "https://x/a.png"}, {"url": "https://x/b.png"}],
+            )
+        assert r.ok is False
+        assert "one media" in (r.error or "").lower()
+        mock_session.assert_not_awaited()  # not even the first is sent — refuse, don't partial-send

@@ -187,18 +187,20 @@ class TestValidateHostConfig:
         from navig.core.config_schema import PYDANTIC_AVAILABLE, validate_host_config
         if not PYDANTIC_AVAILABLE:
             pytest.skip("pydantic not installed")
-        # Non-strict: should return a model or None, never raise
-        result = validate_host_config({"host": "192.168.1.1", "user": "root"})
-        assert result is None or result is not None  # just no exception
+        # Same pair of defects as its sibling: a tautological assertion, and "host"/"user"
+        # instead of the schema's "hostname"/"username", so the "minimal host" it claimed to
+        # validate was invalid and came back None.
+        result = validate_host_config({"hostname": "192.168.1.1", "username": "root"})
+        assert result is not None, "a minimal valid host config should validate"
 
     def test_returns_none_on_invalid(self) -> None:
         from navig.core.config_schema import PYDANTIC_AVAILABLE, validate_host_config
         if not PYDANTIC_AVAILABLE:
             pytest.skip("pydantic not installed")
-        # Missing required fields — may or may not fail depending on strictness
+        # Was true for every value. Measured: an empty config is missing required fields,
+        # so non-strict validation returns None -- exactly what this test is named for.
         result = validate_host_config({})
-        # Non-strict returns None or valid object depending on required fields
-        assert result is None or result is not None  # just ensure no exception
+        assert result is None
 
 
 class TestGetConfigSchema:

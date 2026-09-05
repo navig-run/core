@@ -5,14 +5,11 @@ Batch 15: Tests for
 """
 from __future__ import annotations
 
-import pytest
-
 # ---------------------------------------------------------------------------
 # navig.tools.api_schema
 # ---------------------------------------------------------------------------
 from navig.tools.api_schema import (
     _REDACTED,
-    _SENSITIVE_KEYS_RE,
     ApiSource,
     ApiToolResult,
     redact_sensitive,

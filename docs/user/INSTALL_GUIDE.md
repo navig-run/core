@@ -44,7 +44,7 @@ Run this **before** any removal. The script saves all Navig config, data, system
 
 ```bash
 # On the Ubuntu server, as the navig user (with sudo)
-bash scripts/navig_ubuntu_backup_uninstall.sh
+bash installers/navig_ubuntu_backup_uninstall.sh
 ```
 
 The script will:
@@ -69,7 +69,7 @@ The same script continues after the backup and performs a full removal:
 ```bash
 # Continues automatically from the backup script above
 # Or run standalone after a backup already exists:
-bash scripts/navig_ubuntu_backup_uninstall.sh
+bash installers/navig_ubuntu_backup_uninstall.sh
 ```
 
 Manual steps (if you prefer to run them yourself):
@@ -309,7 +309,7 @@ navig --version
 The `release.sh` script handles git tagging and pushing in one step:
 
 ```bash
-bash scripts/release.sh 2.9.1
+bash tools/release.sh 2.9.1
 ```
 
 The script will:
@@ -331,10 +331,10 @@ The script will:
 | Ubuntu service user | `navig` |
 | Ubuntu systemd unit | `/etc/systemd/system/navig.service` |
 | Ubuntu data directory | `/opt/navig` / `~/.navig/` |
-| Backup script | `scripts/navig_ubuntu_backup_uninstall.sh` |
-| Reinstall script | `scripts/navig_ubuntu_reinstall.sh` |
-| Windows remote deploy | `scripts/navig_windows_remote_deploy.ps1` |
-| Release + publish script | `scripts/release.sh <version>` |
+| Backup script | `installers/navig_ubuntu_backup_uninstall.sh` |
+| Reinstall script | `installers/navig_ubuntu_reinstall.sh` |
+| Windows remote deploy | `installers/navig_windows_remote_deploy.ps1` |
+| Release + publish script | `tools/release.sh <version>` |
 
 ---
 

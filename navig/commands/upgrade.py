@@ -41,7 +41,12 @@ def run_upgrade(check: bool = False, force: bool = False) -> None:
 
     _con = _RC()
     src_dir = Path(__file__).resolve().parent.parent.parent  # navig/commands/upgrade.py → navig-core/
-    is_git = (src_dir / ".git").exists()
+    # NOT `(src_dir/".git").exists()`: `.git` is at the monorepo ROOT, not inside `core/`, so
+    # that was False on an editable install → `navig upgrade` took the pip path and never
+    # pulled (the #533 trap). Ask git whether it actually tracks navig's source here.
+    from navig.commands.update import _is_navig_git_checkout
+
+    is_git = _is_navig_git_checkout(src_dir)
 
     # ------------------------------------------------------------------ check
     if check:
@@ -51,7 +56,7 @@ def run_upgrade(check: bool = False, force: bool = False) -> None:
                     ["git", "-C", str(src_dir), "log", "--oneline", "-1"],
                     capture_output=True,
                     text=True,
-                    timeout=5,
+                    timeout=5, encoding="utf-8", errors="replace",
                 )
                 commit = log.stdout.strip()
                 _con.print(f"[green]✓[/green] NAVIG v{__version__}  [dim]{commit}[/dim]")
@@ -90,7 +95,7 @@ def run_upgrade(check: bool = False, force: bool = False) -> None:
                 capture_output=True,
                 text=True,
                 timeout=30,
-                env=_git_env,
+                env=_git_env, encoding="utf-8", errors="replace",
             )
             if pull.returncode != 0:
                 err = pull.stderr.strip()

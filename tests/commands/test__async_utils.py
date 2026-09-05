@@ -1,8 +1,6 @@
 """Tests for navig/commands/_async_utils.py."""
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 from navig.commands._async_utils import run_sync

@@ -31,6 +31,7 @@ class PatternObserver:
             return []
         try:
             conn = sqlite3.connect(str(self.db_path))
+            conn.execute("PRAGMA busy_timeout=5000")  # wait for a lock, don't error instantly
             cur = conn.execute(
                 "SELECT command FROM patterns ORDER BY ts DESC LIMIT ?", (int(limit),)
             )

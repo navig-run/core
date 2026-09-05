@@ -9,7 +9,6 @@ import io
 import sys
 
 from pywinauto import Desktop
-from pywinauto.findwindows import ElementNotFoundError
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 

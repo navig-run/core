@@ -1,15 +1,11 @@
 """Tests for navig/providers/source_scan.py"""
 from __future__ import annotations
 
-import os
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-import navig.providers.source_scan as ss_mod
 from navig.providers.source_scan import (
-    _FALLBACK_PROVIDER_IDS,
     PROVIDER_ENV_KEYS,
     check_api_key_in_env,
     detect_provider_sources,
@@ -146,25 +142,49 @@ class TestProviderHasConfigKey:
 # ---------------------------------------------------------------------------
 
 class TestProviderHasVaultKey:
-    def test_returns_false_when_vault_import_fails(self):
+    """`provider_has_vault_key` now LOOKS before it opens.
+
+    `get_vault()` creates the store, so this read-only probe used to leave an empty
+    encrypted vault behind on machines that had none. It checks `vault_exists()` first.
+
+    Every test below that mocks `get_vault` must therefore also say a vault EXISTS —
+    otherwise the probe short-circuits and the test passes without ever reaching the
+    branch it is named for.
+    """
+
+    @pytest.fixture
+    def vault_present(self):
+        """Say a vault is on disk, so the mocked `get_vault` path is actually reached."""
+        with patch("navig.vault.vault_exists", return_value=True):
+            yield
+
+    def test_returns_false_when_no_vault_exists(self, tmp_path, monkeypatch):
+        """The new short-circuit: no vault means no key, and nothing is created."""
+        monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path))
+        assert provider_has_vault_key("openai") is False
+        assert not (tmp_path / "vault").exists(), (
+            "asking whether a provider key exists created an empty encrypted store"
+        )
+
+    def test_returns_false_when_vault_import_fails(self, vault_present):
         with patch.dict("sys.modules", {"navig.vault.core": None}):
             result = provider_has_vault_key("openai")
         assert result is False
 
-    def test_returns_false_when_get_vault_returns_none(self):
+    def test_returns_false_when_get_vault_returns_none(self, vault_present):
         # get_vault imported lazily from navig.vault.core
         with patch("navig.vault.core.get_vault", return_value=None):
             result = provider_has_vault_key("openai")
         assert result is False
 
-    def test_returns_true_when_secret_found(self):
+    def test_returns_true_when_secret_found(self, vault_present):
         mock_vault = MagicMock()
         mock_vault.get_secret.return_value = "secret-value"
         with patch("navig.vault.core.get_vault", return_value=mock_vault):
             result = provider_has_vault_key("openai")
         assert result is True
 
-    def test_returns_false_when_all_secrets_empty(self):
+    def test_returns_false_when_all_secrets_empty(self, vault_present):
         mock_vault = MagicMock()
         mock_vault.get_secret.return_value = ""
         with patch("navig.vault.core.get_vault", return_value=mock_vault):

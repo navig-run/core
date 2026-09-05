@@ -43,23 +43,35 @@ def _manifest_type(kind: str) -> str:
 async def resolve_entity(client, chat):
     """Resolve a chat robustly. A raw numeric id often can't be resolved until the
     session entity cache is warm, and a bare positive channel/supergroup id needs the
-    PeerChannel form. Try direct → warm dialogs → PeerChannel(-100)."""
+    PeerChannel form. Try direct → warm dialogs → PeerChannel(-100).
+
+    Numeric ids arrive from the CLI as **strings**, and Telethon treats a string as a
+    username: ``get_entity("-1001736302429")`` raises "Cannot find any entity", while
+    the same value as an ``int`` resolves fine. Coercing up front is what makes
+    ``navig telegram <cmd> -- -100…`` work at all.
+    """
+    n = None
+    if isinstance(chat, int):
+        n = chat
+    elif isinstance(chat, str) and chat.strip().lstrip("-").isdigit():
+        n = int(chat.strip())
+    target = n if n is not None else chat
     try:
-        return await client.get_entity(chat)
+        return await client.get_entity(target)
     except (ValueError, TypeError):
         pass
     await client.get_dialogs()  # warm the entity cache (access hashes)
     try:
-        return await client.get_entity(chat)
+        return await client.get_entity(target)
     except (ValueError, TypeError):
-        try:
-            n = int(chat)
-        except (TypeError, ValueError):
+        if n is None:
             raise
         from telethon.tl.types import PeerChannel
-        if n > 0:                       # bare channel/supergroup raw id → -100… peer
-            return await client.get_entity(PeerChannel(n))
-        raise
+        raw = n
+        if raw < 0:                     # -100XXXXXXXXXX marked id → bare channel id
+            s = str(-raw)
+            raw = int(s[3:]) if s.startswith("100") and len(s) > 3 else -raw
+        return await client.get_entity(PeerChannel(raw))
 
 
 def _first_tiktok(text: str) -> str:

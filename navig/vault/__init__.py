@@ -4,7 +4,7 @@ All vault access goes through :func:`get_vault` and the unified
 :class:`Vault` implementation.
 """
 
-from .core import Vault, get_vault, reveal_secret
+from .core import Vault, get_vault, reveal_secret, vault_exists
 from .core import Vault as CredentialsVault
 from .logins import (
     LoginInfo,
@@ -36,6 +36,7 @@ from .types import (
 __all__ = [
     "Vault",
     "get_vault",
+    "vault_exists",
     "reveal_secret",
     "CredentialsVault",
     "Credential",

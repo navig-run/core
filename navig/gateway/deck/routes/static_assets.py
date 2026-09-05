@@ -41,13 +41,25 @@ def _find_deck_static_dir(override: str | None = None) -> Path | None:
         logger.debug("navig_deck.static_dir() raised %r", exc)
 
     # 3. Dev-tree neighbours for monorepo work.
+    #
+    # `repo` is the monorepo root: routes -> deck -> gateway -> navig -> core -> root.
+    # Every entry below used to name `navig-deck/`, the PRE-monorepo sibling repo, so this
+    # list had no monorepo path at all and the gateway could not serve a locally-built deck
+    # after the migration. `commands/miniapp.py` carried the identical bug in the function
+    # this one is documented as mirroring — one class, two copies, fixed together.
+    core_dir = Path(__file__).parent.parent.parent.parent.parent
+    repo = core_dir.parent
     candidates = [
-        Path(__file__).parent.parent.parent.parent.parent / "deck-static",
-        Path.home() / "navig-core" / "deck-static",
-        Path(__file__).parent.parent.parent.parent.parent.parent / "navig-deck" / "out",
-        Path(__file__).parent.parent.parent.parent.parent.parent / "navig-deck" / "dist",
+        core_dir / "deck-static",
+        Path.home() / "navig-core" / "deck-static",  # dead-path-ok: harmless stale fallback candidate
+        repo / "apps" / "deck" / "out",
+        repo / "apps" / "deck" / "dist",
         # Also handle the wheel-builder's pre-copy staging dir for local CI tests
-        Path(__file__).parent.parent.parent.parent.parent.parent / "navig-deck" / "python" / "navig_deck" / "static",
+        repo / "apps" / "deck" / "python" / "navig_deck" / "static",
+        # Legacy polyrepo checkouts, tried after the monorepo layout (same order as
+        # miniapp.py's deck-source search).
+        repo / "navig-deck" / "out",  # dead-path-ok: deliberate legacy-checkout fallback
+        repo / "navig-deck" / "dist",  # dead-path-ok: deliberate legacy-checkout fallback
     ]
     for p in candidates:
         if p.is_dir() and (p / "index.html").exists():

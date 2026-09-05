@@ -57,6 +57,9 @@ class AgentToolEntry:
                    dispatch calls are rejected.
         vault_keys: Credential keys to inject from vault before dispatch.
                    These key names are **stripped** from the LLM-facing schema.
+        origin:    Who defined this tool. ``"first-party"`` means NAVIG's own source;
+                   ``"external"`` means a third party (an MCP server) chose the name.
+                   Used to refuse a shadowing registration — see :meth:`register`.
     """
 
     name: str
@@ -65,10 +68,25 @@ class AgentToolEntry:
     toolset: str = "core"
     check_fn: Callable[[], bool] | None = None
     vault_keys: list[str] = field(default_factory=list)
+    origin: str = "first-party"
 
 
 # Helper type alias
 CheckFn = Callable[[], bool]
+
+
+def _forget_declared_safety(name: str) -> None:
+    """Drop a deregistered tool's self-declaration from the approval gate.
+
+    A stale entry would keep gating a name the registry no longer serves — harmless in
+    isolation, but it would let a *later* tool inherit a predecessor's classification.
+    """
+    try:
+        from navig.tools.approval import forget_tool_safety
+
+        forget_tool_safety(name)
+    except Exception:  # noqa: BLE001 — best-effort, mirrors the record side
+        pass
 
 
 # Friendly, user-facing domain labels for toolset groups — used to describe the
@@ -116,6 +134,21 @@ class AgentToolRegistry:
 
     def __init__(self) -> None:
         self._entries: dict[str, AgentToolEntry] = {}
+        #: Bumped on every mutation. Part of the ``capability_summary`` memo key
+        #: and of the conversational agent's system-prompt cache key, so a
+        #: late-registered plugin tool invalidates both instead of being invisible
+        #: until restart.
+        self._revision: int = 0
+        self._summary_cache: dict[tuple[Any, ...], str] = {}
+
+    @property
+    def revision(self) -> int:
+        """Monotonic counter of registry mutations."""
+        return self._revision
+
+    def _bump(self) -> None:
+        self._revision += 1
+        self._summary_cache.clear()
 
     # ── Registration ────────────────────────────────────────
 
@@ -125,6 +158,7 @@ class AgentToolRegistry:
         toolset: str = "core",
         check_fn: CheckFn | None = None,
         vault_keys: list[str] | None = None,
+        origin: str = "first-party",
     ) -> None:
         """Register a :class:`BaseTool` with an auto-generated OpenAI schema.
 
@@ -135,6 +169,7 @@ class AgentToolRegistry:
             vault_keys: Credential key names to inject from vault at
                         dispatch time.  These are stripped from the exported
                         schema so the LLM never sees them.
+            origin:     ``"external"`` when a third party chose the name.
         """
         schema = _build_openai_schema(tool, vault_keys or [])
         entry = AgentToolEntry(
@@ -144,14 +179,92 @@ class AgentToolRegistry:
             toolset=toolset,
             check_fn=check_fn,
             vault_keys=vault_keys or [],
+            origin=origin,
         )
-        self._entries[tool.name] = entry
-        logger.debug("AgentToolRegistry: registered %r (toolset=%s)", tool.name, toolset)
+        self.register_entry(entry)
 
     def register_entry(self, entry: AgentToolEntry) -> None:
-        """Register a pre-built :class:`AgentToolEntry` directly."""
+        """Register a pre-built :class:`AgentToolEntry` directly.
+
+        Refuses an **external** registration that would replace a first-party tool.
+        Registration is a plain ``dict`` assignment, so an MCP server publishing a tool
+        named ``bash_exec`` used to silently replace the real one — and because the
+        approval gate matches on the *name*, the operator would then approve what they
+        believed was the local shell while the call went to the remote server.
+
+        Refused rather than renamed, and logged rather than raised: callers register
+        inside a best-effort ``try``, and a missing tool is strictly safer than one that
+        sends the agent somewhere it did not mean to go.
+        """
+        existing = self._entries.get(entry.name)
+        if (
+            existing is not None
+            and existing.origin == "first-party"
+            and entry.origin != "first-party"
+        ):
+            logger.warning(
+                "AgentToolRegistry: refusing external tool %r from toolset %r — the name "
+                "is already taken by a first-party tool. It will not be callable.",
+                entry.name,
+                entry.toolset,
+            )
+            return
+
         self._entries[entry.name] = entry
+        self._bump()
+        self._record_declared_safety(entry)
         logger.debug("AgentToolRegistry: registered entry %r", entry.name)
+
+    @staticmethod
+    def _record_declared_safety(entry: AgentToolEntry) -> None:
+        """Push a tool's self-declared ``safety`` into the approval gate.
+
+        `DESTRUCTIVE_TOOLS` can only list names core knows at import time, so a plugin's
+        tools were invisible to the gate — `navig-games`' ``games_claim`` completes a
+        checkout on the operator's real store account and was ungated. `navig.tools.bridge`
+        already established `safety = "dangerous"` as the declaration; nothing on this
+        side read it. Best-effort: a tool that fails to classify itself must not fail
+        registration.
+        """
+        try:
+            # The READ is inside the try too: `safety` may be a property, and a tool
+            # whose classification raises must still register rather than take the
+            # gateway down at boot.
+            declared = getattr(entry.tool_ref, "safety", None)
+            if declared is None:
+                return
+            value = getattr(declared, "value", declared)
+            if not isinstance(value, str) or value.lower() != "dangerous":
+                return
+
+            from navig.tools.approval import record_tool_safety
+
+            record_tool_safety(entry.name, dangerous=True)
+        except Exception as exc:  # noqa: BLE001 — classification is not worth a boot failure
+            logger.debug(
+                "AgentToolRegistry: could not record safety for %r: %s", entry.name, exc
+            )
+
+    def deregister_toolset(self, toolset: str) -> int:
+        """Remove every tool belonging to *toolset*. Returns how many were removed.
+
+        Computed from live entries rather than from the caller's idea of what it
+        registered. The MCP pool used to deregister by iterating the server's *current*
+        tool list, so a tool the server had since dropped was never removed and stayed
+        callable against a client that no longer advertised it.
+        """
+        names = [n for n, e in self._entries.items() if e.toolset == toolset]
+        for name in names:
+            del self._entries[name]
+            _forget_declared_safety(name)
+        if names:
+            self._bump()
+            logger.debug(
+                "AgentToolRegistry: deregistered %d tool(s) from toolset %r",
+                len(names),
+                toolset,
+            )
+        return len(names)
 
     def deregister(self, name: str) -> None:
         """Remove a tool from the registry at runtime (e.g. plugin unload).
@@ -161,6 +274,8 @@ class AgentToolRegistry:
         """
         removed = self._entries.pop(name, None)
         if removed:
+            self._bump()
+            _forget_declared_safety(name)
             logger.debug("AgentToolRegistry: deregistered %r", name)
 
     # ── Querying ─────────────────────────────────────────────
@@ -172,17 +287,24 @@ class AgentToolRegistry:
     def available_names(self, toolsets: list[str] | None = None) -> list[str]:
         """Return sorted list of available (check_fn-passing) tool names.
 
+        Excludes tools the operator blocked via ``tools.blocked_tools``: this list is
+        formatted straight into the system prompt and into the planner's prompt, so a
+        blocked tool left in it *advertises* a capability dispatch will refuse — the model
+        spends turns being told no, and answers "what can you do?" with something the
+        operator switched off.
+
         Args:
             toolsets: If given, only include tools belonging to these toolsets.
 
         Returns:
-            Sorted list of tool names that pass their ``check_fn``.
+            Sorted list of tool names that pass their ``check_fn`` and are not blocked.
         """
+        is_blocked = _operator_block_filter()
         results: list[str] = []
         for name, entry in self._entries.items():
             if toolsets is not None and entry.toolset not in toolsets:
                 continue
-            if _is_available(entry):
+            if _is_available(entry) and not is_blocked(name):
                 results.append(name)
         return sorted(results)
 
@@ -202,12 +324,54 @@ class AgentToolRegistry:
         part before its ``—``) for the slim/minimal prompt — language-agnostic, so
         even a short non-English "what can you do?" still gets the real breadth.
         The default is the verbose bulleted form for the full prompt.
+
+        Memoised on ``(revision, dynamic-availability, toolsets, compact)`` so it
+        is genuinely stable within a session — the conversational agent's system
+        prompt claims this in its docstring and relies on it for prompt-cache
+        stability. The dynamic part of the key is computed from ``check_fn``-bearing
+        entries only (a handful of the ~45 registered tools), so a runtime toggle
+        such as plan mode still invalidates correctly instead of freezing a stale
+        inventory.
         """
+        # The operator's block list is part of the answer, so it must be part of the key:
+        # without it the first call's summary is replayed after they disable a capability,
+        # and the prompt keeps claiming it. Read fresh (~2µs) and hashable already.
+        from navig.agent.tool_permissions import operator_blocked_tools
+
+        key = (
+            self._revision,
+            self._dynamic_fingerprint(),
+            tuple(toolsets) if toolsets is not None else None,
+            compact,
+            operator_blocked_tools(),
+        )
+        cached = self._summary_cache.get(key)
+        if cached is not None:
+            return cached
+        summary = self._capability_summary_impl(toolsets, compact=compact)
+        self._summary_cache[key] = summary
+        return summary
+
+    def _dynamic_fingerprint(self) -> tuple[tuple[str, bool], ...]:
+        """Availability of the only entries that can change between mutations."""
+        return tuple(
+            (name, _is_available(entry))
+            for name, entry in sorted(self._entries.items())
+            if entry.check_fn is not None
+        )
+
+    def _capability_summary_impl(
+        self, toolsets: list[str] | None, *, compact: bool
+    ) -> str:
+        is_blocked = _operator_block_filter()
         seen: set[str] = set()
         for entry in self._entries.values():
             if toolsets is not None and entry.toolset not in toolsets:
                 continue
-            if _is_available(entry):
+            # A toolset earns its line only if something in it can actually run. With
+            # every tool in it blocked, claiming the capability is a lie to the operator
+            # who disabled it.
+            if _is_available(entry) and not is_blocked(entry.name):
                 seen.add(entry.toolset)
         if not seen:
             return ""
@@ -241,6 +405,8 @@ class AgentToolRegistry:
             List of ``{"type": "function", "function": {...}}`` dicts suitable
             for passing directly to any OpenAI-compatible LLM ``tools=`` param.
         """
+        is_blocked = _operator_block_filter()
+
         schemas: list[dict[str, Any]] = []
         for name, entry in self._entries.items():
             # Toolset filter
@@ -254,6 +420,13 @@ class AgentToolRegistry:
                 continue
             # Permission gate
             if permissions is not None and permissions.blocks(name):
+                continue
+            # Operator policy: don't advertise a tool the operator switched off. Dispatch
+            # refuses it anyway, but offering it means the model keeps calling it and
+            # spending a turn to be told no. Same predicate `available_names` uses — two
+            # implementations of one policy is how the prompt and the schemas drifted
+            # apart in the first place.
+            if is_blocked(name):
                 continue
             schemas.append({"type": "function", "function": entry.schema})
         return schemas
@@ -296,6 +469,18 @@ class AgentToolRegistry:
             from navig.agent.tool_permissions import ToolPermissionDenied
 
             raise ToolPermissionDenied(name)
+
+        # The operator's standing `tools.blocked_tools`, which is documented as blocking a
+        # tool "entirely". Checked here rather than at the call sites because this is the
+        # chokepoint every caller reaches — including SpeculativeExecutor, whose
+        # `_dispatch_fn` is this method. A `permissions=` argument only protects the callers
+        # that remember to pass one, and none of them did.
+        from navig.agent.tool_permissions import ToolPermissionDenied, operator_blocks
+
+        if operator_blocks(name):
+            raise ToolPermissionDenied(
+                name, reason="blocked by the operator's tools.blocked_tools policy"
+            )
 
         if not _is_available(entry):
             raise RuntimeError(f"Tool {name!r} is currently unavailable (check_fn returned False)")
@@ -340,6 +525,30 @@ _AGENT_REGISTRY = AgentToolRegistry()
 # ─────────────────────────────────────────────────────────────
 
 
+def _operator_block_filter() -> Callable[[str], bool]:
+    """A predicate: is this tool blocked by the operator's standing policy?
+
+    One reader for every surface that names tools. `tools.blocked_tools` is documented as
+    blocking a tool "entirely", and the schema layer already honoured it — but the prompt
+    list and the capability summary did not, so a blocked tool stayed *advertised* while
+    being un-callable.
+
+    Keeps the schema path's optimisation: on the overwhelmingly common empty policy this
+    skips the `canonical_tool_key` import entirely and returns a constant-false predicate.
+    Canonicalisation matters when there IS a policy — NAVIG has two tool registries and the
+    operator writes one list of names for both.
+    """
+    from navig.agent.tool_permissions import operator_blocked_tools
+
+    blocked = operator_blocked_tools()
+    if not blocked:
+        return lambda _name: False
+
+    from navig.tools.router import canonical_tool_key
+
+    return lambda name: canonical_tool_key(name) in blocked
+
+
 def _is_available(entry: AgentToolEntry) -> bool:
     """Return True if the entry's check_fn passes (or no check_fn)."""
     if entry.check_fn is None:
@@ -349,6 +558,12 @@ def _is_available(entry: AgentToolEntry) -> bool:
     except Exception as e:
         logger.debug("check_fn error for tool %r: %s", entry.name, e)
         return False
+
+
+#: Wall-clock cap for a single synchronous tool dispatch. Mirrored by
+#: ``navig.agent.conv.agent._TOOL_DISPATCH_TIMEOUT`` (which caps the offloaded
+#: async path); this one caps the sync-on-loop bridge below.
+TOOL_TIMEOUT_SECONDS: float = 120.0
 
 
 def _run_tool_sync(tool: BaseTool, args: dict[str, Any]) -> ToolResult:
@@ -363,12 +578,25 @@ def _run_tool_sync(tool: BaseTool, args: dict[str, Any]) -> ToolResult:
         loop = None
 
     if loop and loop.is_running():
-        # We're inside an async context — use a thread-based approach
+        # We're inside an async context — run the tool in a worker thread.
         import concurrent.futures
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            future = ex.submit(asyncio.run, _run())
-            return future.result(timeout=120)
+        # NOT a `with` block: ThreadPoolExecutor.__exit__ calls
+        # shutdown(wait=True), which JOINS the worker and so silently DEFEATS the
+        # timeout below — a hung tool would wedge the caller forever despite the
+        # 120s cap. Shut down WITHOUT waiting on timeout instead: a Python thread
+        # can't be force-killed, so the orphaned worker finishes in the
+        # background, but the caller returns at TOOL_TIMEOUT_SECONDS.
+        ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = ex.submit(asyncio.run, _run())
+        try:
+            return future.result(timeout=TOOL_TIMEOUT_SECONDS)
+        except concurrent.futures.TimeoutError as exc:
+            raise TimeoutError(
+                f"tool did not return within {TOOL_TIMEOUT_SECONDS:.0f}s"
+            ) from exc
+        finally:
+            ex.shutdown(wait=False)
     else:
         return asyncio.run(_run())
 
@@ -387,6 +615,48 @@ def _result_to_str(result: ToolResult) -> str:
     # Failure path
     error = result.error or "Tool execution failed (unknown error)"
     return f"[ERROR] {error}"
+
+
+# ─────────────────────────────────────────────────────────────
+# The dispatch result contract
+# ─────────────────────────────────────────────────────────────
+
+#: Prefixes that mark a dispatch result string as a FAILED tool call.
+#:
+#: `dispatch()` raises for an unknown tool, a blocked permission and an
+#: unavailable `check_fn` — but a tool that *ran and failed* does not raise:
+#: `_result_to_str` turns `ToolResult(success=False)` into `"[ERROR] …"` and
+#: returns it normally. `navig_run` with a non-zero exit, a failed db query or
+#: dump, a permission-denied write all arrive this way. Callers that wrap
+#: `dispatch` add the rest: a caught exception or dispatch timeout
+#: (`[Tool error …]`), the approval interlock (`[Denied …]`) and pre-execution
+#: verification (`[Verification blocked …]`).
+TOOL_FAILURE_PREFIXES: tuple[str, ...] = (
+    "[ERROR",
+    "[Tool error",
+    "[Denied",
+    "[Verification blocked",
+)
+
+
+def is_failure_result(result: object) -> bool:
+    """True when a `dispatch()` result string reports a failed tool call.
+
+    Every consumer that branches on success MUST use this rather than assuming
+    "did not raise" means "worked". Only `conv/agent.py` knew the contract, and
+    it kept its own copy of the prefix tuple, so the two programmatic consumers
+    both misread a non-raising failure:
+
+    * `plan_execute.py` set ``step.status = "success"`` unconditionally, so
+      ``navig agent plan "restart nginx and verify it's healthy"`` printed
+      ``✅ Step 1 — navig_run (success)`` over a failed restart — and its plan
+      *revision* hangs off the ``except`` arm, so recovery never ran for the one
+      failure mode that does not raise.
+    * `speculative.py` cached the string, so an ``[ERROR] …`` was served back as
+      a speculative HIT for the cache's whole TTL — a transient blip pinned as a
+      permanent answer that the agent never retried.
+    """
+    return isinstance(result, str) and result.startswith(TOOL_FAILURE_PREFIXES)
 
 
 def _build_openai_schema(tool: BaseTool, vault_keys: list[str]) -> dict[str, Any]:

@@ -206,7 +206,10 @@ def _load_mcp_servers() -> list[dict]:
         from navig.mcp_manager import MCPManager
 
         mgr = MCPManager()
-        servers = mgr.list()
+        # list_servers() is the real API; mgr.list() never existed, so this raised
+        # AttributeError into the handler below and the admin page showed no MCP
+        # servers at all — with only a log line to say so.
+        servers = mgr.list_servers()
         return [
             {
                 "key": s.name,
@@ -229,7 +232,6 @@ def _load_admin_settings() -> dict:
 
         cm = get_config_manager()
         cfg = cm.get_config() if hasattr(cm, "get_config") else {}
-        ai_cfg = cfg.get("ai", {}) if isinstance(cfg, dict) else {}
         code_cfg = cfg.get("code_interpreter", {}) if isinstance(cfg, dict) else {}
         chat_cfg = cfg.get("chat", {}) if isinstance(cfg, dict) else {}
         index_cfg = cfg.get("index", {}) if isinstance(cfg, dict) else {}
@@ -561,7 +563,19 @@ async def handle_deck_admin_settings_update(request: "web.Request") -> "web.Resp
                     errors.append(f"{section}.{key}: expected number")
                 else:
                     _write(section, key, int(value))
-            # else: silently skip unknown keys
+            else:
+                # Previously `# else: silently skip unknown keys`. A patch naming only
+                # keys this server does not know then returned HTTP 200 with
+                # `{"ok": true, "updated": []}` — indistinguishable from a successful
+                # save. One typo (`hybrid_serch`) or one key renamed in a later
+                # version and the caller is told the setting was stored.
+                #
+                # Counting it as an error is the whole fix: the `errors and not
+                # updated` check below already turns "nothing landed" into a 400.
+                known = sorted(bool_keys | str_keys | int_keys)
+                errors.append(
+                    f"{section}.{key}: unknown setting (known: {', '.join(known)})"
+                )
 
     if "code_interpreter" in body and isinstance(body["code_interpreter"], dict):
         _validate_group(
@@ -586,6 +600,11 @@ async def handle_deck_admin_settings_update(request: "web.Request") -> "web.Resp
 
     return web.json_response({
         "ok": True,
+        # `ok` means "something landed"; `complete` means "everything you asked for
+        # landed". A partial patch (two keys valid, one rejected) is still a 200 —
+        # the valid writes really happened — but a caller that only checks `ok` would
+        # never learn about the rejected one. Same split as `navig backup export`.
+        "complete": not errors,
         "updated": updated,
         "errors": errors,
         "settings": _load_admin_settings(),

@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 import navig.installer.modules.vault_bootstrap as vault_mod
 from navig.installer.contracts import Action, InstallerContext, ModuleState
 

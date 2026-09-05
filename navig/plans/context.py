@@ -31,7 +31,7 @@ from navig.plans.frontmatter import (
     _safe_read,
 )
 from navig.plans.frontmatter import (
-    first_h1 as _first_h1,
+    first_h1 as _first_h1,  # noqa: F401 — re-export; tests/planning/test_plan_context.py imports it
 )
 from navig.plans.frontmatter import (
     parse_frontmatter as _parse_frontmatter,
@@ -397,12 +397,18 @@ class PlanContext:
 
     @staticmethod
     def _call_with_timeout(fn: Any, timeout_sec: float, *args: Any, **kwargs: Any) -> Any:
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(fn, *args, **kwargs)
-            try:
-                return future.result(timeout=timeout_sec)
-            except FutureTimeoutError as exc:
-                raise TimeoutError(f"Timed out after {timeout_sec}s") from exc
+        # NOT a `with` block: ThreadPoolExecutor.__exit__ calls shutdown(wait=True), which
+        # JOINS the worker — so a hung source `fn` would wedge the caller past the cap
+        # despite the timeout. Shut down without waiting (a Python thread can't be
+        # force-killed) so the TimeoutError is raised at `timeout_sec`.
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(fn, *args, **kwargs)
+        try:
+            return future.result(timeout=timeout_sec)
+        except FutureTimeoutError as exc:
+            raise TimeoutError(f"Timed out after {timeout_sec}s") from exc
+        finally:
+            executor.shutdown(wait=False)
 
     @staticmethod
     def _extract_phase_title(current_phase_text: str | None) -> str:

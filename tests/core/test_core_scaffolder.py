@@ -268,8 +268,12 @@ class TestCheckCondition:
     def test_condition_none_is_true(self):
         assert self.s._check_condition({"condition": None}, {}) is True
 
-    def test_invalid_condition_returns_false(self):
-        # A condition with undeclared variable logs warning and returns False
+    def test_undefined_variable_renders_empty_and_returns_false(self):
+        # Renamed from test_invalid_condition_returns_false, which said "logs warning
+        # and returns False" — it does neither of those things and the condition is not
+        # invalid. The env uses Jinja's default Undefined, so an undeclared variable
+        # renders as "" -> False. A genuinely MALFORMED expression now raises; see
+        # test_scaffold_condition_honesty.py.
         assert self.s._check_condition({"condition": "{{ undefined_var }}"}, {}) is False
 
 
@@ -433,6 +437,7 @@ class TestGenerateToTempArchive:
         with tarfile.open(result, "r:gz") as tar:
             names = tar.getnames()
         # Root should not be a temp directory name with many segments
+        assert names, "names was empty, so the loop below asserted nothing"
         for name in names:
             assert "/" not in name or name.startswith("f.txt")
 

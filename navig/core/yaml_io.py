@@ -269,10 +269,11 @@ def atomic_write_text(
             suffix=".navig~",
         )
         tmp_path: Path | None = Path(tmp_name)
-        # os.fdopen() takes ownership of fd immediately — mark it open
-        # BEFORE entering the with-block so the except-Exception branch
-        # never attempts a double-close on an already-owned descriptor.
-        fd_open = True
+        # os.fdopen() takes ownership of fd immediately, so no branch below may close it
+        # by hand — the with-block's __exit__ does it on both the success and error paths.
+        # (A `fd_open` flag used to track this for an except-branch that closed fd manually;
+        # that branch is long gone, so the flag was dead state documenting a guard that no
+        # longer exists.)
         try:
             with os.fdopen(fd, "w", encoding=encoding) as fh:
                 fh.write(content)

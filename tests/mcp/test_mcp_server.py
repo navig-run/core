@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -174,13 +175,24 @@ async def test_memory_handlers(mock_store):
     store_instance = MagicMock()
     mock_store.return_value = store_instance
 
-    # Retrieve
+    # Retrieve — FactRetriever.retrieve() returns a FactRetrievalResult (facts live on
+    # `.facts`, as RankedFact wrappers). This used to stub a bare list of objects with
+    # `model_dump()`, a shape the real retriever never returns, which is how the tool's
+    # TypeError stayed invisible.
     with patch("navig.memory.fact_retriever.FactRetriever") as rc:
         ret_inst = MagicMock()
         rc.return_value = ret_inst
-        fact_mock = MagicMock()
-        fact_mock.model_dump.return_value = {"id": "1"}
-        ret_inst.retrieve.return_value = [fact_mock]
+        fact = SimpleNamespace(
+            id="1",
+            content="c",
+            category="preference",
+            tags=[],
+            confidence=0.8,
+            created_at="2026-07-28T00:00:00Z",
+        )
+        ret_inst.retrieve.return_value = SimpleNamespace(
+            facts=[SimpleNamespace(fact=fact, combined_score=0.5)]
+        )
 
         res = await memory_retrieve("q")
         assert res["facts"][0]["id"] == "1"

@@ -1,8 +1,7 @@
 """Batch 69 — update/targets, update/history, core/evolution/failure_summary."""
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

@@ -2,7 +2,6 @@
 Tests for navig.migrations.migrate_addons_to_templates
 """
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

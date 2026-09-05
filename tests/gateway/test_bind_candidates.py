@@ -27,3 +27,35 @@ class TestBindCandidates:
             assert _bind_candidates(8789, bad) == [
                 8789, 8790, 8791, 8792, 8793, 8794, 0,
             ]
+
+
+class TestEphemeralRequest:
+    """A caller passing 0 wants ANY free port -- there is nothing to heal away from.
+
+    Expanding it produced ``[0, 1, 2, 3, 4, 5, <last_bound>, 0]``: ports 1-5 are privileged
+    and meaningless, and ``last_bound`` comes from the discovery file, which on a developer's
+    machine is **their live gateway**. Measured before the fix:
+    ``_bind_candidates(0, read_gateway_discovery()[0])`` returned
+    ``[0, 1, 2, 3, 4, 5, 8789, 0]`` -- the operator's own daemon offered as a fallback.
+
+    ``tests/e2e/test_gateway_api.py`` asks for exactly this ephemeral bind, and its docstring
+    warns that a foreign gateway answering on the port it asserts against is "a silent false
+    PASS that proves nothing about the gateway this test started".
+    """
+
+    def test_zero_asks_the_os_and_nothing_else(self):
+        assert _bind_candidates(0, None) == [0]
+
+    def test_zero_never_offers_the_sticky_port(self):
+        candidates = _bind_candidates(0, 8789)
+        assert candidates == [0], (
+            f"an ephemeral request expanded to {candidates}; the 8789 there is whatever "
+            "gateway bound here last -- potentially the operator's live daemon"
+        )
+
+    def test_a_real_preference_still_self_heals(self):
+        """The fix must not disarm the behaviour this function exists for."""
+        assert _bind_candidates(8789, 9000) == [
+            8789, 8790, 8791, 8792, 8793, 8794, 9000, 0,
+        ]
+

@@ -4,8 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 
 def _write_prompt(directory: Path, slug: str, content: str) -> Path:
     """Write a prompt file under directory/prompts/<slug>.md."""

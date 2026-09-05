@@ -15,16 +15,22 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 from pathlib import Path
 from typing import Any
 
-import yaml
-
-from navig.core.yaml_io import atomic_write_text, atomic_write_yaml
+from navig.core.yaml_io import (
+    ConfigReadError,
+    atomic_write_text,
+    atomic_write_yaml,
+    load_yaml_for_update,
+)
 from navig.platform.paths import config_dir
 from navig.platform.paths import debug_log_path as _debug_log_path
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigSingleton:
@@ -65,6 +71,10 @@ class ConfigSingleton:
                 # Data storage
                 self._global_data: dict[str, Any] = {}
                 self._project_data: dict[str, Any] = {}
+                # Set when the corresponding file exists but could not be read;
+                # the matching _save_* refuses while it stands.
+                self._global_load_failed = False
+                self._project_load_failed = False
                 self._project_cache_path: Path | None = None
                 self._project_cache_mtime_ns: int | None = None
 
@@ -115,12 +125,23 @@ class ConfigSingleton:
             self._global_data = get_config_manager().global_config
         except Exception:
             # Fallback for rare bootstrap edge-case (ConfigManager unavailable).
+            #
+            # This bypasses ConfigManager entirely, INCLUDING its refusal to write an
+            # empty config over a populated one — and `_save_global` here writes the
+            # very same `~/.navig/config.yaml` through `atomic_write_yaml` directly.
+            # So degrading an unreadable file to `{}` reopened the exact door that
+            # guard exists to close: `enable_plugin()` after one transient lock would
+            # persist `{}` plus a single key over every global setting.
             if self.global_config_path.exists():
                 try:
-                    with open(self.global_config_path, encoding="utf-8") as f:
-                        self._global_data = yaml.safe_load(f) or {}
-                except Exception:
-                    self._global_data = {}
+                    self._global_data = load_yaml_for_update(self.global_config_path)
+                except ConfigReadError as exc:
+                    self._global_load_failed = True
+                    logger.warning(
+                        "global config %s could not be read: %s",
+                        self.global_config_path,
+                        exc,
+                    )
             else:
                 self._global_data = self._get_default_config()
                 self._ensure_dirs()
@@ -130,7 +151,22 @@ class ConfigSingleton:
         self._refresh_project_data(force=True)
 
     def _refresh_project_data(self, force: bool = False) -> None:
-        """Reload project-local config when current project path changes."""
+        """Reload project-local config when current project path changes.
+
+        A failed READ must never become a destructive WRITE. This degraded an
+        unreadable `.navig/config.yaml` to ``{}`` with no record, and
+        `_save_project` then wrote that back — so `navig context set --host X
+        --scope project` during one transient lock replaced the whole project
+        config with a single key. `load_yaml_for_update` tells "absent or genuinely
+        empty" (safe to overwrite) from "has content but could not be read" (never
+        overwrite); the failure is remembered so `_save_project` refuses.
+
+        The cache keys were also set BEFORE the read, so a failure was STICKY: the
+        next `force=False` call saw the same path+mtime, skipped re-reading, and kept
+        the empty copy for the life of this process-wide singleton. They are now
+        recorded only after a read that actually succeeded, so a transient failure
+        retries instead of persisting.
+        """
         path = self.project_config_path
         try:
             mtime_ns = path.stat().st_mtime_ns if path.exists() else None
@@ -140,17 +176,28 @@ class ConfigSingleton:
         if not force and path == self._project_cache_path and mtime_ns == self._project_cache_mtime_ns:
             return
 
+        if not path.exists():
+            self._project_cache_path = path
+            self._project_cache_mtime_ns = mtime_ns
+            self._project_load_failed = False
+            self._project_data = {}
+            return
+
+        try:
+            data = load_yaml_for_update(path)
+        except ConfigReadError as exc:
+            # Keep whatever we already hold rather than replacing it with {} — and do
+            # NOT cache this path/mtime, so the next call retries the read.
+            self._project_load_failed = True
+            self._project_cache_path = None
+            self._project_cache_mtime_ns = None
+            logger.warning("project config %s could not be read: %s", path, exc)
+            return
+
         self._project_cache_path = path
         self._project_cache_mtime_ns = mtime_ns
-
-        if path.exists():
-            try:
-                with open(path, encoding="utf-8") as f:
-                    self._project_data = yaml.safe_load(f) or {}
-            except Exception:
-                self._project_data = {}
-        else:
-            self._project_data = {}
+        self._project_load_failed = False
+        self._project_data = data
 
     def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration values."""
@@ -175,12 +222,42 @@ class ConfigSingleton:
         self.plugins_dir.mkdir(parents=True, exist_ok=True)
 
     def _save_global(self) -> None:
-        """Save global configuration to disk (atomic write)."""
+        """Save global configuration to disk (atomic write). Refuses after a failed load.
+
+        This writes the SAME `~/.navig/config.yaml` that `ConfigManager` guards, but
+        through `atomic_write_yaml` directly — so without this check it is a back door
+        around that guard's refusal to put an empty config over a populated one.
+        """
+        if self._global_load_failed:
+            self._record_write_refused("global_config", self.global_config_path)
+            return
         self._ensure_dirs()
         atomic_write_yaml(self._global_data, self.global_config_path, allow_unicode=True)
 
+    def _record_write_refused(self, store: str, path: Path) -> None:
+        """Note a refused write where the operator can actually see it.
+
+        A singleton that silently stops persisting is indistinguishable from one with
+        nothing to persist — the trap `navig doctor` -> Config Health exists for.
+        """
+        try:
+            from navig.core import incidents  # noqa: PLC0415 — avoid an import cycle
+
+            incidents.record(incidents.STORE_WRITE_REFUSED, store=store, path=str(path))
+        except Exception:  # noqa: BLE001 — an observation must never break a save path
+            pass
+        logger.warning(
+            "refusing to save %s: %s could not be read, so writing now would replace "
+            "it with an incomplete copy",
+            store,
+            path,
+        )
+
     def _save_project(self) -> None:
-        """Save project-local configuration to disk."""
+        """Save project-local configuration to disk. Refuses after a failed load."""
+        if self._project_load_failed:
+            self._record_write_refused("project_config", self.project_config_path)
+            return
         self.project_config_path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_yaml(self._project_data, self.project_config_path, allow_unicode=True)
         try:

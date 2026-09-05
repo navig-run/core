@@ -6,7 +6,6 @@ Extracted from ``navig/cli/__init__.py`` during CLI decomposition.
 from __future__ import annotations
 
 import inspect
-import locale
 import logging
 import os
 import platform
@@ -19,6 +18,7 @@ import typer
 from navig import console_helper as ch
 from navig.cli._callbacks import show_subcommand_help
 from navig.console_helper import get_console
+from navig.core.proc_text import decode_console_output
 from navig.platform.paths import config_dir
 
 logger = logging.getLogger(__name__)
@@ -87,25 +87,14 @@ def _format_openrouter_missing_key_error(config_manager, server_name: str) -> st
 
 
 def _decode_command_output(raw: bytes | str) -> str:
-    """Decode subprocess output robustly across Windows locale/codepage variants."""
-    if isinstance(raw, str):
-        return raw
-    if not raw:
-        return ""
+    """Decode console-tool output. Delegates to the one canonical implementation.
 
-    candidates = ["utf-8"]
-    preferred = locale.getpreferredencoding(False)
-    if preferred:
-        candidates.append(preferred)
-    candidates.extend(["cp1252", "latin-1"])
-
-    for encoding in candidates:
-        try:
-            return raw.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-
-    return raw.decode("utf-8", errors="replace")
+    This used to fall back to ``locale.getpreferredencoding(False)`` — the **ANSI** code
+    page — for output that ``tasklist`` writes in the **OEM** one. On a Russian-locale
+    Windows those are cp1251 and cp866, so the process list handed to the model came back
+    corrupted with no exception. See ``navig.core.proc_text``.
+    """
+    return decode_console_output(raw)
 
 
 def _host_exists(config_manager: Any, host_name: str) -> bool:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -217,7 +217,6 @@ class TestStartComplete:
 class TestRecorderQueries:
     def _populate(self, rec, n=5):
         """Populate recorder with n simple operations (audit side-patched out)."""
-        from navig.operation_recorder import OperationRecord, OperationStatus
 
         with patch("navig.store.audit.get_audit_store", side_effect=ImportError):
             for i in range(n):

@@ -1,7 +1,7 @@
 # NAVIG - AI-Optimized Command Reference Guide
 
 > **Primary Knowledge Base for AI Assistants**
-> Version: 3.24.0 | Last Updated: 2026-07-18
+> Version: 3.25.0 | Last Updated: 2026-09-04
 
 ---
 
@@ -316,7 +316,7 @@ navig host test                    # Test SSH connection
 navig host monitor show            # Health overview
 navig host monitor show --disk     # Disk usage
 navig host security show           # Security scan
-navig host security firewall       # Firewall status
+navig host firewall                # Firewall status
 navig host maintenance update      # Update packages
 navig host maintenance clean       # Cleanup
 
@@ -362,21 +362,41 @@ navig wiki show <topic>            # Show wiki page
 navig wiki list                    # List wiki pages
 ```
 
-### Deprecated Commands (Migration)
+### Removed and renamed commands (migration)
 
-Old commands continue to work but show warnings:
-```bash
-# Old → New
-navig monitor      → navig host monitor
-navig security     → navig host security
-navig system       → navig host maintenance
-navig server       → navig host
-navig workflow     → navig flow
-navig task         → navig flow
-navig template     → navig flow template
-navig addon        → navig flow template
-navig hestia       → navig web hestia
-```
+⚠ Most of these no longer exist at all — they error rather than warn. Verified against the
+CLI:
+
+| Removed name | Use instead |
+|--------------|-------------|
+| `monitor` | `navig host monitor` |
+| `security` | `navig host security` |
+| `template` | `navig flow template` |
+| `addon` | `navig flow template` |
+| `hestia` | `navig web hestia` |
+| `workflow` | `navig block list` / `navig apply <id>` (see below) |
+
+Three names DO still resolve, and two of them are not what this table used to imply:
+
+| Name | Status |
+|------|--------|
+| `navig server` | Genuinely deprecated — its own help says *"[DEPRECATED: Use 'navig host']"*. |
+| `navig system` | **Live and unrelated** — "System information and maintenance" (`info`, `clean`). It is *not* an alias for `navig host maintenance`. |
+| `navig task` | Resolves, but its help says *"retired, superseded by Blocks (see `navig apply`)"*. |
+
+⚠ **The workflow engine is retired.** `navig flow list` says so itself and points at Blocks,
+so `workflow → flow` is a migration to a dead end. The live successor is **Blocks**:
+
+| Old | New |
+|-----|-----|
+| `workflow list` | `navig block list` |
+| `workflow show <name>` | `navig block show <name>` |
+| `workflow run <name>` | `navig apply <name>` |
+| `workflow run <name> --var k=v` | `navig apply <name> --input k=v` |
+| `workflow validate <name>` | `navig block verify <name>` |
+| `workflow create <name>` | `navig block new` |
+
+`navig flow template` is the exception — templates were not retired and that surface is live.
 
 ---
 
@@ -401,6 +421,37 @@ navig db --help              # Database operations
 navig file --help            # File operations
 navig flow --help            # Workflow automation
 ```
+
+### Exit codes — what `$?` means
+
+Every NAVIG command is meant to be chained and scripted, so the exit status is part of
+the contract, not an afterthought:
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success. Also an honest **empty** result — a host with no apps, a filter matching nothing, an optional component that is simply absent. Empty is not a failure. |
+| `1` | The operation failed — the command could not do what you asked. |
+| `2` | Usage error — the named host/app/file does not exist, or a required argument is missing. |
+
+```bash
+# safe to chain: the deploy only runs if the migration actually succeeded
+navig docker exec app "npm run migrate" && ./deploy.sh
+
+# branch on the distinction
+navig app show web
+case $? in
+  0) echo "ok" ;;
+  2) echo "no such app — check 'navig app list'" ;;
+  *) echo "failed" ;;
+esac
+```
+
+`navig docker exec` propagates the **container's own** exit code rather than a flat 1, so
+`$?` still tells you what the remote command returned.
+
+> A command that prints a red ✗ always exits non-zero. If you ever see an error message
+> with `$?` of 0, that is a bug worth reporting — the build guard
+> `tests/quality/test_command_exit_honesty.py` exists to prevent exactly that.
 
 ---
 
@@ -575,7 +626,7 @@ navig host add staging
 - Authentication method (key or password)
 - SSH key path (if using key auth)
 
-**Related Commands:** `navig host list`, `navig host use`, `navig host inspect`
+**Related Commands:** `navig host list`, `navig host use`, `navig host show --inspect`
 
 ---
 
@@ -608,7 +659,7 @@ NAVIG resolves the active host in this priority order:
 
 **For multi-project workflows:** Use `navig context set --host production` to set project-local context that persists automatically. See the Context Management section below.
 
-**Related Commands:** `navig host list`, `navig host current`, `navig context set`
+**Related Commands:** `navig host list`, `navig host show --current`, `navig context set`
 
 ---
 
@@ -664,17 +715,18 @@ navig run "systemctl status nginx"  # Runs on staging
 - Add `.navig/` to `.gitignore` to keep context local
 - Use `NAVIG_ACTIVE_HOST` in CI/CD for explicit context
 
-**Related Commands:** `navig host use`, `navig host current`
+**Related Commands:** `navig host use`, `navig host show --current`
 
 ---
 
-### `navig host current`
+### `navig host show --current`
 
 Show the currently active host with source information.
+(There is no `current` verb — it is a flag on `show`.)
 
 **Examples:**
 ```bash
-navig host current
+navig host show --current
 # Output shows source of selection:
 # ℹ Source: 📍 local (.navig/config.yaml)
 #          Server: production
@@ -715,14 +767,15 @@ navig host remove old-staging
 
 ---
 
-### `navig host inspect`
+### `navig host show --inspect`
 
 Auto-discover host details (OS, PHP, databases, web servers, paths).
+(There is no `inspect` verb — it is a flag on `show`.)
 
 **Examples:**
 ```bash
 # Inspect active host
-navig host inspect
+navig host show --inspect
 
 # Output shows detected:
 # - Operating System (Ubuntu 24.04)
@@ -734,11 +787,11 @@ navig host inspect
 
 **💡 Tip:** Run this after adding a new host to auto-populate configuration.
 
-**Related Commands:** `navig host add`, `navig host info`
+**Related Commands:** `navig host add`, `navig host show`
 
 ---
 
-### `navig host info [name]`
+### `navig host show [name]`
 
 Show detailed host information.
 
@@ -750,13 +803,13 @@ Show detailed host information.
 **Examples:**
 ```bash
 # Show info for active host
-navig host info
+navig host show
 
 # Show info for specific host
-navig host info production
+navig host show production
 ```
 
-**Related Commands:** `navig host list`, `navig host inspect`
+**Related Commands:** `navig host list`, `navig host show --inspect`
 
 ---
 
@@ -781,11 +834,11 @@ navig host test
 navig host test staging
 ```
 
-**Related Commands:** `navig host add`, `navig host info`
+**Related Commands:** `navig host add`, `navig host show`
 
 ---
 
-### `navig host clone <source> <new_name>`
+### `navig host add <new_name> --from <source>`
 
 Clone a host configuration.
 
@@ -798,48 +851,56 @@ Clone a host configuration.
 **Examples:**
 ```bash
 # Clone production to create staging
-navig host clone production staging
+navig host add staging --from production
 ```
 
-**Related Commands:** `navig host add`, `navig host edit`
+**Related Commands:** `navig host add`, `navig host remove`
 
 ---
 
-### `navig host edit <name>`
+### Editing a host
 
-Open host configuration in default editor (YAML file).
+There is no `edit` verb. A host's configuration is a YAML file under
+`~/.navig/hosts/<name>.yaml` — open it directly, or replace the entry:
+
+```bash
+# See the current definition first
+navig host show production
+
+# Replace it: remove, then re-add through the wizard
+navig host remove production
+navig host add production
+
+# Or start a new host from an existing one and adjust that
+navig host add production-next --from production
+```
+
+⚠ `host add --from` CLONES to a new name; it does not modify the source.
+
+**Related Commands:** `navig host show`, `navig host show --inspect`
+
+---
+
+### `navig host use <name>`
+
+Switch the active host context (global). There is no `default` verb — `use` is what pins
+the host that later commands act on.
 
 **Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `name` | string | Yes | Host name to edit |
+| `name` | string | No | Host name; omit to be prompted |
 
 **Examples:**
 ```bash
-# Edit production host config
-navig host edit production
+# Make production the active host
+navig host use production
+
+# Confirm which host is active, and where that came from
+navig host show --current
 ```
 
-**Related Commands:** `navig host info`, `navig host inspect`
-
----
-
-### `navig host default <name>`
-
-Set the default host (used when no active host is set).
-
-**Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `name` | string | Yes | Host name to set as default |
-
-**Examples:**
-```bash
-# Set production as default
-navig host default production
-```
-
-**Related Commands:** `navig host use`, `navig host current`
+**Related Commands:** `navig host use`, `navig host show --current`
 
 ---
 
@@ -1212,7 +1273,7 @@ navig file add config.json /var/www/config.json
 
 **💡 This is the recommended approach for JSON/YAML config files.**
 
-Legacy compatibility: `navig upload ...` still works, but `navig file add ...` is the canonical form.
+There is no `upload` verb — verified against the CLI. Use `navig file add ...`.
 
 ---
 
@@ -1226,10 +1287,8 @@ Is it a simple, single-line command?
          │        ├── YES → Use: @'...'@ | navig run --stdin
          │        └── NO (Bash) → Use: cat script.sh | navig run --stdin
          └── NO → Is it a JSON/YAML config file?
-                  ├── YES → Use: navig upload (RECOMMENDED)
+                  ├── YES → Use: navig file add (RECOMMENDED)
                   └── NO → Use: navig run --file script.sh
-
-(Canonical form: `navig file add ...`.)
 ```
 
 ---
@@ -1303,7 +1362,7 @@ Transfer files and manage remote filesystem.
 
 Upload file or directory to remote server.
 
-Legacy compatibility: `navig upload <local> [remote]` still works, but `navig file add ...` is the canonical form.
+There is no `upload` verb — verified against the CLI. Use `navig file add <local> [remote]`.
 
 **Parameters:**
 | Parameter | Type | Required | Description |
@@ -1333,7 +1392,9 @@ navig file add ./app /var/www/html/app
 
 Download file or directory from remote server.
 
-Legacy compatibility: `navig download <remote> [local]` still works, but `navig file get ...` is the canonical form.
+⚠ There is no remote-file `download` verb. The name IS taken — `navig download` is the
+**media downloader plugin** (TikTok videos/profiles), so calling it with a server path does
+something entirely different. To fetch a file from a host, use `navig file get`.
 
 **Parameters:**
 | Parameter | Type | Required | Description |
@@ -1399,7 +1460,7 @@ navig file add /var/www/html/uploads --dir
 navig file add /var/www/html/private --dir --mode 700
 ```
 
-**Related Commands:** `navig chmod`, `navig chown`
+**Related Commands:** `navig file edit --mode`, `navig file edit --owner`
 
 ---
 
@@ -1428,58 +1489,64 @@ navig file remove /tmp/logs --recursive --force
 
 **⚠️ Warning:** Use with caution. Consider `--dry-run` first.
 
-**Related Commands:** `navig list`, `navig mkdir`
+**Related Commands:** `navig file list`, `navig file add --dir`
 
 ---
 
-### `navig chmod <path> <mode>`
+### `navig file edit <path> --mode <mode>`
 
-Change file/directory permissions.
+Change file/directory permissions. (There is no `chmod` verb; permissions are one of the
+things `file edit` sets.)
 
 **Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `path` | string | Yes | Remote file/directory path |
-| `mode` | string | Yes | Permission mode (e.g., 755, 644) |
-| `--recursive`, `-r` | flag | No | Apply recursively |
+| `remote` | string | Yes | Remote file/directory path |
+| `--mode`, `-m` | string | Yes | Permission mode (e.g., 755, 644) |
 
 **Examples:**
 ```bash
 # Set file permissions
-navig chmod /var/www/html/storage 775
-
-# Set permissions recursively
-navig chmod /var/www/html/storage --recursive 775
+navig file edit /var/www/html/storage --mode 775
 ```
 
-**Related Commands:** `navig chown`, `navig mkdir`
+There is **no recursive form** — `file edit` sets one path. For a tree, run the remote
+command directly:
+
+```bash
+navig run "chmod -R 775 /var/www/html/storage"
+```
+
+**Related Commands:** `navig file edit --owner`, `navig file add --dir`
 
 ---
 
-### `navig chown <path> <owner>`
+### `navig file edit <path> --owner <owner>`
 
-Change file/directory ownership.
+Change file/directory ownership. (There is no `chown` verb.)
 
 **Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `path` | string | Yes | Remote file/directory path |
-| `owner` | string | Yes | New owner (user or user:group) |
-| `--recursive`, `-r` | flag | No | Apply recursively |
+| `remote` | string | Yes | Remote file/directory path |
+| `--owner`, `-o` | string | Yes | New owner (user or user:group) |
 
 **Examples:**
 ```bash
 # Change owner
-navig chown /var/www/html www-data
+navig file edit /var/www/html --owner www-data
 
 # Change owner and group
-navig chown /var/www/html www-data:www-data
-
-# Change recursively
-navig chown /var/www/html www-data:www-data --recursive
+navig file edit /var/www/html --owner www-data:www-data
 ```
 
-**Related Commands:** `navig chmod`, `navig mkdir`
+There is **no recursive form** — for a tree, run the remote command directly:
+
+```bash
+navig run "chown -R www-data:www-data /var/www/html"
+```
+
+**Related Commands:** `navig file edit --mode`, `navig file add --dir`
 
 ---
 
@@ -1487,43 +1554,50 @@ navig chown /var/www/html www-data:www-data --recursive
 
 These commands provide direct access to common file operations, eliminating the need for complex `navig run` commands with shell escaping.
 
-#### `navig cat <path>`
+#### `navig file show <path>`
 
 Read remote file content directly. **Use this instead of** `navig run "cat /path/file"`.
+(There is no `cat` verb.)
 
 **Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `path` | string | Yes | Remote file path |
-| `--head`, `-h` | int | No | Show only first N lines |
-| `--tail`, `-t` | int | No | Show only last N lines |
+| `remote` | string | Yes | Remote file path |
+| `--head` | flag | No | Take from the START of the file (pairs with `--lines`) |
+| `--tail`, `-t` | flag | No | Take from the END of the file (pairs with `--lines`) |
+| `--lines`, `-n` | string | No | How many lines, or a range (e.g. `50` or `100-200`) |
+| `--download`, `-d` | path | No | Write the content to a local path instead |
+| `--json` | flag | No | Machine-readable output |
+
+⚠ `--head`/`--tail` are **flags, not counts** — the count lives in `--lines`.
 
 **Examples:**
 ```bash
 # Read entire file
-navig cat /var/www/html/.env
+navig file show /var/www/html/.env
 
 # Read first 20 lines
-navig cat /var/log/nginx/error.log --head 20
+navig file show /var/log/nginx/error.log --head --lines 20
 
 # Read last 50 lines
-navig cat /var/log/nginx/access.log --tail 50
+navig file show /var/log/nginx/access.log --tail --lines 50
 ```
 
-**💡 AI Tip:** Use `navig cat` instead of `navig run "cat ..."` for simpler syntax and proper output handling.
+**💡 AI Tip:** Use `navig file show` instead of `navig run "cat ..."` for simpler syntax and proper output handling. Always bound a log read with `--lines`.
 
-**Related Commands:** `navig download`, `navig ls`
+**Related Commands:** `navig file get`, `navig file list`
 
 ---
 
-#### `navig write-file <path>`
+#### `navig file edit <path>`
 
-Write content to a remote file. **Use this instead of** complex heredoc patterns like `navig run "cat > file << 'EOF' ... EOF"`.
+Write content to a remote file. (There is no `write-file` verb;
+`file edit` takes exactly the options below.) **Use this instead of** complex heredoc patterns like `navig run "cat > file << 'EOF' ... EOF"`.
 
 **Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `path` | string | Yes | Remote file path to create/overwrite |
+| `remote` | string | Yes | Remote file path to create/overwrite |
 | `--content`, `-c` | string | No | Content to write (for simple strings) |
 | `--from-file`, `-f` | path | No | Local file to upload as content |
 | `--mode`, `-m` | string | No | Permission mode (default: 644) |
@@ -1531,79 +1605,81 @@ Write content to a remote file. **Use this instead of** complex heredoc patterns
 **Examples:**
 ```bash
 # Write simple content
-navig write-file /var/www/html/test.txt --content "Hello World"
+navig file edit /var/www/html/test.txt --content "Hello World"
 
 # Write JSON config from local file (RECOMMENDED for complex content)
-navig write-file /var/www/app/config.json --from-file ./config.json
+navig file edit /var/www/app/config.json --from-file ./config.json
 
 # Write with specific permissions
-navig write-file /etc/nginx/conf.d/app.conf --from-file nginx-app.conf --mode 644
+navig file edit /etc/nginx/conf.d/app.conf --from-file nginx-app.conf --mode 644
 ```
 
 **💡 AI Tip:** For JSON, YAML, or multi-line content, ALWAYS use `--from-file` to avoid shell escaping issues. Create the file locally first, then upload.
 
 **⚠️ CRITICAL:** This command solves the heredoc escaping problem documented in Section 4.2.
 
-**Related Commands:** `navig upload`, `navig cat`
+**Related Commands:** `navig file add`, `navig file show`
 
 ---
 
-#### `navig ls <path>`
+#### `navig file list <path>`
 
-List directory contents with enhanced options. **Use this instead of** `navig run "ls -la /path"`.
+List directory contents. **Use this instead of** `navig run "ls -la /path"`.
+(There is no `ls` verb.)
 
 **Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `path` | string | Yes | Remote directory path |
-| `--all`, `-a` | flag | No | Show hidden files (default: true) |
-| `--long`, `-l` | flag | No | Long listing format (default: true) |
-| `--human`, `-h` | flag | No | Human-readable sizes (default: true) |
+| `--all`, `-a` | flag | No | Show hidden files |
+| `--tree`, `-t` | flag | No | Show tree structure |
+| `--depth`, `-d` | int | No | Tree depth, with `--tree` (default: 2) |
+| `--json` | flag | No | Machine-readable output |
+
+⚠ There is no `--long` / `--human` — the listing format is fixed.
 
 **Examples:**
 ```bash
-# List directory (default: long format with hidden files)
-navig ls /var/www/html
+# List a directory
+navig file list /var/www/html
 
-# List with all defaults
-navig ls /var/log/nginx
+# Include hidden files
+navig file list /var/log/nginx --all
 
-# Simple listing (no details)
-navig ls /home/user --long false
+# Tree view, three levels deep
+navig file list /var/www --tree --depth 3
 ```
 
-**💡 AI Tip:** Use `navig ls` instead of `navig run "ls -la ..."` for cleaner syntax.
+**💡 AI Tip:** Use `navig file list` instead of `navig run "ls -la ..."` for cleaner syntax.
 
-**Related Commands:** `navig tree`, `navig cat`
+**Related Commands:** `navig file list --tree`, `navig file show`
 
 ---
 
-#### `navig tree <path>`
+#### `navig file list <path> --tree`
 
-Display directory tree structure. **Use this instead of** `navig run "find /path -type f"` for structure visualization.
+Display directory tree structure. **Use this instead of** `navig run "find /path -type f"` for structure visualization. (There is no `tree` verb.)
 
 **Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `path` | string | Yes | Remote directory path |
-| `--depth`, `-d` | int | No | Maximum depth level (default: 3) |
-| `--dirs-only` | flag | No | Show only directories |
+| `--tree`, `-t` | flag | Yes | Render as a tree rather than a flat listing |
+| `--depth`, `-d` | int | No | Maximum depth level (default: 2) |
+| `--all`, `-a` | flag | No | Include hidden entries |
+
+⚠ There is no `--dirs-only`.
 
 **Examples:**
 ```bash
-# Show tree with default depth (3 levels)
-navig tree /var/www/html
+# Show tree with the default depth
+navig file list /var/www/html --tree
 
-# Show tree with 2 levels only
-navig tree /var/www/html --depth 2
-
-# Show only directories
-navig tree /var/www --dirs-only
+# Show three levels
+navig file list /var/www/html --tree --depth 3
 ```
 
-**💡 Note:** Falls back to `find` command if `tree` is not installed on remote server.
-
-**Related Commands:** `navig ls`, `navig list`
+**Related Commands:** `navig file list`, `navig file list --tree`
 
 ---
 
@@ -1864,8 +1940,8 @@ EOF
 navig docker ps --filter nginx
 navig docker logs nginx -n 50
 navig docker compose up --path /app
-navig cat /var/www/config.json
-navig write-file /var/www/config.json --from-file config.json
+navig file show /var/www/config.json
+navig file edit /var/www/config.json --from-file config.json
 ```
 
 ---
@@ -2284,40 +2360,40 @@ navig restart all
 
 ### `navig health-check`
 
-> **Deprecated alias.** Use `navig host monitor show` instead.
+> **Removed — this name no longer resolves.** Use `navig host monitor show` instead.
 > See [Deprecated Command Aliases](#deprecated-command-aliases) for the full migration table.
 
 ---
 
-### `navig monitor-resources`
+### `monitor-resources` (removed)
 
-> **Deprecated alias.** Use `navig host monitor show --resources` instead.
+> **Removed — this name no longer resolves.** Use `navig host monitor show --resources` instead.
 
 ---
 
-### `navig monitor-disk`
+### `monitor-disk` (removed)
 
-> **Deprecated alias.** Use `navig host monitor show --disk` instead.
+> **Removed — this name no longer resolves.** Use `navig host monitor show --disk` instead.
 >
 > The `--threshold` flag is not supported on the canonical command; configure alert thresholds in `config/defaults.yaml` under `monitoring.disk_threshold`.
 
 ---
 
-### `navig monitor-services`
+### `monitor-services` (removed)
 
-> **Deprecated alias.** Use `navig host monitor show` instead (services are included in the overview output).
-
----
-
-### `navig monitor-network`
-
-> **Deprecated alias.** Use `navig host monitor show --resources` instead (network stats are included in the resources panel).
+> **Removed — this name no longer resolves.** Use `navig host monitor show` instead (services are included in the overview output).
 
 ---
 
-### `navig monitoring-report`
+### `monitor-network` (removed)
 
-> **Deprecated alias.** Use `navig host monitor show` and redirect output, or use `navig backup run --config` for full reports.
+> **Removed — this name no longer resolves.** Use `navig host monitor show --resources` instead (network stats are included in the resources panel).
+
+---
+
+### `monitoring-report` (removed)
+
+> **Removed — this name no longer resolves.** Use `navig host monitor show` and redirect output, or use `navig backup run --config` for full reports.
 
 ---
 
@@ -2494,7 +2570,7 @@ Display Fail2Ban status and banned IPs.
 navig fail2ban-status
 ```
 
-**Related Commands:** `navig fail2ban-unban`, `navig security-scan`
+**Related Commands:** `navig host security show`, `navig apply security-audit`
 
 ---
 
@@ -2530,20 +2606,19 @@ Audit SSH configuration for security issues.
 navig ssh-audit
 ```
 
-**Related Commands:** `navig security-scan`, `navig security-updates`
+**Related Commands:** `navig apply security-audit`, `navig host maintenance`
 
 ---
 
-### `navig security-updates`
+### `security-updates` (removed)
 
-Check for available security updates.
+> **Removed — this name no longer resolves.** Check updates through the host's maintenance
+> surface, or run the package manager directly.
 
-**Examples:**
 ```bash
-navig security-updates
+navig host maintenance
+navig run "apt list --upgradable"
 ```
-
-**Related Commands:** `navig update-packages`, `navig security-scan`
 
 ---
 
@@ -2556,20 +2631,20 @@ Audit active network connections.
 navig audit-connections
 ```
 
-**Related Commands:** `navig monitor-network`, `navig security-scan`
+**Related Commands:** `navig host monitor show --resources`, `navig apply security-audit`
 
 ---
 
-### `navig security-scan`
+### `security-scan` (removed)
 
-Run comprehensive security scan.
+> **Removed — this name no longer resolves.** The guided security analysis ships as a
+> **Block**; the host's own settings are under `navig host security`.
 
-**Examples:**
 ```bash
-navig security-scan
+navig apply security-audit --dry-run
+navig apply security-audit
+navig host security show
 ```
-
-**Related Commands:** `navig ssh-audit`, `navig fail2ban-status`, `navig firewall-status`
 
 ---
 
@@ -2710,13 +2785,19 @@ navig software list --format json
 
 ### Local Security Audit
 
-#### `navig security audit`
+#### `navig apply security-audit`
 
-Run an AI-powered security analysis of installed software.
+Run a guided security analysis. There is no `security` group — the audit ships as a
+**Block**, and the host's own security settings are under `navig host security`.
 
 **Examples:**
 ```bash
-navig security audit
+# Run the audit block (preview first if you like)
+navig apply security-audit --dry-run
+navig apply security-audit
+
+# Inspect the host's security configuration
+navig host security show
 ```
 
 **Checks Performed:**
@@ -2810,7 +2891,7 @@ Update package lists and upgrade packages.
 navig update-packages
 ```
 
-**Related Commands:** `navig clean-packages`, `navig security-updates`
+**Related Commands:** `navig host maintenance`, `navig apply security-audit`
 
 ---
 
@@ -2862,7 +2943,7 @@ Check filesystem usage and find large files.
 navig check-filesystem
 ```
 
-**Related Commands:** `navig monitor-disk`, `navig cleanup-temp`
+**Related Commands:** `navig host monitor show --disk`, `navig host maintenance`
 
 ---
 
@@ -2890,22 +2971,22 @@ navig system-maintenance
 
 Manage application templates and server configurations.
 
-### `navig template list`
+### `navig flow template list`
 
 List all available templates.
 
 **Examples:**
 ```bash
-navig template list
+navig flow template list
 ```
 
 **Available templates:** nginx, docker, postgresql, mysql, redis, caddy, traefik, nextcloud, gitea, portainer, grafana, prometheus, etc.
 
-**Related Commands:** `navig template enable`, `navig template info`
+**Related Commands:** `navig flow template add`, `navig flow template show`
 
 ---
 
-### `navig template enable <name>`
+### `navig flow template add <name>`
 
 Enable a template.
 
@@ -2916,15 +2997,15 @@ Enable a template.
 
 **Examples:**
 ```bash
-navig template enable nginx
-navig template enable postgresql
+navig flow template add nginx
+navig flow template add postgresql
 ```
 
-**Related Commands:** `navig template disable`, `navig template list`
+**Related Commands:** `navig flow template remove`, `navig flow template list`
 
 ---
 
-### `navig template disable <name>`
+### `navig flow template remove <name>`
 
 Disable a template.
 
@@ -2935,14 +3016,14 @@ Disable a template.
 
 **Examples:**
 ```bash
-navig template disable redis
+navig flow template remove redis
 ```
 
-**Related Commands:** `navig template enable`, `navig template list`
+**Related Commands:** `navig flow template add`, `navig flow template list`
 
 ---
 
-### `navig template info <name>`
+### `navig flow template show <name>`
 
 Show detailed information about a template.
 
@@ -2953,42 +3034,29 @@ Show detailed information about a template.
 
 **Examples:**
 ```bash
-navig template info nginx
+navig flow template show nginx
 ```
 
-**Related Commands:** `navig template list`, `navig template edit`
+**Related Commands:** `navig flow template list`, `navig flow template add`
 
 ---
 
-### `navig template edit <name>`
+### Editing and checking templates
 
-Edit template configuration.
+`navig flow template` has five verbs — `list`, `show`, `add`, `remove`, `run`. There is no
+`edit` and no `validate`.
 
-**Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `name` | string | Yes | Template name to edit |
-| `--server`, `-s` | string | No | Server name (uses active if omitted) |
-
-**Examples:**
 ```bash
-navig template edit nginx
+# Inspect what a template declares
+navig flow template show nginx
+
+# Re-add it after changing its files on disk
+navig flow template remove nginx
+navig flow template add nginx
 ```
 
-**Related Commands:** `navig template info`, `navig template validate`
-
----
-
-### `navig template validate`
-
-Validate all template configurations.
-
-**Examples:**
-```bash
-navig template validate
-```
-
-**Related Commands:** `navig template list`, `navig template info`
+A template is a `template.yaml` / `template.json` on disk; edit that file directly. If it
+cannot be parsed, `navig flow template list` reports it as skipped rather than failing.
 
 ---
 
@@ -3268,7 +3336,7 @@ When using `--encrypt`:
 **Backup Before Changes:**
 ```bash
 navig backup export
-navig host edit production
+# edit ~/.navig/hosts/production.yaml
 # If something goes wrong:
 navig backup import ~/.navig/exports/navig-export-*.json --overwrite
 ```
@@ -3305,13 +3373,13 @@ navig host add production
 navig host use production
 
 # 3. Auto-discover server details
-navig host inspect
+navig host show --inspect
 
 # 4. Test connection
 navig host test
 
 # 5. View discovered info
-navig host info
+navig host show
 ```
 
 ---
@@ -3326,10 +3394,10 @@ navig host use production
 navig run "cp -r /var/www/html /var/www/html.backup.$(date +%Y%m%d)"
 
 # 3. Upload new files
-navig upload ./dist /var/www/html
+navig file add ./dist /var/www/html
 
 # 4. Set permissions
-navig chown /var/www/html www-data:www-data --recursive
+navig run "chown -R www-data:www-data /var/www/html"
 
 # 5. Clear caches (Laravel example)
 navig run "cd /var/www/html && php artisan cache:clear"
@@ -3347,7 +3415,7 @@ navig restart nginx
 ```bash
 # OPTION 1: Upload local file (RECOMMENDED)
 # Create config.json locally, then:
-navig upload config.json /var/www/app/config.json
+navig file add config.json /var/www/app/config.json
 
 # OPTION 2: Use --stdin with PowerShell here-string
 @'
@@ -3403,7 +3471,7 @@ navig logs nginx --lines 100
 navig logs php-fpm --lines 100
 
 # 6. Check service status
-navig monitor-services
+navig host monitor show
 
 # 7. Check network connections
 navig audit-connections
@@ -3533,10 +3601,67 @@ What auto-heals (safe, additive):
 
 What stays **report-only** (disruptive — you pull the trigger, `--heal` prints the command):
 - a wedged event processor or a stale lighthouse webhook tenant → `navig service restart`;
-- leaked debug browsers → `navig cdp stop --all`.
+- leaked debug browsers → `navig cdp stop --all`;
+- a PATH near the Windows command-length ceiling with reclaimable entries →
+  `navig doctor clean-path` (rewriting your persistent PATH is a machine-wide change,
+  so it is never automatic).
 
 Anything else failing is listed as "no automatic remediation". Exit code: 0 only when the
 final (post-heal) report is fully green — same parity rule as plain `navig doctor`.
+
+### Windows: `PATH health` and `navig doctor clean-path`
+
+On Windows, `cmd.exe` truncates PATH at **8191 characters**. Past that, commands resolved
+through a shell fail with `'x' is not recognized` — naming a tool that *is* installed and
+whose directory *is* on PATH. The misdirection is the expensive part: the error sends you
+reinstalling dependencies instead of looking at the environment.
+
+The **PATH health** row (Runtime section) reports two different things, measured on two
+different paths on purpose. **Headroom** comes from the PATH the current process holds —
+that is the string a shell actually resolves against, so it is what breaks. **Reclaimable
+space** comes from your persistent *user* PATH, because that is the only one `clean-path`
+can rewrite: a shell can inject entries into its own environment that no command can remove,
+and reporting those as reclaimable would send you to a cleanup that answers "already clean".
+
+It warns while there is still room to act — nested tooling adds roughly
+1300 characters on its own, so a PATH sitting a few hundred under the ceiling is already
+one `npm run` chain away from breaking:
+
+```
+⚠ PATH health: PATH is 7113 chars — only 1078 under cmd.exe's 8191 limit, and nested
+  tooling adds ~1300; 80 missing + 12 duplicate entries hold 4312 chars
+  (reclaim: navig doctor clean-path)
+```
+
+`clean-path` reclaims exactly that space. It removes **only** directories that do not exist
+and exact duplicates — neither can affect which tool a command resolves to, so nothing you
+actually use can disappear:
+
+```bash
+# Preview: table of every entry that would go, and why — writes nothing
+navig doctor clean-path
+
+# Apply it (backs the old value up first, then rewrites the user PATH)
+navig doctor clean-path --apply
+
+# Machine-readable
+navig doctor clean-path --json
+```
+
+Notes:
+- **The previous value is saved** to `~/.navig/backups/path-user-<timestamp>.txt` before any
+  write. To roll back, paste that value back into your user PATH.
+- Only your **user** PATH is touched. The machine-wide PATH needs administrator rights and
+  is not navig's to rewrite.
+- A prune that would empty PATH is **refused** — that means the read went wrong, not that
+  the machine has no PATH.
+- Open a **new** terminal afterwards; already-running shells keep the PATH they started with.
+- Windows only. The 8191 ceiling is a `cmd.exe` property, so on macOS and Linux the row is
+  not shown and the command declines to run.
+
+If dead entries keep coming back, something on the machine is appending temp directories to
+your persistent PATH and never removing them — re-running `clean-path` is safe and
+idempotent, and the doctor row will tell you when it has grown back.
 
 ---
 
@@ -3564,7 +3689,7 @@ navig host use production
 navig host test
 
 # 2. Verify SSH key path
-navig host info
+navig host show
 
 # 3. Check SSH key permissions (should be 600)
 chmod 600 ~/.ssh/id_rsa
@@ -3612,7 +3737,7 @@ navig sql "SELECT 1"
 navig sql "SHOW DATABASES"
 
 # 4. Verify credentials in host config
-navig host info
+navig host show
 
 # 5. Enable verbose mode
 navig --verbose sql "YOUR_QUERY"
@@ -3647,7 +3772,7 @@ EOF
 '@ | navig run --stdin
 
 # Or upload the file:
-navig upload config.json /var/www/config.json
+navig file add config.json /var/www/config.json
 ```
 
 ---
@@ -3663,11 +3788,11 @@ navig run "whoami"
 navig run "ls -l /path/to/file"
 
 # Fix ownership
-navig chown /path/to/file www-data:www-data
+navig file edit /path/to/file --owner www-data:www-data
 
 # Fix permissions
-navig chmod /path/to/directory 755
-navig chmod /path/to/file 644
+navig file edit /path/to/directory --mode 755
+navig file edit /path/to/file --mode 644
 ```
 
 ---
@@ -3689,7 +3814,7 @@ navig run "ls -ld /remote/path"
 navig run "df -h"
 
 # 5. Try with explicit full path
-navig upload local.txt /full/remote/path/local.txt
+navig file add local.txt /full/remote/path/local.txt
 ```
 
 ---
@@ -4152,41 +4277,50 @@ def register(app: typer.Typer):
 
 NAVIG supports reusable command workflows that allow you to define and execute sequences of NAVIG commands.
 
-### 20.1 Workflow Management Commands
+### 20.1 Block commands (the workflow engine is retired)
+
+⚠ There is no `workflow` group. `navig flow list` reports *"the workflow engine is
+retired"* and points here. Reusable command sequences are **Blocks**.
 
 | Command | Description |
 |---------|-------------|
-| `navig workflow list` | List all available workflows |
-| `navig workflow show <name>` | Display workflow definition |
-| `navig workflow run <name>` | Execute a workflow |
-| `navig workflow run <name> --dry-run` | Preview without executing |
-| `navig workflow validate <name>` | Validate workflow syntax |
-| `navig workflow create <name>` | Create new workflow from template |
-| `navig workflow delete <name>` | Delete a workflow |
-| `navig workflow edit <name>` | Open workflow in editor |
+| `navig block list` | List installed/discovered blocks |
+| `navig block show <name>` | Show the spec: inputs, steps with computed risk, verify |
+| `navig apply <name>` | Run the outcome end-to-end and write a receipt |
+| `navig apply <name> --dry-run` | Print the resolved plan; resolves no secrets |
+| `navig apply <name> --input k=v` | Supply a typed input (repeatable) |
+| `navig block verify <name>` | Lint a manifest — does NOT execute it |
+| `navig block doctor <name>` | Can this block run *here*? Checks tools and `detect` probes |
+| `navig block new` | Scaffold a new `BLOCK.md` |
+
+⚠ Variables are `--input k=v`, not `--var`. A destructive step needs its own
+`--approve <step>`; a blanket `--yes` covers only moderate confirmations.
 
 **Examples:**
 ```bash
-# List available workflows
-navig workflow list
+# List available blocks
+navig block list
 
-# Preview a workflow
-navig workflow run safe-deployment --dry-run
+# Preview a block without touching anything
+navig apply safe-deployment --dry-run
 
-# Execute with variable overrides
-navig workflow run db-snapshot --var host=staging --var db_name=mydb
+# Execute with typed inputs
+navig apply db-snapshot --input host=staging --input db_name=mydb
 
-# Skip all prompts
-navig workflow run server-health --yes
+# Skip moderate prompts (destructive steps still need --approve)
+navig apply server-health --yes
 ```
 
-### 20.2 Workflow Locations
+There is no CLI verb to edit or delete a block: a block is a `BLOCK.md` directory you
+edit in place, and `navig install remove <id>` removes an installed one.
+
+### 20.2 Block Locations
 
 | Location | Type | Priority |
 |----------|------|----------|
-| `.navig/workflows/` | Project-local | Highest |
-| `~/.navig/workflows/` | Global | Medium |
-| `navig/resources/workflows/` | Built-in | Lowest |
+| `.navig/blocks/` | Project-local | Highest |
+| `~/.navig/blocks/` | Global | Medium |
+| built-in store | Shipped with navig | Lowest |
 
 ### 20.3 Built-in ops workflows → now Blocks
 
@@ -4248,7 +4382,7 @@ steps:
 
 **Override at runtime:**
 ```bash
-navig workflow run my-workflow --var host=staging --var db_name=testdb
+navig apply my-block --input host=staging --input db_name=testdb
 ```
 
 For complete documentation, see `docs/WORKFLOWS.md`.
@@ -4817,6 +4951,28 @@ navig gateway start --port 9000
 navig gateway status
 ```
 
+**Gateway authentication.** The gateway's admin routes — approvals, audit, cron, MCP,
+memory, tasks and more — require a bearer token. If your install has none, one is
+**generated and saved to `gateway.auth.token` the first time the gateway starts**, the
+same way `deck.api_key` has always been.
+
+You do not need to do anything: the NAVIG CLI reads the token from your config and sends
+it automatically. The deck and the desktop app authenticate separately (with
+`deck.api_key`) and are unaffected.
+
+```bash
+navig config get gateway.auth.token     # if another tool of yours needs it
+navig doctor                            # "Gateway auth" row shows the state
+```
+
+Any *other* client you have pointed at the gateway needs that token as
+`Authorization: Bearer <token>`; it will get a 401 saying so until it does.
+
+> **Why it is not optional.** Without a token every request was accepted. That included
+> `POST /approval/{id}/respond` — so any program running on your machine could list the
+> agent's pending approvals and answer them, which quietly defeats the approval system
+> no matter how carefully it is configured.
+
 **Gateway Features:**
 - HTTP/WebSocket API for agent communication
 - Session persistence across restarts
@@ -5320,7 +5476,7 @@ For deploying NAVIG infrastructure on a Linux server, use the bootstrap script:
 
 ```bash
 # Upload and run the bootstrap script
-bash navig-core/scripts/bootstrap_navig_linux.sh
+bash core/installers/bootstrap_navig_linux.sh
 ```
 
 The bootstrap script performs:
@@ -5784,6 +5940,40 @@ navig memory clear --all --force
 navig memory stats
 ```
 
+#### Searchable session memory (opt-in)
+
+A long agent run eventually fills its context window and gets compacted — older turns are
+summarised away, and the details of what a tool actually returned go with them. With this
+enabled, each tool result is also indexed, and right after a compaction the agent is handed
+back only the recorded events relevant to what you just asked.
+
+```bash
+# off by default; turn it on
+navig config set memory.session_index.enabled true
+
+# back off again
+navig config set memory.session_index.enabled false
+```
+
+Everything stays on your machine (`<data dir>/session_index.db`). One session's events are
+never visible to another, and if the index is unavailable the agent simply carries on without it.
+
+It cleans up after itself, so leaving it on does not grow a file forever:
+
+```bash
+# keep at most this many events per session (0 disables the cap)
+navig config set memory.session_index.max_events 2000
+
+# drop anything older than this many days (0 keeps everything)
+navig config set memory.session_index.retention_days 30
+
+# and a ceiling across every session, for machines that start many short ones
+navig config set memory.session_index.max_total_events 20000
+```
+
+Searching works in any language, including scripts written without spaces — a two-character
+Chinese or Japanese query finds text inside a longer run.
+
 ### 24.2 Knowledge Base
 
 Store persistent knowledge entries for project context.
@@ -5806,29 +5996,43 @@ navig memory knowledge clear
 
 Memory is accessible via the Gateway REST API:
 
+**Every memory route requires the gateway bearer token** — read it once and export it:
+
+```bash
+export NAVIG_TOKEN=$(navig config get gateway.auth.token)
+```
+
 ```bash
 # List sessions
-curl http://localhost:8789/memory/sessions
+curl -H "Authorization: Bearer $NAVIG_TOKEN" \
+  http://localhost:8789/memory/sessions
 
 # Get session history
-curl http://localhost:8789/memory/sessions/my-task/history
+curl -H "Authorization: Bearer $NAVIG_TOKEN" \
+  http://localhost:8789/memory/history/my-task
 
 # Add a message
 curl -X POST http://localhost:8789/memory/messages \
+  -H "Authorization: Bearer $NAVIG_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"session_key": "my-task", "role": "user", "content": "Hello"}'
 
 # Search knowledge
-curl "http://localhost:8789/memory/knowledge/search?q=database"
+curl -H "Authorization: Bearer $NAVIG_TOKEN" \
+  "http://localhost:8789/memory/knowledge/search?q=database"
 
 # Add knowledge
 curl -X POST http://localhost:8789/memory/knowledge \
+  -H "Authorization: Bearer $NAVIG_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"key": "my-key", "content": "Important info", "tags": ["project"]}'
 
 # Get memory stats
-curl http://localhost:8789/memory/stats
+curl -H "Authorization: Bearer $NAVIG_TOKEN" \
+  http://localhost:8789/memory/stats
 ```
+
+> The NAVIG CLI sends this header for you — `navig memory …` needs no token.
 
 ### 24.4 RAG Pipeline (Python API)
 
@@ -6177,6 +6381,73 @@ navig agent soul edit
 # Check file paths
 navig agent soul path
 ```
+
+#### Where identity comes from — the resolution chain
+
+`SOUL.md` is one of seven sources. The first one that exists wins, and every
+surface (chat, the deep-agent path, the CLI) uses the same order:
+
+| # | Source | Path |
+|---|--------|------|
+| 1 | Active persona | `~/.navig/personas/<name>/soul.md` |
+| 2 | Active space | `~/.navig/spaces/<space>/SOUL.md` |
+| 3 | Folder space | `<project>/.navig/SOUL.md` |
+| 4 | Workspace identity | `~/.navig/workspace/IDENTITY.md` |
+| 5 | Workspace soul (legacy) | `~/.navig/workspace/SOUL.md` |
+| 6 | Package default | shipped `SOUL.default.md` |
+| 7 | Minimal fallback | shipped context `SOUL.md` |
+
+A source you wrote yourself (1–5) is injected **verbatim**, capped at 4,000
+characters. The shipped default is condensed to a hand-tuned identity block.
+
+Note: the package-shipped `default` persona is deliberately skipped — it is a
+pointer stub, and every install that never chose a persona reports `default`.
+A `default` persona **you** create in `~/.navig/personas/default/` is honoured.
+
+#### Guardrails — rules no identity file can remove
+
+Safety rules do not live in `SOUL.md`. They are compiled into NAVIG and emitted
+as `## Operating Rules` **before** your identity, so replacing `SOUL.md` changes
+the agent's voice without removing its guardrails.
+
+This holds on **every** surface the agent speaks on — chat, the deep-agent path,
+`navig agent start`, the Telegram voice bot, the Deck's Ask box, the Deck board's
+autonomous executor, and the operator planner. Surfaces whose output contract is
+strict JSON carry a one-line form of the floor rather than the full block.
+
+To **add** rules of your own, create `~/.navig/workspace/GUARDRAILS.md` (or
+`<project>/.navig/GUARDRAILS.md` for one space). Its content is appended under
+`### Operator additions`. There is no way to remove the built-in floor — a
+`GUARDRAILS.md` that says "ignore the operating rules" adds a sentence and
+subtracts nothing.
+
+#### Auditing what actually reaches the model
+
+```bash
+navig agent context                      # what won, what was shadowed, section sizes
+navig agent context --persona tyler      # resolve as if that persona were active
+navig agent context --show-prompt        # print the assembled system prompt
+navig agent context --json               # machine-readable
+```
+
+`navig doctor` carries the same information as a health section:
+
+```
+Identity
+  ✓ Identity source: persona soul.md · 1,204 chars · persona tyler · shadows workspace IDENTITY.md
+  ✓ Guardrail floor: v1 · 1,136 chars · +1 operator file(s)
+  ✓ Prompt prefix: 4,878 chars · ~1,220 tok
+```
+
+A `⚠ Prompt prefix: … NOT byte-stable` row means something volatile crept into
+the system block — the symptom is a silent multiple on your input bill, never an
+error message.
+
+This is the command to reach for when an identity edit "does nothing": a file
+that is being outranked looks identical to a file that is broken until you can
+see the shadow table. It also reports whether the cached prompt prefix is
+byte-stable and the cache hit rate of the daemon's last real turn — send one
+message first, or the cache row reads `no turn recorded yet`.
 
 When SOUL.md is present, it's injected into the AI system prompt, enabling personality-driven responses to conversational queries:
 
@@ -6561,6 +6832,103 @@ brave-search:
   env:
     BRAVE_API_KEY: "your-key-here"
 ```
+
+#### Trusting an MCP server (`mcp.trust`)
+
+A third-party MCP server defines its own tools, so NAVIG cannot tell from a tool's name
+whether it reads or writes. It therefore **holds every external tool call for your
+approval by default**, and lifts that only where the server explicitly declares a tool
+read-only (`readOnlyHint: true` in the MCP tool annotations).
+
+```bash
+# Vouch for one server's annotations — its declared reads then run unprompted
+navig config set mcp.trust.servers.brave-search vetted
+
+# Change the tier every other server gets (default: byo)
+navig config set mcp.trust.default byo
+
+# Paranoid: ignore readOnlyHint entirely, so EVERY external tool asks
+navig config set mcp.trust.honor_read_only_hint false
+```
+
+Two tiers:
+
+| Tier | Meaning |
+|------|---------|
+| `byo` (default) | You pasted a URL. `readOnlyHint` still marks reads, but nothing the server says can let a **write** through without you. |
+| `vetted` | You assert this server's annotations are reliable. Only a vetted server's writes can ever become auto-approvable. |
+
+Anything other than `vetted` or `byo` is read as `byo` — an unrecognised value never
+resolves to the more permissive setting.
+
+**Limiting which tools a server may offer.** Trust says how far a server's own claims
+are believed; *scope* says which of its tools you will use at all. This matters for a
+vetted server in particular: its declared reads run unprompted, so a tool it adds
+tomorrow is unprompted the day it appears.
+
+```bash
+# only these two tools from this server; everything else is refused outright
+navig config set mcp.trust.servers.brave-search.tools "brave_web_search,brave_local_search"
+```
+
+Or in `~/.navig/config.yaml`, where both settings sit together:
+
+```yaml
+mcp:
+  trust:
+    default: byo
+    servers:
+      brave-search:
+        tier: vetted
+        tools: [brave_web_search, brave_local_search]
+```
+
+Omit `tools` entirely for "every tool, now and later". A `tools` key that names nothing
+denies everything from that server — a typo must not silently become full access.
+
+NAVIG also fingerprints each server's tool catalog and warns when the claims a trust
+setting was made against change (a new tool, or `readOnlyHint` flipping on an existing
+one). Description edits do not trigger it.
+
+**Letting a routine call stop asking.** Being prompted for the same harmless call fifty
+times is how people end up disabling approvals entirely, so a tool can be pre-authorised
+— but it takes **two independent agreements**, and neither party can do it alone:
+
+```bash
+navig config set mcp.trust.servers.acme vetted                 # 1. you trust its claims
+navig config set mcp.trust.servers.acme.auto_approve "sync_issue"   # 2. you name the tool
+```
+
+The tool then runs without a prompt only if the **server** also declares it
+non-destructive *and* idempotent in its annotations. A server saying so on its own is
+marking its own homework; you naming a tool the server never made that claim about is a
+blank cheque against a description that can change under you. Both, or it asks.
+
+Nothing is pre-authorised by default, and there is deliberately no "allow everything"
+spelling. Auto-approved calls are still written to the audit log, recording which config
+key allowed them — an unprompted write nobody can account for afterwards is the thing
+this is meant to avoid. `navig doctor` lists pre-authorised tools, and warns if you set
+them on a server that is not `vetted` (where the setting does nothing).
+
+First-party tools deliberately do not get this: there is no server-side claim to pair
+your opt-in with, so it would just be a narrower `--yes`.
+
+**Adding a server now asks first.** `POST /mcp/connect` registers a stdio server by
+running a binary as you, and keeping it running — more powerful than the shell tool the
+agent cannot use without asking. It is now gated the same way.
+
+A denied call names the fix:
+
+```
+Operator did not approve MCP tool 'delete_repo' on server 'acme'. If this server's
+tools are trustworthy, classify it with: navig config set mcp.trust.servers.acme vetted
+```
+
+> **Why the default is strict.** The approval gate used to match tool names against a
+> list of NAVIG's *own* tools, so a name it had never seen was treated as safe —
+> third-party MCP tools ran with no prompt and no audit line. External tools are now
+> namespaced `mcp__<server>__<tool>`, which both marks them as externally defined and
+> stops a server publishing a tool called `bash_exec` from shadowing yours.
 
 ### 26.6 Troubleshooting
 
@@ -7041,7 +7409,7 @@ The history system provides:
 
 | Command | Description |
 |---------|-------------|
-| `navig history` | List recent operations |
+| `navig history list` | List recent operations |
 | `navig history show <id>` | Show operation details |
 | `navig history replay <id>` | Re-execute an operation |
 | `navig history undo <id>` | Reverse an operation |
@@ -7051,33 +7419,41 @@ The history system provides:
 
 ### 29.3 Listing History
 
+The filters live on the `list` subcommand — `navig history` on its own is a command
+group and takes none of them.
+
 ```bash
 # List recent operations (default: last 20)
-navig history
+navig history list
 
 # List more operations
-navig history --limit 50
+navig history list --limit 50
 
 # Filter by operation type
-navig history --type ssh
-navig history --type docker
-navig history --type database
+navig history list --type ssh
+navig history list --type docker
+navig history list --type database
 
 # Filter by status
-navig history --status success
-navig history --status failed
+navig history list --status success
+navig history list --status failed
 
 # Filter by host
-navig history --host production
+navig history list --host production
 
-# Filter by time range
-navig history --since "1 hour ago"
-navig history --since "2024-01-15"
-navig history --until "yesterday"
+# Filter by time range (relative forms: 1h, 24h, 7d)
+navig history list --since 1h
+navig history list --since 7d
+
+# Search the command text
+navig history list --search "systemctl"
 
 # Combine filters
-navig history --type ssh --status failed --since "24 hours ago"
+navig history list --type ssh --status failed --since 24h
 ```
+
+⚠ There is no `--until` — `--since` gives an open-ended window from a point in the past.
+Output can be redirected with `--plain` or `--json`.
 
 **Operation Types:**
 | Type | Description |
@@ -7137,15 +7513,16 @@ navig history replay abc123 --modify timeout=60
 Some operations support undo:
 
 ```bash
-# Undo an operation (if reversible)
+# Undo an operation (if reversible) — prompts before acting
 navig history undo abc123
 
-# Force undo (even if risky)
-navig history undo abc123 --force
-
-# Dry-run undo
-navig history undo abc123 --dry-run
+# Skip the confirmation prompt
+navig history undo abc123 --yes
 ```
+
+⚠ There is no `--force` or `--dry-run` on `undo`; `--yes` is the only option, and it
+only skips the prompt. To see what an operation did before reversing it, read it first
+with `navig history show abc123`.
 
 **Undoable Operations:**
 | Operation | Undo Action |
@@ -7166,19 +7543,21 @@ navig history undo abc123 --dry-run
 
 Export history for analysis or compliance:
 
+`export` takes the destination as a required ARGUMENT, not a redirect.
+
 ```bash
 # Export to JSON (default)
-navig history export > audit.json
+navig history export audit.json
 
 # Export to CSV
-navig history export --format csv > audit.csv
+navig history export audit.csv --format csv
 
-# Export filtered range
-navig history export --since "2024-01-01" --until "2024-01-31"
-
-# Export only failed operations
-navig history export --status failed
+# Cap how many entries are written (default 1000)
+navig history export audit.json --limit 5000
 ```
+
+⚠ `export` has no filters — its only options are `--format` and `--limit`. To narrow by
+time, status or type, use `navig history list --status failed --json` and redirect that.
 
 ### 29.8 Statistics
 
@@ -7200,15 +7579,15 @@ navig history stats
 ### 29.9 Managing History
 
 ```bash
-# Clear all history (requires confirmation)
+# Clear all history (prompts first)
 navig history clear
 
-# Clear old entries (keep last 30 days)
-navig history clear --keep-days 30
-
-# Clear only failed operations
-navig history clear --status failed
+# Skip the confirmation prompt
+navig history clear --yes
 ```
+
+⚠ `clear` is all-or-nothing — there is no `--keep-days` and no `--status`. Export first
+with `navig history export audit.json` if you need to keep a copy.
 
 ### 29.10 Integration with Other Commands
 
@@ -7219,7 +7598,7 @@ Operations are recorded automatically when you run NAVIG commands:
 navig ssh production "systemctl restart nginx"
 
 # View the recorded operation
-navig history --limit 1
+navig history list --limit 1
 ```
 
 The history system integrates with:
@@ -7770,13 +8149,13 @@ navig insights report --json > /var/reports/navig-metrics.json
 Insights derive from operations history:
 - **Location**: `~/.navig/history/operations.jsonl`
 - Populated by all NAVIG operations
-- Use `navig history` to view raw history data
+- Use `navig history list` to view raw history data
 
 ---
 
 ## 33. � Packs System
 
-> **Removed (2026-07).** The `navig pack` / `navig package` command and the built-in pack
+> **Removed (2026-07).** The `pack` / `package` commands and the built-in pack
 > system have been retired. Shareable, verifiable outcomes are now **Blocks** —
 > `navig apply <id>` (see `docs/blocks-vs-workflows.md`); reusable capability bundles are
 > **plugins** (`navig plugin …`). The examples in this section are historical. Migrate any
@@ -7784,20 +8163,21 @@ Insights derive from operations history:
 
 Packs are shareable operations bundles containing runbooks, checklists, workflows, and templates. Install community packs or create your own reusable operations.
 
-### 33.1 Quick Start
+### 33.1 What to use instead
 
 ```bash
-# List available packs
-navig pack list
+# The outcomes packs used to carry are Blocks
+navig block list
+navig block show security-audit
+navig apply security-audit
+navig apply security-audit --dry-run
 
-# Show pack details
-navig pack show "Security Audit"
+# The reusable capability bundles are plugins
+navig plugin list
+navig plugin show <name>
 
-# Run a checklist interactively
-navig pack run "Security Audit"
-
-# Dry-run a runbook to preview
-navig pack run "Database Backup Runbook" --dry-run
+# On-disk packs under ~/.navig/packs migrate with
+navig doctor migrate-packs
 ```
 
 ### 33.2 Pack Types
@@ -7811,76 +8191,50 @@ navig pack run "Database Backup Runbook" --dry-run
 | `quickactions` | Batch quick action imports | Shortcut bundles |
 | `bundle` | Collection of multiple packs | Pack collections |
 
-### 33.3 Pack Commands
+### 33.3 Command mapping
+
+| Retired | Use instead |
+|---------|-------------|
+| `pack list` | `navig block list` (outcomes) · `navig plugin list` (bundles) |
+| `pack show <name>` | `navig block show <name>` · `navig plugin show <name>` |
+| `pack install <ref>` | `navig install add <ref>` (community assets) · `navig plugin add` |
+| `pack uninstall <name>` | `navig install remove <name>` · `navig plugin remove` |
+| `pack run <name>` | `navig apply <name>` |
+| `pack run <name> --dry-run` | `navig apply <name> --dry-run` |
+| `pack run <name> --var k=v` | `navig apply <name> --input k=v` |
+| `pack create <name>` | `navig block new` (an outcome) · `navig plugin new` (a bundle) |
+| `pack search <term>` | `navig install list` · `navig plugin marketplace` |
+
+⚠ Variables are `--input k=v`, not `--var`, and a destructive step in a Block needs its own
+`--approve <step>`.
+
+### 33.4 Running a Block instead
 
 ```bash
-# List all available packs
-navig pack list
-navig pack list --type runbook
-navig pack list --installed
+# Preview without executing — resolves no secrets
+navig apply db-snapshot --dry-run
 
-# Show pack details
-navig pack show <name>
+# Execute with typed inputs
+navig apply db-snapshot --input host=production
 
-# Install a pack
-navig pack install starter/deployment-checklist
-navig pack install ./my-pack.yaml
-
-# Uninstall a pack
-navig pack uninstall <name>
-
-# Run a pack
-navig pack run <name>
-navig pack run <name> --dry-run
-navig pack run <name> --var host=prod --var db=mydb
-
-# Create a new pack
-navig pack create my-runbook --type runbook
-
-# Search packs
-navig pack search deploy
+# Skip moderate confirmations (a destructive step still needs --approve)
+navig apply db-snapshot --yes --approve backup
 ```
 
-### 33.4 Running Packs
+A Block's steps carry their own risk level, and `navig block show <id>` prints them before
+you run anything. The guided-checklist packs became `kind: instruction` steps inside a
+Block — `navig apply backup-essential` is one.
 
-**Runbook (Auto-execute):**
+### 33.5 Creating a Block
+
 ```bash
-# Preview without executing
-navig pack run "Database Backup Runbook" --dry-run
-
-# Execute with variables
-navig pack run "Database Backup Runbook" --var host=production
-
-# Non-interactive mode
-navig pack run "Database Backup Runbook" --yes
+navig block new
+# Scaffolds a valid, runnable BLOCK.md you can edit
 ```
 
-**Checklist (Interactive):**
-```bash
-# Step through each item
-navig pack run "Security Audit"
+The retired pack YAML is kept below for reference only — it no longer loads.
 
-# Each step shows: [p]ass, [f]ail, [s]kip options
-```
-
-**Quick Actions Bundle:**
-```bash
-# View quick actions in pack
-navig pack show "Quick DevOps Actions"
-
-# Install quick actions to your shortcuts
-navig pack run "Quick DevOps Actions"
-```
-
-### 33.5 Creating Packs
-
-**Create a new local pack:**
-```bash
-navig pack create my-deployment --type checklist
-# Creates: ~/.navig/packs/local/my-deployment/pack.yaml
-```
-
-**Pack YAML Format:**
+**Pack YAML Format (historical):**
 ```yaml
 name: "My Custom Pack"
 description: "What this pack does"
@@ -8836,6 +9190,11 @@ This keeps startup flow minimal: pick a space → get next actions instantly.
 
 ## 39. Device Identity (`navig node`)
 
+> ⚠ **Not implemented — verified against the CLI.** These commands are stubs: they print
+> a notice and **exit 1**. The chapter documents the intended design, not shipped behaviour.
+> `navig node` currently belongs to the mesh (`navig mesh peers`); the device-identity design below has no shipped equivalent — `navig whoami` is the nearest thing that runs.
+
+
 Manage local device fingerprint and identity files.
 
 | Command | Description |
@@ -8855,26 +9214,39 @@ navig node edit soul   # Edit device-local SOUL personality file
 
 ---
 
-## 40. Identity & Persona Management (`navig origin`)
+## 40. Identity & Persona Management (`navig agent personality`)
 
-Manage named origin identities used by the autonomous agent and Telegram bot.
+> ⚠ There is no `origin` command — it is a group with no subcommands. Identity management
+> already ships under `navig agent personality` and `navig agent soul`; the table below maps
+> the old names.
+
+Manage named personalities used by the autonomous agent and Telegram bot.
 
 | Command | Description |
 |---------|-------------|
-| `navig origin init` | Scaffold default identity at `~/.navig/identity/` |
-| `navig origin show` | Display current active identity (default action) |
-| `navig origin use <name>` | Switch active identity |
-| `navig origin clear` | Remove active identity selection |
-| `navig origin set-path <path>` | Point NAVIG at a non-default identity directory |
-| `navig origin list` | List all registered identities |
+| `navig agent personality list` | List available personalities |
+| `navig agent personality show <name>` | Show personality details |
+| `navig agent personality set <name>` | Set the active personality |
+| `navig agent personality create` | Create a custom personality |
+| `navig agent soul show` | Display the current `SOUL.md` |
+| `navig agent soul create` | Create a user `SOUL.md` from the default template |
+| `navig agent soul edit` | Open `SOUL.md` in `$EDITOR` |
+| `navig agent soul path` | Show the `SOUL.md` file paths |
 
-**Storage:** `~/.navig/identity/` and `~/.navig/registry/formations/`
+| Retired name | Use instead |
+|--------------|-------------|
+| `origin list` | `navig agent personality list` |
+| `origin show` | `navig agent personality show` · `navig agent soul show` |
+| `origin use <name>` | `navig agent personality set <name>` |
+| `origin init` | `navig agent soul create` |
+| `origin set-path` | no equivalent — `navig agent soul path` reports where they live |
+| `origin clear` | no equivalent — set a different personality instead |
 
 **Examples:**
 ```bash
-navig origin list           # See all identities
-navig origin use deepwatch  # Activate "deepwatch" persona
-navig origin show           # Verify active identity
+navig agent personality list          # See all personalities
+navig agent personality set witty     # Activate one
+navig agent soul show                 # Verify the active identity
 ```
 
 ---
@@ -8938,6 +9310,11 @@ navig space pack devops-prod    # Archive for sharing
 
 ## 43. Agent Loadout Blueprints (`navig blueprint`)
 
+> ⚠ **Not implemented — verified against the CLI.** These commands are stubs: they print
+> a notice and **exit 1**. The chapter documents the intended design, not shipped behaviour.
+> For outcomes that DO run, see Blocks: `navig block list` · `navig apply <id>`.
+
+
 Blueprints are YAML loadout definitions that specify which skills, tools, prompts, and personas the agent should use for a specific role or project.
 
 YAML files live at `<store_dir>/blueprints/*.yaml`.
@@ -8981,34 +9358,51 @@ navig deck remove old-deck          # Housekeeping
 
 ---
 
-## 45. Portable Vault (`navig portable`)
+## 45. Portable / encrypted config
 
-Manage a *portable vault* — a self-contained, encrypted NAVIG config that can be carried on a USB drive or synced to an external path.
+> ⚠ There is no `portable` command — its two verbs are stubs that exit 1. The capability
+> already ships, split across an existing command and an environment variable, so building a
+> second one would duplicate it.
 
-| Command | Description |
-|---------|-------------|
-| `navig portable status` | Show whether a portable vault is active and its path |
-| `navig portable init <path>` | Initialise a new portable vault at `<path>` |
-| `navig portable export <dest>` | Export current config into a portable vault archive |
-| `navig portable enable <path>` | Mount a portable vault (overrides `~/.navig/`) |
-| `navig portable disable` | Unmount portable vault and return to local config |
+Carry a self-contained, encrypted NAVIG config on a USB drive or an external path.
+
+| Want | Use |
+|------|-----|
+| Export config **with secrets**, encrypted | `navig backup export --include-secrets --encrypt -o <dest>` |
+| Inspect what a bundle contains | `navig backup show` |
+| Restore from one | `navig backup import <file>` |
+| Run against a config on another drive | `NAVIG_CONFIG_DIR=<path> navig …` |
+| Confirm which config is active | `navig paths` (the `config` row) |
+
+`NAVIG_CONFIG_DIR` is what "mounting" a portable vault actually means — every path NAVIG
+resolves hangs off it, so pointing it at a drive switches the whole install for that process.
+There is no persistent enable/disable: set the variable for the session, or don't.
+
+| Retired name | Use instead |
+|--------------|-------------|
+| `portable export <dest>` | `navig backup export --include-secrets --encrypt -o <dest>` |
+| `portable status` | `navig paths` |
+| `portable enable <path>` | `NAVIG_CONFIG_DIR=<path>` |
+| `portable disable` | unset `NAVIG_CONFIG_DIR` |
+| `portable init <path>` | no equivalent — export into the path instead |
 
 **Examples:**
 ```bash
-navig portable status            # Is a portable vault active?
-navig portable init /media/usb   # Set up vault on USB drive
-navig portable enable /media/usb # Use it for this session
-navig portable export ./backup   # Archive current config to portable format
-navig portable disable           # Switch back to local ~/.navig/
+# Make an encrypted, secret-bearing copy
+navig backup export --include-secrets --encrypt -o /media/usb/navig-config.tar.gz
+
+# Work against a config carried on that drive
+NAVIG_CONFIG_DIR=/media/usb/navig navig doctor
 ```
 
-**Security:** Portable vaults use the same AES-256 encryption as `navig backup export --encrypt`. Always keep the vault passphrase separate from the drive.
+**Security:** `--include-secrets` writes unredacted credentials. Always pair it with
+`--encrypt`, and keep the passphrase separate from the drive.
 
 ---
 
-## 46. Package Runtime Notes (`navig package`) — removed
+## 46. Package Runtime Notes (the `package` command) — removed
 
-The legacy `navig package` runtime (handler.py packs, `navig.package.json`,
+The legacy `package` runtime (handler.py packs, `navig.package.json`,
 `packages_autoload.json`) and the built-in `core/packages/` tree were **removed** in 2026-07.
 Every capability now lives natively in `core/navig/` or in a first-party `plugins/navig-*`
 package (pyproject entry points).
@@ -9072,6 +9466,10 @@ Telegram management commands now include direct message sending and target resol
 | `navig gateway test telegram --target <chat_id|@username>` | Run Telegram smoke-test through gateway test flow |
 | `navig gateway test telegram --target <chat_id|@username> --strict` | Fail with non-zero exit code if channel test fails |
 | `navig gateway test telegram --target <chat_id|@username> --json` | Emit machine-readable JSON summary for automation |
+| `navig telegram extensions list` | Show every bot feature bundle and whether it is on (`--json` for scripts) |
+| `navig telegram extensions enable <name>` | Switch a feature bundle on |
+| `navig telegram extensions disable <name>` | Switch a feature bundle off |
+| `navig telegram extensions info <name>` | What one bundle owns, and what switching it off does |
 | `navig contacts import <path>` | Import Telegram contacts from `contacts.json` or export ZIP |
 
 **Examples:**
@@ -9090,6 +9488,41 @@ Notes:
 - `navig gateway test telegram` requires `--target`.
 - `navig gateway test all` tests Telegram and Matrix in one run.
 
+### Extensions — switching bot features off
+
+The bot's ~108 commands, its inline buttons and its scheduled messages are grouped
+into **extensions** you can switch off individually. When one is off its commands
+leave `/help` and Telegram's `/` autocomplete, its buttons stop answering (a stale
+one explains itself and clears), and anything it sends on a schedule is not
+delivered. Nothing is deleted — switching it back on restores it exactly.
+
+Three surfaces, one state (`modules.overrides`, the same store the module registry
+uses), so they cannot disagree:
+
+```bash
+navig telegram extensions list                 # the table
+navig telegram extensions disable habits       # by id, label, or any command it owns
+navig telegram extensions info habits          # what it owns and what "off" means
+```
+
+- In Telegram: **`/extensions`** — a tap-to-flip card. Also reachable from `/help`
+  and `/settings`. It is a locked command: it is the switch for every other
+  switch, so it can never be switched off itself (nor can `/start`, `/help`,
+  `/status`, or plain chat).
+- In the Deck: **Social → Telegram → Extensions**.
+
+Two switches exist and they compose as AND: an extension covers a whole feature,
+while Deck → Social → Telegram → **Commands** disables one command inside it. A
+command whose extension is off shows an `extension off` chip there rather than a
+toggle that would do nothing.
+
+**Habits specifically.** Switching Habits off stops the daily check-in cards and
+reminders from being delivered, but deliberately does **not** rewrite your
+schedule — so habits you paused yourself with `navig habit pause` stay paused when
+you switch it back on. Because the schedule is untouched, `navig habit list`,
+`/habits` and `/health` show a banner saying the reminders are scheduled but not
+delivered, rather than reporting a healthy count into a void.
+
 ---
 
 ## 49. Maintainer Release Shortcuts
@@ -9099,10 +9532,10 @@ For maintainers, NAVIG includes a helper to bump package version and publish a g
 Python helper (no npm required):
 
 ```bash
-python scripts/version_bump.py show
-python scripts/version_bump.py bump patch --commit --tag --push
-python scripts/version_bump.py bump minor --commit --tag --push
-python scripts/version_bump.py bump major --commit --tag --push
+python tools/version_bump.py show
+python tools/version_bump.py bump patch --commit --tag --push
+python tools/version_bump.py bump minor --commit --tag --push
+python tools/version_bump.py bump major --commit --tag --push
 ```
 
 Optional npm-style aliases:
@@ -9132,29 +9565,67 @@ destroy another agent's uncommitted edits. `navig repo` surfaces both early —
 read-only, nothing is modified.
 
 ```bash
+navig repo new <slug>           # create .dev/worktrees/<slug> on feat/<slug> (based on latest origin)
+navig repo new <slug> --type fix    # fix/<slug> instead; --from <ref> to override the base
+navig repo remove <slug>        # reliably remove that worktree (unregister + delete, no leak)
+navig repo remove <slug> --force    # discard the worktree's uncommitted changes too
 navig repo conflicts            # simulate merges between EVERY pair of worktrees
 navig repo conflicts --json     # machine-readable; exit 2 when any pair conflicts
 navig repo conflicts --no-dirty # committed state only (default includes dirty)
-navig repo stale                # leftover worktrees / unmerged branches / stashes
+navig repo stale                # leftover worktrees / unmerged branches / stashes / orphan dirs
 navig repo stale --json
 navig repo lock                 # who holds the main-checkout agent lock
 navig repo lock release [--force]
+navig repo prune                # dry-run: list orphaned .dev/worktrees dirs git no longer tracks
+navig repo prune --yes          # delete them (safe: skips live worktrees + locked dirs, says why)
+navig repo prune --yes --force  # also delete live worktrees (may hold uncommitted work) — rare
 ```
+
+All of these (`new` / `remove` / `conflicts` / `stale` / `lock` / `prune`) accept `--repo
+<path>`, and fall back to `NAVIG_REPO` / `CLAUDE_PROJECT_DIR` when the process cwd
+is not the repo — so an agent can drive them reliably from a subshell (a launched
+`navig.exe` does not always inherit the shell's directory).
 
 Details:
 
+- **`new`** creates an isolated worktree for a parallel session — the sanctioned
+  way to run a second/third agent. It bases the branch on the latest
+  `origin/<default-branch>` (fetched first), not your possibly-behind local
+  checkout, then prints the folder to open. Refuses unsafe slugs, existing dirs,
+  and existing branches; never creates a sibling folder outside the repo.
+- **`remove`** reliably removes a `.dev/worktrees/<slug>` worktree — unregister
+  **and** delete. `git worktree remove` alone often can't delete the folder on
+  Windows (a scanner briefly holds the fresh checkout), leaving an orphan; this
+  unregisters via git (which refuses a *dirty* worktree without `--force`, so
+  uncommitted work is protected) then retries the physical delete with backoff,
+  so a finished worktree doesn't leak. Use it instead of raw `git worktree remove`.
 - **`conflicts`** runs an in-memory three-way merge (`git merge-tree
   --write-tree`, requires git >= 2.38) across all worktree pairs. Uncommitted
   *tracked* changes are included via `git stash create` (writes objects only —
   the working tree is never touched). Untracked files are not compared.
 - **`stale`** flags worktrees left behind (including forbidden sibling
   checkouts outside the repo), branches not merged into the default branch
-  (with ahead counts and gone-upstream hints), stashes, and the agent lock.
+  (with ahead counts and gone-upstream hints), stashes, the agent lock, and
+  **orphaned `.dev/worktrees/` dirs** git no longer tracks (see `prune`).
 - **`lock`** inspects `.dev/agent.lock`, written by the Claude Code hook
   `scripts/agent-hooks/agent_lock.py` — one session at a time may mutate the
   main checkout; parallel sessions work under `.dev/worktrees/` (always
   exempt). The lock auto-expires after 60 minutes without activity. Hook
   wiring instructions: `scripts/agent-hooks/README.md`.
+- **`prune`** removes orphaned worktree directories — physical dirs under
+  `.dev/worktrees/` that git no longer tracks. `git worktree remove` often
+  can't delete a worktree's folder on Windows (a live handle blocks it), so git
+  unregisters it and the directory lingers, invisible to `git worktree list` and
+  piling up (GBs) across parallel sessions. Runs `git worktree prune` (metadata)
+  then deletes the leftover dirs. Dry-run by default (`--yes` to delete); it
+  never touches a registered worktree and never deletes outside `.dev/worktrees/`.
+  **Safe by default: committed work is never at risk** (prune deletes directories,
+  not branch refs), and a dir that is still a *live* worktree/repo of its own —
+  one that could hold uncommitted work — is skipped unless `--force`. The dry-run
+  marks each dir "dead leftover" (safe) vs "LIVE — needs --force". A briefly
+  "locked" dir is a scanner (antivirus/indexer) holding a fresh checkout — the
+  delete retries with backoff, and it clears within a minute (verified: not the
+  daemon), so just re-run; a reboot clears any stubborn one.
 
 ### Install the guard into any repo
 

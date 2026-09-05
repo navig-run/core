@@ -23,6 +23,8 @@ import os
 import shlex
 import sys
 
+from navig.core.aio_subprocess import STREAM_LIMIT, kill_process_tree
+
 try:
     from aiohttp import web
 except ImportError:
@@ -219,6 +221,10 @@ async def handle_deck_cli_exec(request: "web.Request") -> "web.Response":
             stderr=asyncio.subprocess.PIPE,
             cwd=str(paths.config_dir()),
             env=env,
+            # Without this the pipes keep asyncio's 64 KiB line limit, and ONE long line
+            # (any `navig … --json` payload) makes readline() raise instead of returning —
+            # killing the pump mid-command. _MAX_BYTES below is the real output cap.
+            limit=STREAM_LIMIT,
         )
     except Exception as exc:
         await send({"type": "err", "line": f"failed to launch: {exc}"})
@@ -252,22 +258,23 @@ async def handle_deck_cli_exec(request: "web.Request") -> "web.Response":
             timeout=timeout,
         )
         if counters["stop"]:
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                pass
-            code = await proc.wait()
+            # A bare proc.kill() signals only `python -m navig`; a command that shelled out
+            # (ssh, pg_dump, mysqldump…) would leave its grandchildren running against live
+            # infra. kill_process_tree kills the tree AND reaps.
+            await kill_process_tree(proc)
+            code = proc.returncode if proc.returncode is not None else -1
         else:
             code = await proc.wait()
     except asyncio.TimeoutError:
-        try:
-            proc.kill()
-        except ProcessLookupError:
-            pass
+        await kill_process_tree(proc)
         await send({"type": "err", "line": f"timed out after {timeout}s — killed."})
         code = -1
     except Exception as exc:
+        # Any other stream failure (a decode error, a pump crash) left the child RUNNING
+        # and unreaped — this path used to neither kill nor wait, so every such error
+        # orphaned a navig subprocess for the life of the daemon.
         logger.debug("cli exec stream error", exc_info=True)
+        await kill_process_tree(proc)
         await send({"type": "err", "line": f"stream error: {exc}"})
         code = -3
 

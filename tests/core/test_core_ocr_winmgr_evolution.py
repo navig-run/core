@@ -4,11 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # navig.core.ocr
@@ -32,41 +28,45 @@ class TestExtractOcrTextFromImageBytes:
         result = extract_ocr_text_from_image_bytes(b"")
         assert result is None
 
+    # Extraction reads `image_to_data`, not `image_to_string`: tesseract returns
+    # confident-looking glyphs for textureless input, and only the per-word
+    # confidence in the DICT payload tells that apart from real text. A mock of
+    # `image_to_string` would keep passing while the code called nothing it set.
+    @staticmethod
+    def _mocks(words):
+        mock_pil = MagicMock()
+        mock_pil.Image.open.return_value = MagicMock()
+        mock_tesseract = MagicMock()
+        mock_tesseract.image_to_data.return_value = {
+            "text": [w for w, _ in words],
+            "conf": [c for _, c in words],
+            "block_num": [0] * len(words),
+            "par_num": [0] * len(words),
+            "line_num": [0] * len(words),
+        }
+        return mock_pil, mock_tesseract
+
+    def _run(self, words):
+        mock_pil, mock_tesseract = self._mocks(words)
+        with patch.dict(
+            "sys.modules",
+            {"pytesseract": mock_tesseract, "PIL": mock_pil, "PIL.Image": mock_pil.Image},
+        ):
+            return extract_ocr_text_from_image_bytes(b"fake")
+
     def test_returns_none_when_text_too_short(self):
-        """Simulate OCR returning very short text (< 3 chars) → None."""
-        mock_pil = MagicMock()
-        mock_img = MagicMock()
-        mock_pil.Image.open.return_value = mock_img
-        mock_tesseract = MagicMock()
-        mock_tesseract.image_to_string.return_value = "ab"  # len 2 — below threshold
+        """No run of 3+ alphanumerics → not word-shaped, so not a result."""
+        assert self._run([("ab", 95)]) is None
 
-        with patch.dict("sys.modules", {"pytesseract": mock_tesseract, "PIL": mock_pil, "PIL.Image": mock_pil.Image}):
-            result = extract_ocr_text_from_image_bytes(b"fake")
-        assert result is None
+    def test_returns_text_when_confident(self):
+        assert self._run([("Hello", 95), ("World", 93)]) == "Hello World"
 
-    def test_returns_text_when_long_enough(self):
-        """Simulate OCR returning meaningful text → returns it."""
-        mock_pil = MagicMock()
-        mock_img = MagicMock()
-        mock_pil.Image.open.return_value = mock_img
-        mock_tesseract = MagicMock()
-        mock_tesseract.image_to_string.return_value = "Hello World"
+    def test_low_confidence_text_is_discarded(self):
+        """The measured failure mode: plausible words, no confidence behind them."""
+        assert self._run([("Hello", 21), ("World", 33)]) is None
 
-        with patch.dict("sys.modules", {"pytesseract": mock_tesseract, "PIL": mock_pil, "PIL.Image": mock_pil.Image}):
-            result = extract_ocr_text_from_image_bytes(b"fake")
-        assert result == "Hello World"
-
-    def test_strips_whitespace_from_result(self):
-        """OCR result should be stripped of leading/trailing whitespace."""
-        mock_pil = MagicMock()
-        mock_img = MagicMock()
-        mock_pil.Image.open.return_value = mock_img
-        mock_tesseract = MagicMock()
-        mock_tesseract.image_to_string.return_value = "  Hello World  \n"
-
-        with patch.dict("sys.modules", {"pytesseract": mock_tesseract, "PIL": mock_pil, "PIL.Image": mock_pil.Image}):
-            result = extract_ocr_text_from_image_bytes(b"fake")
-        assert result == "Hello World"
+    def test_whitespace_is_stripped_from_each_word(self):
+        assert self._run([("  Hello ", 95), (" World  ", 92)]) == "Hello World"
 
 
 # ---------------------------------------------------------------------------

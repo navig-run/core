@@ -6,7 +6,7 @@ import yaml
 
 from navig.ai import ask_ai_with_context
 from navig.console_helper import error, success
-from navig.core.evolution.base import BaseEvolver
+from navig.core.evolution.base import BaseEvolver, extract_code_block, safe_artifact_name
 
 
 class PackEvolver(BaseEvolver):
@@ -68,11 +68,7 @@ workflows:
     def _validate(self, artifact: str, context: Any) -> str | None:
         """Validate Pack YAML."""
         try:
-            # Extract YAML
-            import re
-
-            match = re.search(r"```yaml\n(.*?)\n```", artifact, re.DOTALL)
-            code = match.group(1).strip() if match else artifact
+            code = extract_code_block(artifact)
 
             data = yaml.safe_load(code)
             if not isinstance(data, dict):
@@ -86,16 +82,14 @@ workflows:
         except Exception as e:
             return f"Validation Error: {e}"
 
-    def _save(self, goal: str, artifact: str):
-        """Save to packs/[name]/pack.yaml."""
+    def _save(self, goal: str, artifact: str) -> bool:
+        """Save to packs/[name]/pack.yaml. Returns True only if written."""
         try:
-            import re
-
-            match = re.search(r"```yaml\n(.*?)\n```", artifact, re.DOTALL)
-            code = match.group(1).strip() if match else artifact
+            code = extract_code_block(artifact)
             data = yaml.safe_load(code)
 
-            name = data.get("name", "unnamed_pack")
+            # `name` comes from the model's YAML — keep it inside packs_dir.
+            name = safe_artifact_name(data.get("name", "unnamed_pack"), "unnamed_pack")
             pack_dir = self._packs_dir / name
             pack_dir.mkdir(parents=True, exist_ok=True)
 
@@ -104,5 +98,8 @@ workflows:
                 f.write(code)
 
             success(f"Pack saved to {path}")
+            return True
         except Exception as e:
+            self._save_error = f"Failed to save pack: {e}"
             error(f"Failed to save pack: {e}")
+            return False

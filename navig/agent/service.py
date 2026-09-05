@@ -17,6 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from navig.core.proc_text import console_encoding, decode_console_result
 from navig.debug_logger import DebugLogger
 
 
@@ -212,20 +213,18 @@ class ServiceInstaller:
         systemctl_args = ["systemctl", "--user"] if is_user_service else ["systemctl"]
 
         try:
-            result = subprocess.run(
+            result = decode_console_result(subprocess.run(
                 systemctl_args + ["is-active", service_name],
                 capture_output=True,
-                text=True,
-            )
+                            ))
 
             is_running = result.returncode == 0 and result.stdout.strip() == "active"
 
             # Get detailed status
-            status_result = subprocess.run(
+            status_result = decode_console_result(subprocess.run(
                 systemctl_args + ["status", service_name],
                 capture_output=True,
-                text=True,
-            )
+                            ))
 
             return is_running, status_result.stdout
 
@@ -571,7 +570,14 @@ WantedBy=default.target
         service_name = "NAVIGAgent"
 
         try:
-            result = subprocess.run(["sc", "query", service_name], capture_output=True, text=True)
+            # Console code page, not the ANSI one: `sc query` writes localized state text,
+            # and the returned `result.stdout` is shown to the operator as the detail line.
+            result = subprocess.run(
+                ["sc", "query", service_name],
+                capture_output=True,
+                encoding=console_encoding(),
+                errors="replace",
+            )
 
             is_running = "RUNNING" in result.stdout
             return is_running, result.stdout

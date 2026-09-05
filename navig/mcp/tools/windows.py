@@ -248,6 +248,27 @@ def register(server: Any) -> None:
         }
     )
 
+    # See navig.mcp_server._gate_tool — unlisted defaults to "safe".
+    # A module's register() must be self-sufficient: register_all_tools creates this
+    # dict, but a direct `module.register(server)` call (tests, a plugin host) does not,
+    # and assuming it exists raised AttributeError. cdp.py already guarded; these did not.
+    if not hasattr(server, "_tool_safety"):
+        server._tool_safety = {}
+    server._tool_safety.update({
+        "desktop_powershell": "dangerous",      # arbitrary local code execution
+        "desktop_process_kill": "dangerous",    # terminates any process
+        "desktop_registry_set": "dangerous",    # writes the Windows registry
+        "desktop_registry_delete": "dangerous", # deletes registry keys/values
+        "desktop_clipboard_get": "dangerous",   # the clipboard routinely holds secrets
+        "desktop_clipboard_set": "moderate",
+        # read-only — recorded explicitly so a missing entry is a build failure,
+        # not a silent default to "safe".
+        "desktop_process_list": "safe",
+        "desktop_registry_get": "safe",
+        "desktop_registry_list": "safe",
+        "desktop_notify": "safe",
+    })
+
 
 # ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -259,13 +280,16 @@ def _windows_only(tool_name: str) -> dict[str, str] | None:
     return None
 
 
-def _coerce_bool(value: bool | str | None, default: bool = False) -> bool:
-    """Coerce MCP boolean/string inputs to a Python bool."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in ("true", "1", "yes")
-    return default
+def _coerce_bool(value: object, default: bool = False) -> bool:
+    """Coerce an MCP boolean argument — see navig.mcp.tools._args.coerce_bool.
+
+    Kept as a module-local name so call sites read unchanged; the logic lives in
+    one place now (this was triplicated across desktop/filesystem/windows, and all
+    three silently discarded a JSON number).
+    """
+    from navig.mcp.tools._args import coerce_bool
+
+    return coerce_bool(value, default)
 
 
 def _parse_reg_path(path: str) -> tuple[Any, str]:

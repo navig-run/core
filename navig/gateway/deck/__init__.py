@@ -18,6 +18,7 @@ try:
 except ImportError:
     web = None
 
+from navig.core.coerce import coerce_bool
 from navig.gateway.deck.auth import configure_deck_auth, deck_auth_middleware
 from navig.gateway.deck.routes.admin import (
     handle_deck_admin_agents,
@@ -101,6 +102,7 @@ from navig.gateway.deck.routes.catalog import (
     handle_deck_catalog,
     handle_deck_catalog_install,
     handle_deck_space_activate,
+    handle_deck_space_app_sections,
     handle_deck_space_apps,
     handle_deck_space_books,
     handle_deck_space_disable,
@@ -176,6 +178,10 @@ from navig.gateway.deck.routes.inbox_review import (
     handle_inbox_review_list,
     handle_inbox_review_reject,
     handle_inbox_review_requeue,
+)
+from navig.gateway.deck.routes.ledger import (
+    handle_deck_ledger_undo,
+    handle_deck_ledger_verify,
 )
 from navig.gateway.deck.routes.license import (
     handle_deck_license_paste,
@@ -321,6 +327,8 @@ from navig.gateway.deck.routes.social import (
     handle_deck_social_matrix_update,
     handle_deck_social_status,
     handle_deck_social_telegram_commands,
+    handle_deck_social_telegram_extension_set,
+    handle_deck_social_telegram_extensions,
     handle_deck_social_telegram_get,
     handle_deck_social_telegram_post,
 )
@@ -487,7 +495,10 @@ def register_deck_routes(
         dev_mode=deck_cfg.get("dev_mode", False),
         auth_max_age=deck_cfg.get("auth_max_age", 3600),
         api_key=api_key,
-        telegram_only=bool(deck_cfg.get("telegram_only", False)),
+        # Pass the raw config value through; configure_deck_auth coerce_bool's it.
+        # A bare bool() here PRE-CORRUPTS the string ("false" → True) before the
+        # coercion can run, defeating the toggle.
+        telegram_only=coerce_bool(deck_cfg.get("telegram_only", False), default=False),
     )
 
     # Add auth middleware to the app.
@@ -558,6 +569,14 @@ def register_deck_routes(
         app.router.add_get("/api/deck/social/telegram", handle_deck_social_telegram_get)
         app.router.add_post("/api/deck/social/telegram", handle_deck_social_telegram_post)
         app.router.add_get("/api/deck/social/telegram/commands", handle_deck_social_telegram_commands)
+        app.router.add_get(
+            "/api/deck/social/telegram/extensions",
+            handle_deck_social_telegram_extensions,
+        )
+        app.router.add_post(
+            "/api/deck/social/telegram/extensions",
+            handle_deck_social_telegram_extension_set,
+        )
         app.router.add_get("/api/deck/social/adapter/{network}", handle_deck_social_adapter_get)
         app.router.add_post("/api/deck/social/adapter/{network}", handle_deck_social_adapter_post)
         app.router.add_get("/api/deck/social/matrix", handle_deck_social_matrix_get)
@@ -761,6 +780,7 @@ def register_deck_routes(
         app.router.add_post("/api/deck/spaces/{id}/disable", handle_deck_space_disable)
         app.router.add_post("/api/deck/spaces/{id}/activate", handle_deck_space_activate)
         app.router.add_post("/api/deck/spaces/{id}/apps", handle_deck_space_apps)
+        app.router.add_post("/api/deck/spaces/{id}/app-sections", handle_deck_space_app_sections)
         app.router.add_post("/api/deck/spaces/{id}/books", handle_deck_space_books)
         app.router.add_get("/api/deck/catalog", handle_deck_catalog)
         app.router.add_get("/api/deck/bay", handle_deck_bay)
@@ -894,6 +914,11 @@ def register_deck_routes(
         # Operations ledger (read-only) — the recent slice a distill draws from.
         # First surface of the tamper-evident operations history over /api/deck/*.
         app.router.add_get("/api/deck/ledger/recent", handle_deck_ledger_recent)
+        # Ledger integrity + confirm-gated Undo — the Activity/audit timeline's
+        # chain-status view and its one-click Undo (engines: navig.ledger_chain,
+        # navig.undo). verify is read-only; undo previews unless confirm:true.
+        app.router.add_get("/api/deck/ledger/verify", handle_deck_ledger_verify)
+        app.router.add_post("/api/deck/ledger/undo", handle_deck_ledger_undo)
 
         # Database — list / tables / query (SSH-backed)
         app.router.add_get("/api/deck/db/hosts", handle_deck_db_hosts)

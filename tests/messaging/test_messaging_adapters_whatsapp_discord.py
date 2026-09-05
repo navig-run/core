@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from navig.messaging.adapter import (
     DeliveryReceipt,
-    DeliveryStatus,
     InboundEvent,
     ResolvedTarget,
 )

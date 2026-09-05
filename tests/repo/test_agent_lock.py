@@ -8,7 +8,6 @@ and the pure lock decision (claim / refresh / steal / block).
 from __future__ import annotations
 
 import importlib.util
-import json
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -94,6 +93,12 @@ def test_mutating_git_is_enforced(hook, root: Path, command: str) -> None:
         "git branch -vv",
         "git stash list",
         "git stash show -p stash@{0}",
+        # Read-only plumbing whose name STARTS with a mutating verb. The hyphen is a
+        # word boundary, so a bare `merge` matched these — blocking the exact command
+        # you run to check whether a detached HEAD or stray branch holds unmerged work,
+        # i.e. the careful look you take BEFORE deciding to touch anything.
+        "git merge-base --is-ancestor HEAD origin/main",
+        "git merge-tree main feat/x",
         "git worktree add .dev/worktrees/slug -b feat/slug",
         "git worktree list --porcelain",
         "cd .dev/worktrees/slug && git rebase origin/main",

@@ -10,6 +10,8 @@ try:
 except ImportError:
     web = None
 
+from navig.core.aio_subprocess import STREAM_LIMIT
+from navig.core.background import spawn
 from navig.vault.secret_str import mask_secret
 
 logger = logging.getLogger(__name__)
@@ -308,6 +310,9 @@ async def _run_whisper_install() -> None:
             sys.executable, "-m", "pip", "install", "openai-whisper",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,  # merge so we see warnings too
+            # readline()d below — an unset limit turns one long pip line (a resolver
+            # conflict dump) into a raise that fails an install which actually succeeded.
+            limit=STREAM_LIMIT,
         )
         # Read line-by-line so the latest progress line is always visible.
         last_line = ""
@@ -354,9 +359,10 @@ async def handle_deck_whisper_install(request: "web.Request") -> "web.Response":
     if _WHISPER_INSTALL_STATE["running"]:
         return web.json_response({"ok": True, "started": False, "already_running": True})
 
-    # Fire and forget. The task runs in the same event loop and updates the
-    # shared dict above; no need to track the task handle.
-    asyncio.create_task(_run_whisper_install())
+    # Fire and forget: the task updates the shared dict above. spawn() holds a
+    # strong ref so the install can't be GC-collected before it runs (a discarded
+    # create_task can be), which would leave the state stuck "running".
+    spawn(_run_whisper_install())
     return web.json_response({"ok": True, "started": True})
 
 

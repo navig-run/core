@@ -18,6 +18,7 @@ from navig.contracts.mission import Mission, MissionStatus
 from navig.contracts.node import Node, NodeStatus
 from navig.core.dict_utils import now_iso
 from navig.core.yaml_io import atomic_write_text as _atomic_write_text
+from navig.core.yaml_io import read_text_retrying
 from navig.debug_logger import get_debug_logger
 from navig.platform.paths import config_dir
 
@@ -61,6 +62,11 @@ class RuntimeStore:
         self._nodes: dict[str, Node] = {}
         self._missions: dict[str, Mission] = {}
         self._receipts: dict[str, ExecutionReceipt] = {}
+        # Files that EXIST on disk but could not be read/parsed (a transient
+        # Windows lock that survived retries, or on-disk corruption). flush()
+        # refuses to overwrite these — otherwise a failed READ becomes a
+        # destructive WRITE that wipes the whole audit trail. See _load / flush.
+        self._load_failed: set[str] = set()
         self._load()
 
     # ── Node CRUD ─────────────────────────────────────────────────────
@@ -235,51 +241,85 @@ class RuntimeStore:
 
     # ── Persistence ───────────────────────────────────────────────────
 
+    def _collections(self):
+        """(filename, in-memory dict, row→obj parser, id attribute) for each file.
+
+        The dicts are returned by reference, so callers mutate the instance state.
+        """
+        return (
+            ("nodes.json", self._nodes, Node.from_dict, "node_id"),
+            ("missions.json", self._missions, Mission.from_dict, "mission_id"),
+            ("receipts.json", self._receipts, ExecutionReceipt.from_dict, "receipt_id"),
+        )
+
     def flush(self) -> None:
-        """Write current state to disk."""
+        """Write current state to disk.
+
+        A collection whose on-disk file EXISTS but could not be read at load time
+        is NOT overwritten here — writing our (necessarily partial) in-memory copy
+        over it would destroy every row we failed to read, turning a transient read
+        blip into a full wipe of the node/mission/receipt audit trail. Before
+        skipping, we retry the read once: a lock may have cleared, in which case the
+        on-disk rows are folded back in (in-session updates win) and we persist safely.
+        """
         try:
             self._dir.mkdir(parents=True, exist_ok=True)
-            self._write_file("nodes.json", [n.to_dict() for n in self._nodes.values()])
-            self._write_file("missions.json", [m.to_dict() for m in self._missions.values()])
-            self._write_file("receipts.json", [r.to_dict() for r in self._receipts.values()])
+            for name, target, parser, id_attr in self._collections():
+                if name in self._load_failed:
+                    # self-heal: the transient failure may be gone now
+                    self._ingest(name, target, parser, id_attr, prefer_memory=True)
+                if name in self._load_failed:
+                    logger.warning(
+                        "[RuntimeStore] %s still unreadable — skipping write to "
+                        "avoid overwriting unread data",
+                        name,
+                    )
+                    continue
+                self._write_file(name, [obj.to_dict() for obj in target.values()])
         except Exception as e:
             logger.warning("[RuntimeStore] Flush failed: %s", e)
 
     def _load(self) -> None:
-        """Load state from disk (silently ignore missing files)."""
+        """Load state from disk. A missing file is an empty collection; a file that
+        exists but is unreadable is recorded in ``_load_failed`` so flush() can't
+        later wipe it (see flush)."""
+        for name, target, parser, id_attr in self._collections():
+            self._ingest(name, target, parser, id_attr)
+
+    def _ingest(self, name, target, parser, id_attr, *, prefer_memory: bool = False) -> None:
+        """Read one JSON file into ``target``, distinguishing 'absent' (→ empty,
+        safe) from 'unreadable' (→ recorded in ``_load_failed``, never treated as
+        empty). One malformed row is skipped, not fatal to the whole file."""
         try:
-            for raw in self._read_file("nodes.json"):
-                try:
-                    n = Node.from_dict(raw)
-                    self._nodes[n.node_id] = n
-                except Exception:  # noqa: BLE001
-                    pass  # best-effort; failure is non-critical
-
-            for raw in self._read_file("missions.json"):
-                try:
-                    m = Mission.from_dict(raw)
-                    self._missions[m.mission_id] = m
-                except Exception:  # noqa: BLE001
-                    pass  # best-effort; failure is non-critical
-
-            for raw in self._read_file("receipts.json"):
-                try:
-                    r = ExecutionReceipt.from_dict(raw)
-                    self._receipts[r.receipt_id] = r
-                except Exception:  # noqa: BLE001
-                    pass  # best-effort; failure is non-critical
-        except Exception as e:
-            logger.debug("[RuntimeStore] Load skipped: %s", e)
+            rows = self._read_file(name)
+        except Exception as e:  # noqa: BLE001 — file exists but unreadable/corrupt
+            self._load_failed.add(name)
+            logger.warning("[RuntimeStore] %s unreadable (preserved on disk): %s", name, e)
+            return
+        self._load_failed.discard(name)
+        for raw in rows:
+            try:
+                obj = parser(raw)
+                key = getattr(obj, id_attr)
+                if prefer_memory and key in target:
+                    continue  # keep the in-session copy over the stale on-disk one
+                target[key] = obj
+            except Exception:  # noqa: BLE001
+                pass  # best-effort per row; one bad row must not drop the file
 
     def _write_file(self, name: str, data) -> None:
         path = self._dir / name
         _atomic_write_text(path, json.dumps(data, indent=2))
 
     def _read_file(self, name: str) -> list:
+        """Parsed JSON list. ``[]`` for a genuinely-absent file; RAISES for a file
+        that exists but can't be read/parsed (a transient lock that survived retries,
+        or corruption) — the caller must never mistake 'unreadable' for 'empty',
+        because collapsing the two is how a read blip becomes a data wipe."""
         path = self._dir / name
         if not path.exists():
             return []
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(read_text_retrying(path))
 
     # ── Stats ─────────────────────────────────────────────────────────
 

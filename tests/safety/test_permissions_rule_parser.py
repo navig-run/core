@@ -1,8 +1,6 @@
 """Tests for navig.permissions.rule_parser — parse_rule_spec, _normalise_tool."""
 from __future__ import annotations
 
-import pytest
-
 from navig.permissions.rule_parser import _normalise_tool, parse_rule_spec
 from navig.permissions.rules import RuleAction
 

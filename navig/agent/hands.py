@@ -27,6 +27,7 @@ from typing import Any
 from navig.agent.component import Component
 from navig.agent.config import HandsConfig
 from navig.agent.nervous_system import EventPriority, EventType, NervousSystem
+from navig.core.aio_subprocess import kill_process_tree, terminate_process_tree
 
 # Seconds to wait for a subprocess to exit cleanly before sending SIGKILL.
 _PROC_GRACEFUL_TIMEOUT: float = 5.0
@@ -164,10 +165,11 @@ class Hands(Component):
         """Stop all running commands."""
         for _cmd_id, process in list(self._running_commands.items()):
             try:
-                process.terminate()
-                await asyncio.wait_for(process.wait(), timeout=_PROC_GRACEFUL_TIMEOUT)
-            except asyncio.TimeoutError:
-                process.kill()
+                # Commands are spawned with create_subprocess_shell, so `process` is the
+                # SHELL. Terminating it kills cmd.exe and orphans the actual command, which
+                # keeps running past shutdown; and escalating afterwards is too late, because
+                # the tree can no longer be walked once the shell is reaped.
+                await terminate_process_tree(process, grace=_PROC_GRACEFUL_TIMEOUT)
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -299,9 +301,11 @@ class Hands(Component):
                 )
 
             except asyncio.TimeoutError:
-                # Kill the process
-                process.kill()
-                await process.wait()
+                # Kill the process TREE. This is a create_subprocess_shell spawn, so
+                # `process` is cmd.exe and kill() reaped only the shell — the command
+                # that overran its timeout kept running, unbounded and untracked, while
+                # the result below cheerfully reported TIMEOUT.
+                await kill_process_tree(process)
 
                 duration = (datetime.now() - start_time).total_seconds()
 
@@ -426,12 +430,10 @@ class Hands(Component):
             return False
 
         process = self._running_commands[cmd_id]
-        process.terminate()
-
-        try:
-            await asyncio.wait_for(process.wait(), timeout=_PROC_GRACEFUL_TIMEOUT)
-        except asyncio.TimeoutError:
-            process.kill()
+        # `process` is the SHELL (create_subprocess_shell). Terminating it kills cmd.exe while
+        # the command the caller asked to cancel runs on, orphaned — and this returns True
+        # regardless, so "cancelled" was reported for a command that was still executing.
+        await terminate_process_tree(process, grace=_PROC_GRACEFUL_TIMEOUT)
 
         return True
 

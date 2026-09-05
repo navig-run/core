@@ -25,6 +25,13 @@ from pathlib import Path
 
 from loguru import logger
 
+from navig.core.json_io import (
+    JsonReadError,
+    atomic_write_json,
+    load_json_for_update,
+    load_json_safe,
+)
+
 __all__ = [
     "Profile",
     "PROFILE_PORT_BASE",
@@ -79,23 +86,25 @@ def registry_path() -> Path:
 
 
 def _read() -> dict:
-    path = registry_path()
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            return data
-        raise ValueError("registry root is not a JSON object")
-    except Exception as exc:  # noqa: BLE001
-        # Do NOT silently discard a corrupt registry (the next write would clobber
-        # it, losing every profile). Move it aside so it can be recovered.
-        logger.warning("[cdp.profiles] registry unreadable ({}) — backing up to .corrupt", exc)
-        try:
-            path.replace(path.with_name(path.name + ".corrupt"))
-        except Exception:  # noqa: BLE001
-            pass
-        return {}
+    # Read-only view (list/get/allocate_port + the `if name in node`-guarded mutators, which
+    # never write when the read is empty): degrade to {} on any failure so a lookup never
+    # crashes. The two UNGUARDED mutators (create_profile/create_real_profile add a profile
+    # unconditionally) MUST use _read_for_update, or a transient lock here returns {} and the
+    # following _write wipes every other named profile.
+    data = load_json_safe(registry_path(), default={})
+    return data if isinstance(data, dict) else {}
+
+
+def _read_for_update() -> dict:
+    """Load the registry for a read-modify-write that ADDS a profile.
+
+    Raises ``JsonReadError`` when the registry exists-with-content but is transiently
+    unreadable (a Windows AV/backup lock), so create_profile/create_real_profile abort before
+    _write persists a single-profile registry over every other profile. A genuinely corrupt or
+    wrong-typed file is quarantined to ``*.corrupt`` and treated as a fresh registry.
+    """
+    data = load_json_for_update(registry_path(), default={})
+    return data if isinstance(data, dict) else {}
 
 
 def _write(data: dict) -> bool:
@@ -103,7 +112,7 @@ def _write(data: dict) -> bool:
     path = registry_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        atomic_write_json(data, path)
         return True
     except Exception as exc:  # noqa: BLE001
         logger.warning("[cdp.profiles] write failed: {}", exc)
@@ -181,9 +190,18 @@ def get_profile(name: str) -> Profile | None:
 
 
 def create_profile(name: str, *, app: str = "chrome", note: str = "",
-                   project: str | None = None) -> Profile:
-    """Create (or return the existing) named automation profile with a stable port."""
-    data = _read()
+                   project: str | None = None) -> Profile | None:
+    """Create (or return the existing) named automation profile with a stable port.
+
+    Returns None if the registry is transiently unreadable (a lock) — refusing to write is
+    what keeps a lock from wiping every other profile; the caller reports it as "could not be
+    saved".
+    """
+    try:
+        data = _read_for_update()
+    except JsonReadError as exc:
+        logger.warning("[cdp.profiles] registry temporarily unreadable, not creating '{}': {}", name, exc)
+        return None
     node = _profiles_node(data)
     if name in node:
         return get_profile(name)  # idempotent
@@ -215,7 +233,11 @@ def create_real_profile(name: str, directory: str, *, app: str = "chrome", note:
     base = real_user_data_dir(app)
     if base is None:
         return None
-    data = _read()
+    try:
+        data = _read_for_update()
+    except JsonReadError as exc:
+        logger.warning("[cdp.profiles] registry temporarily unreadable, not creating '{}': {}", name, exc)
+        return None
     node = _profiles_node(data)
     if name in node:
         return get_profile(name)

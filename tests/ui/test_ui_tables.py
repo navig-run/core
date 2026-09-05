@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 import navig.ui.tables as tables_mod
 from navig.ui.models import CauseScore
 from navig.ui.tables import render_findings_table, render_fleet_table

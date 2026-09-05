@@ -96,9 +96,14 @@ def test_cdp_bundle_classifies_dangerous_tools():
     assert srv._tool_safety["cdp_eval"] == "dangerous"
     assert srv._tool_safety["cdp_launch"] == "dangerous"
     assert srv._tool_safety["cdp_stop"] == "dangerous"
-    # read-only tools are not classified (default "safe")
-    assert "cdp_snapshot" not in srv._tool_safety
-    assert "cdp_targets" not in srv._tool_safety
+    # Read-only tools are now classified EXPLICITLY as "safe" rather than left out.
+    # This assertion used to be `"cdp_snapshot" not in srv._tool_safety`, which pinned
+    # the older design where absence meant safe. Absence is indistinguishable from
+    # "nobody classified it", and that ambiguity is exactly what let 61 of 122 tools —
+    # `desktop_powershell` and every `connector_*_act` among them — run ungated and
+    # unaudited. Naming them is the stronger statement, so the check is now positive.
+    assert srv._tool_safety["cdp_snapshot"] == "safe"
+    assert srv._tool_safety["cdp_targets"] == "safe"
 
 
 # ---------------------------------------------------------------------------

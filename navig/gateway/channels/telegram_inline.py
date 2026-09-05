@@ -24,6 +24,8 @@ import time
 import uuid
 from typing import TYPE_CHECKING
 
+from navig.core.coerce import coerce_bool
+
 if TYPE_CHECKING:
     pass
 
@@ -60,7 +62,7 @@ class TelegramInlineMixin:
     async def _on_inline_query(self, iq: dict) -> None:
         """Handle an incoming inline query."""
         cfg = self._get_inline_config()
-        if not cfg.get("inline_mode_enabled", True):
+        if not coerce_bool(cfg.get("inline_mode_enabled", True), default=True):
             return
 
         query_id: str = iq.get("id", "")
@@ -243,9 +245,17 @@ class TelegramInlineMixin:
         """Return inline-mode config (best-effort)."""
         try:
             from navig.config import get_config_manager
+            from navig.core.coerce import coerce_bool
 
             cm = get_config_manager()
             tg = cm.get("telegram") or {}
-            return {"inline_mode_enabled": tg.get("inline_mode_enabled", True)}
+            # coerce_bool: `navig config set telegram.inline_mode_enabled false` stores
+            # the string "false" (bool("false") is True), so a raw read would leave
+            # inline mode ON after the operator disabled it.
+            return {
+                "inline_mode_enabled": coerce_bool(
+                    tg.get("inline_mode_enabled", True), default=True
+                )
+            }
         except Exception:  # noqa: BLE001
             return {"inline_mode_enabled": True}

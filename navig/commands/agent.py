@@ -458,9 +458,17 @@ def agent_run(
         def _run():
             return ask_ai_with_context(task, system_prompt=agent.system_prompt, effort=effort)
 
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_run)
+        # NOT a `with` block: ThreadPoolExecutor.__exit__ calls shutdown(wait=True),
+        # which JOINS the worker — so on timeout `future.result` would raise but the
+        # block would still block until the AI call finished, DEFEATING the cap. Shut
+        # down without waiting (a Python thread can't be force-killed; the orphaned call
+        # finishes in the background) so [TIMEOUT] is surfaced at `timeout`.
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(_run)
+        try:
             response = future.result(timeout=timeout) or "[No response]"
+        finally:
+            executor.shutdown(wait=False)
     except FuturesTimeout:
         response = f"[TIMEOUT after {timeout}s]"
         if not json_output and not plain:
@@ -579,15 +587,24 @@ def agent_stop():
     """
     import signal
 
+    from navig.daemon.single_instance import pid_from_pidfile  # noqa: PLC0415
+
     pid_file = _get_agent_config_dir() / "agent.pid"
 
     if not pid_file.exists():
         ch.info("No agent PID file found. Agent may not be running.")
         return
 
-    try:
-        pid = int(pid_file.read_text(encoding="utf-8").strip())
+    # A PID file is a claim, not proof. This used to read the number and send it
+    # `taskkill /F` outright — so once the agent had exited and the OS reissued that number,
+    # `navig agent stop` force-killed a stranger and reported "Stopped agent".
+    pid = pid_from_pidfile(pid_file)
+    if pid is None:
+        ch.info("Agent is not running (stale PID file). Cleaning up.")
+        pid_file.unlink(missing_ok=True)
+        return
 
+    try:
         if sys.platform == "win32":
             import subprocess
 
@@ -597,12 +614,12 @@ def agent_stop():
 
             os.kill(pid, signal.SIGTERM)
 
-        pid_file.unlink()
+        pid_file.unlink(missing_ok=True)
         ch.success(f"Stopped agent (PID {pid})")
 
     except ProcessLookupError:
         ch.info("Agent process not found. Cleaning up PID file.")
-        pid_file.unlink()
+        pid_file.unlink(missing_ok=True)
     except Exception as e:
         ch.error(f"Failed to stop agent: {e}")
         raise typer.Exit(1) from e
@@ -626,7 +643,7 @@ def agent_status(
         if plain:
             print("not_installed")
         else:
-            ch.error("Agent not installed. Run: navig agent install")
+            ch.warning("Agent not installed. Run: navig agent install")
         return
 
     # Check if running
@@ -634,22 +651,12 @@ def agent_status(
     pid = None
 
     if pid_file.exists():
-        try:
-            pid = int(pid_file.read_text(encoding="utf-8").strip())
-            if sys.platform == "win32":
-                import subprocess
+        # Same rule as `agent stop`: a live process holding the recorded number is not
+        # evidence that it is OUR agent — a recycled PID reported the agent as running.
+        from navig.daemon.single_instance import pid_from_pidfile  # noqa: PLC0415
 
-                result = subprocess.run(
-                    ["tasklist", "/FI", f"PID eq {pid}"], capture_output=True, text=True
-                )
-                running = str(pid) in result.stdout
-            else:
-                import os
-
-                os.kill(pid, 0)  # Check if process exists
-                running = True
-        except (ProcessLookupError, ValueError):
-            running = False
+        pid = pid_from_pidfile(pid_file)
+        running = pid is not None
 
     try:
         from navig.agent import AgentConfig
@@ -729,6 +736,10 @@ def agent_status(
             print(json.dumps({"error": str(e)}))
         else:
             ch.error(f"Error reading status: {e}")
+        # Unanswerable, not an answer: "not installed" is a real status, but a
+        # status we could not read is a failure. Raised outside the plain/human
+        # split so both modes agree with the exit code.
+        raise typer.Exit(1) from e
 
 
 @agent_app.command("config")
@@ -831,8 +842,11 @@ def agent_config_cmd(
         ch.console.print()
         ch.info("Use --show for full config, --edit to modify")
 
+    except typer.Exit:
+        raise  # deliberate exit; the catch-all below would rewrite its code
     except Exception as e:
         ch.error(f"Error: {e}")
+        raise typer.Exit(1) from e
 
 
 @agent_app.command("logs")
@@ -1007,6 +1021,7 @@ def agent_personality(
     else:
         ch.error(f"Unknown action: {action}")
         ch.info("Valid: list, show, set, create")
+        raise typer.Exit(2)  # an action that does not exist is a usage error
 
 # ============================================================================
 # Telegram Bot Integration
@@ -1259,7 +1274,7 @@ def agent_remediation(
 
             if not status:
                 ch.error(f"Action not found: {action_id}")
-                return
+                raise typer.Exit(1)
 
             ch.info(f"Remediation Action: {action_id}")
             ch.console.print()
@@ -1287,6 +1302,12 @@ def agent_remediation(
     except ImportError as _exc:
         ch.error("Remediation engine not available. Make sure agent components are installed.")
         raise typer.Exit(1) from _exc
+    except typer.Exit:
+        # typer.Exit subclasses RuntimeError, so the catch-all below CATCHES it: a
+        # deliberate `raise typer.Exit(1)` above became "Failed to access remediation
+        # engine: 1" — the exit code printed as if it were an error message, over the
+        # real one. Re-raise deliberate exits before the catch-all sees them.
+        raise
     except Exception as e:
         ch.error(f"Failed to access remediation engine: {e}")
         raise typer.Exit(1) from e
@@ -1424,6 +1445,8 @@ def agent_learn(
         if error_counts.get("resource_exhausted", 0) > 0:
             ch.console.print("  • [red]Critical:[/red] Check system resources (memory, disk)")
 
+    except typer.Exit:
+        raise  # deliberate exit; the catch-all below would rewrite its code
     except Exception as e:
         ch.error(f"Learning analysis failed: {e}")
         raise typer.Exit(1) from e
@@ -1492,6 +1515,8 @@ def agent_service(
     except ImportError as _exc:
         ch.error("Service management not available. Make sure agent components are installed.")
         raise typer.Exit(1) from _exc
+    except typer.Exit:
+        raise  # deliberate exit; the catch-all below would rewrite its code
     except Exception as e:
         ch.error(f"Service operation failed: {e}")
         raise typer.Exit(1) from e
@@ -1629,6 +1654,8 @@ def agent_goal(
     except ImportError as _exc:
         ch.error("Goal planning not available. Make sure agent components are installed.")
         raise typer.Exit(1) from _exc
+    except typer.Exit:
+        raise  # deliberate exit; the catch-all below would rewrite its code
     except Exception as e:
         ch.error(f"Goal operation failed: {e}")
         raise typer.Exit(1) from e
@@ -1809,6 +1836,239 @@ NAVIG stands for "No Admin Visible In Graveyard" — I keep your systems alive a
 
 
 # ============================================================================
+# Context / prompt audit
+# ============================================================================
+
+
+def _est_tokens(text: str) -> int:
+    """Rough token estimate (~4 chars/token). Good enough to size a section."""
+    return round(len(text) / 4)
+
+
+def _first_divergence(a: str, b: str) -> int:
+    for i, (ca, cb) in enumerate(zip(a, b)):
+        if ca != cb:
+            return i
+    return min(len(a), len(b)) if a != b else -1
+
+
+def _build_context_report(message: str, persona: str, space: str) -> dict[str, Any]:
+    """Assemble the audit payload — shared by the table and ``--json`` renderers."""
+    from navig.agent.conv.guardrails import GUARDRAIL_FLOOR_VERSION, guardrails_paths
+    from navig.agent.conv.soul import get_soul_loader
+    from navig.agent.usage_tracker import read_last_turn
+    from navig.personas.soul_loader import SOURCE_LABELS, soul_candidates
+
+    loader = get_soul_loader()
+    ctx = loader.resolve(persona=persona, space=space, cwd=Path.cwd())
+
+    shadowed = {tag for tag, _path in ctx.shadowed}
+    sources: list[dict[str, Any]] = []
+    for path, tag in soul_candidates(persona or None, space or None, Path.cwd()):
+        try:
+            exists = path.exists()
+            chars = len(path.read_text(encoding="utf-8").strip()) if exists else 0
+        except (OSError, UnicodeDecodeError):
+            exists, chars = False, 0
+        if tag == ctx.source:
+            state, nxt = "active", "in use"
+        elif not exists or not chars:
+            state, nxt = "absent", "—"
+        elif tag in shadowed:
+            state = f"shadowed by {ctx.source}"
+            nxt = f"→ unset {SOURCE_LABELS.get(ctx.source, ctx.source)} to use this"
+        else:
+            state, nxt = "unused", "—"
+        sources.append(
+            {
+                "tag": tag,
+                "label": SOURCE_LABELS.get(tag, tag),
+                "path": str(path),
+                "exists": exists,
+                "chars": chars,
+                "state": state,
+                "next_step": nxt,
+            }
+        )
+
+    def _sections() -> list[tuple[str, str]]:
+        return loader.system_prompt_sections(
+            ctx.condensed,
+            guardrails=ctx.guardrails,
+            tone=ctx.tone,
+            banned_phrases=ctx.banned_phrases,
+            truncation_note=ctx.truncation_note,
+        )
+
+    # Two independent builds of the same inputs — the prefix-stability check.
+    # This is the invariant that a %H:%M timestamp in the system block violated.
+    sections = _sections()
+    prompt_a = "\n\n".join(b for _h, b in sections)
+    prompt_b = "\n\n".join(b for _h, b in _sections())
+    divergence = _first_divergence(prompt_a, prompt_b)
+
+    import hashlib
+
+    return {
+        "identity": {
+            "source": ctx.source,
+            "persona": ctx.persona,
+            "tone": ctx.tone,
+            "banned_phrases": list(ctx.banned_phrases),
+            "path": str(ctx.path) if ctx.path else None,
+            "revision": ctx.revision,
+            "truncated": bool(ctx.truncation_note),
+        },
+        "sources": sources,
+        "guardrails": {
+            "floor_version": GUARDRAIL_FLOOR_VERSION,
+            "chars": len(ctx.guardrails),
+            "operator_files": [
+                str(p) for p, _t in guardrails_paths(Path.cwd()) if p.exists()
+            ],
+        },
+        "system_sections": [
+            {"header": h, "chars": len(b), "est_tokens": _est_tokens(b), "cache": "stable"}
+            for h, b in sections
+        ],
+        "user_turn_sections": [
+            {"header": h, "cache": "volatile"}
+            for h in ("## Now", "## Active Skills", "## What I remember")
+        ],
+        "prefix": {
+            "sha256": hashlib.sha256(prompt_a.encode()).hexdigest()[:16],
+            "chars": len(prompt_a),
+            "est_tokens": _est_tokens(prompt_a),
+            "stable": divergence == -1,
+            "first_divergence": divergence if divergence >= 0 else None,
+        },
+        "last_turn": read_last_turn(),
+        "message": message,
+        "_prompt": prompt_a,
+    }
+
+
+@agent_app.command("context")
+def agent_context(
+    message: str = typer.Option("", "--message", "-m", help="Simulate this user turn"),
+    persona: str = typer.Option("", "--persona", help="Resolve as if this persona were active"),
+    space: str = typer.Option("", "--space", help="Resolve as if this space were active"),
+    show_prompt: bool = typer.Option(False, "--show-prompt", help="Print the system prompt"),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable report"),
+) -> None:
+    """Audit what actually reaches the model.
+
+    Shows which identity source won and which ones it shadowed, the size of every
+    prompt section, whether the cached prefix is byte-stable, and the cache hit
+    rate of the daemon's last real turn.
+
+    The shadow table is the point: an IDENTITY.md that is being outranked by a
+    persona looks exactly like an IDENTITY.md that is broken, until you can see it.
+
+    Examples:
+        navig agent context
+        navig agent context --persona tyler --show-prompt
+        navig agent context --json
+    """
+    report = _build_context_report(message, persona, space)
+    prompt = report.pop("_prompt")
+
+    if as_json:
+        ch.emit_json(report)
+        return
+
+    from navig.console_helper import Table
+
+    ident = report["identity"]
+
+    # ── Identity sources ────────────────────────────────────────────────────
+    tbl = Table(box=None, show_header=True, padding=(0, 2))
+    tbl.add_column("Source", no_wrap=True, style="bold")
+    tbl.add_column("Chars", no_wrap=True, justify="right")
+    tbl.add_column("State", no_wrap=True)
+    tbl.add_column("Path", overflow="fold")
+    for src in report["sources"]:
+        if src["state"] == "active":
+            state = "[green]● active[/green]"
+        elif src["state"] == "absent":
+            state = "[dim]○ absent[/dim]"
+        else:
+            state = f"[yellow]○ {src['state']}[/yellow]"
+        tbl.add_row(
+            src["label"],
+            f"{src['chars']:,}" if src["chars"] else "[dim]—[/dim]",
+            state,
+            f"[dim]{src['path']}[/dim]",
+        )
+    ch.console.print()
+    ch.console.print("[bold]Identity sources[/bold]")
+    ch.console.print(tbl)
+
+    # ── Prompt sections ─────────────────────────────────────────────────────
+    sec = Table(box=None, show_header=True, padding=(0, 2))
+    sec.add_column("Section", overflow="fold")
+    sec.add_column("Chars", no_wrap=True, justify="right")
+    sec.add_column("~Tokens", no_wrap=True, justify="right")
+    sec.add_column("Cache", no_wrap=True)
+    for s in report["system_sections"]:
+        sec.add_row(
+            s["header"], f"{s['chars']:,}", f"{s['est_tokens']:,}", "[green]stable[/green]"
+        )
+    sec.add_row("[dim]── user turn ──[/dim]", "", "", "")
+    for s in report["user_turn_sections"]:
+        sec.add_row(f"[dim]{s['header']}[/dim]", "[dim]—[/dim]", "[dim]—[/dim]", "[yellow]volatile[/yellow]")
+    ch.console.print()
+    ch.console.print("[bold]Prompt sections[/bold]")
+    ch.console.print(sec)
+
+    # ── Cache panel ─────────────────────────────────────────────────────────
+    pre = report["prefix"]
+    lines = [
+        f"stable prefix    sha256:{pre['sha256']}  ({pre['chars']:,} chars · ~{pre['est_tokens']:,} tok)",
+    ]
+    if pre["stable"]:
+        lines.append("stable x2        [green]● yes[/green]")
+    else:
+        lines.append(
+            f"stable x2        [red]✗ no — first divergence at char {pre['first_divergence']:,}[/red]"
+        )
+    gr = report["guardrails"]
+    extra = f" + {len(gr['operator_files'])} operator file(s)" if gr["operator_files"] else ""
+    lines.append(f"guardrail floor  v{gr['floor_version']} ({gr['chars']:,} chars){extra}")
+
+    last = report["last_turn"]
+    if last:
+        read, write = last.get("cache_read_tokens", 0), last.get("cache_write_tokens", 0)
+        total = read + write
+        hit = f"{round(read / total * 100)}%" if total else "n/a"
+        lines.append(f"model            {last.get('model', '?')} / {last.get('provider', '?')}")
+        lines.append(
+            f"last turn        cache_read {read:,} · cache_write {write:,} · hit {hit}"
+        )
+    else:
+        lines.append("last turn        [dim]no turn recorded yet[/dim]")
+    ch.panel("\n".join(lines), title="Prompt cache")
+
+    if show_prompt:
+        ch.console.print()
+        ch.console.print("[bold]System prompt[/bold]")
+        ch.console.print(prompt)
+
+    # ── Nudge ───────────────────────────────────────────────────────────────
+    n_shadowed = sum(1 for s in report["sources"] if "shadowed" in s["state"])
+    bits = [f"identity from [bold]{ident['source'] or 'none'}[/bold]"]
+    if ident["persona"]:
+        bits.append(f"persona [bold]{ident['persona']}[/bold]")
+    if n_shadowed:
+        bits.append(f"{n_shadowed} source(s) shadowed")
+    bits.append("prefix stable" if pre["stable"] else "[red]prefix UNSTABLE[/red]")
+    if not last:
+        bits.append("send one message, then re-run for cache stats")
+    ch.console.print()
+    ch.console.print("[dim]" + " · ".join(bits) + "[/dim]")
+
+
+# ============================================================================
 # Voice Transcription
 # ============================================================================
 
@@ -1949,7 +2209,6 @@ def agent_plan(
         navig agent plan "backup all databases" --toolsets core,devops --yes
     """
     import asyncio
-    import json as _json
 
     from navig.agent.plan_execute import PlanExecuteAgent, format_plan_report
 
@@ -2042,7 +2301,10 @@ def stop_cmd(ctx: dict[str, Any]) -> None:
 
 def config_cmd(ctx: dict[str, Any]) -> None:
     """Wrapper for agent config command (interactive menu)."""
-    agent_config_cmd(key=None, value=None, edit=False)
+    # The parameter is `set_key`, not `key` — this raised TypeError, so the interactive
+    # menu's "config" entry was dead. Values are passed explicitly because the defaults
+    # are `typer.Option(...)` objects, which a bare call would hand through as-is.
+    agent_config_cmd(edit=False, show=True, set_key=None, value=None)
 
 
 def logs_cmd(ctx: dict[str, Any]) -> None:

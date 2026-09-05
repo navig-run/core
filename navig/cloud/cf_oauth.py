@@ -21,7 +21,6 @@ import base64
 import hashlib
 import logging
 import secrets
-import threading
 import time
 import urllib.parse
 from dataclasses import dataclass

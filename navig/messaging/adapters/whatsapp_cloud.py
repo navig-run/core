@@ -107,6 +107,25 @@ class WhatsAppCloudAdapter:
     ) -> DeliveryReceipt:
         """Send a WhatsApp message via Cloud API."""
         to_number = thread_id  # thread_id == phone number for WhatsApp
+
+        # Never report success after silently dropping media. WhatsApp Cloud fetches media by
+        # public link and sends ONE media object per message: a bytes/path attachment (no url)
+        # would need a separate media-upload step that isn't implemented, and extra attachments
+        # can't ride a single message. The old code fell through to a text-only payload and
+        # still returned success() — a silent partial delivery. Refuse up front instead (the
+        # same resolve-then-refuse guard the Telegram/Discord adapters already apply).
+        if attachments:
+            if not attachments[0].get("url"):
+                return DeliveryReceipt.failure(
+                    "WhatsApp Cloud needs a public URL for media; a local bytes/path "
+                    "attachment requires a media upload first — refusing to send text-only"
+                )
+            if len(attachments) > 1:
+                return DeliveryReceipt.failure(
+                    f"WhatsApp Cloud sends one media object per message; got "
+                    f"{len(attachments)} — refusing to silently drop the rest"
+                )
+
         url = f"{_GRAPH_API}/{self._api_version}/{self._phone_number_id}/messages"
         headers = {
             "Authorization": f"Bearer {self._access_token}",

@@ -183,7 +183,9 @@ class FormatterStore:
         except Exception:
             import sqlite3
 
-            return sqlite3.connect(self._db_path, check_same_thread=False)
+            conn = sqlite3.connect(self._db_path, check_same_thread=False)
+            conn.execute("PRAGMA busy_timeout=5000")  # wait for a lock, don't error instantly
+            return conn
 
     def _ensure_schema(self) -> None:
         try:

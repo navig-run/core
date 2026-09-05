@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import pytest
-
 from navig.agent.pattern_analyzer import PatternAnalyzer, ScoredPattern
 
 # ---------------------------------------------------------------------------

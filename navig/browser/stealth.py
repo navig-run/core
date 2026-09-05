@@ -16,6 +16,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from navig.browser._paths import profile_dir
+from navig.browser._paths import screenshot_dir as _default_screenshot_dir
 from navig.browser.a11y import annotate_a11y_snapshot
 from navig.debug_logger import get_debug_logger
 
@@ -81,9 +83,9 @@ class StealthConfig:
 
     headless: bool = False  # headless=False is harder to detect for most CAPTCHAs
     channel: str = "chrome"  # use installed Chrome, not Chromium build
-    user_data_dir: str = "~/.navig/browser/profiles/stealth"
+    user_data_dir: str = field(default_factory=lambda: profile_dir("stealth"))
     timeout_ms: int = 30000
-    screenshot_dir: str = "~/.navig/screenshots"
+    screenshot_dir: str = field(default_factory=_default_screenshot_dir)
     proxy: str | None = None
     allowed_domains: list[str] = field(default_factory=list)
     blocked_domains: list[str] = field(default_factory=list)
@@ -113,7 +115,7 @@ class StealthConfig:
         return cls(
             headless=stealth_cfg.get("headless", False),
             channel=stealth_cfg.get("channel", "chrome"),
-            user_data_dir=stealth_cfg.get("user_data_dir", "~/.navig/browser/profiles/stealth"),
+            user_data_dir=stealth_cfg.get("user_data_dir") or profile_dir("stealth"),
             timeout_ms=stealth_cfg.get("timeout_seconds", 30) * 1000,
             proxy=stealth_cfg.get("proxy"),
             allowed_domains=stealth_cfg.get("allowed_domains", []),
@@ -296,14 +298,32 @@ class StealthController:
             await self.start()
 
     def _check_domain(self, url: str) -> bool:
+        """Whether *url* passes the configured block/allow lists.
+
+        The ALLOW list is matched on the registrable domain, never as a substring. Substring
+        matching let an operator's ``allowed_domains=["example.com"]`` also permit
+        ``example.com.evil.net`` (an attacker-controlled host that merely starts with it) and
+        ``notexample.com`` — a silent bypass of the guardrail. ``origin_match`` is the module
+        that already exists for this, and its rule is explicit: no fuzzy/substring matching,
+        ever; it is public-suffix aware (``a.github.io`` ≢ ``b.github.io``) and normalises IDN
+        homographs. Subdomains of an allowed domain still pass.
+
+        The BLOCK list deliberately keeps substring semantics: over-blocking is the safe
+        direction, and tightening it would silently UN-block existing config entries.
+        """
         from urllib.parse import urlparse
+
+        from navig.browser.origin_match import same_registrable_domain
 
         domain = urlparse(url).netloc.lower()
         for blocked in self.config.blocked_domains:
             if blocked.lower().replace("*", "") in domain:
                 return False
         if self.config.allowed_domains:
-            return any(a.lower().replace("*", "") in domain for a in self.config.allowed_domains)
+            return any(
+                same_registrable_domain(url, a.lower().replace("*", "").strip("."))
+                for a in self.config.allowed_domains
+            )
         return True
 
     # ── Core navigation ────────────────────────────────────────────────────────

@@ -8,7 +8,6 @@ from typing import Any
 
 import typer
 
-from navig._daemon_defaults import _GATEWAY_PORT
 from navig.lazy_loader import lazy_import
 
 ch = lazy_import("navig.console_helper")
@@ -36,11 +35,113 @@ def _gateway_request_headers() -> dict[str, str]:
     return gateway_request_headers()
 
 
+
+def _unwrap(body):
+    """Payload out of the gateway's ``json_ok`` envelope ({"ok":…,"data":…,"error":…}).
+
+    Reading a field straight off ``response.json()`` always misses — the payload is one
+    level down — and a miss looks exactly like "the daemon has nothing to report". That
+    emptied the whole flux (#713) and cron (#714) surfaces. Lazily imported to keep CLI
+    startup fast.
+
+    NOT for error bodies: ``envelope_error`` puts the message at the TOP level ``error``
+    key with ``data: None``, so an error-extraction helper must read the raw body.
+    """
+    from navig.gateway_client import unwrap_envelope
+
+    return unwrap_envelope(body)
+
+
 def _gw_request(method: str, path: str, **kwargs):
     """Send an authenticated request to the local gateway."""
     from navig.gateway_client import gateway_request
 
     return gateway_request(method, path, **kwargs)
+
+
+def _gw_api(
+    method: str,
+    path: str,
+    *,
+    action: str,
+    json_body: dict[str, Any] | None = None,
+    timeout: float = _GW_REQUEST_TIMEOUT,
+    expect_payload: bool = True,
+    not_found: str | None = None,
+    unavailable: str | None = None,
+) -> dict[str, Any]:
+    """Call the gateway API, or exit non-zero saying why.
+
+    Sixteen commands in this module carried their own copy of this block — import
+    requests, call, check for 200, branch on 404/503, catch ConnectionError — and
+    **not one failure branch exited non-zero**. 42 such paths. The worst was the
+    approval gate: ``navig approve yes <id>`` for a request that does not exist
+    printed "✗ Request … not found" and exited **0**, so
+    ``navig approve yes bogus && <proceed>`` proceeded having approved nothing.
+
+    Three inconsistencies the copies had drifted into are settled here:
+
+    * **"Gateway is not running" was a ``ch.warning`` at exit 0** in 11 copies. For
+      anything but a ``*_status`` command that is the doctor-honesty bug in CLI form:
+      "I could not look" rendered as an answer. ``queue list`` against a dead gateway
+      printed a warning and exited 0, indistinguishable from a genuinely empty queue.
+      The ``*_status`` commands keep their warning + exit 0 — there, "not running" IS
+      the verified answer, and they do not use this helper.
+    * ``gateway_session`` sniffed ``"ConnectionError" in str(type(e).__name__)``, which
+      also matches any unrelated class whose name merely contains the word and misses a
+      subclass that does not. Matched on the exception TYPE here.
+    * The 404 message was hand-written per command; pass ``not_found`` and it becomes
+      an ``Exit(2)`` (the usage class — the caller named something nonexistent).
+
+    Returns the unwrapped payload; ``{}`` when *expect_payload* is False.
+    """
+    try:
+        import requests  # noqa: PLC0415 — lazy: keeps `navig --help` fast
+    except ImportError as exc:
+        ch.error(f"Cannot {action}: the 'requests' package is not installed")
+        ch.info("Install with: pip install requests")
+        raise typer.Exit(1) from exc
+
+    kwargs: dict[str, Any] = {"timeout": timeout}
+    if json_body is not None:
+        kwargs["json"] = json_body
+    try:
+        response = _gw_request(method, path, **kwargs)
+    except requests.exceptions.ConnectionError as exc:
+        ch.error(f"Cannot {action}: the gateway is not running")
+        ch.info("Start it with: navig gateway start")
+        raise typer.Exit(1) from exc
+    except requests.exceptions.Timeout as exc:
+        ch.error(f"Cannot {action}: the gateway did not answer within {timeout:g}s")
+        raise typer.Exit(1) from exc
+    except Exception as exc:  # noqa: BLE001 — reported with its type, then exits
+        ch.error(f"Cannot {action}: {type(exc).__name__}: {exc}")
+        raise typer.Exit(1) from exc
+
+    if response.status_code == 404 and not_found:
+        ch.error(not_found)
+        raise typer.Exit(2)
+    if response.status_code == 503:
+        ch.error(unavailable or f"Cannot {action}: that gateway module is not available")
+        raise typer.Exit(1)
+    if response.status_code != 200:
+        ch.error(f"Failed to {action}: HTTP {response.status_code}")
+        detail = (response.text or "").strip()
+        if detail:
+            ch.info(f"  {detail[:300]}")
+        raise typer.Exit(1)
+
+    if not expect_payload:
+        return {}
+
+    try:
+        payload = _unwrap(response.json())
+    except Exception as exc:  # noqa: BLE001 — a 200 we cannot read is not a success
+        # Returning {} would render as "No pending requests" for a gateway that
+        # actually answered with something unreadable.
+        ch.error(f"Cannot {action}: the gateway sent a response that could not be read")
+        raise typer.Exit(1) from exc
+    return payload if isinstance(payload, dict) else {"data": payload}
 
 
 def _load_gateway_cli_defaults() -> tuple[int, str]:
@@ -56,6 +157,8 @@ def _port_holders(port: int) -> list[int]:
     import subprocess
     import sys
 
+    from navig.core.proc_text import console_encoding
+
     pids: list[int] = []
     try:
         import psutil  # type: ignore[import-untyped]
@@ -70,18 +173,32 @@ def _port_holders(port: int) -> list[int]:
             if sys.platform == "win32":
                 out = subprocess.check_output(
                     ["netstat", "-ano"],
-                    text=True,
+                    encoding=console_encoding(),
+                    errors="replace",
                     stderr=subprocess.DEVNULL,
                 )
+                # Match on COLUMNS, not on the word "LISTENING": that word is localized
+                # (Russian Windows prints ПРОСЛУШИВАНИЕ), so a substring test finds nothing
+                # on a non-English install and the port holder silently becomes "nobody".
+                # Columns are positional and locale-independent:
+                #   TCP  0.0.0.0:135  0.0.0.0:0  <state>  2300
+                # Testing the LOCAL address column is also stricter: the old
+                # `f":{port} " in line` matched the FOREIGN column too, and was saved from
+                # that only by the "LISTENING" conjunct being false for such rows.
+                # Accepting any state matches the psutil branch above, which takes LISTEN
+                # and ESTABLISHED alike — both are processes occupying the port.
                 for line in out.splitlines():
-                    if f":{port} " in line and "LISTENING" in line:
-                        parts = line.split()
-                        try:
-                            pid = int(parts[-1])
-                            if pid != os.getpid():
-                                pids.append(pid)
-                        except ValueError:
-                            pass
+                    parts = line.split()
+                    if len(parts) < 4 or not parts[0].upper().startswith("TCP"):
+                        continue
+                    if parts[1].rsplit(":", 1)[-1] != str(port):
+                        continue
+                    try:
+                        pid = int(parts[-1])
+                    except ValueError:
+                        continue
+                    if pid != os.getpid():
+                        pids.append(pid)
             else:
                 out = subprocess.check_output(
                     ["lsof", "-ti", f"tcp:{port}"],
@@ -361,16 +478,29 @@ def gateway_start(
         asyncio.run(gateway.start())
 
     except KeyboardInterrupt:
+        # Ctrl+C on a foreground gateway is how you stop it — not a failure.
         ch.info("Gateway stopped by user")
     except ImportError as e:
-        ch.error(f"Missing dependency: {e}")
+        ch.error(f"Cannot start the gateway, missing dependency: {e}")
         ch.info("Install with: pip install aiohttp")
+        raise typer.Exit(1) from e
     except Exception as e:
-        ch.error(f"Gateway error: {e}")
+        # A gateway that failed to start must not report success: `navig gateway start
+        # && navig bot status` would otherwise query a daemon that never came up.
+        ch.error(f"Gateway error: {type(e).__name__}: {e}")
+        raise typer.Exit(1) from e
 
 
 @gateway_app.command("restart")
-def gateway_restart():
+def gateway_restart(
+    admin: bool = typer.Option(
+        False,
+        "--admin",
+        "-A",
+        help="Relaunch elevated (UAC on Windows, sudo on POSIX) — needed when the "
+        "daemon is running as Administrator.",
+    ),
+):
     """Restart the NAVIG daemon/gateway (alias for `navig service restart`).
 
     Use this after upgrading or changing config so the running daemon picks up
@@ -378,7 +508,7 @@ def gateway_restart():
     """
     from navig.commands.service import service_restart
 
-    service_restart()
+    service_restart(admin=admin)
 
 
 @gateway_app.command("stop")
@@ -394,55 +524,74 @@ def gateway_stop():
     """
     # Helper: try to stop a stray gateway process via PID file
     def _try_kill_by_pid() -> bool:
-        """Check for a gateway PID file and kill the process if found. Returns True if killed."""
+        """Stop the gateway recorded in ``gateway.pid`` — if that PID is still OUR gateway.
+
+        This reached for the wrong process three separate ways:
+
+          * It read a HARDCODED ``~/.navig/gateway.pid`` while :func:`_write_gateway_pid`
+            writes ``paths.config_dir()/"gateway.pid"``. Under ``NAVIG_CONFIG_DIR`` those are
+            different files, so `navig gateway stop` against a second brain read the
+            OPERATOR'S pid and ``taskkill /F``'d their live daemon — the same "there is only
+            one navig, at ~/.navig" assumption that #173 and the ``_free_port`` fix each had
+            to close through a different door — while failing to stop the gateway it was
+            actually asked to stop.
+          * Two of its three candidate paths (``~/.navig/run/gateway.pid``,
+            ``/tmp/navig-gateway.pid``) are written by NOTHING in this codebase. On POSIX
+            ``/tmp`` is world-writable, so any local user could plant a number there and have
+            us kill it.
+          * It never checked identity, so a stale file whose PID had been recycled named a
+            stranger — and the number went straight to ``taskkill /F``.
+
+        Now: read the file the writer actually writes, require the PID to still belong to the
+        process that wrote it, and require that process to be a navig bound to OUR config dir.
+        Anything unproven returns False and the caller reports "not running", which costs
+        nothing — whereas killing the wrong PID costs a live process.
+        """
         import sys
 
-        pid_candidates = []
+        from navig.daemon.single_instance import config_dir_of, pid_from_pidfile
+        from navig.platform import paths
+
         try:
-            from pathlib import Path
-
-            home = Path.home()
-            pid_candidates = [
-                home / ".navig" / "gateway.pid",
-                home / ".navig" / "run" / "gateway.pid",
-                Path("/tmp/navig-gateway.pid"),
-            ]
+            ours = paths.config_dir().resolve()
         except Exception:  # noqa: BLE001
-            pass
+            return False
 
-        for pid_file in pid_candidates:
-            try:
-                if pid_file.exists():
-                    pid = int(pid_file.read_text(encoding="utf-8").strip())
-                    if sys.platform == "win32":
-                        import subprocess
+        pid_file = ours / "gateway.pid"
+        pid = pid_from_pidfile(pid_file)
+        if pid is None:
+            return False
 
-                        result = subprocess.run(
-                            ["taskkill", "/PID", str(pid), "/F"],
-                            capture_output=True,
-                            timeout=_GW_REQUEST_TIMEOUT,
-                        )
-                        killed = result.returncode == 0
-                    else:
-                        import os
-                        import signal
+        theirs = config_dir_of(pid)
+        if theirs is None or theirs != ours:
+            _logger.warning(
+                "gateway stop: pid %s is not our brain (%s != %s) — leaving it alone",
+                pid, theirs, ours,
+            )
+            return False
 
-                        os.kill(pid, signal.SIGTERM)
-                        killed = True
-                    if killed:
-                        try:
-                            pid_file.unlink(missing_ok=True)
-                        except Exception:  # noqa: BLE001
-                            pass
-                        return True
-            except (ProcessLookupError, ValueError):
-                try:
-                    pid_file.unlink(missing_ok=True)
-                except Exception:  # noqa: BLE001
-                    pass
-            except Exception:  # noqa: BLE001
-                pass
-        return False
+        try:
+            if sys.platform == "win32":
+                import subprocess
+
+                result = subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/F"],
+                    capture_output=True,
+                    timeout=_GW_REQUEST_TIMEOUT,
+                )
+                killed = result.returncode == 0
+            else:
+                import os
+                import signal
+
+                os.kill(pid, signal.SIGTERM)
+                killed = True
+        except (ProcessLookupError, OSError):
+            return False  # it exited between the identity check and the signal
+
+        if killed:
+            pid_file.unlink(missing_ok=True)
+        return killed
 
     try:
         import requests
@@ -478,19 +627,26 @@ def gateway_stop():
             if response.status_code == 200:
                 ch.success("Gateway shutdown signal sent")
             else:
-                ch.warning(f"Shutdown request returned status {response.status_code}")
+                # The gateway is still running: `stop` did not do its job, so it must
+                # not report success (a script would go on to start a second one).
+                ch.error(f"Shutdown request returned HTTP {response.status_code}")
                 ch.info("If running in foreground, use Ctrl+C to stop")
+                raise typer.Exit(1)
         except requests.exceptions.ConnectionError:
-            # Connection closed — gateway stopped cleanly
+            # Connection closed - the gateway went down. That IS success.
             ch.success("Gateway stopped")
+        except typer.Exit:
+            raise
         except Exception as e:
-            ch.warning(f"Could not send shutdown signal: {e}")
+            ch.error(f"Could not send the shutdown signal: {type(e).__name__}: {e}")
             ch.info("If running in foreground, use Ctrl+C to stop")
             ch.info("Or kill the process manually: pkill -f 'navig gateway'")
+            raise typer.Exit(1) from e
 
-    except ImportError:
-        ch.error("Missing dependency: requests")
+    except ImportError as exc:
+        ch.error("Cannot stop the gateway: the 'requests' package is not installed")
         ch.info("Install with: pip install requests")
+        raise typer.Exit(1) from exc
 
 
 @gateway_app.command("status")
@@ -505,12 +661,19 @@ def gateway_status(
     import json as _json
     import socket as _socket
 
+    from navig.core.coerce import coerce_bool
+
     # ── Load global config ────────────────────────────────────────────────────
     raw_cfg: dict = {}
     try:
         from navig.config import get_config_manager
 
-        raw_cfg = get_config_manager()._load_global_config()
+        # `get_global_config()`, NOT `_load_global_config()`: the latter returns the
+        # PYDANTIC-VALIDATED view and keeps only schema-declared fields. Measured
+        # against the schema: of `telegram / discord / whatsapp / comms / email /
+        # proactive / deploy`, only `telegram` survives -- the other six are dropped
+        # silently, so this read saw {} for anything the operator had configured.
+        raw_cfg = get_config_manager().get_global_config() or {}
     except Exception:  # noqa: BLE001
         pass
 
@@ -574,7 +737,11 @@ def gateway_status(
     wa_port = 29318
     wa_running = _port_alive("localhost", wa_port)
     wa_cfg = raw_cfg.get("whatsapp") or raw_cfg.get("bridges", {}).get("whatsapp", {})
-    wa_enabled = bool(wa_cfg.get("enabled") or wa_cfg.get("WHATSAPP_ENABLED"))
+    # coerce_bool, not bool(): bool("false") is True, so `config set whatsapp.enabled
+    # false` (string) would show WhatsApp as enabled in this status view.
+    wa_enabled = coerce_bool(wa_cfg.get("enabled"), default=False) or coerce_bool(
+        wa_cfg.get("WHATSAPP_ENABLED"), default=False
+    )
 
     # ── Email / SMTP ──────────────────────────────────────────────────────────
     em_cfg = raw_cfg.get("email") or raw_cfg.get("smtp") or {}
@@ -802,62 +969,47 @@ def gateway_session(
         navig gateway session show agent:default:telegram:123
         navig gateway session clear agent:default:telegram:123
     """
-    try:
-        import requests
+    if action == "list":
+        sessions = _gw_api("GET", "/sessions", action="list sessions").get("sessions", [])
+        if not sessions:
+            # No sessions is a real answer — exit 0.
+            ch.info("No active sessions")
+            return
+        ch.info(f"Active sessions ({len(sessions)}):")
+        for s in sessions:
+            ch.info(f"  • {s.get('key', 'unknown')}")
+        return
 
-        _base = _gw_base_url()
-        if action == "list":
-            response = requests.get(
-                f"{_base}/sessions",
-                headers=_gateway_request_headers(),
-                timeout=_GW_REQUEST_TIMEOUT,
-            )
-            if response.status_code == 200:
-                sessions = response.json().get("sessions", [])
-                if sessions:
-                    ch.info(f"Active sessions ({len(sessions)}):")
-                    for s in sessions:
-                        ch.info(f"  • {s.get('key', 'unknown')}")
-                else:
-                    ch.info("No active sessions")
-            else:
-                ch.error(f"Failed to list sessions: {response.status_code}")
+    if action == "show" and session_key:
+        # GET /sessions/{key} has NEVER existed — only the collection GET /sessions and
+        # the memory routes do. The route that serves a single session's contents is
+        # GET /memory/history/{session_key}.
+        session = _gw_api(
+            "GET",
+            f"/memory/history/{session_key}",
+            action=f"show session {session_key}",
+            not_found=f"Session not found: {session_key}",
+        )
+        ch.info(f"Session: {session_key}")
+        ch.console.print_json(data=session)
+        return
 
-        elif action == "show" and session_key:
-            response = requests.get(
-                f"{_base}/sessions/{session_key}",
-                headers=_gateway_request_headers(),
-                timeout=_GW_REQUEST_TIMEOUT,
-            )
-            if response.status_code == 200:
-                session = response.json()
-                ch.info(f"Session: {session_key}")
-                ch.console.print_json(data=session)
-            else:
-                ch.error(f"Session not found: {session_key}")
+    if action == "clear" and session_key:
+        # Same dead path: DELETE /sessions/{key} does not exist.
+        # DELETE /memory/sessions/{session_key} is the real one.
+        _gw_api(
+            "DELETE",
+            f"/memory/sessions/{session_key}",
+            action=f"clear session {session_key}",
+            expect_payload=False,
+            not_found=f"Session not found: {session_key}",
+        )
+        ch.success(f"Session cleared: {session_key}")
+        return
 
-        elif action == "clear" and session_key:
-            response = requests.delete(
-                f"{_base}/sessions/{session_key}",
-                headers=_gateway_request_headers(),
-                timeout=_GW_REQUEST_TIMEOUT,
-            )
-            if response.status_code == 200:
-                ch.success(f"Session cleared: {session_key}")
-            else:
-                ch.error(f"Failed to clear session: {response.status_code}")
-        else:
-            ch.error("Invalid action or missing session_key")
-            ch.info("Usage: navig gateway session list|show|clear [session_key]")
-
-    except ImportError:
-        ch.error("Missing dependency: requests")
-        ch.info("Install with: pip install requests")
-    except Exception as e:
-        if "ConnectionError" in str(type(e).__name__) or "Connection refused" in str(e):
-            ch.error("Gateway is not running. Start with: navig gateway start")
-        else:
-            ch.error(f"Error: {e}")
+    ch.error("Invalid action or missing session_key")
+    ch.info("Usage: navig gateway session list|show|clear [session_key]")
+    raise typer.Exit(2)
 
 
 # ============================================================================
@@ -1003,82 +1155,70 @@ def bot_start(
 
 @bot_app.command("status")
 def bot_status():
-    """Check if bot is running."""
-    import subprocess
-    import sys
+    """Check whether OUR bot/gateway (this config dir) is running.
 
-    patterns = r"navig\.daemon\.telegram_worker|navig\.daemon\.entry|navig gateway start"
-
+    Scoped by ``NAVIG_CONFIG_DIR`` — a daemon/gateway/worker belonging to a
+    *different* brain on the same machine is not reported as ours (nor, in
+    ``bot stop``, killed). See ``single_instance`` / the gateway supersede guard.
+    """
     try:
-        if sys.platform == "win32":
-            ps_cmd = (
-                "(Get-CimInstance Win32_Process -Filter \"Name='python.exe' OR Name='pythonw.exe'\") "
-                f"| Where-Object {{ $_.CommandLine -match '{patterns}' }} "
-                "| Select-Object -ExpandProperty ProcessId"
-            )
-            result = subprocess.run(
-                ["powershell", "-NoProfile", "-Command", ps_cmd],
-                capture_output=True,
-                text=True,
-            )
-            pids = [line.strip() for line in result.stdout.splitlines() if line.strip().isdigit()]
-            if pids:
-                ch.success("Bot appears to be running")
-                ch.info(f"  PIDs: {', '.join(pids)}")
-            else:
-                ch.warning("Bot does not appear to be running")
+        from navig.daemon.single_instance import (
+            DAEMON_PATTERNS,
+            GATEWAY_PATTERNS,
+            config_dir_of,
+            process_table,
+        )
+        from navig.platform import paths
+
+        mine = paths.config_dir().resolve()
+        pats = tuple(p.lower() for p in DAEMON_PATTERNS + GATEWAY_PATTERNS)
+        pids = [
+            pid
+            for pid, cmd in process_table()
+            if any(p in cmd.lower() for p in pats) and config_dir_of(pid) == mine
+        ]
+        if pids:
+            ch.success("Bot is running")
+            ch.info(f"  PIDs: {', '.join(str(p) for p in pids)}")
         else:
-            result = subprocess.run(["pgrep", "-f", patterns], capture_output=True, text=True)
-            if result.returncode == 0:
-                ch.success("Bot is running")
-                ch.info(f"  PIDs: {result.stdout.strip()}")
-            else:
-                ch.warning("Bot is not running")
+            # "Not running" is a verified answer for a status command — exit 0.
+            ch.warning("Bot is not running")
     except Exception as e:
-        ch.error(f"Could not check status: {e}")
+        # But "I could not check" is not an answer (the navig doctor rule).
+        ch.error(f"Could not check status: {type(e).__name__}: {e}")
+        raise typer.Exit(1) from e
 
 
 @bot_app.command("stop")
 def bot_stop():
-    """Stop all running NAVIG bot/gateway processes."""
-    import subprocess
-    import sys
+    """Stop OUR running NAVIG bot/gateway processes (this config dir only).
 
-    patterns = r"navig\.daemon\.telegram_worker|navig\.daemon\.entry|navig gateway start"
-
+    Routes through the config-dir-scoped ``kill_other_instances`` so a
+    ``navig bot stop`` run under a different ``NAVIG_CONFIG_DIR`` can NEVER
+    force-kill the operator's live brain (the documented catastrophe — the old
+    hand-rolled ``pkill -f`` / ``taskkill`` swept machine-wide, unscoped).
+    """
     try:
-        if sys.platform == "win32":
-            ps_cmd = (
-                "(Get-CimInstance Win32_Process -Filter \"Name='python.exe' OR Name='pythonw.exe'\") "
-                f"| Where-Object {{ $_.CommandLine -match '{patterns}' }} "
-                "| Select-Object -ExpandProperty ProcessId"
+        from navig.daemon.single_instance import (
+            DAEMON_PATTERNS,
+            GATEWAY_PATTERNS,
+            kill_other_instances,
+        )
+        from navig.platform import paths
+
+        killed = kill_other_instances(
+            DAEMON_PATTERNS + GATEWAY_PATTERNS, config_dir=paths.config_dir()
+        )
+        if killed:
+            ch.success(
+                f"Stopped NAVIG bot/gateway processes: {', '.join(str(p) for p in killed)}"
             )
-            find_result = subprocess.run(
-                ["powershell", "-NoProfile", "-Command", ps_cmd],
-                capture_output=True,
-                text=True,
-            )
-            pids = [
-                line.strip() for line in find_result.stdout.splitlines() if line.strip().isdigit()
-            ]
-            if not pids:
-                ch.warning("No running processes found")
-                return
-            for pid in pids:
-                subprocess.run(
-                    ["taskkill", "/PID", pid, "/T", "/F"],
-                    capture_output=True,
-                    text=True,
-                )
-            ch.success(f"Stopped NAVIG bot/gateway processes: {', '.join(pids)}")
         else:
-            result = subprocess.run(["pkill", "-f", patterns], capture_output=True, text=True)
-            if result.returncode == 0:
-                ch.success("Stopped NAVIG bot/gateway")
-            else:
-                ch.warning("No running processes found")
+            # Nothing to stop is the desired end state — idempotent, exit 0.
+            ch.warning("No running processes found")
     except Exception as e:
-        ch.error(f"Error stopping: {e}")
+        ch.error(f"Error stopping: {type(e).__name__}: {e}")
+        raise typer.Exit(1) from e
 
 
 # ============================================================================
@@ -1112,7 +1252,7 @@ def heartbeat_status():
     try:
         response = _gw_request("GET", "/status", timeout=_GW_REQUEST_TIMEOUT)
         if response.status_code == 200:
-            data = response.json()
+            data = _unwrap(response.json())
             hb = data.get("heartbeat", {})
             config = data.get("config", {})
 
@@ -1147,40 +1287,40 @@ def heartbeat_status():
                 ch.warning("Heartbeat is not running")
                 ch.info("Start gateway to enable heartbeat: navig gateway start")
         else:
-            ch.error(f"Failed to get status: {response.status_code}")
+            # A status command may answer "not running" (below) at exit 0 — that is a
+            # verified answer. An HTTP error is NOT an answer: it means we could not
+            # look, which must never exit 0. Same rule as navig doctor.
+            ch.error(f"Failed to get status: HTTP {response.status_code}")
+            raise typer.Exit(1)
+    except typer.Exit:
+        raise
     except requests.exceptions.ConnectionError:
-        ch.warning("Gateway is not running")
+        # Heartbeat runs INSIDE the gateway, so "gateway down" IS "heartbeat down" —
+        # a real answer, exit 0.
+        ch.warning("Heartbeat is not running (the gateway is not running)")
         ch.info("Start with: navig gateway start")
     except Exception as e:
-        ch.error(f"Error: {e}")
+        ch.error(f"Could not read heartbeat status: {type(e).__name__}: {e}")
+        raise typer.Exit(1) from e
 
 
 @heartbeat_app.command("trigger")
 def heartbeat_trigger():
     """Trigger an immediate heartbeat check."""
-    import requests
-
     ch.info("Triggering heartbeat check...")
 
-    try:
-        response = _gw_request("POST", "/heartbeat/trigger", timeout=300)
-        if response.status_code == 200:
-            result = response.json()
-            if result.get("suppressed"):
-                ch.success("HEARTBEAT_OK - All systems healthy")
-            elif result.get("issues"):
-                ch.warning(f"Issues found: {len(result['issues'])}")
-                for issue in result["issues"]:
-                    ch.warning(f"  • {issue}")
-            else:
-                ch.success("Heartbeat completed")
-        else:
-            ch.error(f"Heartbeat failed: {response.status_code}")
-    except requests.exceptions.ConnectionError:
-        ch.warning("Gateway is not running")
-        ch.info("Start with: navig gateway start")
-    except Exception as e:
-        ch.error(f"Error: {e}")
+    # A trigger that never reached the gateway did NOT run a check — exit non-zero.
+    # Issues *found* by a check that did run are its result, not a failure to run, so
+    # they stay exit 0.
+    result = _gw_api("POST", "/heartbeat/trigger", action="trigger a heartbeat check", timeout=300)
+    if result.get("suppressed"):
+        ch.success("HEARTBEAT_OK - All systems healthy")
+    elif result.get("issues"):
+        ch.warning(f"Issues found: {len(result['issues'])}")
+        for issue in result["issues"]:
+            ch.warning(f"  • {issue}")
+    else:
+        ch.success("Heartbeat completed")
 
 
 @heartbeat_app.command("history")
@@ -1188,35 +1328,31 @@ def heartbeat_history(
     limit: int = typer.Option(10, "--limit", "-n", help="Number of entries to show"),
 ):
     """Show heartbeat history."""
-    import requests
+    history = _gw_api(
+        "GET",
+        f"/heartbeat/history?limit={limit}",
+        action="read heartbeat history",
+    ).get("history", [])
 
-    try:
-        response = _gw_request("GET", f"/heartbeat/history?limit={limit}", timeout=_GW_REQUEST_TIMEOUT)
-        if response.status_code == 200:
-            history = response.json().get("history", [])
-            if history:
-                ch.info(f"Heartbeat history (last {len(history)}):")
-                for entry in history:
-                    status = "✅" if entry.get("success") else "❌"
-                    suppressed = " (OK)" if entry.get("suppressed") else ""
-                    issues_count = int(entry.get("issues_count") or 0)
-                    issue_tag = f" — {issues_count} issue(s)" if issues_count else ""
-                    ch.info(
-                        f"  {status} {entry.get('timestamp', '?')}{suppressed} - "
-                        f"{entry.get('duration', 0):.1f}s{issue_tag}"
-                    )
-                    # When the agent flagged something, dump the actual
-                    # issue lines so the operator sees what's wrong.
-                    for issue in entry.get("issues_found") or []:
-                        ch.info(f"     - {issue}")
-            else:
-                ch.info("No heartbeat history")
-        else:
-            ch.error(f"Failed to get history: {response.status_code}")
-    except requests.exceptions.ConnectionError:
-        ch.warning("Gateway is not running")
-    except Exception as e:
-        ch.error(f"Error: {e}")
+    if not history:
+        # No history yet is a real answer — exit 0.
+        ch.info("No heartbeat history")
+        return
+
+    ch.info(f"Heartbeat history (last {len(history)}):")
+    for entry in history:
+        status = "✓" if entry.get("success") else "✗"
+        suppressed = " (OK)" if entry.get("suppressed") else ""
+        issues_count = int(entry.get("issues_count") or 0)
+        issue_tag = f" · {issues_count} issue(s)" if issues_count else ""
+        ch.info(
+            f"  {status} {entry.get('timestamp', '?')}{suppressed} - "
+            f"{entry.get('duration', 0):.1f}s{issue_tag}"
+        )
+        # When the agent flagged something, dump the actual issue lines so the
+        # operator sees what is wrong.
+        for issue in entry.get("issues_found") or []:
+            ch.info(f"     - {issue}")
 
 
 @heartbeat_app.command("configure")
@@ -1230,19 +1366,21 @@ def heartbeat_configure(
     config_manager = ConfigManager()
 
     if interval is not None or enable is not None:
-        config = config_manager.global_config
-        if "heartbeat" not in config:
-            config["heartbeat"] = {}
+        # set_global() is the one safe dotted write (refresh → deep-set → save). This
+        # used to mutate config_manager.global_config in place and then call
+        # save_global(), which does not exist: the success lines had ALREADY printed,
+        # so the command claimed to have saved a setting it then failed to persist.
+        try:
+            if interval is not None:
+                config_manager.set_global("heartbeat.interval", interval)
+                ch.success(f"Set heartbeat interval to {interval} minutes")
 
-        if interval is not None:
-            config["heartbeat"]["interval"] = interval
-            ch.success(f"Set heartbeat interval to {interval} minutes")
-
-        if enable is not None:
-            config["heartbeat"]["enabled"] = enable
-            ch.success(f"Heartbeat {'enabled' if enable else 'disabled'}")
-
-        config_manager.save_global()
+            if enable is not None:
+                config_manager.set_global("heartbeat.enabled", enable)
+                ch.success(f"Heartbeat {'enabled' if enable else 'disabled'}")
+        except Exception as e:
+            ch.error(f"Failed to save heartbeat settings: {e}")
+            raise typer.Exit(1) from e
     else:
         config = config_manager.global_config
         hb = config.get("heartbeat", {})
@@ -1273,36 +1411,25 @@ def approve_callback(ctx: typer.Context):
 @approve_app.command("list")
 def approve_list():
     """List pending approval requests."""
-    import requests
+    pending = _gw_api("GET", "/approval/pending", action="list approvals").get("pending", [])
 
-    try:
-        response = _gw_request("GET", "/approval/pending", timeout=_GW_REQUEST_TIMEOUT)
-        if response.status_code == 200:
-            data = response.json()
-            pending = data.get("pending", [])
+    if not pending:
+        # Nothing pending is a real, successful answer — exit 0.
+        ch.info("No pending approval requests")
+        return
 
-            if not pending:
-                ch.info("No pending approval requests")
-                return
+    ch.info(f"Pending approval requests ({len(pending)}):")
+    for req in pending:
+        level_color = {
+            "confirm": "yellow",
+            "dangerous": "red",
+            "never": "bright_red",
+        }.get(req.get("level", ""), "white")
 
-            ch.info(f"Pending approval requests ({len(pending)}):")
-            for req in pending:
-                level_color = {
-                    "confirm": "yellow",
-                    "dangerous": "red",
-                    "never": "bright_red",
-                }.get(req.get("level", ""), "white")
-
-                ch.console.print(
-                    f"  [{req['id']}] {req['action']} ({req['level']}) - {req.get('description', '')}",
-                    style=level_color,
-                )
-        else:
-            ch.error(f"Failed: {response.status_code}")
-    except requests.exceptions.ConnectionError:
-        ch.warning("Gateway is not running")
-    except Exception as e:
-        ch.error(f"Error: {e}")
+        ch.console.print(
+            f"  \\[{req['id']}] {req['action']} ({req['level']}) - {req.get('description', '')}",
+            style=level_color,
+        )
 
 
 @approve_app.command("yes")
@@ -1311,25 +1438,15 @@ def approve_yes(
     reason: str = typer.Option("", "--reason", "-r", help="Optional reason"),
 ):
     """Approve a pending request."""
-    import requests
-
-    try:
-        response = _gw_request(
-            "POST",
-            f"/approval/{request_id}/respond",
-            json={"approved": True, "reason": reason},
-            timeout=_GW_REQUEST_TIMEOUT,
-        )
-        if response.status_code == 200:
-            ch.success(f"Request {request_id} approved")
-        elif response.status_code == 404:
-            ch.error(f"Request {request_id} not found")
-        else:
-            ch.error(f"Failed: {response.json().get('error', 'Unknown error')}")
-    except requests.exceptions.ConnectionError:
-        ch.warning("Gateway is not running")
-    except Exception as e:
-        ch.error(f"Error: {e}")
+    _gw_api(
+        "POST",
+        f"/approval/{request_id}/respond",
+        action=f"approve request {request_id}",
+        json_body={"approved": True, "reason": reason},
+        expect_payload=False,
+        not_found=f"Request {request_id} not found",
+    )
+    ch.success(f"Request {request_id} approved")
 
 
 @approve_app.command("no")
@@ -1338,25 +1455,15 @@ def approve_no(
     reason: str = typer.Option("", "--reason", "-r", help="Optional reason"),
 ):
     """Deny a pending request."""
-    import requests
-
-    try:
-        response = _gw_request(
-            "POST",
-            f"/approval/{request_id}/respond",
-            json={"approved": False, "reason": reason},
-            timeout=_GW_REQUEST_TIMEOUT,
-        )
-        if response.status_code == 200:
-            ch.success(f"Request {request_id} denied")
-        elif response.status_code == 404:
-            ch.error(f"Request {request_id} not found")
-        else:
-            ch.error(f"Failed: {response.json().get('error', 'Unknown error')}")
-    except requests.exceptions.ConnectionError:
-        ch.warning("Gateway is not running")
-    except Exception as e:
-        ch.error(f"Error: {e}")
+    _gw_api(
+        "POST",
+        f"/approval/{request_id}/respond",
+        action=f"deny request {request_id}",
+        json_body={"approved": False, "reason": reason},
+        expect_payload=False,
+        not_found=f"Request {request_id} not found",
+    )
+    ch.success(f"Request {request_id} denied")
 
 
 @approve_app.command("policy")
@@ -1383,10 +1490,12 @@ def approve_policy():
         ch.console.print("\n[bold bright_red]NEVER (always denied):[/bold bright_red]")
         for pattern in policy.patterns.get("never", []):
             ch.console.print(f"  • {pattern}")
-    except ImportError:
+    except ImportError as exc:
         ch.error("Approval module not available")
+        raise typer.Exit(1) from exc
     except Exception as e:
-        ch.error(f"Error: {e}")
+        ch.error(f"Could not read the approval policy: {type(e).__name__}: {e}")
+        raise typer.Exit(1) from e
 
 
 # ============================================================================
@@ -1413,45 +1522,36 @@ def queue_list(
     limit: int = typer.Option(20, "--limit", "-n", help="Max tasks to show"),
 ):
     """List queued tasks."""
-    import requests
+    tasks = _gw_api(
+        "GET",
+        "/tasks" + (f"?status={status}" if status else ""),
+        action="list tasks",
+        unavailable="Cannot list tasks: the gateway's tasks module is not available",
+    ).get("tasks", [])
 
-    try:
-        params = {"limit": limit}
-        if status:
-            params["status"] = status
+    if not tasks:
+        # An empty queue is a real, successful answer — exit 0.
+        ch.info("No tasks in queue")
+        return
 
-        response = _gw_request("GET", "/tasks", params=params, timeout=_GW_REQUEST_TIMEOUT)
-        if response.status_code == 200:
-            data = response.json()
-            tasks = data.get("tasks", [])
+    ch.info(f"Tasks ({len(tasks)}):")
+    for task in tasks:
+        status_color = {
+            "pending": "blue",
+            "queued": "cyan",
+            "running": "yellow",
+            "completed": "green",
+            "failed": "red",
+            "cancelled": "dim",
+        }.get(task.get("status", ""), "white")
 
-            if not tasks:
-                ch.info("No tasks in queue")
-                return
-
-            ch.info(f"Tasks ({len(tasks)}):")
-            for task in tasks:
-                status_color = {
-                    "pending": "blue",
-                    "queued": "cyan",
-                    "running": "yellow",
-                    "completed": "green",
-                    "failed": "red",
-                    "cancelled": "dim",
-                }.get(task.get("status", ""), "white")
-
-                ch.console.print(
-                    f"  [{task['id']}] {task['name']} - {task['status']}",
-                    style=status_color,
-                )
-        elif response.status_code == 503:
-            ch.warning("Tasks module not available")
-        else:
-            ch.error(f"Failed: {response.status_code}")
-    except requests.exceptions.ConnectionError:
-        ch.warning("Gateway is not running")
-    except Exception as e:
-        ch.error(f"Error: {e}")
+        # The id is escaped: Rich read the bare "[op-…]" as a style tag and SWALLOWED
+        # it, so `queue list` showed a task with no id — while `queue show`/`cancel`
+        # both require that id as their argument.
+        ch.console.print(
+            f"  \\[{task['id']}] {task['name']} - {task['status']}",
+            style=status_color,
+        )
 
 
 @queue_app.command("add")
@@ -1464,37 +1564,30 @@ def queue_add(
     """Add a task to the queue."""
     import json as json_mod
 
-    import requests
-
-    try:
-        task_params = {}
-        if params:
+    task_params = {}
+    if params:
+        try:
             task_params = json_mod.loads(params)
+        except json_mod.JSONDecodeError as exc:
+            ch.error(f"Invalid JSON in --params: {exc}")
+            raise typer.Exit(2) from exc
 
-        response = _gw_request(
-            "POST",
-            "/tasks",
-            json={
-                "name": name,
-                "handler": handler,
-                "params": task_params,
-                "priority": priority,
-            },
-            timeout=_GW_REQUEST_TIMEOUT,
-        )
-        if response.status_code == 200:
-            data = response.json()
-            ch.success(f"Task added: {data.get('id')}")
-        elif response.status_code == 503:
-            ch.warning("Tasks module not available")
-        else:
-            ch.error(f"Failed: {response.json().get('error', 'Unknown error')}")
-    except json_mod.JSONDecodeError:
-        ch.error("Invalid JSON in --params")
-    except requests.exceptions.ConnectionError:
-        ch.warning("Gateway is not running")
-    except Exception as e:
-        ch.error(f"Error: {e}")
+    # Through _gw_api so the json_ok envelope is unwrapped: reading .get("id") off the
+    # raw body always missed (the payload is one level down), so a successful add
+    # printed "Task added: None".
+    task = _gw_api(
+        "POST",
+        "/tasks",
+        action="add the task",
+        json_body={
+            "name": name,
+            "handler": handler,
+            "params": task_params,
+            "priority": priority,
+        },
+        unavailable="Cannot add the task: the gateway's tasks module is not available",
+    )
+    ch.success(f"Task added: {task.get('id', '(no id returned)')}")
 
 
 @queue_app.command("show")
@@ -1502,31 +1595,25 @@ def queue_show(
     task_id: str = typer.Argument(..., help="Task ID"),
 ):
     """Show task details."""
-    import requests
-
-    try:
-        response = _gw_request("GET", f"/tasks/{task_id}", timeout=_GW_REQUEST_TIMEOUT)
-        if response.status_code == 200:
-            data = response.json()
-            ch.info(f"Task: {data.get('name', 'unknown')}")
-            ch.console.print(f"  ID: {data.get('id')}")
-            ch.console.print(f"  Handler: {data.get('handler')}")
-            ch.console.print(f"  Status: {data.get('status')}")
-            ch.console.print(f"  Priority: {data.get('priority')}")
-            if data.get("error"):
-                ch.console.print(f"  Error: {data.get('error')}", style="red")
-            if data.get("result"):
-                ch.console.print(f"  Result: {data.get('result')}")
-        elif response.status_code == 404:
-            ch.error(f"Task {task_id} not found")
-        elif response.status_code == 503:
-            ch.warning("Tasks module not available")
-        else:
-            ch.error(f"Failed: {response.status_code}")
-    except requests.exceptions.ConnectionError:
-        ch.warning("Gateway is not running")
-    except Exception as e:
-        ch.error(f"Error: {e}")
+    # Through _gw_api: read off the raw body, every field below was the json_ok
+    # envelope's missing key, so a real task rendered as "Task: unknown" with a
+    # None id, handler and status.
+    data = _gw_api(
+        "GET",
+        f"/tasks/{task_id}",
+        action=f"show task {task_id}",
+        not_found=f"Task {task_id} not found",
+        unavailable="Cannot show the task: the gateway's tasks module is not available",
+    )
+    ch.info(f"Task: {data.get('name', 'unknown')}")
+    ch.console.print(f"  ID: {data.get('id')}")
+    ch.console.print(f"  Handler: {data.get('handler')}")
+    ch.console.print(f"  Status: {data.get('status')}")
+    ch.console.print(f"  Priority: {data.get('priority')}")
+    if data.get("error"):
+        ch.console.print(f"  Error: {data.get('error')}", style="red")
+    if data.get("result"):
+        ch.console.print(f"  Result: {data.get('result')}")
 
 
 @queue_app.command("cancel")
@@ -1534,57 +1621,44 @@ def queue_cancel(
     task_id: str = typer.Argument(..., help="Task ID to cancel"),
 ):
     """Cancel a pending task."""
-    import requests
-
-    try:
-        response = _gw_request("POST", f"/tasks/{task_id}/cancel", timeout=_GW_REQUEST_TIMEOUT)
-        if response.status_code == 200:
-            ch.success(f"Task {task_id} cancelled")
-        elif response.status_code == 404:
-            ch.error(f"Task {task_id} not found")
-        elif response.status_code == 503:
-            ch.warning("Tasks module not available")
-        else:
-            ch.error(f"Failed: {response.json().get('error', 'Unknown error')}")
-    except requests.exceptions.ConnectionError:
-        ch.warning("Gateway is not running")
-    except Exception as e:
-        ch.error(f"Error: {e}")
+    _gw_api(
+        "POST",
+        f"/tasks/{task_id}/cancel",
+        action=f"cancel task {task_id}",
+        expect_payload=False,
+        not_found=f"Task {task_id} not found",
+        unavailable="Cannot cancel the task: the gateway's tasks module is not available",
+    )
+    ch.success(f"Task {task_id} cancelled")
 
 
 @queue_app.command("stats")
 def queue_stats():
     """Show queue statistics."""
-    import requests
+    # _gw_api unwraps the json_ok envelope. Read off the raw body, every one of these
+    # counters was the envelope's own missing key -> a busy queue reported all zeros.
+    data = _gw_api(
+        "GET",
+        "/tasks/stats",
+        action="read queue stats",
+        unavailable="Cannot read queue stats: the gateway's tasks module is not available",
+    )
 
-    try:
-        response = _gw_request("GET", "/tasks/stats", timeout=_GW_REQUEST_TIMEOUT)
-        if response.status_code == 200:
-            data = response.json()
+    ch.info("Task Queue Statistics:")
+    ch.console.print(f"  Total tasks: {data.get('total_tasks', 0)}")
+    ch.console.print(f"  Heap size: {data.get('heap_size', 0)}")
+    ch.console.print(f"  Completed: {data.get('completed_count', 0)}")
 
-            ch.info("Task Queue Statistics:")
-            ch.console.print(f"  Total tasks: {data.get('total_tasks', 0)}")
-            ch.console.print(f"  Heap size: {data.get('heap_size', 0)}")
-            ch.console.print(f"  Completed: {data.get('completed_count', 0)}")
+    counts = data.get("status_counts", {})
+    if counts:
+        ch.console.print("\n  Status breakdown:")
+        for status, count in counts.items():
+            ch.console.print(f"    {status}: {count}")
 
-            counts = data.get("status_counts", {})
-            if counts:
-                ch.console.print("\n  Status breakdown:")
-                for status, count in counts.items():
-                    ch.console.print(f"    {status}: {count}")
-
-            worker = data.get("worker", {})
-            if worker:
-                ch.console.print("\n  Worker:")
-                ch.console.print(f"    Running: {worker.get('running', False)}")
-                ch.console.print(f"    Active tasks: {worker.get('active_tasks', 0)}")
-                ch.console.print(f"    Completed: {worker.get('tasks_completed', 0)}")
-                ch.console.print(f"    Failed: {worker.get('tasks_failed', 0)}")
-        elif response.status_code == 503:
-            ch.warning("Tasks module not available")
-        else:
-            ch.error(f"Failed: {response.status_code}")
-    except requests.exceptions.ConnectionError:
-        ch.warning("Gateway is not running")
-    except Exception as e:
-        ch.error(f"Error: {e}")
+    worker = data.get("worker", {})
+    if worker:
+        ch.console.print("\n  Worker:")
+        ch.console.print(f"    Running: {worker.get('running', False)}")
+        ch.console.print(f"    Active tasks: {worker.get('active_tasks', 0)}")
+        ch.console.print(f"    Completed: {worker.get('tasks_completed', 0)}")
+        ch.console.print(f"    Failed: {worker.get('tasks_failed', 0)}")

@@ -1,8 +1,6 @@
 """Tests for navig/routing/detect.py"""
 from __future__ import annotations
 
-import pytest
-
 from navig.llm.routing.detect import (
     _is_casual,
     _is_greeting,

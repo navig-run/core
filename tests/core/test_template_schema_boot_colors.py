@@ -1,8 +1,6 @@
 """Tests for template_manager.TemplateSchema, boot_messages, and console_helper.Colors."""
 from __future__ import annotations
 
-import pytest
-
 # ──────────────────────────────────────────────────────────────────────────────
 # template_manager.TemplateSchema.validate
 # ──────────────────────────────────────────────────────────────────────────────

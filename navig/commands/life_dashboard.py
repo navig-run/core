@@ -14,9 +14,7 @@ are wrapped in try/except so a misconfigured env never crashes the view.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
-from pathlib import Path
 
 import typer
 from rich.columns import Columns
@@ -25,7 +23,8 @@ from rich.table import Table
 from rich.text import Text
 
 from navig import console_helper as ch
-from navig.spaces.health import BUILTIN_HABITS, get_habit_template
+from navig.scheduler.habit_store import HABIT_NAME_PREFIX
+from navig.spaces.health import get_habit_template
 
 life_dashboard_app = typer.Typer(
     name="life",
@@ -34,7 +33,6 @@ life_dashboard_app = typer.Typer(
     no_args_is_help=False,
 )
 
-_HABIT_NAME_PREFIX = "habit:"
 
 
 # ── Data fetchers (all silent-fail) ───────────────────────────────────────────
@@ -165,7 +163,7 @@ def _habits_panel(habit_jobs: list[dict]) -> Panel:
         t.add_column(no_wrap=True)
         t.add_column(style="dim")
         for j in habit_jobs[:6]:
-            key = j.get("name", "").removeprefix(_HABIT_NAME_PREFIX)
+            key = j.get("name", "").removeprefix(HABIT_NAME_PREFIX)
             tmpl = get_habit_template(key)
             emoji = tmpl.emoji if tmpl else "📌"
             next_raw = j.get("next_run")
@@ -182,7 +180,7 @@ def _habits_panel(habit_jobs: list[dict]) -> Panel:
 
 
 def _schedule_panel(all_jobs: list[dict]) -> Panel:
-    upcoming = [j for j in all_jobs if not j.get("name", "").startswith(_HABIT_NAME_PREFIX)][:3]
+    upcoming = [j for j in all_jobs if not j.get("name", "").startswith(HABIT_NAME_PREFIX)][:3]
     if not upcoming:
         body = Text("No jobs scheduled.\nRun: navig cron add", style="dim")
     else:

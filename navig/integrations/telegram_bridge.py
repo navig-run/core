@@ -31,6 +31,8 @@ import asyncio
 import logging
 from pathlib import Path
 
+from navig.telegram.updates import ALLOWED_UPDATES
+
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────── lazy Telegram import ────────────────────────────
@@ -313,8 +315,15 @@ class TelegramBridge:
         async with app:
             await app.start()
             await app.updater.start_polling(
-                allowed_updates=["message", "callback_query"],
-                drop_pending_updates=True,
+                # ONE list, shared with the gateway channel and `lighthouse deploy`.
+                # `allowed_updates` is STICKY server-side: whatever the last getUpdates
+                # declared is what the bot keeps receiving, so retyping a narrower list
+                # here silently switched business_*, edited_message, channel_post and
+                # inline_query OFF for the MAIN bot — this polls the same vault token.
+                allowed_updates=ALLOWED_UPDATES,
+                # Not `True`: this shares the operator's bot, so the pending queue is
+                # not ours to discard — dropping it destroys unread inbound messages.
+                drop_pending_updates=False,
             )
             await self._stop_event.wait()  # run until stop() called
             await app.updater.stop()

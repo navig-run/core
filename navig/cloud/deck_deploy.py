@@ -26,6 +26,7 @@ import hashlib
 import json
 import logging
 import mimetypes
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -50,11 +51,102 @@ logger = logging.getLogger(__name__)
 
 DECK_WORKER_DEFAULT = "navig-deck"
 
-# A minimal Worker whose only job is to serve the bound static assets. The deck
-# is a static export, so all routing is handled by the assets layer.
-_ASSETS_WORKER = (
-    b"export default { async fetch(request, env) { return env.ASSETS.fetch(request); } };\n"
-)
+# Files that configure the asset layer rather than being served by it.
+# `_headers` is Cloudflare's header-rules format. Uploading it as an ordinary
+# asset does NOT apply it -- it just publishes the security policy at
+# `/_headers` as application/octet-stream, which is exactly what this deployment
+# used to do: the deck shipped with no CSP, no HSTS and no X-Frame-Options at
+# all, while the file sat in the repo looking authoritative. We parse it here
+# and let the shim Worker apply the headers, so `_headers` stays the single
+# source of truth and the policy is not published as a public file.
+_ASSET_CONFIG_FILES = {"/_headers"}
+
+# A minimal Worker whose only job is to serve the bound static assets, applying
+# the `_headers` rules on the way out. The deck is a static export, so all
+# routing is handled by the assets layer.
+_ASSETS_WORKER_TEMPLATE = """const HEADER_RULES = __RULES__;
+
+// Cloudflare's `_headers` matching: every rule whose pattern matches applies, in
+// file order, so a later rule overrides an earlier one for the same header.
+function headersFor(pathname) {
+  const out = {};
+  for (const [re, headers] of HEADER_RULES) {
+    if (new RegExp(re).test(pathname)) Object.assign(out, headers);
+  }
+  return out;
+}
+
+export default {
+  async fetch(request, env) {
+    const res = await env.ASSETS.fetch(request);
+    const extra = headersFor(new URL(request.url).pathname);
+    const names = Object.keys(extra);
+    if (names.length === 0) return res;
+    const headers = new Headers(res.headers);
+    for (const name of names) headers.set(name, extra[name]);
+    return new Response(res.body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers,
+    });
+  },
+};
+"""
+
+
+def _pattern_to_regex(pattern: str) -> str:
+    """Cloudflare `_headers` path pattern -> an anchored JS regex source.
+
+    Supports the forms this repo actually uses -- an exact path (`/connect`) and
+    a `*` wildcard (`/*`, `/_next/static/*`). Every other character is escaped,
+    so an unfamiliar pattern degrades to "matches only itself" rather than to
+    "matches everything", which is the safe direction for a header rule.
+    """
+    out = ["^"]
+    for ch in pattern:
+        out.append(".*" if ch == "*" else re.escape(ch))
+    out.append("$")
+    return "".join(out)
+
+
+def parse_headers_file(text: str) -> list[tuple[str, dict[str, str]]]:
+    """Parse a Cloudflare `_headers` file into ``[(pattern, {name: value})]``.
+
+    Format: a line starting with `/` opens a rule; indented `Name: value` lines
+    belong to it. `#` comments and blank lines are ignored. A header line before
+    any pattern, or a rule with no headers, is dropped rather than guessed at.
+    """
+    rules: list[tuple[str, dict[str, str]]] = []
+    current: dict[str, str] | None = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("/"):
+            current = {}
+            rules.append((line.split()[0], current))
+            continue
+        if current is None or ":" not in line:
+            continue  # a header before any pattern has nothing to attach to
+        name, _, value = line.partition(":")
+        name, value = name.strip(), value.strip()
+        if name and value:
+            current[name] = value
+    return [(pat, hdrs) for pat, hdrs in rules if hdrs]
+
+
+def build_assets_worker(out_dir: Path) -> bytes:
+    """The shim Worker, with this build's `_headers` rules compiled in."""
+    src = out_dir / "_headers"
+    rules: list[tuple[str, dict[str, str]]] = []
+    if src.is_file():
+        try:
+            rules = parse_headers_file(src.read_text(encoding="utf-8", errors="replace"))
+        except OSError as exc:  # unreadable is not the same as absent -- say so
+            logger.warning("could not read %s: %r -- deploying without header rules", src, exc)
+    compiled = [[_pattern_to_regex(pat), hdrs] for pat, hdrs in rules]
+    return _ASSETS_WORKER_TEMPLATE.replace("__RULES__", json.dumps(compiled)).encode("utf-8")
+
 
 # Cloudflare's asset manifest hash: hex SHA-256 of the file, first 32 chars.
 _HASH_LEN = 32
@@ -74,8 +166,15 @@ def _hash_bytes(data: bytes) -> str:
 
 def _iter_files(root: Path):
     for p in sorted(root.rglob("*")):
-        if p.is_file():
-            yield "/" + p.relative_to(root).as_posix(), p
+        if not p.is_file():
+            continue
+        rel = "/" + p.relative_to(root).as_posix()
+        if rel in _ASSET_CONFIG_FILES:
+            # Configuration for the asset layer, not content. Uploading it would
+            # publish the security policy at its own URL without applying it --
+            # `build_assets_worker` compiles these rules into the Worker instead.
+            continue
+        yield rel, p
 
 
 def build_manifest(out_dir: Path) -> tuple[dict[str, dict[str, Any]], dict[str, tuple[str, bytes, str]]]:
@@ -130,19 +229,29 @@ def _upload_buckets(
     return completion
 
 
-def _put_assets_worker(token: str, acc: str, name: str, completion_jwt: str) -> None:
+def _put_assets_worker(
+    token: str, acc: str, name: str, completion_jwt: str, *, script: bytes
+) -> None:
     metadata = {
         "main_module": "index.js",
         "compatibility_date": COMPAT_DATE,
         "bindings": [{"type": "assets", "name": "ASSETS"}],
         "assets": {
             "jwt": completion_jwt,
-            "config": {"html_handling": "auto-trailing-slash", "not_found_handling": "404-page"},
+            "config": {
+                "html_handling": "auto-trailing-slash",
+                "not_found_handling": "404-page",
+                # Without this the asset layer answers matching requests DIRECTLY and
+                # the Worker is never invoked — so the header rules compiled into it
+                # applied to nothing anyone actually loads. Measured: a non-asset path
+                # carried the full CSP while `/` carried no headers at all.
+                "run_worker_first": True,
+            },
         },
     }
     files = {
         "metadata": ("metadata.json", json.dumps(metadata), "application/json"),
-        "index.js": ("index.js", _ASSETS_WORKER, "application/javascript+module"),
+        "index.js": ("index.js", script, "application/javascript+module"),
     }
     resp = requests.put(
         f"{CF_API}/accounts/{acc}/workers/scripts/{name}",
@@ -181,7 +290,9 @@ def deploy(
     if not completion:
         raise DeployError("Cloudflare did not return an assets completion token")
 
-    _put_assets_worker(token, acc, worker_name, completion)
+    _put_assets_worker(
+        token, acc, worker_name, completion, script=build_assets_worker(out)
+    )
     enable_workers_dev(token, acc, worker_name)
 
     return DeckDeployResult(

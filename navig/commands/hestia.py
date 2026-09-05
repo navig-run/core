@@ -8,6 +8,7 @@ import json
 import shlex
 from typing import Any
 
+import typer
 from rich.table import Table
 
 from navig import console_helper as ch
@@ -69,7 +70,7 @@ def list_users_cmd(options: dict[str, Any]):
         ch.dim("")
         ch.dim("  To verify installation:")
         ch.dim(f'    navig --host {server_name} run "command -v v-list-users"')
-        return
+        raise typer.Exit(1)
 
     # List users
     cmd = "v-list-users json"
@@ -110,8 +111,9 @@ def list_users_cmd(options: dict[str, Any]):
             ch.console.print(table)
             ch.dim(f"\nTotal: {len(users_data)} users")
 
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
         ch.error("Failed to parse HestiaCP output")
+        raise typer.Exit(1) from exc
 
 
 def list_domains_cmd(user: str | None, options: dict[str, Any]):
@@ -143,7 +145,7 @@ def list_domains_cmd(user: str | None, options: dict[str, Any]):
             ch.dim("")
             ch.dim("  To verify installation:")
             ch.dim(f'    navig --host {server_name} run "command -v v-list-users"')
-            return
+            raise typer.Exit(1)
 
         try:
             users_data = json.loads(users_result["output"])
@@ -184,9 +186,9 @@ def list_domains_cmd(user: str | None, options: dict[str, Any]):
 
             return
 
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
             ch.error("Failed to parse users data")
-            return
+            raise typer.Exit(1) from exc
 
     # Single user domains
     result = _execute_hestia_cmd(cmd, server_config, options)
@@ -229,8 +231,9 @@ def list_domains_cmd(user: str | None, options: dict[str, Any]):
             ch.console.print(table)
             ch.dim(f"\nTotal: {len(domains_data)} domains")
 
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
         ch.error("Failed to parse domains data")
+        raise typer.Exit(1) from exc
 
 
 def add_user_cmd(username: str, password: str, email: str, options: dict[str, Any]):
@@ -272,6 +275,13 @@ def add_user_cmd(username: str, password: str, email: str, options: dict[str, An
         return True
 
     # Execute
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    # Placed AFTER the --dry-run early return above: a dry run prints what it would do
+    # and touches nothing, so it must not contend for the lock.
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, f"navig hestia add-user: {username}")
+
     result = _execute_hestia_cmd(cmd, server_config, options)
 
     if result["success"]:
@@ -323,6 +333,13 @@ def delete_user_cmd(username: str, options: dict[str, Any]):
 
     # Execute
     cmd = f"v-delete-user {username}"
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    # Placed AFTER the --dry-run early return above: a dry run prints what it would do
+    # and touches nothing, so it must not contend for the lock.
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, f"navig hestia delete-user: {username}")
+
     result = _execute_hestia_cmd(cmd, server_config, options)
 
     if result["success"]:
@@ -363,6 +380,13 @@ def add_domain_cmd(user: str, domain: str, options: dict[str, Any]):
         else:
             ch.info(f"[DRY RUN] Would add domain: {domain} to user: {user}")
         return True
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    # Placed AFTER the --dry-run early return above: a dry run prints what it would do
+    # and touches nothing, so it must not contend for the lock.
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, f"navig hestia add-domain: {domain}")
 
     result = _execute_hestia_cmd(cmd, server_config, options)
 
@@ -413,6 +437,13 @@ def delete_domain_cmd(user: str, domain: str, options: dict[str, Any]):
             return False
 
     cmd = f"v-delete-web-domain {user} {domain}"
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    # Placed AFTER the --dry-run early return above: a dry run prints what it would do
+    # and touches nothing, so it must not contend for the lock.
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, f"navig hestia delete-domain: {domain}")
+
     result = _execute_hestia_cmd(cmd, server_config, options)
 
     if result["success"]:
@@ -454,6 +485,13 @@ def renew_ssl_cmd(user: str, domain: str, options: dict[str, Any]):
             ch.info(f"[DRY RUN] Would renew SSL for: {domain}")
         return True
 
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    # Placed AFTER the --dry-run early return above: a dry run prints what it would do
+    # and touches nothing, so it must not contend for the lock.
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, f"navig hestia renew-ssl: {domain}")
+
     result = _execute_hestia_cmd(cmd, server_config, options)
 
     if result["success"]:
@@ -493,6 +531,13 @@ def rebuild_web_cmd(user: str, options: dict[str, Any]):
         else:
             ch.info(f"[DRY RUN] Would rebuild web config for: {user}")
         return True
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    # Placed AFTER the --dry-run early return above: a dry run prints what it would do
+    # and touches nothing, so it must not contend for the lock.
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, f"navig hestia rebuild-web: {user}")
 
     result = _execute_hestia_cmd(cmd, server_config, options)
 
@@ -535,6 +580,13 @@ def backup_user_cmd(user: str, options: dict[str, Any]):
         return True
 
     ch.info(f"Creating backup for: {user}")
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    # Placed AFTER the --dry-run early return above: a dry run prints what it would do
+    # and touches nothing, so it must not contend for the lock.
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, f"navig hestia backup-user: {user}")
+
     result = _execute_hestia_cmd(cmd, server_config, options)
 
     if result["success"]:

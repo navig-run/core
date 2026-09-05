@@ -1,8 +1,6 @@
 ﻿"""Tests for navig/tui/widgets/check_row.py."""
 from __future__ import annotations
 
-import pytest
-
 
 class TestCheckRow:
     def _row(self):

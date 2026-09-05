@@ -192,6 +192,9 @@ def test_should_skip_plugin_loading_for_help_with_topic():
 
 
 def test_main_does_not_duplicate_profile_registration(monkeypatch):
+    # The code under test sets NAVIG_INVOCATION_CWD directly, so hand the key to monkeypatch or
+    # it survives teardown into every later test in this xdist worker.
+    monkeypatch.setenv("NAVIG_INVOCATION_CWD", "")
     import navig.cli as cli_mod
     import navig.main as main_mod
 

@@ -24,6 +24,12 @@ flow_app = typer.Typer(
 @flow_app.callback()
 def flow_callback(ctx: typer.Context):
     """Flow management - run without subcommand for help."""
+    # Nine sibling modules already do this. The root `navig` callback ensures the dict,
+    # so through the real CLI this is a no-op; it matters when the sub-app is reached
+    # directly (a test, a programmatic invoke), where `ctx.obj[...]` would otherwise
+    # die with "'NoneType' object does not support item assignment" — a crash that is
+    # also non-zero, so an exit-code assertion can pass for entirely the wrong reason.
+    ctx.ensure_object(dict)
     if ctx.invoked_subcommand is None:
         show_subcommand_help("flow", ctx)
         raise typer.Exit()

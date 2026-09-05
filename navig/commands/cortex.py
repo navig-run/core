@@ -72,7 +72,8 @@ def run_cortex(
     """Start the Cortex Hybrid Brain Loop on a specific goal."""
     ch.header(f"🧠 NAVIG Cortex\nGoal: {goal}")
 
-    async def _run():
+    async def _run() -> bool:
+        """True when the goal was reached. The caller turns that into the exit code."""
         from navig.browser.controller import BrowserConfig
         from navig.browser.template_runner import TemplateRunner
 
@@ -94,6 +95,7 @@ def run_cortex(
                 tmpl = runner.find_template(start_url)
 
             if tmpl:
+                template_failures = 0
                 ch.success(f"📋 Template match: {tmpl.get('site')} ({tmpl.get('_file')})")
                 ch.info(f"Navigating to {start_url} ...")
                 await driver.navigate(start_url)
@@ -115,28 +117,35 @@ def run_cortex(
                     ch.info("Running template: login flow")
                     results = await runner.run_flow(tmpl, "login", variables)
                     for r in results:
-                        icon = "✓" if r["ok"] else "✗"
-                        ch.success(
-                            f"  {icon} {r['action']} → {r.get('selector', {}).get('value', '')[:50]}"
-                        )
-                        if not r["ok"]:
+                        # A failed step used to print through ch.success with a ✗ in
+                        # the text — green for a step that did not happen.
+                        target = r.get("selector", {}).get("value", "")[:50]
+                        if r["ok"]:
+                            ch.success(f"  ✓ {r['action']} → {target}")
+                        else:
+                            ch.error(f"  ✗ {r['action']} → {target}")
                             ch.warning(f"    Error: {r.get('error')}")
+                            template_failures += 1
 
                 # Run post if text provided and flow exists
                 if "post" in flows and post_text:
                     ch.info("Running template: post flow")
                     results = await runner.run_flow(tmpl, "post", variables)
                     for r in results:
-                        icon = "✓" if r["ok"] else "✗"
-                        ch.success(f"  {icon} {r['action']}")
+                        if r["ok"]:
+                            ch.success(f"  ✓ {r['action']}")
+                        else:
+                            ch.error(f"  ✗ {r['action']} — {r.get('error')}")
+                            template_failures += 1
 
                 await driver.stop()
                 ch.dim("Session closed.")
-                return  # Done — no AI loop needed
+                return template_failures == 0  # done — no AI loop needed
 
         # ── AI Loop (fallback or explicit) ────────────────────────────────
         orchestrator = CortexOrchestrator(goal=goal, driver=driver)
         last_step_result: dict | None = None
+        achieved = False
 
         try:
             ch.info(f"Navigating to {start_url} ...")
@@ -158,7 +167,7 @@ def run_cortex(
                     )
                 except Exception as exc:
                     ch.error(f"Orchestrator error: {exc}")
-                    break
+                    break  # achieved stays False — the run did not finish the goal
 
                 if not action_json:
                     ch.error("No action produced.")
@@ -180,6 +189,7 @@ def run_cortex(
                 # ── Terminal actions ──────────────────────────────────────
                 if action_type == "done":
                     ch.success("✅ Goal achieved.")
+                    achieved = True
                     break
                 if action_type in ("fail", "error"):
                     ch.error(f"❌ {action_json.get('error') or reason}")
@@ -225,7 +235,13 @@ def run_cortex(
             await driver.stop()
             ch.dim("Session closed.")
 
-    asyncio.run(_run())
+        return achieved
+
+    # Every way out of that loop except `done` is a failure — the brain gave up, an
+    # action failed, the step budget ran out — and each printed its reason and exited 0.
+    # `navig cortex "…" && <next step>` ran the next step on a task that never happened.
+    if not asyncio.run(_run()):
+        raise typer.Exit(1)
 
 
 # ── Action executor with fallback selector chain ──────────────────────────────

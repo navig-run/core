@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
-import os
 import subprocess
 import urllib.parse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
@@ -56,9 +55,43 @@ function open_(i){const o=document.getElementById('ov');const u='/media?p='+enco
 
 
 def _thumb_cache() -> Path:
-    d = Path(os.environ.get("TEMP", "/tmp")) / "navig-browse-thumbs"
+    """Where generated thumbnails live: the user's OWN cache dir.
+
+    This used to be `<shared temp>/navig-browse-thumbs`. On a multi-user box the first
+    account to browse creates that directory and every other account then writes its
+    thumbnails into it — or cannot. `cache_dir()` is per-user and is where the rest of
+    navig already caches derived media (see media_engine/media_cache.py).
+    """
+    from navig.platform.paths import cache_dir  # noqa: PLC0415
+
+    d = cache_dir() / "browse-thumbs"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def thumb_path(cache: Path, target: Path) -> Path:
+    """Cache path for *target*'s thumbnail, keyed by its ABSOLUTE location.
+
+    The key was `md5(rel)` — the path RELATIVE to the browsed root — so two different
+    folders holding the same relative name (`img1.jpg`, `DCIM/100.jpg`) collided in one
+    shared cache: browse folder A, then folder B, and B's listing showed A's picture.
+    Keying on the resolved absolute path makes the entry belong to one real file.
+    """
+    return cache / (hashlib.md5(str(target.resolve()).encode("utf-8")).hexdigest() + ".jpg")
+
+
+def _thumb_is_stale(cached: Path, target: Path) -> bool:
+    """True when the source has been modified since its thumbnail was written.
+
+    Without this the cache was write-once: edit or replace a photo and the gallery kept
+    showing the old thumbnail forever. Comparing mtimes regenerates in place, so this
+    costs no extra disk (unlike folding mtime into the key, which would orphan an entry
+    per edit).
+    """
+    try:
+        return target.stat().st_mtime > cached.stat().st_mtime
+    except OSError:
+        return True  # cannot tell ⇒ regenerate; a wrong thumbnail is worse than a redo
 
 
 def _kind(p: Path) -> str | None:
@@ -72,7 +105,12 @@ def _kind(p: Path) -> str | None:
     return None
 
 
-def serve(root: Path, port: int = 8770) -> None:
+def serve(root: Path, port: int | None = None, open_browser: bool = False) -> None:
+    """``port=None`` prefers 8770 and falls back to a free port (OS-reserved ranges).
+
+    The URL is only known after binding, so the browser is opened here rather than by
+    the caller — otherwise an auto-picked port would be advertised as ``localhost:None``.
+    """
     root = root.resolve()
     items = []
     for p in root.rglob("*"):
@@ -121,8 +159,8 @@ def serve(root: Path, port: int = 8770) -> None:
             if not tgt:
                 return self._b(404, "x", "text/plain")
             k = _kind(tgt)
-            cp = cache / (hashlib.md5(rel.encode()).hexdigest() + ".jpg")
-            if not cp.exists():
+            cp = thumb_path(cache, tgt)
+            if not cp.exists() or _thumb_is_stale(cp, tgt):
                 try:
                     if k == "image" and _HAVE_PIL:
                         im = Image.open(tgt).convert("RGB")
@@ -180,6 +218,14 @@ def serve(root: Path, port: int = 8770) -> None:
             except (BrokenPipeError, ConnectionResetError):
                 pass
 
-    srv = ThreadingHTTPServer(("127.0.0.1", port), H)
-    print(f"  Browsing {len(items)} media files → http://localhost:{port}")
+    from navig.http_bind import bind_http_server  # noqa: PLC0415
+    srv, port = bind_http_server(H, port, preferred=8770)
+    url = f"http://localhost:{port}"
+    print(f"  Browsing {len(items)} media files → {url}")
+    if open_browser:
+        try:
+            import webbrowser  # noqa: PLC0415
+            webbrowser.open(url)
+        except Exception:  # noqa: BLE001
+            pass
     srv.serve_forever()

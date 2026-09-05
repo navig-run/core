@@ -43,10 +43,21 @@ def _resolve_telegram_token_from_legacy_store() -> str:
         from navig.vault import get_vault
 
         vault = get_vault()
-        for key in ("token", "bot_token", "api_key"):
-            secret = vault.get_secret("telegram", key, caller="messaging.telegram_token")
-            if secret:
-                token = (secret.reveal() or "").strip()
+        # `Vault.get_secret(label)` takes ONE argument; this passed three plus a `caller=`
+        # it has never defined, so the loop raised TypeError on its first iteration and
+        # this legacy resolver returned nothing without ever reading the vault.
+        # `Vault.get(provider, …)` returns the whole credential — fetch once, then try
+        # each field, rather than paying a lookup per key.
+        # Guarded on its own so a failure here still falls through to the provider scan
+        # below — the two lookups are independent, and collapsing them under one handler
+        # would make a miss in the first skip the second.
+        try:
+            cred = vault.get("telegram", caller="messaging.telegram_token")
+        except Exception:  # noqa: BLE001 - best-effort legacy resolver
+            cred = None
+        if cred is not None:
+            for key in ("token", "bot_token", "api_key"):
+                token = str(getattr(cred, "data", {}).get(key) or "").strip()
                 if token:
                     return token
 
@@ -204,10 +215,14 @@ def _resolve_telegram_uid_from_legacy_store() -> str | None:
         from navig.vault import get_vault
 
         vault = get_vault()
-        for key in ("user_id", "uid"):
-            secret = vault.get_secret("telegram", key, caller="messaging.telegram_uid")
-            if secret:
-                uid = (secret.reveal() or "").strip()
+        # Same defect as the token resolver above — see the comment there.
+        try:
+            cred = vault.get("telegram", caller="messaging.telegram_uid")
+        except Exception:  # noqa: BLE001 - best-effort legacy resolver
+            cred = None
+        if cred is not None:
+            for key in ("user_id", "uid"):
+                uid = str(cred.data.get(key) or "").strip()
                 if uid:
                     return uid
     except Exception:

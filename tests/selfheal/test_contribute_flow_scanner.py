@@ -10,8 +10,6 @@ Coverage targets:
 
 from __future__ import annotations
 
-import pytest
-
 from navig.bot.contribute_flow import (
     _APPROVAL_SEVERITIES,
     _MDV2_ESCAPE_CHARS,

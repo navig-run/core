@@ -542,29 +542,14 @@ class WorkspaceManager:
         except Exception:
             return False
 
-    def build_system_prompt(self, base_prompt: str = "") -> str:
-        """
-        Build a complete system prompt with workspace context.
-
-        Args:
-            base_prompt: Base system prompt to extend
-
-        Returns:
-            Complete system prompt with injected workspace context
-        """
-        parts = []
-
-        # Add base prompt if provided
-        if base_prompt:
-            parts.append(base_prompt)
-
-        # Add workspace context
-        if self.is_initialized():
-            workspace_content = self.get_bootstrap_content()
-            if workspace_content:
-                parts.append("\n\n# Agent Context\n\n" + workspace_content)
-
-        return "\n".join(parts)
+    # NOTE: ``build_system_prompt()`` used to live here — it concatenated
+    # IDENTITY.md + SOUL.md + AGENTS.md into a system prompt with no guardrail
+    # floor and no truncation, and it had **zero callers** (not even a test).
+    # Prompt assembly now belongs to exactly two renderers, both of which emit the
+    # floor first: ``navig.agent.conv.soul.SoulLoader`` (chat) and
+    # ``NavigGateway._build_system_prompt`` (deep agent). A third builder that
+    # nobody calls is a hole waiting for a caller — see
+    # ``tests/agent/test_guardrail_floor_every_surface.py``.
 
     def add_memory(self, key: str, value: str) -> bool:
         """

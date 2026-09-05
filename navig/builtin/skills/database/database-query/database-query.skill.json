@@ -4,7 +4,7 @@
   "user_invocable": true,
   "navig-commands": [
     "navig db query \"{sql}\" -d {database}",
-    "navig db databases",
+    "navig db list",
     "navig db tables {database}",
     "navig db dump {database}"
   ],

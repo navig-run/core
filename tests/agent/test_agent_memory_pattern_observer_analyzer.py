@@ -5,9 +5,6 @@ Batch 80: navig/agent/memory.py, navig/agent/pattern_observer.py,
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # agent/memory.py

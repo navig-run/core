@@ -350,7 +350,9 @@ class TestRollbackManager:
         assert "/var/backups/myapp/" in rec.path
         calls = [call[0][0] for call in remote.execute_command.call_args_list]
         assert any("mkdir" in c for c in calls)
-        assert any("cp -r" in c for c in calls)
+        # `cp -a`, not `cp -r`: `-r` resets every timestamp and drops ownership, so a
+        # restored snapshot did not match the deployment it replaced.
+        assert any("cp -a" in c for c in calls)
 
     def test_create_snapshot_returns_none_when_disabled(self, tmp_path):
         remote = MagicMock()
@@ -388,8 +390,14 @@ class TestRollbackManager:
 
         assert ok is True
         call_args = remote.execute_command.call_args[0][0]
-        assert "rm -rf /var/www/myapp" in call_args
-        assert "mv /var/backups/myapp/20260317_142233 /var/www/myapp" in call_args
+        # This used to assert `rm -rf <target> && mv <snapshot> <target>` — i.e. it
+        # pinned a restore that deletes the deployment before knowing it can be
+        # replaced, and that consumes the snapshot so a second rollback has nothing.
+        # The snapshot is now COPIED into place after the current deployment has been
+        # staged aside. See tests/deploy/test_rollback_restore_safety.py.
+        assert "cp -a /var/backups/myapp/20260317_142233 /var/www/myapp" in call_args
+        assert "mv /var/www/myapp /var/www/myapp.navig-rollback-tmp" in call_args
+        assert "mv /var/backups/myapp/20260317_142233 /var/www/myapp" not in call_args
 
     def test_restore_snapshot_no_snapshot_returns_false(self, tmp_path):
         remote = MagicMock()

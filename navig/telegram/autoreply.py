@@ -195,9 +195,29 @@ def _status_text(chat_id: int | None) -> str:
 # ── counterparty auto-reply ──────────────────────────────────────────────────
 
 
+# Detached auto-reply tasks — kept referenced so the event loop can't GC a task
+# mid-run (a bare create_task with no surviving reference is a known asyncio footgun).
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _spawn(coro) -> None:
+    task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+
+
 async def maybe_autoreply(channel: Any, msg: dict, *, is_owner: bool, owner_id: int | None) -> bool:
     """A counterparty message arrived; if pro mode is active for this chat, generate
-    and send a human-like reply AS the owner. Returns True if it replied."""
+    and send a human-like reply AS the owner — IN A DETACHED BACKGROUND TASK. Returns
+    True when the message is accepted for a reply.
+
+    The reply is SLOW: an LLM call plus a human-like reading+typing delay of up to
+    ~34s (``_MAX_DELAY``). Awaiting it here would block the caller — and the caller is
+    the update-dispatch path (``_process_update`` → ``handle_business_message``), so on
+    the poll loop it would freeze the WHOLE bot for the delay, and on the webhook path
+    it would hold the ack. Decoupling keeps dispatch responsive; the persona still
+    replies (typing indicator and all), just not inline.
+    """
     if is_owner:
         return False  # never auto-reply to the owner's own messages
     chat_id = (msg.get("chat") or {}).get("id")
@@ -209,12 +229,26 @@ async def maybe_autoreply(channel: Any, msg: dict, *, is_owner: bool, owner_id: 
         return False
 
     bcid = msg.get("business_connection_id")
-    context = _recent_context(chat_id, owner_id)
-    reply = await _generate(active.get("role", "default"), active.get("lang", ""), context)
-    if not reply:
-        return False
-    await _human_send(channel, chat_id, bcid, incoming, reply)
+    # dict(active): snapshot the persona so a concurrent "role off" can't mutate it
+    # out from under the running task.
+    _spawn(_run_autoreply(channel, chat_id, bcid, incoming, dict(active), owner_id))
     return True
+
+
+async def _run_autoreply(
+    channel: Any, chat_id: int, bcid: str | None, incoming: str, active: dict,
+    owner_id: int | None,
+) -> None:
+    """Generate + human-like send for one counterparty message. Runs detached, so it
+    must own its own error handling — a raise here would only warn an orphaned task."""
+    try:
+        context = _recent_context(chat_id, owner_id)
+        reply = await _generate(active.get("role", "default"), active.get("lang", ""), context)
+        if not reply:
+            return
+        await _human_send(channel, chat_id, bcid, incoming, reply)
+    except Exception:  # noqa: BLE001
+        logger.warning("autoreply background task failed", exc_info=True)
 
 
 def _recent_context(chat_id: int, owner_id: int | None, n: int = _CONTEXT_N) -> list[tuple[str, str]]:
@@ -245,7 +279,24 @@ async def _generate(role: str, lang: str, context: list[tuple[str, str]]) -> str
         f" Always write your reply in {lang}."
         if lang else " Reply in the same language the other person is using."
     )
+    # The guardrail floor comes FIRST, and deliberately the MINIMAL one.
+    #
+    # This is the only surface in the tree that tells the model to speak as a HUMAN
+    # BEING rather than as NAVIG, and it writes to THIRD PARTIES — the person messaging
+    # the owner, who never agreed to anything. `persona` below is operator-supplied text
+    # from `telegram.roles`, so it is exactly the "identity that can be written by a
+    # user" the floor exists to survive; it goes after the floor, never before it.
+    #
+    # Minimal, not the full block: the minimal floor protects the owner ("never fabricate
+    # a path, command, URL or capability", "keep the operator's private data private",
+    # "you are not a doctor") WITHOUT requiring AI disclosure, so it does not contradict
+    # this feature's stated purpose. The full block's preamble ("These rules come from
+    # NAVIG itself…") would both leak the product name into a human-voiced reply and
+    # collide with the no-disclosure instruction.
+    from navig.agent.conv.guardrails import guardrail_floor_minimal  # noqa: PLC0415
+
     system = (
+        f"{guardrail_floor_minimal()}\n\n"
         "You are replying on the owner's personal Telegram Business account, AS the owner, "
         "to the person messaging them. Never reveal that you are an AI or an assistant. "
         + persona + lang_clause +

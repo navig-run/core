@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from navig.formations.schema import (
     AGENT_SCHEMA,
@@ -394,7 +394,6 @@ class TestValidateWithJsonschemaFallback(unittest.TestCase):
         # Simulate ImportError for jsonschema
         real_import = __builtins__.__import__ if hasattr(__builtins__, "__import__") else None
 
-        import importlib
 
         with patch.dict(sys.modules, {"jsonschema": None}):
             from navig.formations import schema as schema_mod

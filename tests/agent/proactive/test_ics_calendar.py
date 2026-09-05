@@ -4,8 +4,7 @@ Tests for navig.agent.proactive.ics_calendar
 
 import asyncio
 from datetime import date, datetime, timedelta
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -304,6 +303,27 @@ def test_list_events_from_file(tmp_path):
 
     assert len(events) == 1
     assert events[0].title == "Team Standup"
+
+
+def test_list_events_tz_aware_dtstart_does_not_crash(tmp_path):
+    # A tz-aware DTSTART ('…Z') parsed by icalendar becomes an aware datetime; the CLI
+    # passes NAIVE datetime.now() bounds, which used to raise TypeError in _filter_events.
+    ics_data = _make_ics([{
+        "summary": "UTC Event",
+        "dtstart": "20240615T100000Z",
+        "dtend": "20240615T110000Z",
+    }])
+    cal_file = tmp_path / "cal.ics"
+    cal_file.write_bytes(ics_data.encode("utf-8"))
+
+    p = ICSCalendarProvider(path=cal_file)
+    # wide naive window so the aware event lands inside regardless of the machine's tz
+    start = datetime(2024, 6, 14, 0, 0)
+    end = datetime(2024, 6, 17, 0, 0)
+    events = _run(p.list_events(start, end))
+
+    assert len(events) == 1
+    assert events[0].title == "UTC Event"
 
 
 def test_list_events_uses_cache(tmp_path):

@@ -63,6 +63,9 @@ class CircuitBreaker:
         self._failure_count = 0
         self._last_failure_time: float = 0.0
         self._total_trips = 0
+        # monotonic timestamp of the outstanding HALF_OPEN probe, or None.
+        # A *timestamp* rather than a bool on purpose — see allow_request().
+        self._probe_started_at: float | None = None
 
     # -- Public API --------------------------------------------------------
 
@@ -76,22 +79,47 @@ class CircuitBreaker:
         return self._state
 
     def allow_request(self) -> bool:
-        """Return ``True`` if a request is permitted."""
+        """Return ``True`` if a request is permitted.
+
+        In HALF_OPEN exactly **one** probe is admitted at a time. Previously every
+        caller was admitted, so a recovering upstream took the full concurrent herd
+        the moment the recovery timeout elapsed — the precise stampede a circuit
+        breaker exists to prevent — and each in-flight failure counted a separate
+        "trip", making ``total_trips`` meaningless.
+
+        The reservation is a **timestamp, not a boolean**, so a probe that never
+        reports back cannot wedge the breaker shut. That is not hypothetical: the
+        wrapper in ``connectors/base.py`` records the outcome from an
+        ``except Exception`` block, and ``asyncio.CancelledError`` derives from
+        ``BaseException`` — a cancelled task would leave a boolean flag set forever
+        and lock the connector out permanently. After ``recovery_timeout`` an
+        unreported probe is treated as abandoned and a fresh one is admitted.
+        """
         current = self.state  # triggers promotion check
         if current == CircuitState.CLOSED:
             return True
-        if current == CircuitState.HALF_OPEN:
-            return True  # allow one probe request
-        return False  # OPEN
+        if current != CircuitState.HALF_OPEN:
+            return False  # OPEN
+
+        now = time.monotonic()
+        if (
+            self._probe_started_at is not None
+            and (now - self._probe_started_at) < self.recovery_timeout
+        ):
+            return False  # a probe is already out and still plausibly running
+        self._probe_started_at = now
+        return True
 
     def record_success(self) -> None:
         """Record a successful call — reset to CLOSED."""
+        self._probe_started_at = None
         if self._state != CircuitState.CLOSED:
             self._transition(CircuitState.CLOSED)
         self._failure_count = 0
 
     def record_failure(self) -> None:
         """Record a failed call — may trip the breaker."""
+        self._probe_started_at = None
         self._failure_count += 1
         self._last_failure_time = time.monotonic()
 
@@ -104,6 +132,7 @@ class CircuitBreaker:
     def reset(self) -> None:
         """Force-reset to CLOSED (e.g. after manual reconnect)."""
         self._failure_count = 0
+        self._probe_started_at = None
         self._state = CircuitState.CLOSED
 
     # -- Diagnostics -------------------------------------------------------
@@ -115,13 +144,22 @@ class CircuitBreaker:
             "failure_count": self._failure_count,
             "total_trips": self._total_trips,
             "recovery_timeout": self.recovery_timeout,
+            "probe_in_flight": self._probe_started_at is not None,
         }
 
     # -- Internal ----------------------------------------------------------
 
     def _transition(self, new_state: CircuitState) -> None:
         old = self._state
+        if new_state == old:
+            # Not a transition. Re-entering OPEN while already OPEN used to count
+            # another "trip" and log another line, so a single outage with N calls
+            # in flight reported N trips (measured: 51 for one outage).
+            return
         self._state = new_state
+        if new_state == CircuitState.HALF_OPEN:
+            # A fresh recovery window — let the next caller take the probe.
+            self._probe_started_at = None
         if new_state == CircuitState.OPEN:
             self._total_trips += 1
         logger.info(

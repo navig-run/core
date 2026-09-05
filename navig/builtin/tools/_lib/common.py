@@ -9,7 +9,6 @@ import json
 import os
 import platform
 import subprocess
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -190,23 +189,58 @@ def emit(envelope: dict) -> None:
 # ── Subprocess ────────────────────────────────────────────────────────────────
 
 
+def _decode_stream(raw: bytes | str | None) -> str:
+    """Decode child output: UTF-8 strictly, then the console code page.
+
+    Delegates to :func:`navig.core.proc_text.decode_console_output`, the one
+    implementation of this. The import is defensive because this module is loaded as a
+    TOP-LEVEL module (workers do ``sys.path.insert(_lib); from common import …``) rather
+    than as ``navig.builtin.tools._lib.common``; navig is importable whenever a worker
+    runs in-process, but a tool that is copied out and driven standalone must not break
+    on an import. The fallback is the same two steps, not a different policy.
+    """
+    try:
+        from navig.core.proc_text import decode_console_output  # noqa: PLC0415
+
+        return decode_console_output(raw)
+    except ImportError:
+        if isinstance(raw, str):
+            return raw
+        if not raw:
+            return ""
+        try:
+            return bytes(raw).decode("utf-8")
+        except UnicodeDecodeError:
+            return bytes(raw).decode("oem" if os.name == "nt" else "utf-8", errors="replace")
+
+
 def run(
     args: list[str | Path],
     timeout: int = 60,
     dry_run: bool = False,
     env: dict | None = None,
 ) -> tuple[int, str, str]:
-    """Run subprocess. Returns (returncode, stdout, stderr)."""
+    """Run subprocess. Returns (returncode, stdout, stderr).
+
+    The command is a caller-supplied argv, so there is no codec this can name up front:
+    the builtin tools drive `reg`, `powercfg`, `fsutil`, `logman` and PowerShell, which
+    write the Windows console code page, alongside cross-platform binaries that write
+    UTF-8. `text=True` would decode both with the ANSI page, which is right for neither.
+    Captured as bytes and decoded UTF-8-first, console-page-second.
+    """
     if dry_run:
         return 0, f"[dry-run] {' '.join(str(a) for a in args)}", ""
     result = subprocess.run(
         [str(a) for a in args],
         capture_output=True,
-        text=True,
         timeout=timeout,
         env={**os.environ, **(env or {})},
     )
-    return result.returncode, result.stdout.strip(), result.stderr.strip()
+    return (
+        result.returncode,
+        _decode_stream(result.stdout).strip(),
+        _decode_stream(result.stderr).strip(),
+    )
 
 
 # ── Timing ────────────────────────────────────────────────────────────────────

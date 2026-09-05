@@ -5,8 +5,6 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 
 def _patch_config_dir(navig_dir: Path):
     # config_dir is lazily imported inside ensure_navig_directory; patch at source

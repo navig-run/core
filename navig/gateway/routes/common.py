@@ -69,13 +69,24 @@ def require_bearer_auth(
     """
     token = getattr(getattr(gateway, "config", None), "auth_token", None)
     if not token:
-        return None  # No token configured → open access
+        # Open access. The gateway mints and persists a token at startup precisely so
+        # this branch is not the normal state (`server._ensure_auth_token`); reaching it
+        # means that write failed, and the operator has been told so loudly. Left
+        # permissive rather than fail-closed on purpose: a token that exists nowhere a
+        # client can read would lock the operator out of their own gateway.
+        return None
 
     header = request.headers.get("Authorization", "")
     if not header.startswith("Bearer "):
         if allow_anonymous:
             return None  # Allow through without token if endpoint permits it
-        return json_error_response("Missing bearer token", status=401, code="unauthorized")
+        return json_error_response(
+            "Missing bearer token. The gateway's token is in your config — read it with "
+            "`navig config get gateway.auth.token` and send it as "
+            "`Authorization: Bearer <token>`. (The NAVIG CLI does this for you.)",
+            status=401,
+            code="unauthorized",
+        )
 
     provided = header[len("Bearer ") :].strip()
     if not provided or not hmac.compare_digest(provided, str(token)):

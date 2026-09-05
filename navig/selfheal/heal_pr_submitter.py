@@ -1,8 +1,10 @@
 """navig.selfheal.heal_pr_submitter — Hive Mind PR creation for auto-heal patches.
 
-Opens a GitHub Pull Request from a heal-context dict.  Wraps the existing
-``git_manager`` / GitHub REST infrastructure that the ``navig contribute``
-pipeline already uses.
+STATUS: PR creation is NOT wired. ``submit_heal_pr`` raises :class:`HealPRNotWiredError` — it
+never cloned, applied, committed or pushed anything, so GitHub had no branch to open a PR from
+and could only answer 422. What *is* finished and used today: ``store_pending_patch`` (a durable
+local record of the failure) plus the PR body/label builders, ready for whoever wires the git
+side. See :class:`HealPRNotWiredError` for exactly what that requires.
 
 Activation policy (enforced by the *caller*, not this module):
 - Only triggered for FailureClass.UNKNOWN or when a primary fix attempt fails
@@ -28,8 +30,6 @@ from navig.platform.paths import config_dir as _navig_config_dir
 from navig.selfheal.git_manager import (
     UPSTREAM_REPO,
     _github_request,
-    create_branch,
-    get_github_username,
 )
 
 # ---------------------------------------------------------------------------
@@ -51,6 +51,38 @@ def _heal_patches_dir() -> Path:
 _LABEL_AUTO_HEAL = "auto-heal"
 _LABEL_NEEDS_REVIEW = "needs-review"
 _PR_BASE_BRANCH = "main"
+
+
+class HealPRNotWiredError(RuntimeError):
+    """PR submission cannot succeed because the git half of the flow was never wired.
+
+    ``git_manager`` has every piece needed (``fork_repo`` · ``clone_or_update`` · ``sync_fork``
+    · ``create_branch`` · ``apply_patch`` · ``commit_and_push``) but ``submit_heal_pr`` calls
+    NONE of them: nothing is cloned, applied, committed or pushed, so the ``head`` branch never
+    exists on GitHub and ``POST /pulls`` can only answer 422. It also called
+    ``create_branch(token)`` while that function takes a *repo path* — the token became ``cwd``,
+    so the call raised on every invocation and silently fell through to a branch name that was
+    never created anywhere.
+
+    Raised BEFORE any network call so the caller stores the patch and reports the real reason
+    instead of burning two authenticated requests on a request that cannot be granted.
+
+    Wiring this for real means auto-forking the upstream repo into the user's GitHub account and
+    pushing branches to it — outward-facing actions that need an explicit owner decision — and it
+    needs a real patch generator: the only caller passes prose (``"# Observed error\\n<stderr>"``),
+    not a diff, so ``git apply`` would reject it anyway.
+    """
+
+
+class MissingGitHubTokenError(ValueError):
+    """``NAVIG_GITHUB_TOKEN`` is absent — the one failure a user can fix by setting a variable.
+
+    It subclasses ``ValueError`` so existing ``except ValueError`` handlers keep working, but it
+    is a *distinct* type because ``git_manager._github_request`` also raises plain ``ValueError``
+    for EVERY non-2xx GitHub response (401, 403 rate-limit, 404, 422 …). A caller that catches
+    ``ValueError`` alone cannot tell "you have no token" from "GitHub said no", and reporting the
+    second as the first sends the user to fix something that isn't broken.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -95,55 +127,28 @@ class HealPRSubmitter:
             The HTML URL of the created PR.
 
         Raises:
-            ValueError: If ``NAVIG_GITHUB_TOKEN`` is not set.
-            RuntimeError: If the GitHub API call fails unexpectedly.
+            MissingGitHubTokenError: If ``NAVIG_GITHUB_TOKEN`` is not set.
+            HealPRNotWiredError: Always, after the token check — the git half of this flow was
+                never implemented, so a PR cannot be created. See that class for the details and
+                for what wiring it would require.
+            ValueError: If any GitHub API call returns a non-2xx response (raised by
+                ``git_manager._github_request``) — catch this SEPARATELY from the token error,
+                they mean different things to the user.
         """
-        token = self._get_token()
-        ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-        branch = f"fix/autoheal-{ts}"
+        # The token check stays first so a missing token is still reported as a missing token
+        # (the one thing the user can fix) rather than as the wiring gap.
+        self._get_token()
 
-        # Create branch in user's fork
-        try:
-            branch = create_branch(token)  # uses navig-selfheal/{date}-{hash} pattern
-        except Exception as exc:
-            logger.warning("heal_pr: create_branch failed, using timestamp branch: {}", exc)
-            # Fall through — we'll attempt PR creation anyway
-
-        username = get_github_username(token)
-        head = f"{username}:{branch}"
-
-        body = self._build_pr_body(
-            failure_class=failure_class,
-            original_cmd=original_cmd,
-            stderr=stderr,
-            exit_code=exit_code,
-            host=host,
-            patch_text=patch_text,
-            ts=ts,
+        # Then fail, before spending two authenticated requests on a PR GitHub must refuse.
+        # What used to follow assumed a pushed branch that nothing in this flow ever creates:
+        # it called create_branch(token) — that function takes a repo PATH, so the token became
+        # cwd and the call raised every time — and then POSTed a PR whose head branch did not
+        # exist. _build_pr_body() and _attach_labels() are kept: they are the finished half,
+        # ready for whoever wires the git side (fork -> clone -> apply -> commit -> push -> PR).
+        raise HealPRNotWiredError(
+            "Hive Mind cannot open a PR: the patch is never committed or pushed, so GitHub has "
+            "no branch to open one from. The failure details are kept locally instead."
         )
-
-        pr_data = _github_request(
-            "POST",
-            f"/repos/{UPSTREAM_REPO}/pulls",
-            token=token,
-            json={
-                "title": f"fix(navig): auto-heal patch \u2014 {failure_class} @ {ts}",
-                "body": body,
-                "head": head,
-                "base": _PR_BASE_BRANCH,
-                "draft": False,
-            },
-        )
-
-        pr_number = pr_data.get("number")
-        pr_url = pr_data.get("html_url", "")
-
-        # Attach labels (best-effort — label creation is idempotent)
-        if pr_number:
-            self._attach_labels(token, pr_number)
-
-        logger.info("heal_pr: opened PR #{} — {}", pr_number, pr_url)
-        return pr_url
 
     def store_pending_patch(
         self,
@@ -156,8 +161,11 @@ class HealPRSubmitter:
     ) -> Path:
         """Persist a heal patch locally when GitHub is unreachable.
 
-        The file is stored under ``~/.navig/heal_patches/`` and will be picked
-        up for retry on the next bot restart.
+        The file is stored under ``~/.navig/heal_patches/`` with ``submitted: False``.
+
+        NOTE: nothing resubmits these automatically. ``list_pending_patches()`` exists to read
+        them back, but it has no production caller — so this is a durable record, not a retry
+        queue. The user-facing message must not promise a retry that no code performs.
 
         Returns:
             Path to the written patch file.
@@ -210,7 +218,7 @@ class HealPRSubmitter:
             return self._token
         token = os.environ.get("NAVIG_GITHUB_TOKEN", "").strip()
         if not token:
-            raise ValueError(
+            raise MissingGitHubTokenError(
                 "NAVIG_GITHUB_TOKEN is not set. "
                 "Hive Mind PR submission requires a GitHub Personal Access Token."
             )

@@ -196,6 +196,7 @@ async def test_provider_activate_uses_curated_defaults_and_persists(monkeypatch)
 
     marked: list[str] = []
 
+    monkeypatch.setattr("navig.providers.get_provider", lambda _prov_id: _Manifest())
     monkeypatch.setattr("navig.providers.registry.get_provider", lambda _prov_id: _Manifest())
     monkeypatch.setattr("navig.agent.ai_client.get_ai_client", lambda: _Client())
     monkeypatch.setattr(
@@ -249,6 +250,7 @@ async def test_provider_model_assignment_marks_onboarding_step(monkeypatch):
 
     marked: list[str] = []
 
+    monkeypatch.setattr("navig.providers.get_provider", lambda _prov_id: _Manifest())
     monkeypatch.setattr("navig.providers.registry.get_provider", lambda _prov_id: _Manifest())
     monkeypatch.setattr("navig.agent.ai_client.get_ai_client", lambda: _Client())
     monkeypatch.setattr(
@@ -632,8 +634,16 @@ async def test_provider_vision_callback_data_respects_64_byte_limit(monkeypatch)
     ]
 
     monkeypatch.setattr(
+        "navig.providers.list_available_models",
+        lambda capability=None, connected_only=True: models,
+    )
+    monkeypatch.setattr(
         "navig.providers.discovery.list_available_models",
         lambda capability=None, connected_only=True: models,
+    )
+    monkeypatch.setattr(
+        "navig.providers.resolve_vision_model",
+        lambda session_overrides=None: None,
     )
     monkeypatch.setattr(
         "navig.providers.discovery.resolve_vision_model",

@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from navig.tools.executor import ToolExecutor
 from navig.tools.interfaces import (

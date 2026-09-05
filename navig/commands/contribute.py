@@ -24,6 +24,7 @@ import typer
 from rich.table import Table
 
 from navig.console_helper import get_console
+from navig.core.coerce import coerce_bool
 
 # ---------------------------------------------------------------------------
 # Typer app
@@ -82,7 +83,7 @@ def _assert_enabled(cfg: dict[str, Any]) -> None:
     Raises:
         typer.Exit: When ``contribute.enabled`` is not ``True``.
     """
-    if not cfg.get("enabled", False):
+    if not coerce_bool(cfg.get("enabled", False), default=False):
         _console.print(
             "[yellow]Contribution Mode is disabled.[/yellow]\n"
             "Enable it by running [cyan]navig init[/cyan] and choosing "

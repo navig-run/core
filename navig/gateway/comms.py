@@ -4,6 +4,7 @@ import asyncio
 
 from navig.comms.dispatch import send_user_notification
 from navig.comms.types import NotificationTarget
+from navig.core.background import spawn
 
 
 def dispatch_message(message: str) -> None:
@@ -21,9 +22,9 @@ def dispatch_message(message: str) -> None:
             raise RuntimeError("fanout delivery failed")
 
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()  # require a running loop; else run to completion
     except RuntimeError:
         asyncio.run(_send())
         return
 
-    loop.create_task(_send())
+    spawn(_send())

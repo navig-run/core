@@ -81,6 +81,9 @@ def _fake_browser(monkeypatch):
         return c
 
     monkeypatch.setattr(bs, "_open_controller", _fake_open)
+    # Keep navigation hermetic: browser_tool now SSRF-checks the target URL before
+    # navigating (real DNS). Default to "allow" here; the SSRF test overrides it.
+    monkeypatch.setattr("navig.net.ssrf.check_url", lambda url, policy=None: None)
     bs.close_all()
     bs._SESSIONS.clear()
     yield created
@@ -133,6 +136,24 @@ def test_navigate_returns_screenshot():
     out = _run(BrowserTool(), "navigate example.com", key="k1")
     assert out["url"] == "https://example.com"
     assert out["_screenshot"] == b"JPEG_SCREENSHOT_BYTES"
+
+
+def test_navigate_blocked_by_ssrf_is_refused(_fake_browser, monkeypatch):
+    """A link-local / internal target (e.g. cloud metadata, the local gateway) is
+    refused BEFORE the browser connects — the agent can be steered here by injected
+    page content, and extract/evaluate would read the response back to the model."""
+    import navig.net.ssrf as ssrf
+
+    def _blocked(url, policy=None):
+        raise ssrf.SsrfBlockedError(url, "169.254.169.254")
+
+    monkeypatch.setattr(ssrf, "check_url", _blocked)
+
+    out = _run(BrowserTool(), "navigate http://169.254.169.254/latest/meta-data/", key="k")
+    assert "blocked" in out["result"].lower()
+    assert "ssrf" in out["result"].lower()
+    # The browser must never have been driven to the internal URL.
+    assert _fake_browser[0].navigated == []
 
 
 def test_snapshot_then_click_persists_and_uses_refmap(_fake_browser):

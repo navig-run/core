@@ -1,8 +1,6 @@
 """Tests for navig.comms.types — NotificationTarget, DeliveryPriority, DeliveryResult, FanoutResult."""
 from __future__ import annotations
 
-import pytest
-
 from navig.comms.types import (
     DeliveryPriority,
     DeliveryResult,

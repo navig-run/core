@@ -25,6 +25,7 @@ from navig.agent.hands import Hands
 from navig.agent.heart import Heart
 from navig.agent.nervous_system import EventType, NervousSystem
 from navig.agent.soul import Soul
+from navig.core.background import spawn
 
 
 class Agent:
@@ -214,7 +215,6 @@ async def run_agent(config: AgentConfig | None = None) -> None:
     Sets up signal handlers for graceful shutdown.
     """
     import os
-    from pathlib import Path
 
     agent = Agent(config)
 
@@ -237,7 +237,7 @@ async def run_agent(config: AgentConfig | None = None) -> None:
 
     def signal_handler():
         print("\nShutting down agent...")
-        asyncio.create_task(agent.stop())
+        spawn(agent.stop())
 
     if sys.platform != "win32":
         for sig in (signal.SIGINT, signal.SIGTERM):

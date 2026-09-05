@@ -546,11 +546,14 @@ class TestCallbackHandlerModelSwitch:
             "data": "ms_small",
         }
 
-        # Should not crash even if AI client isn't configured
-        try:
-            await handler.handle(cb_query)
-        except Exception:
-            pass  # Expected — no AI client configured in test env
+        # The try/except swallowed everything and nothing was asserted, so this passed
+        # whether ms_small dispatched, did nothing, or raised. Measured: it returns normally
+        # and answers the callback, so assert that -- the same shape as the sibling
+        # test_handle_unknown_cb_data_answers_gracefully.
+        await handler.handle(cb_query)
+
+        answered = [c for c in ch.api_calls if c[0] == "answerCallbackQuery"]
+        assert answered, f"ms_small did not answer the callback: {ch.api_calls}"
 
     async def test_ms_prov_dispatches(self):
         """ms_prov callback shows provider picker."""

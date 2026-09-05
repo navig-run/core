@@ -1,12 +1,7 @@
 """Tests for navig.blackbox.seal — seal_bundle, is_sealed, unseal."""
 from __future__ import annotations
 
-import plistlib
 from datetime import datetime
-from pathlib import Path
-from unittest.mock import patch
-
-import pytest
 
 from navig.blackbox.seal import is_sealed, seal_bundle, unseal
 from navig.blackbox.types import Bundle

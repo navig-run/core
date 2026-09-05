@@ -1,8 +1,6 @@
 """Tests for navig.connectors.errors — exception hierarchy."""
 from __future__ import annotations
 
-import pytest
-
 from navig.connectors.errors import (
     ConnectorAPIError,
     ConnectorAuthError,

@@ -1,17 +1,47 @@
 """Root-level pytest configuration.
 
-Ensures the basetemp directory (``.local/.pytest_tmp``) exists before
-collection starts so ``--basetemp`` in ``pytest.ini`` never fails on a
-fresh clone (fixes #34).
+Ensures the ``--basetemp`` directory exists before collection starts so it never
+fails on a fresh clone (fixes #34). The path is read back from the running
+config rather than retyped — a hardcoded copy here silently drifted to
+``.local/.pytest_tmp`` while ``pytest.ini`` pinned ``.pytest_tmp``, so this hook
+pre-created a directory pytest never used.
+
+It also gives every RUN its own temp root (see ``PYTEST_DEBUG_TEMPROOT`` below), because
+several agent sessions run this suite at the same time.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent
 _BUILD_LIB = (_PROJECT_ROOT / "build" / "lib").resolve()
+
+# ── One temp root per RUN, not one shared by all of them ──────────────────────────────────
+# `pytest.ini` used to pin `--basetemp=.dev/tmp/pytest`, and `--basetemp` WIPES AND RECREATES
+# the directory it points at. Several sessions run this suite concurrently here, so each new
+# run deleted the temp dirs of the runs already in flight and died before executing a single
+# test:
+#
+#   INTERNALERROR> PermissionError: [WinError 32] The process cannot access the file because
+#   it is being used by another process: '...\\.dev\\tmp\\pytest\\popen-gw12\\...\\task_1.log'
+#
+# Since the pre-push gate runs the suite, that also turned every concurrent push into a false
+# failure. Dropping `--basetemp` hands temp-dir management back to pytest, which allocates a
+# NUMBERED `pytest-<n>` directory per run under this root, guarded by a lock file and rotated
+# (it keeps the last few) — the mechanism built for exactly this.
+#
+# The root stays inside `core/` on purpose: `tests/core/test_tmp_dir_repo_boundary.py` pins
+# that every `tmp_path` has a `.git` AND `.navig` ancestor, because a hundred tests rely on it
+# (the `temp_dir` fixture is the escape hatch for "must be outside a repo"). `.dev/` is also
+# where the artifact policy requires generated files to live.
+#
+# `setdefault`: an explicit `PYTEST_DEBUG_TEMPROOT` from the environment still wins.
+_TMP_ROOT = _PROJECT_ROOT / ".dev" / "tmp"
+_TMP_ROOT.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("PYTEST_DEBUG_TEMPROOT", str(_TMP_ROOT))
 
 
 def _ensure_repo_import_priority() -> None:
@@ -81,9 +111,11 @@ def _normalize_import_path() -> None:
     _evict_build_lib_modules()
 
 
-def pytest_sessionstart(session):  # noqa: ARG001
-    """Create the basetemp parent directory if it doesn't exist yet."""
-    Path(".local/.pytest_tmp").mkdir(parents=True, exist_ok=True)
+def pytest_sessionstart(session):
+    """Create the configured basetemp directory if it doesn't exist yet."""
+    basetemp = getattr(session.config.option, "basetemp", None)
+    if basetemp:
+        Path(basetemp).mkdir(parents=True, exist_ok=True)
     _normalize_import_path()
 
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -55,12 +54,20 @@ class TestInit:
 
 
 class TestEnableDebug:
-    def test_sets_is_debug(self):
+    def test_sets_is_debug(self, monkeypatch):
+        # `enable_debug()` writes os.environ directly, so monkeypatch must own the key
+        # or it survives teardown and every later test in this xdist worker runs in
+        # debug mode. `delenv` alone does NOT suffice: on a var that was ABSENT it
+        # records nothing to restore. Verified empirically; same class as #1125.
+        monkeypatch.setenv("NAVIG_DEBUG", "")
         ch = CrashHandler()
         ch.enable_debug()
         assert ch.is_debug is True
 
-    def test_sets_env_var(self):
+    def test_sets_env_var(self, monkeypatch):
+        # Same ownership point as the sibling above. This one only surfaced in the
+        # audit AFTER that sibling stopped leaking -- one leaking test masks the next.
+        monkeypatch.setenv("NAVIG_DEBUG", "")
         ch = CrashHandler()
         ch.enable_debug()
         assert os.environ.get("NAVIG_DEBUG") == "1"

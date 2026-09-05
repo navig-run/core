@@ -450,15 +450,25 @@ class SessionManager:
                 self._save_session(session)
             return len(to_remove)
 
-    def delete_session(self, session_key: str):
-        """Delete a session completely."""
+    def delete_session(self, session_key: str) -> bool:
+        """Delete a session completely. False when there was nothing to delete.
+
+        It used to return None and no-op silently on an unknown key, so
+        `navig telegram sessions delete <typo>` printed "✓ Session deleted" for a
+        session that never existed. The memory store's `delete_session` already
+        returns bool and its callers check it (`commands/memory.py`,
+        `gateway/routes/memory.py`) — this one was the outlier.
+        """
         with self._lock:
-            if session_key in self._sessions:
+            existed = session_key in self._sessions
+            if existed:
                 del self._sessions[session_key]
 
             session_file = self._get_session_file(session_key)
             if session_file.exists():
                 session_file.unlink()
+                existed = True
+            return existed
 
     def list_sessions(self) -> list[TelegramSession]:
         """List all sessions."""

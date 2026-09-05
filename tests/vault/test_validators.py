@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from navig.vault.types import Credential, TestResult
 from navig.vault.validators import (
     _VALIDATOR_DEFAULT_TIMEOUT,

@@ -130,6 +130,92 @@ def test_service_uninstall_stop_failure_returns_exit_code_1(monkeypatch):
     assert result.exit_code == 1
 
 
+def test_service_uninstall_admin_relaunches_when_not_elevated(monkeypatch):
+    from navig.commands import service
+
+    calls: dict[str, object] = {}
+
+    def _fake_relaunch(sub):
+        calls["sub"] = sub
+        return 0
+
+    monkeypatch.setattr(service, "_is_elevated", lambda: False)
+    monkeypatch.setattr(service, "_relaunch_elevated", _fake_relaunch)
+
+    result = runner.invoke(service_app, ["uninstall", "--admin"])
+
+    assert result.exit_code == 0
+    assert calls["sub"] == ["service", "uninstall"]
+
+
+def test_service_uninstall_admin_forwards_method(monkeypatch):
+    # The elevated child must remove the SAME backend the operator asked for.
+    from navig.commands import service
+
+    calls: dict[str, object] = {}
+
+    def _fake_relaunch(sub):
+        calls["sub"] = sub
+        return 0
+
+    monkeypatch.setattr(service, "_is_elevated", lambda: False)
+    monkeypatch.setattr(service, "_relaunch_elevated", _fake_relaunch)
+
+    result = runner.invoke(service_app, ["uninstall", "--admin", "--method", "nssm"])
+
+    assert result.exit_code == 0
+    assert calls["sub"] == ["service", "uninstall", "--method", "nssm"]
+
+
+def _patch_status_running(monkeypatch, *, pid=4242):
+    from navig.commands import service
+
+    class FakeDaemon:
+        @staticmethod
+        def is_running():
+            return True
+
+        @staticmethod
+        def read_pid():
+            return pid
+
+        @staticmethod
+        def read_state():
+            return {"children": []}
+
+    monkeypatch.setattr("navig.daemon.supervisor.NavigDaemon", FakeDaemon)
+    monkeypatch.setattr(
+        "navig.daemon.service_manager.status", lambda method=None: (True, "Daemon process: RUNNING")
+    )
+    monkeypatch.setattr(
+        service, "reachability_summary",
+        lambda: {"gateway_url": "http://127.0.0.1:8789", "mode": "local-only",
+                 "reach_url": "http://127.0.0.1:8789", "deck_url": "http://127.0.0.1:8789",
+                 "gateway_port": "8789"},
+    )
+    return service
+
+
+def test_service_status_warns_when_daemon_elevated_and_shell_is_not(monkeypatch):
+    service = _patch_status_running(monkeypatch)
+    monkeypatch.setattr(service, "_process_is_elevated", lambda pid: True)
+    monkeypatch.setattr(service, "_is_elevated", lambda: False)
+
+    result = runner.invoke(service_app, ["status"])
+    assert result.exit_code == 0
+    assert "elevated" in result.output.lower() and "--admin" in result.output
+
+
+def test_service_status_no_warning_when_shell_also_elevated(monkeypatch):
+    service = _patch_status_running(monkeypatch)
+    monkeypatch.setattr(service, "_process_is_elevated", lambda pid: True)
+    monkeypatch.setattr(service, "_is_elevated", lambda: True)  # can already stop it → no warning
+
+    result = runner.invoke(service_app, ["status"])
+    assert result.exit_code == 0
+    assert "--admin" not in result.output
+
+
 def test_service_status_json_includes_service_manager_detail(monkeypatch):
     class FakeDaemon:
         @staticmethod
@@ -265,6 +351,12 @@ def test_service_start_interactive_stop_flag_override_clears_both_guards(monkeyp
         lambda: cleared.__setitem__("deadline", True),
     )
     monkeypatch.setattr("navig.daemon.service_manager.task_scheduler_enable", lambda: None)
+    # `service_start` finishes by tailing the logs, and that is a deliberate
+    # `while True: time.sleep(0.5)` broken only by KeyboardInterrupt — correct for a
+    # real `tail -f`, fatal for a test. Stubbing time.sleep (above) does not help: it
+    # just turns the wait into a 100%-CPU spin. Everything asserted here happens
+    # BEFORE the tail, so stub the tail itself and let the call return.
+    monkeypatch.setattr("navig.commands.service._tail_service_logs", lambda *a, **k: None)
 
     from navig.commands.service import service_start
 
@@ -286,7 +378,11 @@ def test_spawn_stop_watchdog_uses_pythonw_not_sys_executable(monkeypatch, tmp_pa
     def _fake_popen(cmd, **kwargs):
         captured["exe"] = cmd[0]
 
-    monkeypatch.setattr("navig.daemon.service_manager.DAEMON_DIR", tmp_path)
+    # `daemon_dir` is a FUNCTION, not a DAEMON_DIR constant — the constant this used
+    # to patch has never existed, so the test died on this line before asserting
+    # anything. `_spawn_stop_watchdog` lazily imports both names from
+    # service_manager, so patching them there is what actually takes effect.
+    monkeypatch.setattr("navig.daemon.service_manager.daemon_dir", lambda: tmp_path)
     monkeypatch.setattr("navig.daemon.service_manager._pythonw_exe", lambda: "/fake/pythonw")
     monkeypatch.setattr("subprocess.Popen", _fake_popen)
     # Provide a fake deadline file so the watchdog script can be written
@@ -332,3 +428,119 @@ def test_service_install_handles_malformed_existing_config(monkeypatch, tmp_path
     assert cfg["gateway"] is True
     assert cfg["scheduler"] is True
     assert cfg["health_port"] == 123
+
+
+def test_stop_failure_message_prefers_recorded_reason(monkeypatch):
+    from navig.commands import service
+
+    class FakeDaemon:
+        _last_stop_error = ("access denied — the daemon (pid 999) is running elevated "
+                            "(Administrator) but this terminal is not.")
+
+        @staticmethod
+        def read_pid():
+            return 999
+
+    monkeypatch.setattr("navig.daemon.supervisor.NavigDaemon", FakeDaemon)
+    msg = service._stop_failure_message()
+    assert "elevated" in msg.lower() and "999" in msg
+
+
+def test_stop_failure_message_falls_back_to_kill_hint(monkeypatch):
+    from navig.commands import service
+
+    class FakeDaemon:
+        _last_stop_error = None
+
+        @staticmethod
+        def read_pid():
+            return 4242
+
+    monkeypatch.setattr("navig.daemon.supervisor.NavigDaemon", FakeDaemon)
+    msg = service._stop_failure_message()
+    assert "4242" in msg  # a concrete manual force-kill hint
+
+
+def test_service_restart_admin_relaunches_when_not_elevated(monkeypatch):
+    from navig.commands import service
+
+    calls: dict[str, object] = {}
+
+    def _fake_relaunch(sub):
+        calls["sub"] = sub
+        return 0
+
+    monkeypatch.setattr(service, "_is_elevated", lambda: False)
+    monkeypatch.setattr(service, "_relaunch_elevated", _fake_relaunch)
+
+    result = runner.invoke(service_app, ["restart", "--admin"])
+
+    assert result.exit_code == 0
+    assert calls["sub"] == ["service", "restart"]  # handed off, before touching the daemon
+
+
+def test_service_stop_admin_relaunches_when_not_elevated(monkeypatch):
+    from navig.commands import service
+
+    calls: dict[str, object] = {}
+
+    def _fake_relaunch(sub):
+        calls["sub"] = sub
+        return 0
+
+    monkeypatch.setattr(service, "_is_elevated", lambda: False)
+    monkeypatch.setattr(service, "_relaunch_elevated", _fake_relaunch)
+
+    result = runner.invoke(service_app, ["stop", "--admin"])
+
+    assert result.exit_code == 0
+    assert calls["sub"] == ["service", "stop"]
+
+
+def test_service_restart_admin_does_not_relaunch_when_already_elevated(monkeypatch):
+    # Already elevated → skip the UAC relaunch entirely and run the normal flow.
+    from navig.commands import service
+
+    _patch_daemon_start_failure(monkeypatch)  # is_running False + Popen/sleep stubbed
+    monkeypatch.setattr(service, "_is_elevated", lambda: True)
+    monkeypatch.setattr(
+        service, "_relaunch_elevated",
+        lambda *a: (_ for _ in ()).throw(AssertionError("must not relaunch when elevated")),
+    )
+    monkeypatch.setattr("navig.daemon.service_manager.task_scheduler_disable", lambda: None)
+    monkeypatch.setattr("navig.daemon.service_manager.task_scheduler_enable", lambda: None)
+
+    result = runner.invoke(service_app, ["restart", "--admin"])
+
+    # No relaunch happened (no AssertionError); the normal start path ran and failed
+    # in the stubbed environment.
+    assert result.exit_code == 1
+
+
+def test_service_restart_direct_call_ignores_optioninfo_default(monkeypatch):
+    # `navig gateway restart` calls service_restart() DIRECTLY. An unpassed
+    # typer.Option arrives as a truthy OptionInfo, not False — the coercion must stop
+    # that from auto-popping UAC. Guards the alias regression.
+    from navig.commands import service
+
+    class _Sentinel(Exception):
+        pass
+
+    monkeypatch.setattr(service, "_is_elevated", lambda: False)
+    monkeypatch.setattr(
+        service, "_relaunch_elevated",
+        lambda *a: (_ for _ in ()).throw(AssertionError("must not elevate on a direct call")),
+    )
+    monkeypatch.setattr("navig.daemon.service_manager.task_scheduler_disable", lambda: None)
+
+    class FakeDaemon:
+        @staticmethod
+        def is_running():
+            raise _Sentinel  # reached ONLY if the admin block was correctly skipped
+
+    monkeypatch.setattr("navig.daemon.supervisor.NavigDaemon", FakeDaemon)
+
+    # No args → admin is a truthy OptionInfo; coercion → False → past the admin block
+    # (reaching is_running → _Sentinel), and _relaunch_elevated is never called.
+    with pytest.raises(_Sentinel):
+        service.service_restart()

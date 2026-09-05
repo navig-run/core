@@ -1,6 +1,7 @@
 import sys
 from typing import Any
 
+from navig.debug_logger import get_debug_logger
 from navig.mcp.tools import (
     agent,
     bay,
@@ -15,6 +16,8 @@ from navig.mcp.tools import (
     system,
     wiki,
 )
+
+logger = get_debug_logger()
 
 
 def register_all_tools(server: Any) -> None:
@@ -33,5 +36,17 @@ def register_all_tools(server: Any) -> None:
     bundles.append(connectors)
 
     for bundle in bundles:
-        if hasattr(bundle, "register"):
+        if not hasattr(bundle, "register"):
+            continue
+        # Guard each bundle: if one bundle's register() raises (a platform/import
+        # edge in desktop/cdp/windows, a bad manifest), every bundle AFTER it must
+        # still register. Ordering 'connectors' last was a partial mitigation; this
+        # protects them all.
+        try:
             bundle.register(server)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "MCP tool bundle %s failed to register: %s",
+                getattr(bundle, "__name__", bundle),
+                exc,
+            )

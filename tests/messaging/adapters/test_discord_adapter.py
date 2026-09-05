@@ -1,9 +1,7 @@
 """Tests for navig/messaging/adapters/discord_adapter.py — DiscordMessagingAdapter."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 
 class TestDiscordAvailabilityFlag:

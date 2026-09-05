@@ -37,6 +37,10 @@ _STEP_KINDS = {"materialize", "command", "skill", "prompt", "instruction", "bloc
 # Verify kinds understood by the runner. ``command`` and ``file_exists`` are
 # machine self-checks; ``none`` records that no machine verification exists.
 _VERIFY_KINDS = {"none", "file_exists", "command"}
+# The only levels a passing machine verify may claim. `level` is author-controlled
+# text that reaches the receipt, the terminal and (via the MCP tool) an agent's
+# context, so an unconstrained value lets a block print its own trust label.
+VERIFY_LEVELS = {"self-check", "external-check"}
 _INPUT_TYPES = {"string", "int", "number", "boolean", "path", "enum", "secret"}
 
 # Template token pattern: {{inputs.x}}, {{outputs.x}}, {{workdir}}, {{config_dir}}, {{vault.x}}
@@ -411,6 +415,11 @@ def validate_block(block: Block) -> list[str]:
             _check_tokens(f"step '{step.id}' text", step.text)
 
     # top-level verify tokens
+    if block.verify.kind != "none" and block.verify.level not in VERIFY_LEVELS:
+        problems.append(
+            f"verify: unknown level '{block.verify.level}' "
+            f"(allowed: {sorted(VERIFY_LEVELS)})"
+        )
     if block.verify.kind == "command":
         for element in block.verify.argv:
             _check_tokens("verify argv", element)

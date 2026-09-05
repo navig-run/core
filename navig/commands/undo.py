@@ -22,8 +22,6 @@ the optional positional id must parse.
 
 from __future__ import annotations
 
-import time
-
 import typer
 
 
@@ -54,15 +52,15 @@ def undo_command(
     """
     from navig import console_helper as ch
     from navig.console_helper import emit_json
-    from navig.operation_recorder import claim_cli_operation, get_operation_recorder
+    from navig.operation_recorder import get_operation_recorder
     from navig.undo import (
         UndoRefused,
         check_drift,
         collect_undone,
         describe_undo,
         ensure_undoable,
+        execute_undo,
         find_candidates,
-        perform_undo,
         recent_records,
     )
 
@@ -172,35 +170,15 @@ def undo_command(
                 return
 
     # ------------------------------------------------------------------
-    # Perform + record (the undo rides the same hash chain, tagged `undo`)
+    # Perform + record — delegates to the engine's ONE write path
+    # (navig.undo.execute_undo), which rides the same hash chain, tagged
+    # `undo`. On a replay failure it records the failure line and re-raises;
+    # we render that as an honest refusal.
     # ------------------------------------------------------------------
-    record, start = claim_cli_operation(match=("navig undo",))
-    if record is None:
-        record = recorder.start_operation(command=f"navig undo {target.id}")
-    record.operation_type = target.operation_type
-    record.args = {**(record.args or {}), "undo_of": target.id}
-    record.tags = sorted({*(record.tags or []), "undo"})
-    started = start or time.time()
-
     try:
-        swapped = perform_undo(target)
-    except Exception as exc:  # noqa: BLE001 — record the failure, then surface it
-        recorder.complete_operation(
-            record,
-            success=False,
-            error=str(exc),
-            exit_code=1,
-            duration_ms=(time.time() - started) * 1000,
-        )
+        undo_id = execute_undo(recorder, target)
+    except Exception as exc:  # noqa: BLE001 — the failure is already recorded; surface it
         _fail(f"Undo failed: {exc}", json_out)
-
-    undo_id = recorder.complete_operation(
-        record,
-        success=True,
-        output=description,
-        duration_ms=(time.time() - started) * 1000,
-        undo_data=swapped,
-    )
 
     if json_out:
         emit_json({"undone": target.id, "did": description, "recorded": undo_id})

@@ -34,8 +34,8 @@ def repo(tmp_path: Path) -> Path:
 
 
 def test_outside_git_repo_is_silent(monkeypatch) -> None:
-    # NOT tmp_path: pytest.ini sets --basetemp=.pytest_tmp, which lives INSIDE
-    # this repo — "outside a git repo" needs the system temp dir instead.
+    # NOT tmp_path: core/conftest.py points PYTEST_DEBUG_TEMPROOT at core/.dev/tmp, which
+    # lives INSIDE this repo — "outside a git repo" needs the system temp dir instead.
     import tempfile
 
     with tempfile.TemporaryDirectory() as outside:
@@ -75,3 +75,23 @@ def test_partial_wiring_warns(repo: Path, monkeypatch) -> None:
     _icon, ok, line = results[0]
     assert ok is False
     assert "partially wired" in line and "SessionStart" in line
+
+
+def test_orphaned_worktree_dirs_add_a_warn_row(repo: Path, monkeypatch) -> None:
+    guard_install_cmd(repo=str(repo))
+    (repo / ".dev" / "worktrees" / "dead").mkdir(parents=True)  # git-untracked leftover
+    monkeypatch.chdir(repo)
+    results = check_repo_guard()
+
+    assert any("active" in line for _i, _o, line in results)  # guard row still present
+    orphan_rows = [(ok, line) for _i, ok, line in results if "orphaned dir" in line]
+    assert len(orphan_rows) == 1
+    ok, line = orphan_rows[0]
+    assert ok is False and "navig repo prune" in line
+
+
+def test_no_orphan_row_when_clean(repo: Path, monkeypatch) -> None:
+    guard_install_cmd(repo=str(repo))
+    monkeypatch.chdir(repo)
+    results = check_repo_guard()
+    assert not any("orphaned dir" in line for _i, _o, line in results)  # silent when clean

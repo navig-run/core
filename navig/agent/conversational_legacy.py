@@ -120,8 +120,13 @@ class ConversationalAgent:
 
         # 1. Global workspace SOUL.md  (~/.navig/workspace/SOUL.md)
         try:
-            home = Path.home()
-            soul_candidates.append((home / ".navig" / "workspace" / "SOUL.md", "workspace"))
+            # paths.workspace_dir() — NOT ~/.navig/workspace. The workspace is config-scoped
+            # (paths.py even creates it there), so a hardcoded home read the wrong SOUL.md
+            # under NAVIG_CONFIG_DIR: the agent silently fell through to the packaged default
+            # persona while the operator's real SOUL.md sat unread in the configured dir.
+            from navig.platform.paths import workspace_dir  # noqa: PLC0415
+
+            soul_candidates.append((workspace_dir() / "SOUL.md", "workspace"))
         except Exception as exc:  # noqa: BLE001
             logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
 
@@ -805,7 +810,6 @@ class ConversationalAgent:
         from navig.agent.tools import register_all_tools
         from navig.agent.usage_tracker import CostTracker, IterationBudget, UsageEvent
         from navig.providers import CompletionRequest, Message, create_client, get_builtin_provider
-        from navig.providers.auth import AuthProfileManager
         from navig.providers.clients import ToolDefinition
 
         # ── Lazy tool registration ──
@@ -2006,7 +2010,7 @@ class ConversationalAgent:
                         "plan": [
                             {
                                 "action": "command",
-                                "params": {"cmd": "navig workflow list"},
+                                "params": {"cmd": "navig flow list"},
                                 "description": "Listing workflows",
                             }
                         ],
@@ -2254,7 +2258,9 @@ class ConversationalAgent:
 
             evolver = WorkflowEvolver()
             result = evolver.evolve(goal)
-            return f"Created workflow: {result}"
+            if not result.success:
+                raise RuntimeError(result.error or "Workflow evolution failed")
+            return f"Created workflow (after {result.attempts} attempt(s))"
 
         elif action == "wait":
             # (asyncio is imported at module level — a local re-import here made

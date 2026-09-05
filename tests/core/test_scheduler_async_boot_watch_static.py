@@ -99,28 +99,40 @@ from navig.commands.boot_cmd import boot_app
 _runner = TyCliRunner()
 
 
-def test_boot_show_exits_ok():
+def test_boot_show_exits_nonzero_not_implemented():
+    """`navig boot show` is not implemented in this build, so it must report failure.
+
+    This asserted exit 0 until #1030 made every unimplemented stub exit non-zero; the
+    name said "exits_ok" because the old behaviour was the bug being pinned.
+    """
     with patch.object(_ch, "warning", return_value=None):
         result = _runner.invoke(boot_app, ["show"])
-    assert result.exit_code == 0
+    assert result.exit_code != 0, "an unimplemented command must not report success"
 
 
 def test_boot_show_warns_not_implemented():
-    with patch.object(_ch, "warning", return_value=None):
+    """It must SAY why it failed, not just fail — the name promises the warning."""
+    with patch.object(_ch, "warning", return_value=None) as warned:
         result = _runner.invoke(boot_app, ["show"])
-    assert result.exit_code == 0
+    assert result.exit_code != 0, "an unimplemented command must not report success"
+    assert warned.called, "exited non-zero without telling the user why"
 
 
-def test_boot_run_exits_ok():
+def test_boot_run_exits_nonzero_not_implemented():
+    """`navig boot run` is not implemented in this build, so it must report failure.
+
+    This asserted exit 0 until #1030 made every unimplemented stub exit non-zero; the
+    name said "exits_ok" because the old behaviour was the bug being pinned.
+    """
     with patch.object(_ch, "warning", return_value=None):
         result = _runner.invoke(boot_app, ["run"])
-    assert result.exit_code == 0
+    assert result.exit_code != 0, "an unimplemented command must not report success"
 
 
 def test_boot_run_dry_run_flag():
     with patch.object(_ch, "warning", return_value=None):
         result = _runner.invoke(boot_app, ["run", "--dry-run"])
-    assert result.exit_code == 0
+    assert result.exit_code != 0, "an unimplemented command must not report success"
 
 
 def test_boot_no_args_shows_help():
@@ -138,22 +150,32 @@ from navig.commands.watch_cmd import watch_app
 _watch_runner = TyCliRunner()
 
 
-def test_watch_start_exits_ok():
+def test_watch_start_exits_nonzero_not_implemented():
+    """`navig watch start` is not implemented in this build, so it must report failure.
+
+    This asserted exit 0 until #1030 made every unimplemented stub exit non-zero; the
+    name said "exits_ok" because the old behaviour was the bug being pinned.
+    """
     with patch.object(_ch, "warning", return_value=None):
         result = _watch_runner.invoke(watch_app, ["start"])
-    assert result.exit_code == 0
+    assert result.exit_code != 0, "an unimplemented command must not report success"
 
 
 def test_watch_start_with_path():
     with patch.object(_ch, "warning", return_value=None):
         result = _watch_runner.invoke(watch_app, ["start", "/tmp"])
-    assert result.exit_code == 0
+    assert result.exit_code != 0, "an unimplemented command must not report success"
 
 
-def test_watch_list_exits_ok():
+def test_watch_list_exits_nonzero_not_implemented():
+    """`navig watch list` is not implemented in this build, so it must report failure.
+
+    This asserted exit 0 until #1030 made every unimplemented stub exit non-zero; the
+    name said "exits_ok" because the old behaviour was the bug being pinned.
+    """
     with patch.object(_ch, "warning", return_value=None):
         result = _watch_runner.invoke(watch_app, ["list"])
-    assert result.exit_code == 0
+    assert result.exit_code != 0, "an unimplemented command must not report success"
 
 
 def test_watch_no_args_shows_help():

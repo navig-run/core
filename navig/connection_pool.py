@@ -18,6 +18,8 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
+from navig.core.coerce import coerce_bool
+
 # Lazy paramiko import
 _paramiko = None
 
@@ -228,7 +230,7 @@ class SSHConnectionPool:
         # prevent MITM attacks.  Callers may set trust_new_host=True in ssh_config for
         # first-connect onboarding, mirroring the pattern in navig/remote.py.
         client.load_system_host_keys()
-        if ssh_config.get("trust_new_host", False):
+        if coerce_bool(ssh_config.get("trust_new_host"), default=False):
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         else:
             client.set_missing_host_key_policy(paramiko.RejectPolicy())

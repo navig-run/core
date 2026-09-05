@@ -25,39 +25,14 @@ from typer.testing import CliRunner
 
 from navig.commands import doctor
 from navig.commands.doctor import _check, doctor_app
+from tests.commands._doctor_checks import stub_all_checks as _stub_all_checks
 
 runner = CliRunner()
 
-# Every check function the doctor() callback calls, by module-global name.
-_ALL_CHECKS = (
-    "check_config",
-    "check_runtime",
-    "check_storage",
-    "check_vault",
-    "check_cache_dir",
-    "check_sockets",
-    "check_formations",
-    "check_skills",
-    "check_gateway",
-    "check_event_processor",
-    "check_ai_providers",
-    "check_wiring",
-    "check_config_health",
-    "check_reachability",
-    "check_repo_guard",
-    "check_browsers",
-    "check_python_deps",
-)
 
 
-def _stub_all_checks(monkeypatch, **overrides):
-    """Replace every check with an empty stub, then apply per-check overrides.
 
-    Overrides map a check name to the list of rows it should return.
-    """
-    for name in _ALL_CHECKS:
-        rows = overrides.get(name, [])
-        monkeypatch.setattr(doctor, name, lambda *a, _rows=rows, **k: list(_rows))
+
 
 
 def _section(payload: dict, name: str) -> dict:

@@ -15,6 +15,7 @@ So the supervisor daemon starts and manages subsystems internally.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -26,6 +27,7 @@ try:
 except ImportError:
     ctypes = None
 
+from navig.core.proc_text import console_encoding
 from navig.core.yaml_io import atomic_write_text
 from navig.platform import paths
 
@@ -295,11 +297,65 @@ def nssm_status() -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 
 
+def _task_env_setup(home: Path) -> str:
+    """The env assignments the scheduled task bakes in, as executable Python.
+
+    Split out so a test can execute exactly these — and only these — without also
+    running the log redirection, which would hijack the test session's stdout.
+    """
+    h = str(home).replace("\\", "/")
+    return (
+        "os.environ['NAVIG_SERVICE']='1'; "
+        f"os.environ['NAVIG_CONFIG_DIR']='{h}'; "
+        f"os.environ.setdefault('NAVIG_HOME', '{h}'); "
+    )
+
+
+def _task_bootstrap_args(home: Path) -> str:
+    """The `-c` bootstrap the scheduled task runs.
+
+    A Task Scheduler `<Exec>` action has NO environment mechanism (unlike systemd's
+    `Environment=` or NSSM's AppEnvironmentExtra) — the task inherits only the user's
+    PERSISTENT env, not whatever `NAVIG_CONFIG_DIR` the install shell had. So a daemon
+    installed with a custom home ran its config/vault/gateway/supersede against the default
+    ~/.navig while only memory followed the custom home (the #302 split brain, through the
+    Windows fallback door).
+
+    Rather than a wrapper .cmd (console flash) or `setx` (pollutes the user's global env),
+    the task launches `pythonw -c <bootstrap>`, which sets the vars in os.environ BEFORE any
+    navig import, then hands off to the daemon module exactly as `-m navig.daemon.entry`
+    would. Forward-slash the home (Windows accepts it) to avoid a trailing-backslash killing
+    the string literal; NAVIG_HOME uses setdefault so an explicit ambient value still wins.
+
+    **stdout/stderr are pointed at daemon/boot.log first.** `pythonw` has no console: its
+    streams are None, so a boot that fails leaves the task with `Last Result: 1` and not one
+    byte of evidence anywhere — which is exactly how an installed autostart delivered nothing
+    for a day without anyone being able to say why. A file the boot can talk to costs one
+    open() and turns the next silent failure into a readable line. Opened line-buffered and
+    append-only; a failure to open it must never stop the daemon from starting.
+    """
+    h = str(home).replace("\\", "/")
+    return (
+        f'-c "import os, sys; '
+        f"{_task_env_setup(home)}"
+        f"os.makedirs(r'{h}/daemon', exist_ok=True); "
+        f"_f=open(r'{h}/daemon/boot.log', 'a', encoding='utf-8', buffering=1); "
+        f"sys.stdout=sys.stderr=_f; "
+        f"import runpy; runpy.run_module('navig.daemon.entry', run_name='__main__', alter_sys=True)\""
+    )
+
+
 def _schtasks_xml() -> str:
     """Generate a Task Scheduler XML definition."""
-    cmd = _daemon_command(windowless=True)
-    python = cmd[0]
-    args = " ".join(cmd[1:])
+    from xml.sax.saxutils import escape as _xml_escape
+
+    home = _navig_home()
+    python = _xml_escape(_pythonw_exe())
+    workdir = _xml_escape(str(home))
+    # The task has no env mechanism, so bake NAVIG_CONFIG_DIR into the launch (see
+    # _task_bootstrap_args). XML-escape everything interpolated — a username with '&' would
+    # otherwise produce malformed XML (the WorkingDirectory + Command were previously raw).
+    args = _xml_escape(_task_bootstrap_args(home))
     return f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
@@ -309,6 +365,42 @@ def _schtasks_xml() -> str:
     <LogonTrigger>
       <Enabled>true</Enabled>
     </LogonTrigger>
+    <!-- A repeating trigger, deliberately, and ONLY because the bootstrap is now
+         idempotent. Read this before changing either half.
+
+         The daemon detaches, so the process Task Scheduler launches exits at once
+         and the instance is marked COMPLETE. RestartOnFailure therefore never
+         applies, and a LogonTrigger does not fire again while the user stays
+         logged in. Net effect: a dead daemon stayed dead, and an operator lost
+         days of daily check-ins with every status light green.
+
+         This trigger was withheld once, on measurement: with supervisor 8732
+         healthy and serving, two further firings produced supervisors 8968 and
+         75516, and daemon/state.json showed the NEWCOMER had taken over the pid
+         file. Three supervisors and two gateways, growing every interval. A task
+         that cannot recover beat one that multiplies daemons.
+
+         What changed: navig.daemon.entry now asks NavigDaemon.is_running() and
+         RETURNS (exit 0, so the launcher records success) when a daemon is
+         already up. Verified on a live install by running this very task with
+         the daemon serving: LastTaskResult 0, and the process table still held
+         exactly the original supervisor and gateway.
+
+         PT5M is measured, not guessed: a no-op duplicate launch costs about 0.6s,
+         so 288 firings a day is roughly 3 minutes of CPU, bounding recovery
+         latency at 5 minutes. The check-ins this protects run at fixed times.
+
+         If you ever remove the idempotency guard in navig/daemon/entry.py, remove
+         this trigger in the SAME change. tests/daemon/test_autostart_watchdog.py
+         pins them together so that cannot be done by accident. -->
+    <TimeTrigger>
+      <Repetition>
+        <Interval>PT5M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+      <StartBoundary>2020-01-01T00:00:00</StartBoundary>
+      <Enabled>true</Enabled>
+    </TimeTrigger>
   </Triggers>
   <Principals>
     <Principal>
@@ -336,14 +428,54 @@ def _schtasks_xml() -> str:
     <Exec>
       <Command>{python}</Command>
       <Arguments>{args}</Arguments>
-      <WorkingDirectory>{_navig_home()}</WorkingDirectory>
+      <WorkingDirectory>{workdir}</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>"""
 
 
+def _refuse_task_mutation(operation: str) -> tuple[bool, str] | None:
+    """Block a test process from mutating the OPERATOR'S real scheduled task.
+
+    ``TASK_NAME`` is the bare literal ``"NAVIG Daemon"`` -- there is no config-dir
+    scoping on Task Scheduler the way there now is on the daemon's pid file and log
+    dir, and there cannot be: the task is a machine-level object, not a file under a
+    config root. So any code path that reaches ``schtasks /change ... /disable`` from
+    a test disables the autostart of whoever is running the suite, silently, and it
+    stays off until someone notices their daemon never came back from a reboot.
+
+    That is the #1189 class (a test writing the operator's live daemon state) applied
+    to the one remaining unscoped OS-level mutation. **Measured before adding this:
+    the full `tests/service` suite (110 tests) leaves the task Ready, so this is a
+    floor placed BEFORE something falls through it, not a bug report** -- but nine
+    tests invoke `service stop` / `restart` / `uninstall` without stubbing these
+    helpers, and they are one refactor away from arriving here.
+
+    Reads (`task_scheduler_status`, `_health`, `_enabled_state`) are deliberately NOT
+    guarded: observing the machine harms nothing, and several tests legitimately drive
+    them with a stubbed ``subprocess``.
+
+    Returns the ``(ok, detail)`` tuple every caller already returns, or ``None`` when
+    the operation may proceed. Set ``NAVIG_ALLOW_TASK_MUTATION=1`` to opt in -- for a
+    test that genuinely means to exercise Task Scheduler on a throwaway machine.
+    """
+    if "pytest" not in sys.modules:
+        return None
+    if os.environ.get("NAVIG_ALLOW_TASK_MUTATION") == "1":
+        return None
+    return False, (
+        f"refusing to {operation} the '{TASK_NAME}' scheduled task from a test "
+        "process: it is a machine-level object and cannot be isolated by config dir, "
+        "so this would change the autostart of whoever is running the suite. Stub the "
+        "helper, or set NAVIG_ALLOW_TASK_MUTATION=1 if you really mean it."
+    )
+
+
 def task_scheduler_install(start_now: bool = True) -> tuple[bool, str]:
     """Install via Windows Task Scheduler (no admin needed)."""
+    refusal = _refuse_task_mutation("install")
+    if refusal is not None:
+        return refusal
     _ensure_dirs()
     xml_path = daemon_dir() / "navig-task.xml"
     xml_path.write_text(_schtasks_xml(), encoding="utf-16")
@@ -382,6 +514,9 @@ def task_scheduler_end() -> tuple[bool, str]:
     instance is running and succeeds (returncode 0) when the task is not
     installed.
     """
+    refusal = _refuse_task_mutation("end")
+    if refusal is not None:
+        return refusal
     try:
         r = subprocess.run(
             ["schtasks", "/end", "/tn", TASK_NAME],
@@ -401,6 +536,9 @@ def task_scheduler_disable() -> tuple[bool, str]:
     Call this *before* killing the daemon process so that the
     RestartOnFailure policy cannot relaunch it within the next minute.
     """
+    refusal = _refuse_task_mutation("disable")
+    if refusal is not None:
+        return refusal
     try:
         # /change /disable prevents triggers AND RestartOnFailure from firing.
         r = subprocess.run(
@@ -418,6 +556,9 @@ def task_scheduler_disable() -> tuple[bool, str]:
 
 def task_scheduler_enable() -> tuple[bool, str]:
     """Re-enable the scheduled task after the daemon has been (re)started."""
+    refusal = _refuse_task_mutation("enable")
+    if refusal is not None:
+        return refusal
     try:
         r = subprocess.run(
             ["schtasks", "/change", "/tn", TASK_NAME, "/enable"],
@@ -431,6 +572,9 @@ def task_scheduler_enable() -> tuple[bool, str]:
 
 
 def task_scheduler_uninstall() -> tuple[bool, str]:
+    refusal = _refuse_task_mutation("uninstall")
+    if refusal is not None:
+        return refusal
     try:
         subprocess.run(
             ["schtasks", "/end", "/tn", TASK_NAME],
@@ -447,20 +591,243 @@ def task_scheduler_uninstall() -> tuple[bool, str]:
         return False, f"Task Scheduler uninstall failed: {err}"
 
 
-def task_scheduler_status() -> tuple[bool, str]:
+# Task Scheduler reports SCHED_S_* INFORMATIONAL codes through the same
+# LastTaskResult field as a real exit code, so "non-zero" does not mean "failed".
+#
+# 267009 (0x41301, SCHED_S_TASK_RUNNING) is the one that matters here, and it is
+# not transient: Task Scheduler keeps a task in the Running state for as long as
+# the process it launched is alive. The daemon is long-lived, so once the watchdog
+# has actually STARTED it, LastTaskResult stays 267009 for the rest of that
+# daemon's life. Measured 2026-09-04: the watchdog recovered the daemon at
+# 21:05:01 (parent = svchost.exe, i.e. Task Scheduler), and `navig service status`
+# then read
+#
+#     Task Scheduler: Installed but NOT healthy
+#       ! last run FAILED (result 267009)
+#
+# permanently — crying wolf in exactly the case where the recovery WORKED. A row
+# that reports failure on success trains the operator to ignore it, which is the
+# same harm as a green light over an unknown, pointed the other way.
+#
+# Only codes that genuinely are not a failed run are listed. A stopped task
+# (0x41306 SCHED_S_TASK_TERMINATED) and the scheduling ones stay reportable.
+_TASK_RESULT_NOT_A_FAILURE = frozenset({
+    None,     # could not read it — the caller reports that separately
+    0,        # S_OK
+    267008,   # 0x41300 SCHED_S_TASK_READY      — ready, nothing wrong
+    267009,   # 0x41301 SCHED_S_TASK_RUNNING    — running right now
+    267011,   # 0x41303 SCHED_S_TASK_HAS_NOT_RUN — never fired yet
+    # 0x800710E0 — the trigger was REFUSED because an instance was already
+    # running. That is not a failure here, it is the policy working: this task
+    # sets MultipleInstancesPolicy=IgnoreNew precisely so a watchdog firing
+    # cannot start a second daemon. Combined with Task Scheduler holding an
+    # instance "Running" for as long as the process it launched lives, and a
+    # daemon that is long-lived by design, this becomes the STEADY STATE: the
+    # instance that started the daemon stays Running, and every subsequent
+    # 5-minute firing is refused with this code. Measured on the operator's
+    # machine 2026-09-05 — a healthy install with the uplink online reported
+    # "last run FAILED (result 2147946720)" on every check.
+    2147946720,
+})
+
+
+def task_scheduler_health() -> dict:
+    """Structured health of the autostart task — not just "does it exist".
+
+    ``task_scheduler_status`` answers "is the task there", which is the question
+    that let a broken autostart look fine: this operator's task sat at
+    ``Last Result: 1`` with an EMPTY NextRunTime (a logon-only trigger that had
+    already fired) while ``navig service status`` printed a cheerful
+    ``Task Scheduler: Active``. The daemon was dead for two days and the daily
+    check-ins with it. Same rule as ``navig doctor``: a green light over an
+    unknown is worse than a red one.
+
+    Read through PowerShell rather than ``schtasks /query /v`` on purpose —
+    schtasks prints LOCALIZED field names and values (the reason
+    ``commands/doctor.py`` reads only its exit status), so parsing it is a
+    locale bug waiting to happen. ``Get-ScheduledTaskInfo`` returns PROPERTY
+    names, which are the same in every locale.
+
+    Returns ``{installed, last_result, next_run, can_recover, problems[]}``.
+    Never raises; on any failure it reports ``installed=None`` (unknown), which
+    callers must render as a warning rather than as health.
+    """
+    out: dict = {
+        "installed": None, "last_result": None, "next_run": None,
+        "enabled": None, "can_recover": None, "problems": [],
+    }
+    if sys.platform != "win32":
+        return out
+    try:
+        ps = (
+            f"$ErrorActionPreference='Stop';"
+            f"$t=Get-ScheduledTask -TaskName '{TASK_NAME}';"
+            f"$i=$t|Get-ScheduledTaskInfo;"
+            f"[pscustomobject]@{{"
+            f"last=$i.LastTaskResult;"
+            f"next=$(if($i.NextRunTime){{$i.NextRunTime.ToString('o')}}else{{''}});"
+            # A DISABLED task still reports a NextRunTime -- Windows computes the
+            # schedule regardless of whether it will act on it. Without this field the
+            # health headline read "Healthy (watchdog re-checks, next 18:20)" for a task
+            # that was switched off, with "installed but DISABLED" demoted to a detail
+            # line underneath. Observed on the operator's own machine.
+            f"enabled=[bool]$t.Settings.Enabled;"
+            f"reps=@($t.Triggers|Where-Object{{$_.Repetition.Interval}}).Count"
+            f"}}|ConvertTo-Json -Compress"
+        )
+        # console_encoding(), not text=True: powershell writes the console code
+        # page while text mode decodes with the ANSI one, so a task name or path
+        # with a non-ASCII character would mojibake. Same convention as
+        # task_scheduler_status below; enforced by
+        # tests/quality/test_console_subprocess_encoding.py.
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True,
+            encoding=console_encoding(),
+            errors="replace",
+            timeout=20,
+        )
+        if r.returncode != 0:
+            out["problems"].append("not installed")
+            out["installed"] = False
+            return out
+        data = json.loads((r.stdout or "{}").strip() or "{}")
+    except Exception as exc:  # noqa: BLE001
+        out["problems"].append(f"could not read the task ({exc})")
+        return out
+
+    out["installed"] = True
+    out["last_result"] = data.get("last")
+    out["next_run"] = data.get("next") or None
+    # `enabled` is absent only from an older/partial reply; treat that as "assume on"
+    # rather than inventing a failure, since every other field still means something.
+    out["enabled"] = bool(data.get("enabled", True))
+    # It can only bring a dead daemon back if it is ENABLED and still going to fire.
+    # Leaving `enabled` out of this is what let a switched-off task read as Healthy.
+    out["can_recover"] = (
+        out["enabled"] and bool(out["next_run"]) and int(data.get("reps") or 0) > 0
+    )
+    if not out["enabled"]:
+        # First, because it outranks the rest: a disabled task will not fire at all,
+        # so its NextRunTime and repetition are describing something that cannot happen.
+        out["problems"].append(
+            "DISABLED — it will not fire, so it cannot start or recover the daemon "
+            "(re-enable with: navig service start)"
+        )
+    if out["last_result"] not in _TASK_RESULT_NOT_A_FAILURE:
+        out["problems"].append(f"last run FAILED (result {out['last_result']})")
+    if not out["next_run"]:
+        out["problems"].append("no next run scheduled — it cannot restart a dead daemon")
+    elif not out["can_recover"] and out["enabled"]:
+        out["problems"].append("no repeating trigger — it only fires once")
+    return out
+
+
+def _task_xml_enabled(xml_text: str) -> bool | None:
+    """Read ``<Settings><Enabled>`` out of a Task Scheduler task definition.
+
+    Returns ``None`` when the document cannot be parsed or carries no such element
+    -- "I could not look", which the caller must NOT render as healthy.
+
+    Deliberately scoped to the ``Settings`` element: each ``<Trigger>`` carries its
+    OWN ``<Enabled>``, so a naive "first Enabled element" read reports a trigger's
+    state as the task's.
+    """
+    from xml.etree import ElementTree
+
+    try:
+        # S314 (prefer defusedxml): the input is the stdout of schtasks.exe, a local
+        # Windows system binary -- not network or user data. XXE does not apply:
+        # xml.etree resolves no external entities and raises on undefined ones.
+        # chr(0xFEFF) strips the BOM schtasks emits with its UTF-16 declaration.
+        root = ElementTree.fromstring(xml_text.lstrip(chr(0xFEFF)))  # noqa: S314
+    except ElementTree.ParseError:
+        return None
+    for element in root.iter():
+        # Tags arrive namespace-qualified ({...}Settings); compare on the local name.
+        if element.tag.rsplit("}", 1)[-1] != "Settings":
+            continue
+        for child in element:
+            if child.tag.rsplit("}", 1)[-1] == "Enabled":
+                return (child.text or "").strip().lower() == "true"
+        # A <Settings> block with NO <Enabled> child means ENABLED. Windows omits the
+        # element when it holds the schema default (true) and writes it out only to
+        # say `false` -- verified against the operator's real task, which carried
+        # `<Enabled>false</Enabled>` while disabled and dropped the element entirely
+        # once re-enabled. Treating "absent" as unreadable would report every HEALTHY
+        # install as "state could not be read", i.e. swap one dishonest answer for
+        # another.
+        return True
+    return None
+
+
+def task_scheduler_enabled_state() -> tuple[bool | None, bool | None, str]:
+    """Tri-state read of the autostart task: ``(enabled, installed, detail)``.
+
+    ``enabled`` is ``True``/``False``, or ``None`` when the answer could not be
+    established (not installed, or the definition could not be parsed).
+    ``installed`` is ``False`` when the task does not exist and ``None`` when even
+    that could not be determined.
+
+    Split out of ``task_scheduler_status`` because a caller that wants to REPAIR a
+    disabled task must be able to tell "disabled" from "absent" and from "I could
+    not look" -- collapsing all three into one ``False`` is how a repair path ends
+    up warning about a task the operator never installed. Matching on the human
+    message to recover that distinction would be a locale bug waiting to happen.
+    """
     try:
         result = subprocess.run(
-            ["schtasks", "/query", "/tn", TASK_NAME, "/fo", "LIST", "/v"],
+            ["schtasks", "/query", "/tn", TASK_NAME, "/xml", "ONE"],
             capture_output=True,
-            text=True,
+            encoding=console_encoding(),
+            errors="replace",
         )
-        detail = (result.stdout or result.stderr or "").strip()
         if result.returncode != 0:
-            return False, detail or "Task Scheduler query failed"
-        running = "running" in (result.stdout or "").lower()
-        return running, detail
-    except Exception as e:
-        return False, str(e)
+            # NB: _summary_line is nested inside the status renderer, not importable here.
+            raw = (result.stderr or result.stdout or "").strip()
+            detail = next((ln.strip() for ln in raw.splitlines() if ln.strip()), "")
+            return None, False, detail or "not installed - install it with: navig service install"
+
+        enabled = _task_xml_enabled(result.stdout or "")
+        if enabled is None:
+            # Could-not-verify is NOT healthy. Say so rather than showing Active.
+            return None, True, "installed, but its enabled-state could not be read"
+        if not enabled:
+            return False, True, (
+                "installed but DISABLED - it will not start the daemon at logon. "
+                "Re-enable it with: navig service start"
+            )
+        return True, True, "enabled - starts the daemon at logon"
+    except Exception as e:  # noqa: BLE001 - a status probe must never raise
+        return None, None, f"could not query Task Scheduler: {e}"
+
+
+def task_scheduler_status() -> tuple[bool, str]:
+    """Report whether the autostart task will actually fire.
+
+    Returns ``(enabled, detail)``; ``enabled`` is what the status line renders as
+    Active / Inactive.
+
+    **This used to be ``running = "running" in stdout.lower()``** over
+    ``schtasks /query /v``. That output contains the FIELD LABEL
+    ``Repeat: Stop If Still Running:`` for every task ever queried, so the check was
+    unconditionally True: ``navig service status`` printed "Task Scheduler: Active"
+    for a task whose own ``Status:`` field read ``Disabled``. Measured on the
+    operator's machine 2026-09-04 -- their daemon had no autostart at all, the task
+    had last exited 1, and the status command said everything was fine. A green light
+    over an unknown is worse than a red one: it tells you not to look.
+
+    The unit test that covered it fed ``stdout="Status: Running"`` -- a synthetic
+    string that real ``schtasks`` never emits -- so the fake agreed with the bug.
+
+    Reads the task XML rather than the human-readable dump because field labels AND
+    their values are localised by Windows, while the XML schema's element names are
+    not: a substring check for "Disabled" would pass on an English box and silently
+    fail everywhere else.
+    """
+    enabled, _installed, detail = task_scheduler_enabled_state()
+    # Anything but a definite True is NOT healthy -- "could not look" included.
+    return enabled is True, detail
 
 
 # ---------------------------------------------------------------------------
@@ -784,7 +1151,25 @@ def status(method: str | None = None) -> tuple[bool, str]:
 
         if method in (None, "task"):
             running_ts, detail_ts = task_scheduler_status()
-            lines.append(f"Task Scheduler: {'Active' if running_ts else 'Inactive'}")
+            # "Active" used to mean only "the task exists", which is how a task
+            # whose last run FAILED and which had no next run still printed
+            # green while the daemon was dead. Report what it can actually do.
+            health = task_scheduler_health()
+            if health.get("installed") is False:
+                lines.append("Task Scheduler: Not installed")
+                lines.append("  Fix: navig service install")
+            elif health.get("installed") is None:
+                lines.append("Task Scheduler: UNKNOWN (could not read the task)")
+                for problem in health.get("problems", []):
+                    lines.append(f"  ! {problem}")
+            elif health.get("problems"):
+                lines.append("Task Scheduler: Installed but NOT healthy")
+                for problem in health["problems"]:
+                    lines.append(f"  ! {problem}")
+                lines.append("  Fix: navig service install   (re-registers with a watchdog trigger)")
+            else:
+                nxt = health.get("next_run") or "?"
+                lines.append(f"Task Scheduler: Healthy (watchdog re-checks, next {nxt})")
             summary = _summary_line(detail_ts)
             if summary:
                 lines.append(f"  Detail: {summary}")

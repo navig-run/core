@@ -73,8 +73,13 @@ TOOLSETS: dict[str, list[str] | None] = {
         "git_log",
         "git_stash",
     ],
-    # Knowledge base + wiki access
-    "memory": ["memory_read", "memory_write", "memory_delete", "kb_lookup", "fts_search"],
+    # Knowledge base + wiki access.
+    # NB: `fts_search` used to be listed here and is NOT an agent tool — it is a
+    # method on `navig.memory.conversation`'s store. A name the registry cannot
+    # dispatch does not reach the model at all, so this toolset silently offered
+    # four tools while claiming five. Exposing conversation full-text search as a
+    # real tool is worth doing; it is a feature, not a table entry.
+    "memory": ["memory_read", "memory_write", "memory_delete", "kb_lookup"],
     # Wiki-specific toolset
     "wiki": ["wiki_search", "wiki_read", "wiki_write"],
     # Remote agent executor (multi-host, file read, host switch)
@@ -86,7 +91,13 @@ TOOLSETS: dict[str, list[str] | None] = {
     ],
     # LSP integration (diagnostics, navigation, symbols)
     "lsp": ["lsp_diagnostics", "lsp_definition", "lsp_references", "lsp_symbols"],
-    # Sub-agent delegation (requires MVP2 delegate.py)
+    # Sub-agent delegation. ⚠ NOT WIRED: `delegate.py` defines the tool but
+    # `register_delegate_tool()` has no caller and `register_all_tools()` does not
+    # include it, so selecting this toolset yields an agent with ZERO tools. The
+    # live multi-agent path is `coordinator` (which caps recursion by stripping
+    # "delegation"/"full"/"coordinator" from its children). Kept as the recorded
+    # design; `tests/agent/test_toolset_registry_parity.py` pins the empty state so
+    # wiring it flips a test rather than going unnoticed.
     "delegation": ["delegate_task"],
     # Headless browser automation — one batchable CLI-like tool (navigate/snapshot/
     # click @eN/fill/screenshot/…). Backed by Playwright; per-chat persistent session.

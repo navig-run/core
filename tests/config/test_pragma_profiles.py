@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from navig.storage.pragma_profiles import (
     BALANCED,
     DURABLE,

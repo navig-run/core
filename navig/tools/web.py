@@ -395,6 +395,26 @@ def web_fetch(
             success=False, error="Invalid URL: must start with http:// or https://"
         )
 
+    # SSRF: web_fetch is the shared fetcher behind the agent's web tool, the MCP
+    # web_fetch tool, and remote board items — so `url` is untrusted. Reject
+    # private/internal targets before touching the cache (secure by default; opt
+    # in with net.ssrf.allow_private_network). The fetch itself goes through
+    # safe_get below, which ALSO re-validates every redirect hop.
+    from navig.net.ssrf import SsrfBlockedError, check_url, policy_from_config, safe_get
+
+    try:
+        check_url(url, policy_from_config())
+    except SsrfBlockedError:
+        return WebFetchResult(
+            success=False,
+            error=(
+                f"Blocked: {url} resolves to a private/internal address (SSRF guard). "
+                "To allow local/internal fetches: navig config set net.ssrf.allow_private_network true"
+            ),
+        )
+    except ValueError as exc:
+        return WebFetchResult(success=False, error=f"Invalid URL: {exc}")
+
     # Check cache
     cache_key = _cache_key(url, mode=extract_mode, max_chars=max_chars)
     if use_cache:
@@ -413,11 +433,14 @@ def web_fetch(
             "Accept-Encoding": "gzip, deflate",
         }
 
-        response = requests.get(
+        # safe_get re-validates the URL and every redirect hop against the SSRF
+        # policy (a public URL that 302s to an internal address is blocked, not
+        # followed) — otherwise requests would follow it unchecked.
+        response = safe_get(
             url,
+            policy_from_config(),
             headers=headers,
             timeout=timeout_seconds,
-            allow_redirects=True,
             verify=True,
         )
 
@@ -504,6 +527,15 @@ def web_fetch(
     except requests.Timeout:
         return WebFetchResult(
             success=False, error=f"Request timed out after {timeout_seconds} seconds"
+        )
+    except SsrfBlockedError:
+        return WebFetchResult(
+            success=False,
+            error=(
+                f"Blocked: {url} (or a redirect target) resolves to a private/internal "
+                "address (SSRF guard). To allow local/internal fetches: "
+                "navig config set net.ssrf.allow_private_network true"
+            ),
         )
     except requests.RequestException as e:
         return WebFetchResult(success=False, error=f"Request failed: {str(e)}")
@@ -1145,6 +1177,23 @@ def web_search(
         cached = _get_cached(_search_cache, cache_key)
         if cached:
             result = WebSearchResult(**cached)
+            # Results are cached as plain dicts (JSON-safe); rehydrate them back into
+            # SearchResult so a cache hit behaves identically to a fresh call. Without
+            # this, a repeat search within the TTL returned list[dict] and crashed every
+            # consumer (r.title/.url/.snippet → AttributeError). Tolerant of missing keys:
+            # a cache read must never raise.
+            result.results = [
+                r
+                if isinstance(r, SearchResult)
+                else SearchResult(
+                    title=str(r.get("title", "")),
+                    url=str(r.get("url", "")),
+                    snippet=str(r.get("snippet", "")),
+                    age=r.get("age"),
+                )
+                for r in (result.results or [])
+                if isinstance(r, (SearchResult, dict))
+            ]
             result.cached = True
             return result
 
@@ -1172,7 +1221,12 @@ def web_search(
         api_keys = search_cfg.get("api_keys") or {}
 
         explicit = (api_key or "").strip()
-        if explicit:
+        # The explicit api_key is documented as the BRAVE key (and callers pass it as
+        # such — e.g. the MCP tool forwards BRAVE_API_KEY). Honor it for Brave, and for
+        # whatever single provider the caller explicitly named. Do NOT hand it to every
+        # provider in the auto-cascade: that fires a Brave key at Tavily/SerpApi (401)
+        # and silently masks the user's real vaulted per-provider keys.
+        if explicit and provider_name in ("brave", requested_provider):
             return explicit
 
         vault_value = _resolve_vault_key(provider_name)
@@ -1492,22 +1546,30 @@ def get_web_config(config_manager=None) -> dict[str, Any]:
             from navig.config import ConfigManager
 
             config_manager = ConfigManager()
-        except Exception:
+        except Exception as exc:
+            logger.warning("web config unavailable (%s); using defaults", exc)
             return default_config
 
     try:
-        web_config = config_manager.get_global_config_value("web") or {}
-
-        # Merge with defaults
-        for key in default_config:
-            if key in web_config:
-                default_config[key].update(web_config[key])
-
-        # Get API key from env if not in config
-        if not default_config["search"]["api_key"]:
-            default_config["search"]["api_key"] = os.environ.get("BRAVE_API_KEY", "")
-
+        # ``ConfigManager.get()`` is the dotted read. This used to call
+        # ``get_global_config_value()``, which has NEVER existed on ConfigManager: the
+        # AttributeError landed in the `except` below, so the whole `web:` section was
+        # silently discarded and every value here stayed the hardcoded default. That
+        # made `web.fetch.enabled` / `web.search.enabled` impossible to turn off and
+        # made config-stored API keys and timeouts invisible.
+        web_config = config_manager.get("web", {}) or {}
+    except Exception as exc:
+        logger.warning("could not read web config (%s); using defaults", exc)
         return default_config
 
-    except Exception:
-        return default_config
+    if isinstance(web_config, dict):
+        for key, defaults in default_config.items():
+            section = web_config.get(key)
+            if isinstance(section, dict):
+                defaults.update(section)
+
+    # Get API key from env if not in config
+    if not default_config["search"]["api_key"]:
+        default_config["search"]["api_key"] = os.environ.get("BRAVE_API_KEY", "")
+
+    return default_config

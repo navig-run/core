@@ -19,6 +19,7 @@ from typing import Any
 import yaml
 
 from navig._daemon_defaults import _DAEMON_PORT
+from navig.core.coerce import coerce_bool
 from navig.core.security import substitute_env_vars as _substitute_env_vars_impl
 from navig.platform.paths import config_dir
 
@@ -38,7 +39,7 @@ class BrainConfig:
             model=data.get("model", cls.model),
             temperature=data.get("temperature", cls.temperature),
             max_tokens=data.get("max_tokens", cls.max_tokens),
-            reasoning_enabled=data.get("reasoning_enabled", cls.reasoning_enabled),
+            reasoning_enabled=coerce_bool(data.get("reasoning_enabled"), cls.reasoning_enabled),
         )
 
 
@@ -77,7 +78,7 @@ class TelegramConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TelegramConfig:
         return cls(
-            enabled=data.get("enabled", False),
+            enabled=coerce_bool(data.get("enabled"), False),
             bot_token=data.get("bot_token"),
             allowed_users=data.get("allowed_users", []),
             admin_users=data.get("admin_users", []),
@@ -95,7 +96,7 @@ class MCPConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> MCPConfig:
         return cls(
-            enabled=data.get("enabled", True),
+            enabled=coerce_bool(data.get("enabled"), True),
             port=data.get("port", cls.port),
             host=data.get("host", cls.host),
         )
@@ -114,7 +115,7 @@ class WebhooksConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WebhooksConfig:
         return cls(
-            enabled=data.get("enabled", False),
+            enabled=coerce_bool(data.get("enabled"), False),
             port=data.get("port", cls.port),
             host=data.get("host", cls.host),
             secret=data.get("secret"),
@@ -162,7 +163,7 @@ class EmailAccountConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EmailAccountConfig:
         return cls(
-            enabled=data.get("enabled", True),
+            enabled=coerce_bool(data.get("enabled"), True),
             provider=data.get("provider", "gmail"),
             address=data.get("address", ""),
             password=data.get("password", ""),
@@ -196,7 +197,7 @@ class EarsConfig:
             mcp=MCPConfig.from_dict(data.get("mcp", {})),
             webhooks=WebhooksConfig.from_dict(data.get("webhooks", {})),
             email_accounts=accounts,
-            api_enabled=data.get("api_enabled", True),
+            api_enabled=coerce_bool(data.get("api_enabled"), True),
             api_port=data.get("api_port", cls.api_port),
         )
 
@@ -229,8 +230,14 @@ class HandsConfig:
         return cls(
             command_timeout=data.get("command_timeout", cls.command_timeout),
             require_confirmation=data.get("require_confirmation", cls().require_confirmation),
-            safe_mode=data.get("safe_mode", cls.safe_mode),
-            sudo_allowed=data.get("sudo_allowed", cls.sudo_allowed),
+            # safe_mode / sudo_allowed are command-execution SAFETY gates. They're
+            # already operator-configurable via a direct YAML edit; coercing here only
+            # makes the equivalent `navig config set agent.hands.<gate> <v>` path work
+            # (it stored the string "false", which is truthy, so the toggle was ignored).
+            # Net effect is SAFER: `sudo_allowed false` now actually disables sudo instead
+            # of silently leaving it on. Defaults are unchanged (safe_mode=True, sudo=False).
+            safe_mode=coerce_bool(data.get("safe_mode"), cls.safe_mode),
+            sudo_allowed=coerce_bool(data.get("sudo_allowed"), cls.sudo_allowed),
             max_concurrent_commands=data.get(
                 "max_concurrent_commands", cls.max_concurrent_commands
             ),
@@ -276,7 +283,7 @@ class MemoryConfig:
             storage_path=Path(storage).expanduser(),
             max_history_messages=data.get("max_history_messages", cls.max_history_messages),
             context_window=data.get("context_window", cls.context_window),
-            enable_embeddings=data.get("enable_embeddings", cls.enable_embeddings),
+            enable_embeddings=coerce_bool(data.get("enable_embeddings"), cls.enable_embeddings),
         )
 
 
@@ -301,8 +308,8 @@ class PersonalityConfig:
             system_prompt=data.get("system_prompt", ""),
             behavioral_rules=data.get("behavioral_rules", []),
             emotional_responses=data.get("emotional_responses", {}),
-            proactive=data.get("proactive", cls.proactive),
-            emoji_enabled=data.get("emoji_enabled", cls.emoji_enabled),
+            proactive=coerce_bool(data.get("proactive"), cls.proactive),
+            emoji_enabled=coerce_bool(data.get("emoji_enabled"), cls.emoji_enabled),
             verbosity=data.get("verbosity", cls.verbosity),
         )
 
@@ -358,7 +365,7 @@ class AgentConfig:
         workspace = agent_data.get("workspace", str(cls().workspace))
 
         return cls(
-            enabled=agent_data.get("enabled", True),
+            enabled=coerce_bool(agent_data.get("enabled"), True),
             mode=agent_data.get("mode", "autonomous"),
             workspace=Path(workspace).expanduser(),
             brain=BrainConfig.from_dict(agent_data.get("brain", {})),

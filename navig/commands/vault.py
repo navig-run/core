@@ -40,39 +40,65 @@ vault_app.add_typer(login_app, name="login")
 cred_app = vault_app
 
 
-def _run_test_by_id(cred_id: str) -> None:
-    """Run a vault test by credential ID and print results.  Plain function — no Typer annotations."""
+def _record_validation_metadata(vault, credential, result) -> None:
+    """Persist a validation outcome onto the credential's metadata.
+
+    Extracted because `_run_test_by_id` and the `vault test` command carried the
+    same block verbatim — two copies of "what we remember about a test" drift the
+    moment one of them learns a new field.
+    """
+    if credential is None:
+        return
+    tested_at = getattr(result, "tested_at", None)
+    update_meta: dict[str, object] = {
+        "validation_success": bool(result.success),
+        "validation_message": str(result.message or ""),
+    }
+    if tested_at:
+        update_meta["validation_tested_at"] = tested_at.isoformat()
+    if isinstance(getattr(result, "details", None), dict):
+        validation_mode = result.details.get("validation_mode")
+        if validation_mode:
+            update_meta["validation_mode"] = validation_mode
+    vault.update(credential.id, metadata=update_meta)
+
+
+def _run_test_by_id(cred_id: str) -> bool:
+    """Run a vault test by credential ID, print the result, and REPORT it.
+
+    Returns True only when validation actually passed. It used to return None and
+    swallow both failure paths — a failed validation and an exception both printed
+    a ✗ and left the caller with nothing to act on.
+
+    It deliberately does NOT raise: its only caller is the optional "test this
+    now?" step *after* a credential has already been saved, and it runs inside that
+    command's `except Exception` — and `typer.Exit` subclasses RuntimeError, so a
+    raise here would be caught and relabelled "Failed to add credential: 1" for a
+    credential that was in fact saved. Reporting by return value is also the shape
+    the exit-honesty guard exempts by design (a helper that hands failure to its
+    caller). The scripted path, `navig vault test`, exits 1 on its own.
+    """
     vault = _vault_mod.get_vault()
     con = get_console()
     try:
         con.print(f"Running validation for [cyan]{cred_id}[/cyan]...")
         result = vault.test(cred_id)
         credential = vault.get_by_id(cred_id, caller="vault.test")
-        if credential is not None:
-            tested_at = getattr(result, "tested_at", None)
-            update_meta = {
-                "validation_success": bool(result.success),
-                "validation_message": str(result.message or ""),
-            }
-            if tested_at:
-                update_meta["validation_tested_at"] = tested_at.isoformat()
-            if isinstance(getattr(result, "details", None), dict):
-                vm = result.details.get("validation_mode")
-                if vm:
-                    update_meta["validation_mode"] = vm
-            vault.update(credential.id, metadata=update_meta)
+        _record_validation_metadata(vault, credential, result)
         if result.success:
             _ch.success("Validation successful!")
             con.print(f"[green]{result.message}[/green]")
             if result.details:
                 _rprint(result.details)
-        else:
-            _ch.error("Validation failed.")
-            con.print(f"[red]{result.message}[/red]")
-            if result.details:
-                _rprint(result.details)
-    except Exception as exc:
+            return True
+        _ch.error("Validation failed.")
+        con.print(f"[red]{result.message}[/red]")
+        if result.details:
+            _rprint(result.details)
+        return False
+    except Exception as exc:  # noqa: BLE001 — reported to the caller, not swallowed
         _ch.error(f"Test failed: {exc}")
+        return False
 
 
 def _resolve_test_target_mode(vault, target: str, provider: str | None, credential_id: str | None):
@@ -586,7 +612,13 @@ def add_credential(
 
         # Ask to test immediately (skip in non-interactive / stdin mode)
         if interactive and not from_stdin and _ch.confirm_action("Test this credential now?"):
-            _run_test_by_id(cred_id)
+            if not _run_test_by_id(cred_id):
+                # The add succeeded; only the optional check failed. Say so plainly
+                # rather than let a ✗ scroll past as if it were part of a success.
+                _ch.warning(
+                    f"  Credential saved, but validation did not pass — "
+                    f"re-check it with: navig vault test {short_id}"
+                )
 
     except Exception as e:
         _ch.error(f"Failed to add credential: {e}")
@@ -1002,20 +1034,7 @@ def test_credential(
             raise typer.Exit(1) from None
         raise
 
-    if credential is not None:
-        tested_at = getattr(result, "tested_at", None)
-        tested_at_iso = tested_at.isoformat() if tested_at else None
-        update_meta = {
-            "validation_success": bool(result.success),
-            "validation_message": str(result.message or ""),
-        }
-        if tested_at_iso:
-            update_meta["validation_tested_at"] = tested_at_iso
-        if isinstance(getattr(result, "details", None), dict):
-            validation_mode = result.details.get("validation_mode")
-            if validation_mode:
-                update_meta["validation_mode"] = validation_mode
-        vault.update(credential.id, metadata=update_meta)
+    _record_validation_metadata(vault, credential, result)
 
     if result.success:
         _ch.success("Validation successful!")
@@ -1039,6 +1058,7 @@ def disable_credential(credential_id: str = typer.Argument(..., help="Credential
         _ch.success(f"Credential {credential_id} disabled.")
     else:
         _ch.error(f"Credential {credential_id} not found.")
+        raise typer.Exit(1)
 
 
 @vault_app.command("enable")
@@ -1049,6 +1069,7 @@ def enable_credential(credential_id: str = typer.Argument(..., help="Credential 
         _ch.success(f"Credential {credential_id} enabled.")
     else:
         _ch.error(f"Credential {credential_id} not found.")
+        raise typer.Exit(1)
 
 
 @vault_app.command("clone")
@@ -1065,6 +1086,7 @@ def clone_credential(
         _ch.success(f"Credential cloned to profile '{profile}'. New ID: {new_id}")
     else:
         _ch.error(f"Source credential {credential_id} not found.")
+        raise typer.Exit(1)
 
 
 @vault_app.command("providers")
@@ -1155,7 +1177,7 @@ def activate_credential(
 
     item = next((i for i in vault.list() if i.id == target_id), None)
     provider = item.provider if item else "?"
-    _ch.success(f"[{provider}] Credential {target_id[:8]} is now active.")
+    _ch.success(f"\\[{provider}] Credential {target_id[:8]} is now active.")
     _ch.dim("Use 'navig vault list' to confirm  ⭐")
 
 

@@ -1,10 +1,7 @@
 """Tests for store/base.py, store/audit.py, and memory/sync._as_chunk()."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
-
-import pytest
+from datetime import datetime
 
 # ──────────────────────────────────────────────────────────────────────────────
 # store/base.py — BASE_PRAGMAS + _utcnow()

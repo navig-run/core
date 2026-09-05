@@ -31,6 +31,7 @@ def test_scan_enabled_provider_sources_uses_registry(monkeypatch, tmp_path: Path
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-test")
 
     providers = [SimpleNamespace(id="openai"), SimpleNamespace(id="llamacpp")]
+    monkeypatch.setattr("navig.providers.list_enabled_providers", lambda: providers)
     monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: providers)
 
     from navig.providers.source_scan import scan_enabled_provider_sources

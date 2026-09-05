@@ -1,7 +1,7 @@
 # NAVIG Enhanced Installers - Master Index
 
-📅 **Updated:** July 18, 2026
-🔖 **Version:** 3.24.0
+📅 **Updated:** September 4, 2026
+🔖 **Version:** 3.25.0
 ✅ **Status:** Ready for Production
 
 > **Looking for the main NAVIG CLI docs?**
@@ -51,7 +51,7 @@
 ```powershell
 powershell -ExecutionPolicy Bypass -File navig_quick_setup.ps1 -Fast
 ```
-- **File:** [../scripts/navig_quick_setup.ps1](../scripts/navig_quick_setup.ps1)
+- **File:** [../installers/navig_quick_setup.ps1](../installers/navig_quick_setup.ps1)
 - **Time:** ~5 minutes
 - **Effort:** 1 command
 - **What it does:** Everything automatically
@@ -60,7 +60,7 @@ powershell -ExecutionPolicy Bypass -File navig_quick_setup.ps1 -Fast
 ```powershell
 powershell -ExecutionPolicy Bypass -File install_navig_windows_enhanced.ps1
 ```
-- **File:** [../scripts/install_navig_windows_enhanced.ps1](../scripts/install_navig_windows_enhanced.ps1)
+- **File:** [../installers/install_navig_windows_enhanced.ps1](../installers/install_navig_windows_enhanced.ps1)
 - **Time:** ~5-10 minutes
 - **Effort:** Follow prompts
 - **What it does:** Complete setup with optional customization
@@ -71,7 +71,7 @@ powershell -ExecutionPolicy Bypass -File install_navig_windows_enhanced.ps1
 ```bash
 bash navig_quick_setup.sh --fast
 ```
-- **File:** [../scripts/navig_quick_setup.sh](../scripts/navig_quick_setup.sh)
+- **File:** [../installers/navig_quick_setup.sh](../installers/navig_quick_setup.sh)
 - **Time:** ~5 minutes
 - **Effort:** 1 command
 - **What it does:** Everything automatically
@@ -80,7 +80,7 @@ bash navig_quick_setup.sh --fast
 ```bash
 bash install_navig_linux_enhanced.sh
 ```
-- **File:** [../scripts/install_navig_linux_enhanced.sh](../scripts/install_navig_linux_enhanced.sh)
+- **File:** [../installers/install_navig_linux_enhanced.sh](../installers/install_navig_linux_enhanced.sh)
 - **Time:** ~5-10 minutes
 - **Effort:** Follow prompts
 - **What it does:** Complete setup with optional customization
@@ -91,14 +91,14 @@ bash install_navig_linux_enhanced.sh
 
 ### Troubleshooting & Maintenance
 
-- **[../scripts/fix_windows_network_sharing.ps1](../scripts/fix_windows_network_sharing.ps1)**
+- **[../installers/fix_windows_network_sharing.ps1](../installers/fix_windows_network_sharing.ps1)**
   - Diagnose network sharing issues
   - Auto-repair common problems
   - Configure firewall rules
   - Test file sharing functionality
   - **Usage:** `.\fix_windows_network_sharing.ps1 -AutoFix`
 
-- **[../scripts/mount_remote_drives.ps1](../scripts/mount_remote_drives.ps1)**
+- **[../installers/mount_remote_drives.ps1](../installers/mount_remote_drives.ps1)**
   - Interactive mount wizard
   - Cloud drive setup (rclone)
   - Linux server access (SSHFS)
@@ -110,7 +110,7 @@ bash install_navig_linux_enhanced.sh
 ## 📋 File Structure
 
 ```
-navig-core/scripts/
+core/installers/
 │
 ├── 📋 INSTALLATION SCRIPTS (Main)
 │   ├── install_navig_windows_enhanced.ps1     (447 lines)

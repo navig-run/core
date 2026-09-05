@@ -23,6 +23,7 @@ from typer.testing import CliRunner
 from navig.commands import doctor
 from navig.commands.doctor import _check, doctor_app
 from navig.selfheal import doctor_remediation as dr
+from tests.commands._doctor_checks import stub_all_checks as _stub_all_checks
 
 runner = CliRunner()
 
@@ -30,32 +31,10 @@ runner = CliRunner()
 # captured-console width of 80 truncates the wrappable Result column away).
 _WIDE = {"COLUMNS": "160"}
 
-_ALL_CHECKS = (
-    "check_config",
-    "check_runtime",
-    "check_storage",
-    "check_vault",
-    "check_cache_dir",
-    "check_sockets",
-    "check_formations",
-    "check_skills",
-    "check_gateway",
-    "check_event_processor",
-    "check_ai_providers",
-    "check_wiring",
-    "check_config_health",
-    "check_reachability",
-    "check_repo_guard",
-    "check_browsers",
-    "check_python_deps",
-)
 
 
-def _stub_all_checks(monkeypatch, **overrides):
-    """Replace every check with an empty stub, then apply per-check overrides."""
-    for name in _ALL_CHECKS:
-        rows = overrides.get(name, [])
-        monkeypatch.setattr(doctor, name, lambda *a, _rows=rows, **k: list(_rows))
+
+
 
 
 def _no_settle(monkeypatch):
@@ -213,6 +192,37 @@ def test_heal_json_is_one_parseable_document_with_actions_and_reports(monkeypatc
     # the full final report rides along for downstream consumers.
     assert payload["report"]["ok"] is True
     assert result.exit_code == 0
+
+
+def test_heal_json_stays_parseable_when_the_action_narrates(monkeypatch):
+    """The one above passes with a SILENT stub, which is not what real actions do:
+    `_start_daemon` prints on every path ("Daemon already running…", "Starting…",
+    "Daemon started"). `execute()` used to run UNGUARDED between two quiet=-guarded
+    collect_report() calls, so that narration landed on stdout ahead of the JSON and
+    `json.loads` failed — exactly on the runs where healing actually did something."""
+    _no_settle(monkeypatch)
+    _stub_all_checks(
+        monkeypatch,
+        check_gateway=[_check("Gateway", False, "No response", warn=True)],
+    )
+
+    def _noisy_start():
+        from navig import console_helper as ch
+
+        ch.info("Starting NAVIG daemon…")  # what the real remediation does
+        monkeypatch.setattr(
+            doctor, "check_gateway", lambda *a, **k: [_check("Gateway", True, "Responding")]
+        )
+        return True, "daemon running"
+
+    monkeypatch.setitem(dr._ACTIONS, "start_daemon", _noisy_start)
+
+    result = runner.invoke(doctor_app, ["--heal", "--json"])
+
+    payload = json.loads(result.stdout)  # pre-fix: JSONDecodeError
+    assert payload["ok"] is True
+    assert payload["actions"][0]["executed"] is True
+    assert "Starting NAVIG daemon" not in result.stdout  # narration was diverted
 
 
 def test_heal_json_dry_run_has_null_after(monkeypatch):

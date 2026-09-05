@@ -20,6 +20,7 @@ import sys
 from functools import lru_cache
 from typing import NamedTuple
 
+from navig.core.proc_text import decode_console_result
 from navig.platform.windows_utils import run_with_graceful_timeout
 
 # ─── Constants ────────────────────────────────────────────────────────────────
@@ -213,14 +214,12 @@ class PowerShellExecutor:
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
 
-        # Decode bytes → str; replace undecodable bytes rather than crashing.
-        if isinstance(proc.stdout, bytes):
-            proc = subprocess.CompletedProcess(
-                proc.args,
-                proc.returncode,
-                proc.stdout.decode("utf-8", errors="replace"),
-                proc.stderr.decode("utf-8", errors="replace")
-                if isinstance(proc.stderr, bytes)
-                else (proc.stderr or ""),
-            )
-        return proc
+        # Decode bytes → str, UTF-8 first and the console code page second.
+        #
+        # `_ENCODING_PREFIX` makes PowerShell's OWN output UTF-8, but it does NOT convert a
+        # native console tool's byte stream — measured, `icacls C:\Windows` comes back in
+        # cp866 with the prefix applied exactly as without it. `command` is caller-supplied
+        # (the `desktop_powershell` MCP tool passes whatever the model wrote), so it can be
+        # either, and decoding everything as UTF-8 turned every byte of a console tool's
+        # localized output into U+FFFD before handing it to the model.
+        return decode_console_result(proc)

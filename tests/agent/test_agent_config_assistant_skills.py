@@ -6,8 +6,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 # ---------------------------------------------------------------------------
 # agent_config_loader
 # ---------------------------------------------------------------------------
@@ -321,7 +319,6 @@ class TestGetContextSkillsMode:
         assert isinstance(result, str)
 
     def test_returns_auto_on_config_failure(self, monkeypatch):
-        from navig.ui import skills_renderer
         monkeypatch.setattr(
             "navig.ui.skills_renderer._get_context_skills_mode",
             lambda: "auto",

@@ -9,9 +9,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from io import StringIO
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 from rich.console import Console
 from rich.panel import Panel
 

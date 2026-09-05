@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import signal
 
+from navig.core.background import spawn
 from navig.gateway.server import GatewayConfig, NavigGateway
 
 
@@ -15,7 +16,7 @@ def run_api_server(host: str = "127.0.0.1", port: int = 7002) -> None:
     asyncio.set_event_loop(loop)
 
     def _signal_handler() -> None:
-        loop.create_task(gateway.stop())
+        spawn(gateway.stop())
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:

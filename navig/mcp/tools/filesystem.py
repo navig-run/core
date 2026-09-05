@@ -110,16 +110,32 @@ def register(server: Any) -> None:
         }
     )
 
+    # See navig.mcp_server._gate_tool — unlisted defaults to "safe".
+    # A module's register() must be self-sufficient: register_all_tools creates this
+    # dict, but a direct `module.register(server)` call (tests, a plugin host) does not,
+    # and assuming it exists raised AttributeError. cdp.py already guarded; these did not.
+    if not hasattr(server, "_tool_safety"):
+        server._tool_safety = {}
+    server._tool_safety.update({
+        # One tool, eight modes — write/copy/move/delete are in there, so the tool
+        # as a whole is gated. Mode-level granularity would need the gate to see args.
+        "desktop_filesystem": "dangerous",
+    })
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _coerce_bool(value: bool | str | None, default: bool = False) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in ("true", "1", "yes")
-    return default
+def _coerce_bool(value: object, default: bool = False) -> bool:
+    """Coerce an MCP boolean argument — see navig.mcp.tools._args.coerce_bool.
+
+    Kept as a module-local name so call sites read unchanged; the logic lives in
+    one place now (this was triplicated across desktop/filesystem/windows, and all
+    three silently discarded a JSON number).
+    """
+    from navig.mcp.tools._args import coerce_bool
+
+    return coerce_bool(value, default)
 
 
 # ── Handler ───────────────────────────────────────────────────────────────────

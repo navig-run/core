@@ -16,6 +16,8 @@ import asyncio
 import logging
 from dataclasses import dataclass
 
+from navig.notify.delivery import all_channels_failed
+
 logger = logging.getLogger("navig.notify")
 
 POLL_S = 60.0
@@ -79,31 +81,59 @@ async def run_resource_monitor(config: dict | None = None) -> None:
     logger.info("resource monitor started (disk≥%s mem≥%s cpu≥%s)", disk_hi, mem_hi, cpu_hi)
     try:
         while True:
-            values = await asyncio.to_thread(_sample)
-            for key, value in values.items():
-                if value is None:
-                    continue
-                edge = trackers[key].update(value)
-                if edge == "alert":
-                    await dispatch(
-                        "system_alert",
-                        f"{labels[key]} high — {value:.0f}%",
-                        f"{labels[key]} usage crossed {int(trackers[key].t.high)}% on this machine.",
-                        priority="high",
-                        data={"metric": key, "value": value},
-                    )
-                elif edge == "clear":
-                    await dispatch(
-                        "system_alert",
-                        f"{labels[key]} back to normal — {value:.0f}%",
-                        f"{labels[key]} usage recovered below {int(trackers[key].t.low)}%.",
-                        priority="normal",
-                        data={"metric": key, "value": value},
-                    )
+            # A bad poll (dispatch bug, transient import/IO error) must NOT kill the
+            # monitor — otherwise it dies silently while the deck still shows it
+            # enabled. Log and keep looping; only cancellation stops it.
+            try:
+                values = await asyncio.to_thread(_sample)
+                await _react(values, trackers, labels, dispatch)
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001 — one bad poll must not kill the monitor
+                logger.warning("resource monitor: poll failed, continuing", exc_info=True)
             await asyncio.sleep(POLL_S)
     except asyncio.CancelledError:
         logger.info("resource monitor stopped")
         raise
+
+
+async def _react(
+    values: dict[str, float | None],
+    trackers: dict[str, ThresholdTracker],
+    labels: dict[str, str],
+    dispatch_fn,
+) -> None:
+    """React to one poll's sampled values: alert/clear on threshold edges, and
+    settle the ``alerted`` latch on VERIFIED delivery.
+
+    ``ThresholdTracker.update`` latches ``alerted`` on the rising edge so it only
+    fires once. But if that single alert reached ZERO channels because every one
+    FAILED (``all_channels_failed`` — an empty list is an intentional mute, not a
+    failure), the latch is rolled back so the NEXT poll re-fires instead of
+    silently swallowing the crossing until the metric recovers and re-crosses.
+    """
+    for key, value in values.items():
+        if value is None:
+            continue
+        edge = trackers[key].update(value)
+        if edge == "alert":
+            outcome = await dispatch_fn(
+                "system_alert",
+                f"{labels[key]} high — {value:.0f}%",
+                f"{labels[key]} usage crossed {int(trackers[key].t.high)}% on this machine.",
+                priority="high",
+                data={"metric": key, "value": value},
+            )
+            if all_channels_failed(outcome):
+                trackers[key].alerted = False
+        elif edge == "clear":
+            await dispatch_fn(
+                "system_alert",
+                f"{labels[key]} back to normal — {value:.0f}%",
+                f"{labels[key]} usage recovered below {int(trackers[key].t.low)}%.",
+                priority="normal",
+                data={"metric": key, "value": value},
+            )
 
 
 def _sample() -> dict[str, float | None]:

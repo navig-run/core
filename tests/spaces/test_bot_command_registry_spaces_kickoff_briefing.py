@@ -4,7 +4,6 @@ Batch 81: navig/bot/command_registry.py, navig/spaces/kickoff.py,
 """
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,7 +11,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # bot/command_registry.py
 # ---------------------------------------------------------------------------
-from navig.bot.command_registry import BotCommand, CommandRegistry, get_command_registry
+from navig.bot.command_registry import BotCommand, CommandRegistry
 
 _SAMPLE_SCHEMA = {
     "type": "function",

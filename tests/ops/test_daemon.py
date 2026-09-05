@@ -138,6 +138,40 @@ class TestNavigDaemon:
         )
 
         assert NavigDaemon.stop_running_daemon() is False
+        # the reason is recorded so the CLI can tell the operator WHY.
+        assert NavigDaemon._last_stop_error and "31337" in NavigDaemon._last_stop_error
+
+    def test_stop_running_daemon_records_elevation_reason_on_access_denied(self, monkeypatch):
+        # The reported bug: an elevated daemon can't be killed from a normal shell —
+        # taskkill returns "Access is denied". The reason must be recorded (not a bare
+        # False) and the graceful step must short-circuit (no 10 s wait).
+        from navig.daemon.supervisor import NavigDaemon
+
+        monkeypatch.setattr("navig.daemon.supervisor.sys.platform", "win32")
+        monkeypatch.setattr(NavigDaemon, "read_pid", staticmethod(lambda: 4242))
+
+        class _R:
+            returncode = 1
+            stdout = (b"ERROR: The process with PID 4242 could not be terminated.\r\n"
+                      b"Reason: Access is denied.")
+            stderr = b""
+
+        calls = {"n": 0}
+
+        def _fake_run(*_a, **_k):
+            calls["n"] += 1
+            return _R()
+
+        monkeypatch.setattr("navig.daemon.supervisor.subprocess.run", _fake_run)
+        monkeypatch.setattr(
+            "navig.daemon.supervisor.time.sleep",
+            lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not wait")),
+        )
+
+        assert NavigDaemon.stop_running_daemon() is False
+        assert calls["n"] == 1  # short-circuited after the graceful taskkill
+        reason = NavigDaemon._last_stop_error or ""
+        assert "4242" in reason and "elevated" in reason.lower()
 
 
 class TestDaemonConfig:
@@ -187,6 +221,27 @@ class TestDaemonConfig:
 
         repaired = json.loads(config_path.read_text(encoding="utf-8"))
         assert repaired == entry.DEFAULT_DAEMON_CONFIG
+
+    def test_save_default_config_preserves_config_on_transient_lock(self, tmp_path, monkeypatch):
+        """A transient read lock (AV/backup) must NOT be treated as corruption and
+        overwrite the existing daemon config with defaults — that silently resets the
+        feature toggles (gateway/scheduler/ports)."""
+        from pathlib import Path
+
+        from navig.daemon import entry
+
+        config_path = tmp_path / "config.json"
+        custom = {**entry.DEFAULT_DAEMON_CONFIG, "gateway": True, "gateway_port": 9999}
+        config_path.write_text(json.dumps(custom), encoding="utf-8")
+        monkeypatch.setattr(entry, "DAEMON_CONFIG", config_path)
+
+        with patch.object(Path, "read_text", side_effect=PermissionError("sharing violation")):
+            entry.save_default_config()
+
+        # The existing custom config survives untouched — no repair-to-defaults on a lock.
+        on_disk = json.loads(config_path.read_text(encoding="utf-8"))
+        assert on_disk["gateway"] is True
+        assert on_disk["gateway_port"] == 9999
 
     def test_as_bool_string_values(self):
         from navig.daemon import entry

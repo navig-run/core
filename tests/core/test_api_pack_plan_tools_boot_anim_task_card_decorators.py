@@ -8,18 +8,13 @@ Batch 113: tests for
 """
 from __future__ import annotations
 
-import asyncio
 import io
 import json
-import sys
-from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-
-from navig.tools.api_schema import ApiToolResult
 
 # ---------------------------------------------------------------------------
 # navig/tools/domains/api_pack.py
@@ -163,11 +158,29 @@ from navig.agent.tools.plan_tools import (
     _get_interceptor,
     set_interceptor,
 )
-from navig.tools.registry import ToolResult
 
 
 def _reset_interceptor():
     plan_tools_mod._interceptor_ref = None
+
+
+@pytest.fixture(autouse=True)
+def _restore_interceptor_ref():
+    """Put the module-level interceptor back after every test in this file.
+
+    `_interceptor_ref` is process-global. The manual `_reset_interceptor()` calls below
+    cover the happy path only: a test that fails between `set_interceptor(fake)` and its
+    trailing reset leaves that fake installed, and `_get_interceptor()` then RETURNS it
+    instead of raising "not initialised" — so a later test gets silently wrong behaviour
+    rather than a clear error, and the first failure you read is not the one that happened.
+
+    Same shape as `_restore_module_refs` in tests/agent/tools/test_todo_tools.py, and the
+    same reasoning: with every test passing this changes nothing, which is exactly why it
+    is worth having. Teardown runs whether the test passed or failed.
+    """
+    original = plan_tools_mod._interceptor_ref
+    yield
+    plan_tools_mod._interceptor_ref = original
 
 
 def test_set_and_get_interceptor():
@@ -350,7 +363,6 @@ def test_boot_anim_skips_no_rich():
 from navig.gateway.channels.task_card import (
     STATE_ICON,
     STATE_WEIGHT,
-    THROTTLE_SECONDS,
     StepState,
     TaskStep,
     TaskView,

@@ -1,8 +1,6 @@
 """Tests for navig.adapters.automation.types — ExecutionResult, WindowInfo."""
 from __future__ import annotations
 
-import pytest
-
 from navig.adapters.automation.types import ExecutionResult, WindowInfo
 
 

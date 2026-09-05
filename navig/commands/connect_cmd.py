@@ -30,6 +30,9 @@ from navig.providers.connect import (
     resolve_default,
 )
 from navig.providers.connect import (
+    disconnect as _disconnect,
+)
+from navig.providers.connect import (
     revalidate as _revalidate,
 )
 from navig.providers.connect import (
@@ -104,7 +107,7 @@ def _list() -> None:
         for r in rows:
             mark = "*" if r["connection_id"] == default_id else " "
             console.print(
-                f"{mark} {r['name']} [{r['template_id']}] {r['ui_state']} "
+                f"{mark} {r['name']} \\[{r['template_id']}] {r['ui_state']} "
                 f"({str(r['connection_id'])[:8]})"
             )
 
@@ -285,7 +288,7 @@ def doctor_cmd(
     console.print(f"[bold]Connections:[/bold] {len(report['connections'])}")
     for c in report["connections"]:
         sec = "🔑" if c.get("has_secret") else "—"
-        console.print(f"  {sec} {c['name']} [{c['template_id']}] {c['ui_state']}")
+        console.print(f"  {sec} {c['name']} \\[{c['template_id']}] {c['ui_state']}")
     console.print(f"[bold]Default:[/bold] {report['default_connection_id'] or '—'}")
     det = ", ".join(d["label"] for d in report["detected_external"]) or "none"
     console.print(f"[bold]Detected runtimes:[/bold] {det}")
@@ -380,7 +383,11 @@ def remove_cmd(
     console = get_console()
     try:
         cid = _resolve_connection_ref(connection)
-        _disconnect(cid)
+        # disconnect() returns False when it removed nothing; printing "Removed" over that
+        # is the phantom-success this command already avoids for the env-var case (it raises).
+        if not _disconnect(cid):
+            console.print(f"[yellow]Nothing to remove for {cid}.[/yellow]")
+            raise typer.Exit(1)
         console.print(f"[green]✓[/green] Removed {cid}.")
     except ConnError as exc:
         console.print(f"[red]{exc}[/red]")

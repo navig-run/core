@@ -88,7 +88,16 @@ def test_get_disabled_commands_swallows_import_errors(monkeypatch):
 
 
 def test_locked_commands_present():
-    assert {"start", "help", "settings", "status"} == set(LOCKED_COMMANDS)
+    """The exact locked set. Adding to it is a deliberate act, so it is pinned here.
+
+    `extensions` (and its `ext` alias) are locked one level up from the rest: it is
+    the switch for every OTHER switch, so if it could be disabled the only route
+    back to the settings UI would be a terminal — the same argument that locks
+    /start, /help and /status.
+    """
+    assert {
+        "start", "help", "settings", "status", "extensions", "ext",
+    } == set(LOCKED_COMMANDS)
 
 
 def test_locked_set_matches_social_route():

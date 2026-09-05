@@ -8,21 +8,22 @@ Each patched line is annotated with an inline ``# NAVIG-HEAL: <reason>``
 comment so reviewers can trace every change back to the scan result.
 
 If a finding's ``suggested_fix`` references a new dependency (detected by the
-presence of a pip package name pattern), that dependency is appended to
-``requirements.txt`` with a comment.
+presence of a pip package name pattern), a ``requirements.txt`` hunk is added
+to the diff — so the reviewer sees it and ``git apply`` performs it.
 
-Returns a raw ``.patch`` string — no prose, no wrappers.
+Returns a raw ``.patch`` string — no prose, no wrappers, and no writes: building
+a patch never touches the working tree.
 """
 
 from __future__ import annotations
 
 import difflib
 import re
+import textwrap
 from pathlib import Path
 
 from loguru import logger
 
-from navig.core.yaml_io import atomic_write_text
 from navig.selfheal.scanner import ScanFinding
 
 # ---------------------------------------------------------------------------
@@ -49,6 +50,27 @@ _BARE_EXCEPT_RE = re.compile(r"^(\s*)except\s*:(.*)$")
 # ---------------------------------------------------------------------------
 
 
+def _one_line(text: str, limit: int = 80) -> str:
+    """Collapse *text* to a single line so it is safe inside a trailing ``#`` comment.
+
+    ``description`` and ``suggested_fix`` are LLM free-text. A newline in either used to end up
+    INSIDE one element of the line list, so ``difflib`` counted one line where the file had two:
+    the extra physical line was emitted with no ``+``/``-``/space prefix and ``git apply`` refused
+    the whole patch as corrupt.
+    """
+    return " ".join(text.split())[:limit]
+
+
+def _fix_rows(suggested_fix: str, indent_str: str) -> list[str]:
+    """Split a possibly multi-line ``suggested_fix`` into indented replacement rows."""
+    body = textwrap.dedent(suggested_fix.strip("\n").replace("\r\n", "\n")).rstrip()
+    rows: list[str] = []
+    for row in body.splitlines():
+        # Keep blank rows genuinely blank — trailing indent on an empty line is noise.
+        rows.append(f"{indent_str}{row}".rstrip() if row.strip() else "")
+    return rows
+
+
 def _apply_finding_to_lines(
     lines: list[str],
     finding: ScanFinding,
@@ -57,9 +79,11 @@ def _apply_finding_to_lines(
 
     Strategy:
     - Line index is ``finding.line - 1`` (1-based → 0-based).
-    - The fix replaces only the specific problematic line identified in the
-      finding.  The ``suggested_fix`` text is used as the new line content.
-    - A ``# NAVIG-HEAL: <description>`` comment is appended to the fixed line.
+    - The fix replaces the problematic line. A multi-line ``suggested_fix`` becomes SEVERAL list
+      elements — never one element holding embedded newlines, which produced a corrupt diff.
+      Splicing extra rows is safe because ``build_patch`` applies findings in descending line
+      order, so only already-processed indices shift.
+    - A single-line ``# NAVIG-HEAL: <description>`` comment is appended to the first fixed line.
     - For bare ``except:`` findings, the replacement is hard-coded for safety.
 
     Args:
@@ -79,27 +103,29 @@ def _apply_finding_to_lines(
     stripped = original_line.rstrip("\r\n")
     indent = len(stripped) - len(stripped.lstrip())
     indent_str = " " * indent
+    heal_comment = f"  # NAVIG-HEAL: {_one_line(finding.description)}"
 
     # Special-case: bare except clause → safe replacement
     bare_match = _BARE_EXCEPT_RE.match(stripped)
     if bare_match:
-        new_content = f"{bare_match.group(1)}except Exception as exc:{bare_match.group(2)}"
-        heal_comment = f"  # NAVIG-HEAL: {finding.description[:80]}"
-        new_line = new_content.rstrip() + heal_comment + "\n"
+        rows = [f"{bare_match.group(1)}except Exception as exc:{bare_match.group(2)}".rstrip()]
     else:
-        # Use the suggested_fix as the replacement; preserve indent.
         fix_stripped = finding.suggested_fix.strip()
-        # If the suggested fix looks like a full line of code, use it directly.
-        if fix_stripped and not fix_stripped.startswith("#"):
-            new_content = indent_str + fix_stripped
+        # A fix that is only an install instruction ("pip install tenacity") is NOT a line of
+        # code — we already parse it as a dependency and emit a requirements.txt hunk for it.
+        # Substituting it verbatim wrote shell text into a Python file.
+        is_dep_instruction = bool(_NEW_DEP_RE.match(fix_stripped)) and "\n" not in fix_stripped
+        # If the suggested fix looks like code, use it directly; prose keeps the original line.
+        if fix_stripped and not fix_stripped.startswith("#") and not is_dep_instruction:
+            rows = _fix_rows(finding.suggested_fix, indent_str)
         else:
-            # For descriptive fixes (prose), keep original line and add comment.
-            new_content = original_line.rstrip("\n")
-        heal_comment = f"  # NAVIG-HEAL: {finding.description[:80]}"
-        new_line = new_content.rstrip() + heal_comment + "\n"
+            rows = [stripped]
+    if not rows:  # a suggested_fix of pure whitespace must not delete the line
+        rows = [stripped]
 
+    new_lines = [f"{row.rstrip()}{heal_comment if i == 0 else ''}\n" for i, row in enumerate(rows)]
     patched = list(lines)
-    patched[idx] = new_line
+    patched[idx : idx + 1] = new_lines
     return patched
 
 
@@ -118,26 +144,62 @@ def _extract_new_dep(finding: ScanFinding) -> str | None:
     return None
 
 
-def _append_requirement(repo_path: Path, dep: str, reason: str) -> None:
-    """Append *dep* to ``requirements.txt`` if not already present.
+def _requirements_diff(repo_path: Path, deps: dict[str, str]) -> list[str]:
+    """Return diff lines adding *deps* to ``requirements.txt`` — writing NOTHING to disk.
+
+    This used to append to ``requirements.txt`` directly, from inside patch *generation*. Three
+    problems, all fixed by emitting a hunk instead:
+
+    * ``build_patch`` is documented (and used) as a pure "produce a diff" step, but it mutated the
+      working tree as a side effect;
+    * the caller builds the patch BEFORE its final "Submit this patch?" confirmation, so declining
+      still left ``requirements.txt`` modified;
+    * the change never appeared in the returned diff, so the human approved a patch that did not
+      contain it — and ``commit_and_push`` runs ``git add --all``, sweeping an LLM-suggested
+      dependency into the PR that nobody reviewed.
 
     Args:
         repo_path: Root of the git repository.
-        dep: Package name (e.g. ``"httpx"``).
-        reason: Short explanation appended as a comment.
+        deps: Mapping of package name → short reason.
+
+    Returns:
+        Unified-diff lines for ``requirements.txt``, or an empty list when there is nothing to add.
     """
     req_file = repo_path / "requirements.txt"
     if not req_file.exists():
         logger.debug("requirements.txt not found at {}", repo_path)
-        return
-    existing = req_file.read_text(encoding="utf-8")
-    # Avoid duplicates — check bare package name (ignoring version specifiers).
-    if re.search(rf"^{re.escape(dep)}[=<>!;\s]", existing, re.MULTILINE):
-        logger.debug("Dependency {} already in requirements.txt", dep)
-        return
-    addition = f"{dep}  # added by NAVIG self-heal: {reason}\n"
-    atomic_write_text(req_file, existing.rstrip("\n") + "\n" + addition)
-    logger.info("Added {} to requirements.txt", dep)
+        return []
+    try:
+        existing = req_file.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Cannot read {}: {}", req_file, exc)
+        return []
+
+    additions: list[str] = []
+    for dep, reason in deps.items():
+        # Avoid duplicates — check bare package name (ignoring version specifiers).
+        if re.search(rf"^{re.escape(dep)}[=<>!;\s]", existing, re.MULTILINE):
+            logger.debug("Dependency {} already in requirements.txt", dep)
+            continue
+        additions.append(f"{dep}  # added by NAVIG self-heal: {_one_line(reason, 60)}\n")
+    if not additions:
+        return []
+
+    original_lines = existing.splitlines(keepends=True)
+    patched_lines = list(original_lines)
+    if patched_lines and not patched_lines[-1].endswith("\n"):
+        patched_lines[-1] += "\n"  # keep the file line-oriented before appending
+    patched_lines.extend(additions)
+    logger.info("Patch adds {} dependency line(s) to requirements.txt", len(additions))
+    return list(
+        difflib.unified_diff(
+            original_lines,
+            patched_lines,
+            fromfile="a/requirements.txt",
+            tofile="b/requirements.txt",
+            lineterm="\n",
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +248,9 @@ def build_patch(
         by_file.setdefault(finding.file, []).append(finding)
 
     all_hunks: list[str] = []
+    # Collected, not written: the dependency additions ride in the returned diff so the reviewer
+    # sees them and `git apply` performs them.
+    new_deps: dict[str, str] = {}
 
     for rel_path, file_findings in sorted(by_file.items()):
         abs_path = repo_path / rel_path
@@ -207,10 +272,10 @@ def build_patch(
         for finding in sorted(file_findings, key=lambda f: f.line, reverse=True):
             patched_lines = _apply_finding_to_lines(patched_lines, finding)
 
-            # Handle new dependency if referenced.
+            # Handle new dependency if referenced (emitted as a hunk after the file loop).
             new_dep = _extract_new_dep(finding)
             if new_dep:
-                _append_requirement(repo_path, new_dep, finding.description[:60])
+                new_deps.setdefault(new_dep, finding.description)
 
         if patched_lines == original_lines:
             logger.debug("No effective change for {}", rel_path)
@@ -227,6 +292,9 @@ def build_patch(
         )
         if diff:
             all_hunks.extend(diff)
+
+    if new_deps:
+        all_hunks.extend(_requirements_diff(repo_path, new_deps))
 
     patch_str = "".join(all_hunks)
     logger.info(

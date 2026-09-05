@@ -15,6 +15,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 from navig.core.file_permissions import set_owner_only_file_permissions
+from navig.core.json_io import JsonReadError, load_json_for_update
 from navig.platform import paths
 
 from .types import (
@@ -57,26 +58,60 @@ class AuthProfileManager:
         self.credentials_dir = config_dir / "credentials"
         self.store_path = self.credentials_dir / "auth-profiles.json"
         self._store: AuthProfileStore | None = None
+        # True when the on-disk store existed but was transiently UNREADABLE at load
+        # (a Windows AV/backup lock, a half-written read). While set, save() REFUSES to
+        # write — overwriting a store we could not read would wipe every stored API key
+        # and OAuth token. A later successful load clears it (self-healing).
+        self._load_failed = False
 
         # Ensure directories exist
         self.credentials_dir.mkdir(parents=True, exist_ok=True)
 
     @property
     def store(self) -> AuthProfileStore:
-        """Get or load the auth profile store."""
-        if self._store is None:
+        """Get or load the auth profile store.
+
+        Re-attempts the load while ``_load_failed`` is set: a prior access hit a
+        transient lock and cached an empty store, so retry until the real file can be
+        read again (self-healing for a long-lived manager; fresh per-op managers reload
+        anyway).
+        """
+        if self._store is None or self._load_failed:
             self._store = self._load_store()
         return self._store
 
     def _load_store(self) -> AuthProfileStore:
-        """Load auth profiles from disk."""
+        """Load auth profiles from disk.
+
+        Reads through ``load_json_for_update``, which retries transient OS locks and
+        RAISES ``JsonReadError`` when a file that exists-with-content stays unreadable —
+        so a transient lock becomes a recorded failure (``_load_failed``) that makes
+        :meth:`save` refuse, instead of an empty store that the next ``save()`` would
+        persist over every stored credential. A genuinely corrupt file is quarantined to
+        ``*.corrupt`` and treated as empty (recoverable, and never a wipe of live keys).
+        """
         if not self.store_path.exists():
+            self._load_failed = False
             return AuthProfileStore()
 
         try:
-            with open(self.store_path, encoding="utf-8") as f:
-                data = json.load(f)
+            data = load_json_for_update(self.store_path, default={})
+        except JsonReadError as e:
+            # Existing store, transiently unreadable — do NOT return an empty store as if
+            # the credentials were gone. Flag it so save() refuses to overwrite the file.
+            self._load_failed = True
+            logger.warning(
+                "auth_profiles: %s is temporarily unreadable (%s) — keeping credentials "
+                "intact; saves are paused until it can be read again",
+                self.store_path,
+                e,
+            )
+            return AuthProfileStore()
 
+        # The file was read successfully (or a corrupt one was quarantined to a fresh
+        # default) — it is not an unreadable lock, so saves may proceed.
+        self._load_failed = False
+        try:
             profiles = {}
             for profile_id, cred_data in data.get("profiles", {}).items():
                 cred = self._parse_credential(cred_data)
@@ -165,6 +200,19 @@ class AuthProfileManager:
     def save(self) -> None:
         """Save auth profiles to disk."""
         if self._store is None:
+            return
+
+        if self._load_failed:
+            # The store was unreadable when we loaded it (a transient lock), so the
+            # in-memory store is empty — NOT because the credentials are gone. Writing it
+            # now would overwrite the real file and wipe every stored API key and OAuth
+            # token. Refuse; a later successful load clears the flag (self-healing).
+            logger.error(
+                "auth_profiles: refusing to save %s — it was unreadable at load, so "
+                "writing now would wipe the stored credentials. Retry once the file is "
+                "readable again.",
+                self.store_path,
+            )
             return
 
         data = {

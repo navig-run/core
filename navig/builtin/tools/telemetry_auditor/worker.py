@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "_lib"))
-from common import Timer, current_os, emit, err, is_admin, ok, run
+from common import Timer, current_os, emit, err, ok, run
 
 TOOL = "telemetry_auditor"
 PS = ["powershell", "-NoProfile", "-NonInteractive", "-Command"]
@@ -411,10 +411,11 @@ def _match_known(hostname: str, remote_ip: str) -> dict | None:
                 "risk_level": data[2],
                 "status": data[3],
             }
-    # Check suffix patterns for CDN-like entries
-    for fqdn, data in KNOWN_ENDPOINTS.items():
-        if remote_ip and fqdn.endswith(".net") or fqdn.endswith(".com"):
-            pass  # only exact tail match above
+    # NOTE: CDN-style suffix matching is NOT implemented — only the exact tail match above.
+    # A loop used to sit here scanning every KNOWN_ENDPOINTS entry with a `pass` body, so it
+    # cost a full dict walk per call and classified nothing. (Its condition also read
+    # `remote_ip and a or b`, which binds as `(remote_ip and a) or b` — it would not have
+    # meant what it looked like even with a body.)
     return None
 
 

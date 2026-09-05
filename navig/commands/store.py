@@ -137,10 +137,13 @@ def _store_status(
     items = collect_store(include_available=False)  # installed only (matches store_status)
     summary = store_status(items)
     if json_output:
-        # NOTHING may follow the JSON on stdout — scripts pipe this to jq.
+        # NOTHING may follow the JSON on stdout — scripts pipe this to jq. (An exit code
+        # prints nothing, so the verdict below still applies to this path.)
         import json
 
         ch.console.print_json(json.dumps(summary, indent=2))
+        if summary["broken"]:
+            raise typer.Exit(1)
         return
 
     from rich.table import Table
@@ -193,6 +196,12 @@ def _store_status(
             ch.dim("  SQLite store maintenance moved to: navig db local status")
     except Exception:  # noqa: BLE001
         pass
+
+    # Same rule as `navig doctor`: the full report is printed either way and the exit
+    # code carries the verdict. "0 broken" is the answer at exit 0; a broken install is a
+    # fault, and `navig store status && <use it>` must not proceed over one.
+    if summary["broken"]:
+        raise typer.Exit(1)
 
 
 @store_app.command("info")

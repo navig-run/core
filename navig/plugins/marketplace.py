@@ -30,6 +30,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from navig.core.json_io import (
+    JsonReadError,
+    atomic_write_json,
+    load_json_for_update,
+    load_json_safe,
+)
+
 logger = logging.getLogger(__name__)
 
 REGISTRY_FILENAME = "marketplaces.json"
@@ -125,7 +132,7 @@ def fetch_marketplace(url: str, *, workdir: Path | None = None) -> Marketplace:
         try:
             subprocess.run(
                 ["git", "clone", "--depth", "1", url, str(clone_root)],
-                check=True, capture_output=True, text=True,
+                check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
             )
             data = _read_manifest_dir(clone_root)
             if data is None:
@@ -162,17 +169,24 @@ class MarketplaceStore:
 
     # ── registry io ────────────────────────────────────────────────────────
     def _load(self) -> dict[str, Any]:
-        if not self.registry_path.exists():
-            return {"marketplaces": []}
-        try:
-            return json.loads(self.registry_path.read_text(encoding="utf-8"))
-        except Exception as exc:  # noqa: BLE001 — a corrupt registry must not crash
-            logger.warning("marketplace registry unreadable: %s", exc)
-            return {"marketplaces": []}
+        # Read-only view (list_marketplaces / resolve): degrade to empty on any failure so a
+        # lookup never crashes. A read-modify-write MUST use _load_for_update instead, or a
+        # transient lock here returns {} and the following _save wipes every registered
+        # marketplace.
+        return load_json_safe(self.registry_path, default={"marketplaces": []})
+
+    def _load_for_update(self) -> dict[str, Any]:
+        """Load the registry for a read-modify-write (add/remove/refresh).
+
+        Raises ``JsonReadError`` when the registry exists-with-content but is transiently
+        unreadable (a Windows AV/backup lock), so the caller aborts before _save persists an
+        empty registry over the real one.
+        """
+        return load_json_for_update(self.registry_path, default={"marketplaces": []})
 
     def _save(self, data: dict[str, Any]) -> None:
         self.plugins_dir.mkdir(parents=True, exist_ok=True)
-        self.registry_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        atomic_write_json(data, self.registry_path)
 
     # ── crud ───────────────────────────────────────────────────────────────
     def list_marketplaces(self) -> list[Marketplace]:
@@ -191,14 +205,22 @@ class MarketplaceStore:
     def add(self, url: str) -> Marketplace:
         """Register a marketplace (validates its manifest first)."""
         mkt = fetch_marketplace(url)          # raises if the manifest is bad
-        data = self._load()
+        # _load_for_update raises JsonReadError on a transiently-unreadable registry; the CLI
+        # (_marketplace_add) already wraps this in try/except → clean error, no wipe.
+        data = self._load_for_update()
         rows = [m for m in data.get("marketplaces", []) if m.get("name") != mkt.name]
         rows.append(mkt.to_dict())
         self._save({"marketplaces": rows})
         return mkt
 
     def remove(self, name: str) -> bool:
-        data = self._load()
+        try:
+            data = self._load_for_update()
+        except JsonReadError as exc:
+            # Registry transiently unreadable — refuse rather than rewrite an empty registry
+            # over every other marketplace. The caller is unwrapped, so degrade to False.
+            logger.warning("marketplace registry temporarily unreadable, not removing: %s", exc)
+            return False
         rows = data.get("marketplaces", [])
         kept = [m for m in rows if m.get("name") != name]
         if len(kept) == len(rows):
@@ -214,7 +236,13 @@ class MarketplaceStore:
         AVAILABLE rows) otherwise only update on `add`, so a removed/renamed
         upstream plugin would be advertised forever. Never raises.
         """
-        data = self._load()
+        try:
+            data = self._load_for_update()
+        except JsonReadError as exc:
+            # Registry transiently unreadable — do NOT rewrite it empty (would wipe every
+            # registered marketplace). Report and skip; the contract is "never raises".
+            logger.warning("marketplace registry temporarily unreadable, skipping refresh: %s", exc)
+            return [(name or "all", "registry temporarily unreadable — try again")]
         rows = data.get("marketplaces", [])
         results: list[tuple[str, str]] = []
         changed = False

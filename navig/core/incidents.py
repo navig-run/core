@@ -16,6 +16,17 @@ raises), and ``navig doctor`` reads them back under "Config Health".
 
 Recording must never break the code path it observes — a health note is not worth an
 outage — so every function here swallows its own failures.
+
+**This file has writers outside Python.** The Rust desktop apps (Anchor and Echo) append
+to the same JSONL through ``packages/shared-desktop/src/jsonstore.rs``, reusing the
+``store_read_failed`` / ``store_write_refused`` ids below — a rescue in a desktop store
+has to reach ``navig doctor`` too, not just a toast the operator dismissed. So the record
+shape (``{"ts", "event", "data"}``), the log filename, and those two ids are a
+**cross-language contract**: changing any of them here silently orphans the desktop
+writers, and nothing errors — the reader is per-line tolerant, so mismatched entries just
+stop appearing. Two consequences worth knowing: entries arrive from three processes
+concurrently (so each writer must emit a line in ONE write), and a new id added here is
+rendered for desktop events only once it exists in :data:`DESCRIPTIONS`.
 """
 
 from __future__ import annotations
@@ -33,16 +44,76 @@ LOAD_FAILED = "config_load_failed"
 RECOVERED_FROM_CACHE = "config_recovered_from_cache"
 DECK_KEY_RESTORED = "deck_key_restored"
 DECK_KEY_REIDENTIFIED = "deck_key_reidentified"
+SPACE_MANIFEST_UNREADABLE = "space_manifest_unreadable"
+ACTIVE_SPACE_UNREADABLE = "active_space_unreadable"
+FTS_INDEX_REPAIRED = "fts_index_repaired"
+FTS_INDEX_UNREPAIRABLE = "fts_index_unrepairable"
+WEBHOOK_TENANT_HEALED = "webhook_tenant_healed"
+STORE_WRITE_REFUSED = "store_write_refused"
+STORE_READ_FAILED = "store_read_failed"
+STORE_WRITE_FAILED = "store_write_failed"
+APPROVAL_EXPIRED = "approval_expired"
+APPROVAL_ANSWERED_TOO_LATE = "approval_answered_too_late"
+BROKER_REGISTER_FAILED = "broker_register_failed"
 
 # Human-readable, operator-facing summaries (doctor prints these, not the raw ids).
 DESCRIPTIONS: dict[str, str] = {
     WIPE_REFUSED: "a save tried to write an EMPTY config over your settings — refused",
+    APPROVAL_EXPIRED: (
+        "an approval request timed out with no answer — the action was auto-decided "
+        "and, before this, nobody outside the terminal was told"
+    ),
+    APPROVAL_ANSWERED_TOO_LATE: (
+        "you answered an approval AFTER it had already expired — your decision was "
+        "not applied. Re-run the action, or raise approval.timeout_seconds"
+    ),
+    BROKER_REGISTER_FAILED: (
+        "the broker never learned this daemon's address, so the Mini App resolves to "
+        "whatever was registered LAST — typically a dead tunnel from a previous session"
+    ),
     LOAD_FAILED: "config.yaml could not be read",
     RECOVERED_FROM_CACHE: "config was recovered from the last known-good cache",
     DECK_KEY_RESTORED: "deck.api_key was restored from the vault (config had lost it)",
     DECK_KEY_REIDENTIFIED: (
         "a NEW deck.api_key was minted over a used config (no vault mirror to restore) — "
         "the install was RE-IDENTIFIED; check for a config wipe"
+    ),
+    SPACE_MANIFEST_UNREADABLE: (
+        "a space manifest could not be parsed — that space is running with EMPTY "
+        "settings (no name, no pinned apps, and its finance BOOK falls back to personal)"
+    ),
+    ACTIVE_SPACE_UNREADABLE: (
+        "the file recording which space is active could not be read — the agent fell "
+        "back to another directory, so it may be reading and writing in the WRONG space"
+    ),
+    FTS_INDEX_REPAIRED: (
+        "a search index was rebuilt after its unsafe sync triggers were corrected — "
+        "results before this may have been stale, and editing the same record twice "
+        "could have failed"
+    ),
+    FTS_INDEX_UNREPAIRABLE: (
+        "a search index could NOT be rebuilt — full-text search for that store falls "
+        "back to a plain LIKE match until it is repaired"
+    ),
+    WEBHOOK_TENANT_HEALED: (
+        "the Telegram webhook was pointing at a DEAD lighthouse tenant (deck.api_key "
+        "had been rotated) — every inbound message was being queued at the edge and "
+        "never delivered, with every light green. Re-pointed at the live tenant"
+    ),
+    STORE_WRITE_REFUSED: (
+        "a store could not be READ, so a save that would have replaced it with an "
+        "incomplete set was refused — your data is intact, but that store is not "
+        "accepting changes until the file is fixed or moved"
+    ),
+    STORE_WRITE_FAILED: (
+        "an append to an audit/ledger store FAILED — the operation itself happened, "
+        "but there is no record of it, so `navig undo` and `navig insights` cannot "
+        "see it and the history is missing a line rather than showing a gap"
+    ),
+    STORE_READ_FAILED: (
+        "a store could not be READ, so whatever runs on it is running on an EMPTY "
+        "set — the daemon does not error, it simply matches nothing, which looks "
+        "exactly like having nothing configured"
     ),
 }
 
@@ -120,6 +191,22 @@ def describe(entry: dict[str, Any]) -> str:
     """A one-line, operator-facing rendering of one incident."""
     event = str(entry.get("event") or "?")
     text = DESCRIPTIONS.get(event, event)
+    # Several stores share STORE_WRITE_REFUSED, so the description alone leaves the
+    # operator with a problem and no address. Name the file they have to fix.
+    data = entry.get("data")
+    if isinstance(data, dict):
+        target = data.get("path") or data.get("store")
+        if target:
+            text = f"{text} [{target}]"
+        # …and when the unreadable bytes were quarantined, name THAT too. Five
+        # different producers copy a damaged file to ``<name>.corrupt`` before
+        # falling back to defaults, and that copy is the entire recovery path — the
+        # operator cannot restore what they do not know exists. `doctor` used to
+        # surface it for exactly one hardcoded filename (config.yaml.corrupt); any
+        # producer that passes ``backup`` now gets it for free.
+        backup = data.get("backup")
+        if backup:
+            text = f"{text} — original preserved at {backup}"
     try:
         stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(float(entry.get("ts") or 0)))
     except Exception:  # noqa: BLE001

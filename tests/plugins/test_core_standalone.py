@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.fixtures.module_eviction import evicted_modules, matches
+
 # Every first-party plugin distribution's import package.
 PLUGIN_PACKAGES = (
     "navig_audio", "navig_calendar", "navig_devhost", "navig_download", "navig_email",
@@ -61,8 +63,14 @@ UNDER_TEST = (
 )
 
 
+# The ONE definition of what the simulated install hides. Eviction and the teardown
+# purge below must cover exactly the same set: a module the purge misses is a module
+# that outlives the world it was born in.
+_EVICTED_PREFIXES = PLUGIN_PACKAGES + EXPECTED_SHIMS + UNDER_TEST
+
+
 def _matches(mod: str, prefixes: tuple[str, ...]) -> bool:
-    return any(mod == p or mod.startswith(p + ".") for p in prefixes)
+    return matches(mod, prefixes)
 
 
 @pytest.fixture
@@ -70,15 +78,117 @@ def no_plugins(monkeypatch: pytest.MonkeyPatch):
     """Simulate an install with core only — no plugins."""
     blocker = _PluginBlocker()
     monkeypatch.setattr(sys, "meta_path", [blocker, *sys.meta_path])
+    with evicted_modules(monkeypatch, _EVICTED_PREFIXES):
+        yield blocker
 
-    # Evict the plugins, the core shims that re-export them, and the modules under test,
-    # so every import in these tests genuinely re-executes through the blocker.
-    # monkeypatch restores sys.modules on teardown.
-    evict = PLUGIN_PACKAGES + EXPECTED_SHIMS + UNDER_TEST
-    for mod in list(sys.modules):
-        if _matches(mod, evict):
-            monkeypatch.delitem(sys.modules, mod, raising=False)
-    return blocker
+
+def test_eviction_leaves_no_duplicate_module_behind() -> None:
+    """After teardown, `sys.modules[m]` and `parent.leaf` must be the SAME object.
+
+    When they diverge, `monkeypatch.setattr("pkg.mod.attr", …)` — which resolves by
+    attribute traversal — patches one module while the code under test reads the other,
+    and the patch silently does nothing. That is a bug with no error message: it surfaces
+    as an unrelated test failing only when this file ran first in the same worker.
+
+    Driven with an explicit MonkeyPatch so the assertion runs AFTER teardown inside one
+    test, instead of depending on which test pytest happens to run next.
+    """
+    assert UNDER_TEST, "nothing is under test — this guard would pass vacuously"
+    # Import them HERE rather than assuming an earlier test did: run alone, none of them
+    # is in sys.modules yet, and a guard that only works in a particular order is the
+    # same class of bug it exists to catch.
+    for mod in UNDER_TEST:
+        importlib.import_module(mod)
+    before = {m: sys.modules[m] for m in UNDER_TEST}
+
+    mp = pytest.MonkeyPatch()
+    try:
+        with evicted_modules(mp, _EVICTED_PREFIXES):
+            for mod in UNDER_TEST:
+                importlib.import_module(mod)      # the re-import every test here performs
+    finally:
+        mp.undo()
+
+    for mod, original in before.items():
+        parent_name, _, leaf = mod.rpartition(".")
+        assert sys.modules[mod] is original, f"{mod} was not restored in sys.modules"
+        assert getattr(sys.modules[parent_name], leaf) is original, (
+            f"{parent_name}.{leaf} is a stale duplicate of {mod} — a later "
+            "monkeypatch.setattr on it would patch the wrong module object"
+        )
+
+
+def test_no_module_imported_inside_outlives_the_no_plugins_world() -> None:
+    """A module first imported INSIDE the simulated install must not survive its teardown.
+
+    The sibling guard above covers the three names in ``UNDER_TEST`` — the modules that
+    already existed when eviction ran. This covers the ones that did not:
+    ``test_every_gateway_route_imports_without_plugins`` imports ~20 modules beneath
+    ``navig.gateway.routes``, and a fresh xdist worker has loaded none of them. Nothing
+    tracked those, so they outlived teardown while their parent was rolled back to the
+    original object that never had them as attributes — leaving ``sys.modules`` holding a
+    child its parent does not know.
+
+    The damage lands somewhere else entirely: dotted ``monkeypatch.setattr`` resolves by
+    attribute traversal, so every later ``setattr("navig.gateway.routes.<mod>.X", …)`` in
+    that worker raises ``AttributeError: 'module' object at navig.gateway.routes.<mod> has
+    no attribute '<mod>'``. Measured before the fix — ``pytest
+    tests/plugins/test_core_standalone.py tests/gateway/test_gateway_core_routes.py``
+    failed both WS-heartbeat tests every single time in that order and passed in the
+    other, which is why four pre-push gate runs read it as flake.
+
+    Driven with an explicit MonkeyPatch so the assertion runs AFTER teardown inside one
+    test, rather than depending on which test pytest happens to run next.
+    """
+    routes = importlib.import_module("navig.gateway.routes")
+    victim = "navig.gateway.routes.core"
+
+    # Reproduce a fresh worker: the package loaded, this submodule not. Done BY HAND and
+    # not through the MonkeyPatch below, whose undo would restore the victim and hide the
+    # very orphan this asserts against.
+    saved_mod = sys.modules.pop(victim, None)
+    saved_attr = routes.__dict__.pop("core", None)
+    try:
+        mp = pytest.MonkeyPatch()
+        # Drive the REAL fixture — its body AND its teardown — so this guards the WIRING,
+        # not just the helper. The first version of this test called
+        # the purge helper itself and passed with the fixture's use of it
+        # deleted: it proved the function worked and nothing whatever about anything using
+        # it. `__wrapped__` because pytest refuses a direct call to a fixture.
+        fixture_fn = getattr(no_plugins, "__wrapped__", no_plugins)
+        gen = fixture_fn(mp)
+        try:
+            next(gen)  # setup, up to the yield
+            importlib.import_module(victim)  # born inside the no-plugins world
+            next(gen, None)  # teardown, everything after the yield
+        finally:
+            mp.undo()
+
+        assert victim not in sys.modules, (
+            f"{victim} was imported inside the simulated no-plugins install and outlived "
+            "its teardown. Its parent package has been rolled back to the original "
+            "object, which has no such attribute, so the next dotted monkeypatch.setattr "
+            "on it anywhere in this worker raises AttributeError."
+        )
+
+        orphans = [
+            m
+            for m in sys.modules
+            if "." in m
+            and _matches(m, _EVICTED_PREFIXES)
+            and getattr(sys.modules.get(m.rpartition(".")[0]), m.rpartition(".")[2], None)
+            is not sys.modules[m]
+        ]
+        assert not orphans, (
+            "modules left in sys.modules that their parent package does not know about — "
+            "a dotted monkeypatch.setattr on any of them will not resolve:\n  "
+            + "\n  ".join(orphans)
+        )
+    finally:
+        if saved_mod is not None:
+            sys.modules[victim] = saved_mod
+        if saved_attr is not None:
+            routes.core = saved_attr
 
 
 def test_blocker_actually_blocks(no_plugins) -> None:

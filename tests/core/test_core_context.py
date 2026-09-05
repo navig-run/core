@@ -5,8 +5,6 @@ Tests for ContextManager.get_active_host and related priority resolution.
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from navig.core.context import ContextManager
 
 # ---------------------------------------------------------------------------

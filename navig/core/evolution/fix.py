@@ -5,8 +5,9 @@ from typing import Any
 
 from navig.ai import ask_ai_with_context
 from navig.console_helper import error, info, success
-from navig.core.evolution.base import BaseEvolver
+from navig.core.evolution.base import BaseEvolver, extract_code_block
 from navig.core.evolution.failure_summary import summarize_check_failure
+from navig.core.proc_text import decode_console_result
 
 
 class FixEvolver(BaseEvolver):
@@ -55,11 +56,9 @@ Constraints:
 
     def _validate(self, artifact: str, context: Any) -> str | None:
         # 1. Basic syntax check if python
-        import re
-
-        # Extract code to temp file for checking
-        match = re.search(r"```\w*\n(.*?)\n```", artifact, re.DOTALL)
-        code = match.group(1).strip() if match else artifact
+        # Same extractor as _save — validating one string and writing a
+        # different one is how fenced markdown ended up inside source files.
+        code = extract_code_block(artifact)
 
         if self.target_file.suffix == ".py":
             try:
@@ -84,7 +83,7 @@ Constraints:
                 cmd_str = self.check_command.replace("{file}", tmp_path)
 
                 info(f"Running validation: {cmd_str}")
-                result = subprocess.run(cmd_str, shell=True, capture_output=True, text=True)  # noqa: S602  # dynamic shell dispatch
+                result = decode_console_result(subprocess.run(cmd_str, shell=True, capture_output=True))  # noqa: S602  # dynamic shell dispatch
 
                 if result.returncode != 0:
                     self.last_failure_summary = summarize_check_failure(
@@ -105,22 +104,18 @@ Constraints:
 
         return None
 
-    def _save(self, goal: str, artifact: str):
+    def _save(self, goal: str, artifact: str) -> bool:
+        # Tracks the window in which the user's original file has been renamed
+        # aside and the replacement is not yet in place. Anything failing in
+        # there must put the original back — losing the file the user asked us
+        # to *fix* is never an acceptable cost of fixing it.
+        backup_path = self.target_file.with_name(f"{self.target_file.name}.bak")
+        original_sidelined = False
+        replaced = False
         try:
-            import re
-
-            # Try to find code block matching extension
-            ext = self.target_file.suffix.strip(".")
-            pattern = re.compile(rf"```{ext}\n(.*?)\n```", re.DOTALL)
-            match = pattern.search(artifact)
-            if not match:
-                # Fallback to generic block
-                match = re.search(r"```\n(.*?)\n```", artifact, re.DOTALL)
-
-            code = match.group(1).strip() if match else artifact
+            code = extract_code_block(artifact)
 
             # Write new code atomically, then swap original to backup
-            backup_path = self.target_file.with_name(f"{self.target_file.name}.bak")
             backup_created = False
             _tmp_path: Path | None = None
             try:
@@ -132,9 +127,11 @@ Constraints:
                 if self.target_file.exists():
                     backup_path.unlink(missing_ok=True)
                     self.target_file.rename(backup_path)
-                    backup_created = True
+                    backup_created = original_sidelined = True
                 os.replace(_tmp_path, self.target_file)
                 _tmp_path = None
+                original_sidelined = False  # the target is back in place
+                replaced = True  # committed: nothing after this can un-save it
             finally:
                 if _tmp_path is not None:
                     _tmp_path.unlink(missing_ok=True)
@@ -142,5 +139,28 @@ Constraints:
             success(f"Fixed code saved to {self.target_file}")
             if backup_created:
                 info(f"Backup at {backup_path}")
+            return True
         except Exception as e:
-            error(f"Failed to save fix: {e}")
+            if replaced:
+                # The swap already committed; only the reporting after it failed.
+                # Saying "unchanged" here would be a lie about the user's file.
+                return True
+            if original_sidelined and not self.target_file.exists():
+                try:
+                    backup_path.rename(self.target_file)
+                    original_sidelined = False
+                except OSError:
+                    pass
+            if original_sidelined:
+                self._save_error = (
+                    f"Failed to save fix and {self.target_file.name} could not be restored: {e}"
+                )
+                error(
+                    f"Failed to save fix: {e}\n"
+                    f"  {self.target_file.name} is still set aside and could NOT be put back.\n"
+                    f"  Recover it with:  mv {backup_path} {self.target_file}"
+                )
+            else:
+                self._save_error = f"Failed to save fix: {e}"
+                error(f"Failed to save fix: {e}\n  {self.target_file.name} is unchanged.")
+            return False

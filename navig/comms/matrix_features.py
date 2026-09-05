@@ -11,6 +11,8 @@ import functools
 import logging
 from typing import Any
 
+from navig.core.coerce import coerce_bool
+
 logger = logging.getLogger(__name__)
 
 # Feature defaults — safe-by-default philosophy
@@ -52,7 +54,9 @@ def is_matrix_enabled() -> bool:
         from navig.config import get_config_manager
 
         cfg = get_config_manager().get_global_config()
-        return cfg.get("comms", {}).get("matrix", {}).get("enabled", False)
+        return coerce_bool(
+            cfg.get("comms", {}).get("matrix", {}).get("enabled"), default=False
+        )
     except Exception:
         return False
 
@@ -62,18 +66,36 @@ def is_feature_enabled(feature: str) -> bool:
     Check if a specific Matrix feature is enabled.
 
     Uses config value if set, otherwise falls back to MATRIX_FEATURE_DEFAULTS.
+
+    coerce_bool, not a raw read. These values come straight from ``config.yaml``,
+    where ``navig config set`` stores its argument as a STRING — and ``bool("false")``
+    is True. The gates that default to *False* are the dangerous ones
+    (``admin_ops``, ``registration_control``, ``file_sharing``), so an operator who
+    ran the command this module's own error message prints —
+
+        navig config set comms.matrix.features.admin_ops false
+
+    — turned the gate ON. Coercion only ever moves that the safe way: a
+    ``"false"``-ish string now closes a gate it used to open, and every truthy
+    spelling still opens it exactly as before.
     """
     features = _get_matrix_features_config()
-    return features.get(feature, MATRIX_FEATURE_DEFAULTS.get(feature, False))
+    default = MATRIX_FEATURE_DEFAULTS.get(feature, False)
+    return coerce_bool(features.get(feature, default), default=default)
 
 
 def get_all_features() -> dict[str, bool]:
-    """Return a dict of all features with their resolved on/off state."""
+    """Return a dict of all features with their resolved on/off state.
+
+    Same coercion as :func:`is_feature_enabled`, and for the same reason twice over:
+    this backs ``navig matrix features``, so an uncoerced string made the listing
+    disagree with the gate it is supposed to describe.
+    """
     features = _get_matrix_features_config()
-    result = {}
-    for key, default in MATRIX_FEATURE_DEFAULTS.items():
-        result[key] = features.get(key, default)
-    return result
+    return {
+        key: coerce_bool(features.get(key, default), default=default)
+        for key, default in MATRIX_FEATURE_DEFAULTS.items()
+    }
 
 
 def require_feature(feature: str):

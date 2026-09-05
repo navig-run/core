@@ -1,5 +1,4 @@
 import os
-import re
 from pathlib import Path
 from typing import Any
 
@@ -7,7 +6,7 @@ import yaml
 
 from navig.ai import ask_ai_with_context
 from navig.console_helper import error, success
-from navig.core.evolution.base import BaseEvolver
+from navig.core.evolution.base import BaseEvolver, extract_code_block
 
 
 class WorkflowEvolver(BaseEvolver):
@@ -111,16 +110,9 @@ steps:
 
         response = ask_ai_with_context(prompt, system_prompt=self._system_prompt)
 
-        # Extract YAML
-        match = re.search(r"```yaml\n(.*?)\n```", response, re.DOTALL)
-        if match:
-            return match.group(1).strip()
-
-        match = re.search(r"```\n(.*?)\n```", response, re.DOTALL)
-        if match:
-            return match.group(1).strip()
-
-        return response  # Fallback if no block
+        # Extract YAML — one shared extractor (see base.extract_code_block), so
+        # ```yml or ```YAML is not silently treated as "no block".
+        return extract_code_block(response)
 
     def _validate(self, artifact: str, context: Any) -> str | None:
         """Validate YAML structure."""
@@ -195,8 +187,8 @@ steps:
         except Exception as e:
             return f"Validation Error: {e}"
 
-    def _save(self, goal: str, artifact: str):
-        """Save to workflows dir."""
+    def _save(self, goal: str, artifact: str) -> bool:
+        """Save to workflows dir. Returns True only if written."""
         try:
             data = yaml.safe_load(artifact)
             name = data.get("name", "unnamed_workflow")
@@ -210,5 +202,8 @@ steps:
                 f.write(artifact)
 
             success(f"Workflow saved to {path}")
+            return True
         except Exception as e:
+            self._save_error = f"Failed to save workflow: {e}"
             error(f"Failed to save workflow: {e}")
+            return False

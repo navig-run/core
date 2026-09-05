@@ -187,6 +187,20 @@ _SYS = (
 )
 
 
+def _system_prompt() -> str:
+    """Guardrail floor + the operator persona.
+
+    This surface proposes *financial and life* plans, which is exactly where the
+    floor's "named limits" rule earns its place — NAVIG is not a licensed
+    adviser, and a plan that quietly reads as one is the failure mode. The
+    one-line floor is used rather than the full block because this prompt's
+    contract is STRICT JSON: a prose block ahead of it invites prose back out.
+    """
+    from navig.agent.conv.guardrails import guardrail_floor_minimal
+
+    return f"{guardrail_floor_minimal()}\n\n{_SYS}"
+
+
 async def build_plan(cwd=None) -> OperatorPlan:
     """Gather context → grouped plan via LLM, with deterministic fallback."""
     ctx = gather_context(cwd)
@@ -204,7 +218,7 @@ async def _plan_via_llm(ctx: dict) -> OperatorPlan | None:
         raw = await asyncio.to_thread(
             llm_generate,
             messages=[
-                {"role": "system", "content": _SYS},
+                {"role": "system", "content": _system_prompt()},
                 {"role": "user", "content": user},
             ],
             mode="planning",

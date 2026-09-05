@@ -326,7 +326,10 @@ async def handle_deck_connectors_search(request: "web.Request") -> "web.Response
     except Exception:
         body = {}
     query = str(body.get("query", "")).strip()
-    limit = int(body.get("limit", 20) or 20)
+    try:
+        limit = int(body.get("limit", 20) or 20)
+    except (TypeError, ValueError):
+        return web.json_response({"ok": False, "error": "limit must be an integer"}, status=400)
     try:
         connector, err = await _resolve_connector(connector_id)
         if err is not None:
@@ -457,19 +460,38 @@ async def handle_deck_mcp_add(request: "web.Request") -> "web.Response":
         if body.get("env"):
             server_config["env"] = body["env"]
 
+    # Ask BEFORE writing. A stdio entry here is "run this binary as me" — and unlike
+    # /mcp/connect, which adds a runtime client, this one lands in config.yaml and the
+    # gateway auto-connects everything under `mcp.servers` at boot, so an unapproved
+    # command would run again on every restart. Same decision, one implementation.
+    from navig.mcp.registration import authorize_registration
+
+    refused = await authorize_registration(
+        name=name,
+        command=body.get("command"),
+        args=body.get("args"),
+        url=body.get("url"),
+        transport="stdio" if server_type == "stdio" else "http",
+    )
+    if refused is not None:
+        return web.json_response(
+            {"ok": False, "error": refused.detail, "code": refused.code},
+            status=403,
+        )
+
     try:
         from navig.config import get_config_manager
         cfg = get_config_manager()
-        raw = dict(cfg.global_config or {})
-        mcp = dict(raw.get("mcp", {}))
-        servers = list(mcp.get("servers", []))
+        # `global_config` is a process-lifetime cache, so a read-modify-write built on it
+        # can persist a stale snapshot and drop a setting written meanwhile (by the CLI,
+        # or another route). `refresh_global_config()` re-reads, and `set_global` is the
+        # one safe dotted write — refresh, deep-set the leaf, save.
+        servers = list((cfg.refresh_global_config().get("mcp") or {}).get("servers", []))
 
         # Replace if name already exists
         servers = [s for s in servers if s.get("name") != name]
         servers.append(server_config)
-        mcp["servers"] = servers
-        raw["mcp"] = mcp
-        cfg.update_global_config({"mcp": mcp})
+        cfg.set_global("mcp.servers", servers)
 
         return web.json_response({"ok": True, "server": server_config})
     except Exception as exc:
@@ -486,11 +508,12 @@ async def handle_deck_mcp_remove(request: "web.Request") -> "web.Response":
     try:
         from navig.config import get_config_manager
         cfg = get_config_manager()
-        raw = dict(cfg.global_config or {})
-        mcp = dict(raw.get("mcp", {}))
-        servers = [s for s in mcp.get("servers", []) if s.get("name") != name]
-        mcp["servers"] = servers
-        cfg.update_global_config({"mcp": mcp})
+        # Same discipline as the add path: refresh before read-modify-write, and write
+        # the one leaf rather than replacing the whole `mcp` subtree.
+        current = (cfg.refresh_global_config().get("mcp") or {}).get("servers", [])
+        cfg.set_global(
+            "mcp.servers", [s for s in current if s.get("name") != name]
+        )
         return web.json_response({"ok": True, "removed": name})
     except Exception as exc:
         logger.error("MCP server remove error: %s", exc)

@@ -108,3 +108,57 @@ class TestHabitTemplatesCommand:
         result = runner.invoke(habit_app, ["templates"])
         assert result.exit_code == 0
         assert "workout" in result.output.lower() or "Workout" in result.output
+
+
+# ── the habit prefix must have exactly one owner ─────────────────────────────
+
+
+class TestHabitPrefixHasOneDefinition:
+    """A cron job IS a habit exactly when its name carries the prefix.
+
+    Four modules each kept a private `_HABIT_NAME_PREFIX = "habit:"`: the command that
+    creates habits, the dashboard, the deck route, and the store that writes the rows. They
+    matched, so nothing was broken — but the moment one drifts, habits split into two
+    populations: created under one prefix, invisible to everything that lists under the
+    other. That is the same shape as the `~/.navig` split-brain, where a writer and its
+    readers each had their own idea of a path.
+    """
+
+    def test_only_the_store_defines_the_prefix(self):
+        import ast
+        from pathlib import Path
+
+        import navig
+
+        pkg = Path(navig.__file__).resolve().parent
+        definers: list[str] = []
+        for py in sorted(pkg.rglob("*.py")):
+            if "__pycache__" in py.parts:
+                continue
+            try:
+                tree = ast.parse(py.read_text(encoding="utf-8"))
+            except (OSError, SyntaxError, UnicodeDecodeError):
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Assign):
+                    continue
+                val = node.value
+                if not (isinstance(val, ast.Constant) and val.value == "habit:"):
+                    continue
+                names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+                if any("HABIT" in n.upper() and "PREFIX" in n.upper() for n in names):
+                    definers.append(py.relative_to(pkg).as_posix())
+
+        assert definers == ["scheduler/habit_store.py"], (
+            "the habit name prefix must be defined once, by the module that writes habit "
+            f"rows — import HABIT_NAME_PREFIX from it instead. Definers: {definers}"
+        )
+
+    def test_every_surface_agrees_on_the_value(self):
+        """Anti-vacuity: the single definition is the one the surfaces actually use."""
+        from navig.commands.habit import HABIT_NAME_PREFIX as from_command
+        from navig.commands.life_dashboard import HABIT_NAME_PREFIX as from_dashboard
+        from navig.gateway.deck.routes.apps import HABIT_NAME_PREFIX as from_deck
+        from navig.scheduler.habit_store import HABIT_NAME_PREFIX as from_store
+
+        assert from_command == from_dashboard == from_deck == from_store == "habit:"

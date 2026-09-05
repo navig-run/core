@@ -72,6 +72,20 @@ def audit_file(tmp_path):
     return path
 
 
+def _flat(text: str) -> str:
+    """Collapse Rich's line wrapping before matching prose — same helper as
+    tests/ops/test_ledger_chain.py.
+
+    These views print the audit PATH, and Rich hard-wraps to the terminal width, so
+    a longer path pushes the wrap into the middle of a phrase ("nothing \\nrecorded
+    yet") and a plain substring match fails on output that is perfectly correct.
+    Under `-n auto` xdist lengthens tmp_path with the worker id (`popen-gw6`), which
+    is exactly why this passed solo, passed across tests/cli, and failed only in the
+    full run.
+    """
+    return " ".join(text.split())
+
+
 def _invoke(args):
     from typer.testing import CliRunner
 
@@ -124,7 +138,7 @@ def test_actor_filter_is_exact(audit_file):
 def test_no_filter_match_is_honest_and_exits_zero(audit_file):
     result = _invoke(["tail", "--path", str(audit_file), "--actor", "nobody:x"])
     assert result.exit_code == 0
-    assert "No records match" in result.stdout
+    assert "No records match" in _flat(result.stdout)
 
 
 # ─────────────────────────── --json purity ───────────────────────────
@@ -162,7 +176,7 @@ def test_json_empty_file_is_one_document(tmp_path):
 def test_missing_file_message_exits_zero(tmp_path):
     result = _invoke(["tail", "--path", str(tmp_path / "nope.jsonl")])
     assert result.exit_code == 0
-    assert "nothing recorded yet" in result.stdout
+    assert "nothing recorded yet" in _flat(result.stdout)
 
 
 def test_empty_file_message_exits_zero(tmp_path):

@@ -31,7 +31,7 @@ import urllib.request
 from typing import Any
 
 from navig.connectors.base import BaseConnector, ConnectorManifest
-from navig.connectors.errors import ConnectorAuthError
+from navig.connectors.errors import ConnectorAPIError, ConnectorAuthError
 from navig.connectors.types import (
     Action,
     ActionResult,
@@ -66,6 +66,36 @@ def _sb_request(
         except Exception:  # noqa: BLE001 — parse best-effort
             body_data = {"raw": raw.decode("utf-8", errors="replace")}
         return exc.code, body_data
+
+
+def _err_detail(data: dict | list) -> str:
+    """Pull a short human message out of a PostgREST error body."""
+    if isinstance(data, dict):
+        return str(data.get("message") or data.get("msg") or data.get("hint") or data.get("raw") or data)[:200]
+    return str(data)[:200]
+
+
+def _act_result(label: str, status_code: int, resp: dict | list, ok_codes: tuple[int, ...]) -> ActionResult:
+    """Build a valid ``ActionResult`` for a Supabase write/RPC op.
+
+    On failure it surfaces the HTTP status + PostgREST message in ``error`` (never a phantom
+    success); on success it carries the response payload in ``resource.metadata`` so callers can
+    read the created rows / RPC return / bucket list (``ActionResult`` has no ``data`` field —
+    the previous code passed ``data=`` and raised ``TypeError`` on every call).
+    """
+    if status_code not in ok_codes:
+        return ActionResult(success=False, error=f"HTTP {status_code}: {_err_detail(resp)}")
+    return ActionResult(
+        success=True,
+        resource=Resource(
+            id=label,
+            source="supabase",
+            title=label,
+            preview=str(resp)[:400],
+            resource_type=ResourceType.DOCUMENT,
+            metadata={"status": status_code, "response": resp},
+        ),
+    )
 
 
 class SupabaseConnector(BaseConnector):
@@ -141,6 +171,21 @@ class SupabaseConnector(BaseConnector):
     def _rest_url(self, table: str) -> str:
         return f"{self._url}/rest/v1/{urllib.parse.quote(table, safe='')}"
 
+    def _require_connected(self) -> None:
+        """Guard called at the top of every read/write path.
+
+        Without it, ``search``/``fetch``/``act`` referenced a method that did not exist — every
+        call raised ``AttributeError`` before doing anything, so the connector was dead on arrival
+        (hidden because it had no tests). Now it fails with a clear, catchable message when
+        ``connect()`` was never called or failed (no URL / key), instead of firing a request at
+        ``https://None/...``.
+        """
+        if not self._url or not self._anon_key:
+            raise ConnectorAuthError(
+                self.manifest.id,
+                "Not connected — call connect() first (needs SUPABASE_URL + SUPABASE_ANON_KEY).",
+            )
+
     # ── Search: ilike on text columns (simple full-text) ────────────────────
 
     async def search(
@@ -178,12 +223,18 @@ class SupabaseConnector(BaseConnector):
         )
         if status_code in (401, 403):
             raise ConnectorAuthError(self.manifest.id, f"Unauthorized ({status_code})")
+        if not 200 <= status_code < 300:
+            # A bad column/table, malformed filter, rate limit or server error returns an error
+            # body (a dict, not a row list). Surfacing it as an empty result would make a FAILED
+            # query look identical to "no matches" — a phantom-empty. Raise instead.
+            raise ConnectorAPIError(self.manifest.id, status_code, _err_detail(data))
         rows = data if isinstance(data, list) else []
         return [
             Resource(
                 id=str(row.get("id", i)),
+                source="supabase",
                 title=str(row.get("title", row.get("name", f"Row {i}"))),
-                body=str(row)[:400],
+                preview=str(row)[:400],
                 url=f"{self._url}/rest/v1/{table}?id=eq.{row.get('id', '')}",
                 resource_type=ResourceType.DOCUMENT,
                 metadata={"table": table, "row": row},
@@ -193,11 +244,11 @@ class SupabaseConnector(BaseConnector):
 
     # ── Fetch: read all rows from a table ───────────────────────────────────
 
-    async def fetch(self, table: str, **kwargs: Any) -> Resource | None:
-        """Fetch rows from *table* with optional filters.
+    async def fetch(self, resource_id: str, **kwargs: Any) -> Resource | None:
+        """Fetch rows from *resource_id* (a table) with optional filters.
 
         Args:
-            table: PostgREST table name.
+            resource_id: PostgREST table name.
             kwargs:
                 select (str): Comma-separated columns (default "*").
                 order (str): Column to order by (e.g. "id").
@@ -205,6 +256,10 @@ class SupabaseConnector(BaseConnector):
                 offset (int): Row offset for pagination.
                 filters (dict): Column-filter pairs, e.g. {"status": "eq.active"}.
         """
+        # `resource_id` is the base-class parameter name (BaseConnector.fetch);
+        # 9 of 12 connectors already use it. Bound to the domain name here so the
+        # body, its log lines and its `metadata` keys stay unchanged.
+        table = resource_id
         self._require_connected()
         select = kwargs.get("select", "*")
         order = kwargs.get("order", None)
@@ -230,30 +285,43 @@ class SupabaseConnector(BaseConnector):
         if status_code == 404:
             logger.debug("Supabase table not found: %s", table)
             return None
+        if not 200 <= status_code < 300:
+            # A bad filter / server error must not be reported as "0 row(s) fetched" success.
+            raise ConnectorAPIError(self.manifest.id, status_code, _err_detail(data))
         rows = data if isinstance(data, list) else []
+        # We requested at most `limit` rows and don't auto-paginate, so an exact-`limit` result
+        # means MORE rows almost certainly exist — flag it rather than presenting a capped read
+        # as the whole table (the module docstring's "read all rows" promise).
+        truncated = len(rows) == int(limit)
+        body = f"{len(rows)} row(s) fetched"
+        if truncated:
+            body += f" (limit {limit} reached — more rows may exist; raise `limit` or page with `offset`)"
         return Resource(
             id=table,
+            source="supabase",
             title=f"Supabase table: {table}",
-            body=f"{len(rows)} row(s) fetched",
+            preview=body,
             url=f"{self._url}/rest/v1/{table}",
             resource_type=ResourceType.DOCUMENT,
-            metadata={"table": table, "row_count": len(rows), "rows": rows},
+            metadata={"table": table, "row_count": len(rows), "rows": rows, "truncated": truncated},
         )
 
     # ── Act: insert / update / delete / rpc ─────────────────────────────────
 
     async def act(self, action: Action) -> ActionResult:
-        """Supported actions:
+        """Run a Supabase write/RPC op. The op name comes from ``action.params['op']`` (the five
+        DB operations below don't map onto the generic ``ActionType`` enum, so they're carried in
+        params — ``action.action_type`` is unused here).
 
-        insert:  {"table": "...", "rows": [...]}
-        update:  {"table": "...", "filters": {"id": "eq.5"}, "data": {...}}
-        delete:  {"table": "...", "filters": {"id": "eq.5"}}
-        rpc:     {"function": "my_func", "params": {...}}
-        buckets: {} → list storage buckets
+        insert:  {"op": "insert", "table": "...", "rows": [...]}
+        update:  {"op": "update", "table": "...", "filters": {"id": "eq.5"}, "data": {...}}
+        delete:  {"op": "delete", "table": "...", "filters": {"id": "eq.5"}}
+        rpc:     {"op": "rpc", "function": "my_func", "params": {...}}
+        buckets: {"op": "buckets"} → list storage buckets
         """
         self._require_connected()
-        name = action.name
         p = action.params
+        name = p.get("op", "")
 
         if name == "insert":
             import json
@@ -263,9 +331,7 @@ class SupabaseConnector(BaseConnector):
             body = json.dumps(rows).encode()
             hdrs = {**self._headers(), "Content-Type": "application/json"}
             status_code, resp = _sb_request(self._rest_url(table), hdrs, "POST", body)
-            return ActionResult(
-                success=status_code in (200, 201), data={"status": status_code, "response": resp}
-            )
+            return _act_result(f"insert:{table}", status_code, resp, (200, 201))
 
         if name == "update":
             import json
@@ -281,7 +347,7 @@ class SupabaseConnector(BaseConnector):
             status_code, resp = _sb_request(
                 f"{self._rest_url(table)}?{filters}", hdrs, "PATCH", body
             )
-            return ActionResult(success=status_code in (200, 204), data={"status": status_code})
+            return _act_result(f"update:{table}", status_code, resp, (200, 204))
 
         if name == "delete":
             table = p["table"]
@@ -289,7 +355,7 @@ class SupabaseConnector(BaseConnector):
             status_code, resp = _sb_request(
                 f"{self._rest_url(table)}?{filters}", self._headers(), "DELETE"
             )
-            return ActionResult(success=status_code in (200, 204), data={"status": status_code})
+            return _act_result(f"delete:{table}", status_code, resp, (200, 204))
 
         if name == "rpc":
             import json
@@ -298,11 +364,11 @@ class SupabaseConnector(BaseConnector):
             body = json.dumps(p.get("params", {})).encode()
             hdrs = {**self._headers(), "Content-Type": "application/json"}
             status_code, resp = _sb_request(f"{self._url}/rest/v1/rpc/{func}", hdrs, "POST", body)
-            return ActionResult(success=status_code == 200, data=resp)
+            return _act_result(f"rpc:{func}", status_code, resp, (200,))
 
         if name == "buckets":
             status_code, resp = _sb_request(f"{self._url}/storage/v1/bucket", self._headers())
-            return ActionResult(success=status_code == 200, data={"buckets": resp})
+            return _act_result("buckets", status_code, resp, (200,))
 
         return ActionResult(success=False, error=f"Unknown action: {name}")
 
@@ -311,7 +377,7 @@ class SupabaseConnector(BaseConnector):
     async def health_check(self) -> HealthStatus:
         """Probe the Supabase REST root to verify the project is reachable."""
         if not self._url or not self._anon_key:
-            return HealthStatus(healthy=False, message="Not connected", latency_ms=0)
+            return HealthStatus(ok=False, message="Not connected", latency_ms=0)
         t0 = time.monotonic()
         try:
             key = self._anon_key
@@ -323,21 +389,21 @@ class SupabaseConnector(BaseConnector):
             latency_ms = int((time.monotonic() - t0) * 1000)
             if resp.status in (200, 400):  # 400 = no table arg = API is up
                 return HealthStatus(
-                    healthy=True,
+                    ok=True,
                     message=f"Supabase REST API reachable ({self._url})",
                     latency_ms=latency_ms,
                 )
             return HealthStatus(
-                healthy=False, message=f"Unexpected HTTP {resp.status}", latency_ms=latency_ms
+                ok=False, message=f"Unexpected HTTP {resp.status}", latency_ms=latency_ms
             )
         except urllib.error.HTTPError as exc:
             latency_ms = int((time.monotonic() - t0) * 1000)
             # 400 from PostgREST root means it's up (no table specified)
             if exc.code == 400:
                 return HealthStatus(
-                    healthy=True, message="Supabase REST API reachable", latency_ms=latency_ms
+                    ok=True, message="Supabase REST API reachable", latency_ms=latency_ms
                 )
-            return HealthStatus(healthy=False, message=f"HTTP {exc.code}", latency_ms=latency_ms)
+            return HealthStatus(ok=False, message=f"HTTP {exc.code}", latency_ms=latency_ms)
         except Exception as exc:  # noqa: BLE001
             latency_ms = int((time.monotonic() - t0) * 1000)
-            return HealthStatus(healthy=False, message=str(exc), latency_ms=latency_ms)
+            return HealthStatus(ok=False, message=str(exc), latency_ms=latency_ms)

@@ -1,8 +1,6 @@
 """Tests for navig/core/execution.py and navig/core/model_routing.py — batch 87."""
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -168,8 +166,6 @@ class TestExecutionSettingsLocalConfigCache:
 # model_routing
 # ---------------------------------------------------------------------------
 from navig.core.model_routing import (
-    _DEFAULT_MAX_SIMPLE_CHARS,
-    _DEFAULT_MAX_SIMPLE_WORDS,
     _coerce_bool,
     _coerce_int,
     choose_cheap_model_route,

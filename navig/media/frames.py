@@ -1,9 +1,11 @@
 """navig.media.frames — video frame / scene extraction (ffmpeg).
 
-The one genuinely-new media capability: the existing video paths (`inbox.extract._extract_video`,
-`telegram_catalog_analyzer._analyze_video`) only pull the audio track or a *single* thumbnail.
-This does scene-change detection + interval sampling into a `frames/` dir, plus `ffprobe`
-metadata — the frames the `navig media` briefing pipeline reads with OCR / vision.
+The one genuinely-new media capability: `inbox.extract._extract_video` still only pulls the
+audio track, and `telegram_catalog_analyzer.analyze_video_file` defaults to a *single*
+thumbnail for bulk catalog work. This does scene-change detection + interval sampling into a
+`frames/` dir, plus `ffprobe` metadata — the frames the `navig media` briefing pipeline reads
+with OCR / vision, and (since the TikTok 📝 Transcript action) the frames `analyze_video_file`
+samples when a caller explicitly asks for more than one.
 
 Pure subprocess over ffmpeg; **degrades gracefully** — returns ``[]`` / ``{}`` when ffmpeg is
 absent or on error, never raises. Mirrors the ffmpeg recipe already documented in the distillery
@@ -15,6 +17,8 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+
+from navig.core.proc_text import decode_console_result
 
 _FRAME_GLOB = "f_*.jpg"
 
@@ -91,7 +95,7 @@ def extract_frames(
                "-vf", vf, "-frames:v", str(max_frames), str(out / "f_%03d.jpg")]
 
     try:
-        subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=True)
+        decode_console_result(subprocess.run(cmd, capture_output=True, timeout=timeout, check=True))
     except (subprocess.SubprocessError, OSError):
         pass  # non-zero exit (cut-free clip, or an encoder quirk) → handled by the fallback below
 

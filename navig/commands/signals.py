@@ -131,7 +131,7 @@ def list_cmd() -> None:
     for r in rows:
         state = "on " if r["enabled"] else "off"
         ch.info(
-            f"[{state}] {r['name']}",
+            f"\\[{state}] {r['name']}",
             f"{r['notify_type']} · {r['priority']} · hits={r['hit_count']} · {r['secret']}",
         )
 
@@ -201,6 +201,15 @@ def test(
         ch.error("Could not reach the gateway.", f"{exc} — is the daemon running? ({url})")
         raise typer.Exit(1)
 
-    delivered = ", ".join(data.get("delivered") or []) or "no channels enabled"
-    ch.success("Signal accepted.", f"Delivered to: {delivered}")
-    ch.dim("Check the deck bell/Inbox and your Telegram chat.")
+    delivered = data.get("delivered") or []
+    if delivered:
+        ch.success("Signal accepted.", f"Delivered to: {', '.join(delivered)}")
+        ch.dim("Check the deck bell/Inbox and your Telegram chat.")
+    else:
+        # Verified + accepted, but the fan-out reached zero channels — every channel
+        # for this type is off/muted. Say so honestly instead of a green "delivered".
+        ch.warning(
+            "Signal accepted but delivered to no channels.",
+            "Every channel for this notification type is off or muted — "
+            "enable one in Settings → Notifications.",
+        )

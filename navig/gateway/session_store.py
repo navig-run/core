@@ -221,8 +221,27 @@ class SessionStore:
         return len(idle_keys)
 
     def save(self) -> None:
-        """Persist all contexts to JSON (atomic write). No-op when no persist_path."""
+        """Persist all contexts to JSON (atomic write). No-op when no persist_path.
+
+        Refuses while the last load is known to have failed — see `_load`. Recorded
+        as an incident so a daemon that declines to write on a timer does not do it
+        silently. Runs on the gateway's timer, so it must not raise.
+        """
         if not self._persist_path:
+            return
+        if getattr(self, "_load_failed", False):
+            from navig.core import incidents
+
+            incidents.record(
+                incidents.STORE_WRITE_REFUSED,
+                store="session_store",
+                path=str(self._persist_path),
+            )
+            logger.warning(
+                "session_store: refusing to persist — {} could not be read, so saving "
+                "now would replace it with an incomplete set",
+                self._persist_path,
+            )
             return
         try:
             with self._lock:
@@ -239,16 +258,35 @@ class SessionStore:
     # ------------------------------------------------------------------
 
     def _load(self) -> None:
+        """Restore persisted contexts.
+
+        A failed READ must never become a destructive WRITE. This swallowed any
+        failure into a log line and left `_contexts` empty, and `save()` — called on
+        a timer and at shutdown — then wrote that empty mapping over the file. One
+        transient lock cost every operator's active host, space and conversation
+        state. `load_json_for_update` refuses to mask an unreadable-but-populated
+        file, and the failure is remembered so `save()` can decline.
+        """
+        self._load_failed = False
         if not self._persist_path or not self._persist_path.exists():
             return
+        from navig.core.json_io import JsonReadError, load_json_for_update
+
         try:
-            raw = json.loads(self._persist_path.read_text(encoding="utf-8"))
-            for k, d in raw.items():
-                ctx = OperatorContext.from_dict(d)
-                self._contexts[k] = ctx
-            logger.debug("session_store: loaded {} context(s)", len(self._contexts))
-        except Exception as exc:
+            raw = load_json_for_update(self._persist_path, default={})
+        except JsonReadError as exc:
+            self._load_failed = True
             logger.warning("session_store: failed to load persisted sessions: {}", exc)
+            return
+
+        for k, d in raw.items():
+            try:
+                self._contexts[k] = OperatorContext.from_dict(d)
+            except Exception as exc:  # noqa: BLE001 — one bad row must not drop the rest
+                self._load_failed = True
+                logger.warning("session_store: failed to load session {}: {}", k, exc)
+                return
+        logger.debug("session_store: loaded {} context(s)", len(self._contexts))
 
 
 # =============================================================================

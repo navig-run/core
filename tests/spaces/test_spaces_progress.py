@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from navig.spaces.progress import SpaceProgress, _completion_from_markdown, read_space_progress
 
 

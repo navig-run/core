@@ -1,9 +1,7 @@
 """Tests for navig/commands/paths_cmd.py."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from navig.commands.paths_cmd import _path_rows, paths_app

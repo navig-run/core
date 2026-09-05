@@ -78,6 +78,10 @@ _COIN_IDS = {
     "near": "near", "atom": "cosmos", "uni": "uniswap", "etc": "ethereum-classic",
 }
 
+# Crypto symbols recognised for a bare "N BTC to USD" conversion. The NL matcher in
+# biz_commands validates against this so ordinary words never trigger a conversion.
+CRYPTO_SYMBOLS = frozenset(_COIN_IDS)
+
 
 async def crypto(sym: str, vs: str = "usd") -> str:
     s = (sym or "").strip().lower() or "btc"
@@ -103,6 +107,63 @@ async def crypto(sym: str, vs: str = "usd") -> str:
     if chg is not None:
         chg_s = f"\n{'🟢▲' if chg >= 0 else '🔴▼'} {chg:+.2f}% (24h)"
     return f"₿ <b>{cid.replace('-', ' ').title()}</b> ({s.upper()})\n<b>{_money(price)} {vs.upper()}</b>{chg_s}"
+
+
+# ── amount-aware conversion across fiat + crypto ("0.5 btc to usd") ──────────
+
+
+async def _coin_price(sym: str, vs: str = "usd") -> tuple[str, float, float | None] | None:
+    """``(coin_id, price, 24h_change%)`` for *sym* priced in *vs*, or None. Resolves
+    the CoinGecko id from the known map, else a search."""
+    s = (sym or "").strip().lower() or "btc"
+    vs = (vs or "usd").lower()
+    cid = _COIN_IDS.get(s)
+    if not cid:
+        sr = await _get_json(f"https://api.coingecko.com/api/v3/search?query={s}", timeout=8)
+        coins = (sr or {}).get("coins") or []
+        cid = coins[0]["id"] if coins else None
+    if not cid:
+        return None
+    d = await _get_json(
+        f"https://api.coingecko.com/api/v3/simple/price?ids={cid}"
+        f"&vs_currencies={vs}&include_24hr_change=true",
+        timeout=8,
+    )
+    row = (d or {}).get(cid) or {}
+    price = row.get(vs)
+    if price is None:
+        return None
+    return cid, float(price), row.get(f"{vs}_24h_change")
+
+
+async def _usd_value(code: str) -> float | None:
+    """USD value of ONE unit of *code* — a fiat ISO code or a crypto symbol."""
+    code = (code or "").upper()
+    if code == "USD":
+        return 1.0
+    if code.lower() in _COIN_IDS:
+        r = await _coin_price(code, "usd")
+        return r[1] if r else None
+    d = await _get_json(f"https://open.er-api.com/v6/latest/{code}", timeout=8)
+    rate = ((d or {}).get("rates") or {}).get("USD")
+    return float(rate) if rate else None
+
+
+async def smart_convert(amount: float, frm: str, to: str) -> str:
+    """Convert *amount* of *frm* into *to* for ANY mix of fiat & crypto, bridging via
+    USD. Used by the natural-language "N BTC to USD" path; plain fiat↔fiat stays on
+    :func:`currency` (one call)."""
+    frm, to = (frm or "").upper(), (to or "").upper()
+    uf = await _usd_value(frm)
+    ut = await _usd_value(to)
+    if not uf or not ut:
+        return f"💱 Couldn't convert <b>{frm}→{to}</b> right now (check the codes)."
+    rate = uf / ut
+    glyph = "₿" if (frm.lower() in _COIN_IDS or to.lower() in _COIN_IDS) else "💱"
+    return (
+        f"{glyph} <b>{amount:g} {frm}</b> = <b>{_money(amount * rate)} {to}</b>\n"
+        f"<i>1 {frm} = {_money(rate)} {to}</i>"
+    )
 
 
 # ── currency (open.er-api.com) ───────────────────────────────────────────────

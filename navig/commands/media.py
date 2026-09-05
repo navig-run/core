@@ -278,26 +278,26 @@ def media_dedupe_video(
 @media_app.command("browse")
 def media_browse(
     directory: str = typer.Argument(..., help="Folder of media to browse."),
-    port: int = typer.Option(8770, "--port", "-p"),
+    port: int | None = typer.Option(
+        None, "--port", "-p",
+        help="Default: 8770, or a free port if the OS has that range reserved."),
     no_open: bool = typer.Option(False, "--no-open", help="Don't auto-open the browser."),
 ) -> None:
     """Launch a local web gallery for any media folder (grid + preview, streams video)."""
-    import webbrowser  # noqa: PLC0415
-
+    from navig.http_bind import PortBindError  # noqa: PLC0415
     from navig.media.browse import serve  # noqa: PLC0415
     root = Path(directory).expanduser()
     if not root.is_dir():
         ch.error(f"Not a directory: {root}")
         raise typer.Exit(1)
-    url = f"http://localhost:{port}"
-    ch.success(f"Media gallery → {url}   (Ctrl+C to stop)")
-    if not no_open:
-        try:
-            webbrowser.open(url)
-        except Exception:  # noqa: BLE001
-            pass
+    ch.success("Media gallery starting…   (Ctrl+C to stop)")
+    # serve() prints the URL and opens the browser: with no --port the port is only
+    # known after binding (the preferred one may be reserved by the OS).
     try:
-        serve(root, port)
+        serve(root, port, open_browser=not no_open)
+    except PortBindError as exc:
+        ch.error(str(exc))
+        raise typer.Exit(1) from None
     except KeyboardInterrupt:
         pass
 

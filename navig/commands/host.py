@@ -740,13 +740,13 @@ def inspect_host(options: dict[str, Any]) -> dict[str, Any] | None:
     if not silent:
         ch.success(f"✓ Host '{active}' configuration updated\n")
         ch.header("Updated Information")
-        ch.info(f"OS: {updates['metadata']['os']}", style="green")
+        ch.console.print(f"[green]OS: {updates['metadata']['os']}[/green]")
         if updates["metadata"]["php_version"]:
-            ch.info(f"PHP: {updates['metadata']['php_version']}", style="green")
+            ch.console.print(f"[green]PHP: {updates['metadata']['php_version']}[/green]")
         if updates["metadata"]["mysql_version"]:
-            ch.info(f"Database: {updates['metadata']['mysql_version']}", style="green")
+            ch.console.print(f"[green]Database: {updates['metadata']['mysql_version']}[/green]")
         if detected_templates:
-            ch.info(f"Templates: {', '.join(detected_templates.keys())}", style="cyan")
+            ch.console.print(f"[cyan]Templates: {', '.join(detected_templates.keys())}[/cyan]")
 
     # Return discovery results for silent mode (used by interactive menu)
     return {
@@ -1030,7 +1030,10 @@ def test_host(options: dict[str, Any]) -> None:
         ch.dim(f"\nSSH Command: {' '.join(ssh_cmd)}\n")
 
     try:
-        result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=15)
+        # UTF-8: remote output over SSH, not local console output.
+        result = subprocess.run(
+            ssh_cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=15
+        )
 
         if result.returncode == 0:
             if not silent:
@@ -1214,6 +1217,12 @@ host_app = typer.Typer(
 @host_app.callback()
 def host_callback(ctx: typer.Context):
     """Host management - run without subcommand for help."""
+    # Nine subcommands below write into ctx.obj (`ctx.obj["plain"] = plain`, …). Reached
+    # any way other than through the root `navig` callback — a test, a direct sub-app
+    # invocation — ctx.obj is None and that assignment dies with "'NoneType' object does
+    # not support item assignment". This group callback runs before every subcommand, so
+    # it is the one place that can guarantee the dict.
+    ctx.ensure_object(dict)
     if ctx.invoked_subcommand is None:
         import os as _os  # noqa: PLC0415
 
@@ -1338,6 +1347,22 @@ def host_add(
         from navig.commands.host import add_host
 
         add_host(name, ctx.obj)
+
+
+@host_app.command("remove")
+def host_remove(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Host name to remove"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+):
+    """Remove a host configuration."""
+    from navig.commands.host import remove_host
+
+    # A local copy rather than mutating ctx.obj: this flag is for one call, and the
+    # shared context outlives it. `remove_host` reads "yes" (its own confirm gate).
+    opts = dict(ctx.obj or {})
+    opts["yes"] = force or opts.get("yes", False)
+    remove_host(name, opts)
 
 
 @host_app.command("discover-local")
@@ -1962,3 +1987,137 @@ def host_maintenance_install(
     from navig.commands.remote import install_remote_package
 
     install_remote_package(package, ctx.obj)
+
+
+# ============================================================================
+# HOST LOCK — stop two agent sessions mutating the same server at once
+# ============================================================================
+
+host_lock_app = typer.Typer(
+    help="Per-host advisory lock (multi-agent safety)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+host_app.add_typer(host_lock_app, name="lock")
+
+
+@host_lock_app.callback()
+def host_lock_callback(ctx: typer.Context):
+    """Show lock status when called without a subcommand."""
+    ctx.ensure_object(dict)
+    if ctx.invoked_subcommand is None:
+        host_lock_status(ctx, host=None, json_out=False)
+
+
+def _lock_target(host: str | None) -> str:
+    """The host a lock command applies to — explicit arg, else the active host."""
+    if host:
+        return host
+    config_manager = get_config_manager()
+    active = config_manager.get_active_host()
+    if not active:
+        ch.error(
+            "No active host.",
+            "pass a host name, or select one with 'navig host use <name>'.",
+        )
+        raise typer.Exit(1)
+    return active if isinstance(active, str) else str(active)
+
+
+@host_lock_app.command("status")
+def host_lock_status(
+    ctx: typer.Context,
+    host: str = typer.Argument(None, help="Host (default: active host)"),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output"),
+):
+    """Show who currently holds the lock for a host."""
+    from navig.core import host_lock
+
+    target = _lock_target(host)
+    st = host_lock.lock_state(host_lock.read_lock(target))
+
+    if json_out:
+        import json as _json
+
+        typer.echo(
+            _json.dumps(
+                {
+                    "host": target,
+                    "state": st.state,
+                    "age_minutes": st.age_minutes,
+                    "session": st.session,
+                    "user": st.user,
+                    "machine": st.machine,
+                    "command": st.command,
+                    "claimed_at": st.claimed_at,
+                    "me": host_lock.session_id(),
+                    "identity_quality": host_lock.identity_quality(),
+                    "mode": host_lock.mode(),
+                },
+                indent=2,
+            )
+        )
+        raise typer.Exit(2 if st.blocking else 0)
+
+    if st.state == "free":
+        ch.success(f"host lock: free — {target}")
+    elif st.state == "mine":
+        ch.success(f"host lock: held by THIS session — {target} (for {st.age_minutes}m)")
+    elif st.state == "stale":
+        ch.warning(
+            f"host lock: stale — {target}",
+            f"session {st.session} last active {st.age_minutes}m ago "
+            f"(TTL {host_lock.LOCK_TTL_MINUTES}m); it will be taken over automatically.",
+        )
+    else:
+        ch.warning(f"host lock: HELD BY ANOTHER SESSION — {target}", host_lock.describe(st, target))
+
+    if host_lock.identity_quality() == "weak":
+        ch.dim(
+            "identity is weak (no NAVIG_SESSION_ID): two agents under the same account "
+            "look like one session, so conflicts cannot be detected. Export "
+            "NAVIG_SESSION_ID=<something-unique> per session."
+        )
+
+
+@host_lock_app.command("acquire")
+def host_lock_acquire(
+    ctx: typer.Context,
+    host: str = typer.Argument(None, help="Host (default: active host)"),
+    note: str = typer.Option(None, "--note", help="What this session is doing"),
+    force: bool = typer.Option(False, "--force", help="Take over a lock held by another session"),
+):
+    """Claim the lock for a host (also refreshes an existing claim)."""
+    from navig.core import host_lock
+
+    target = _lock_target(host)
+    st = host_lock.lock_state(host_lock.read_lock(target))
+    if st.blocking and not force:
+        ch.error(
+            f"Cannot acquire — {target} is locked by another session.",
+            host_lock.describe(st, target)
+            + "\n\nWait for it to finish (locks expire after "
+            f"{host_lock.LOCK_TTL_MINUTES}m of inactivity), or --force if that session is dead.",
+        )
+        raise typer.Exit(2)
+
+    host_lock.claim(target, note or "navig host lock acquire")
+    ch.success(f"host lock acquired — {target}")
+
+
+@host_lock_app.command("release")
+def host_lock_release(
+    ctx: typer.Context,
+    host: str = typer.Argument(None, help="Host (default: active host)"),
+    force: bool = typer.Option(False, "--force", help="Release even if another session holds it"),
+):
+    """Release the lock for a host."""
+    from navig.core import host_lock
+
+    target = _lock_target(host)
+    ok, reason = host_lock.release(target, force=force)
+    if ok:
+        ch.success(f"host lock released — {target} ({reason})")
+    else:
+        ch.error(f"Not released — {target}", reason)
+        raise typer.Exit(2)

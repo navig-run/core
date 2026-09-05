@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import field
-from datetime import datetime, timezone
-
-import pytest
-
 # ---------------------------------------------------------------------------
 # Helpers: build minimal Credential / TestResult without importing full vault
 # ---------------------------------------------------------------------------

@@ -98,6 +98,27 @@ def _get(path: str) -> dict:
         raise SystemExit(1) from e
 
 
+def _peer_list(data: object) -> list:
+    """Peers out of a ``GET /mesh/peers`` response, whatever shape it arrives in.
+
+    ``_get`` returns the RAW body, and the route answers ``json_ok(registry.to_api_dict())``
+    — i.e. ``{"ok": …, "data": {"self": …, "peers": [...]}, "error": …}``. Reading
+    ``data.get("peers")`` off that envelope therefore always missed, so `flux peers` said
+    "No peers discovered yet", `flux target` exited 1 with "No peers", and `flux health`
+    counted zeroes — on a perfectly healthy mesh. Unwrap the envelope, and still accept a
+    bare list or a bare payload dict so this can't break if the route shape changes.
+    """
+    from navig.gateway_client import unwrap_envelope
+
+    data = unwrap_envelope(data)  # json_ok envelope → its payload (the shared rule)
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        peers = data.get("peers")
+        return peers if isinstance(peers, list) else []
+    return []
+
+
 def _post(path: str, payload: dict) -> dict:
     if not _HTTPX:
         import urllib.request
@@ -159,7 +180,7 @@ def peers(
 ) -> None:
     """List all known mesh peers."""
     data = _get("/mesh/peers")
-    peer_list: list = data if isinstance(data, list) else data.get("peers", [])
+    peer_list: list = _peer_list(data)
 
     if not peer_list:
         typer.echo("No peers discovered yet. Try: navig flux scan")
@@ -225,7 +246,7 @@ def target(
 ) -> None:
     """Set the active routing target. Interactive picker if no arg given."""
     data = _get("/mesh/peers")
-    peer_list: list = data if isinstance(data, list) else data.get("peers", [])
+    peer_list: list = _peer_list(data)
 
     if not peer_list:
         typer.echo("No peers — run: navig flux scan")
@@ -371,9 +392,9 @@ def status(
 ) -> None:
     """Overall mesh health summary."""
     data = _get("/mesh/peers")
-    peer_list: list = data if isinstance(data, list) else data.get("peers", [])
+    peer_list: list = _peer_list(data)
 
-    healthy = sum(1 for p in peer_list if p.get("health") == "healthy")
+    healthy = sum(1 for p in peer_list if p.get("health") == "online")
     degraded = sum(1 for p in peer_list if p.get("health") == "degraded")
     unreachable = len(peer_list) - healthy - degraded
     target_node = next((p for p in peer_list if p.get("is_current_target")), None)

@@ -123,21 +123,25 @@ class EmailProvider(BaseTaskProvider):
         return _keyword_score(instruction, self._KEYWORDS)
 
     def process(self, instruction: str) -> ProviderResult:
-        try:
-            from navig.commands.email import get_email_provider  # type: ignore
-
-            provider = get_email_provider()
-            result = provider.send_from_instruction(instruction)
-            return ProviderResult(provider=self.name, success=True, output=str(result))
-        except ImportError:
-            return ProviderResult(
-                provider=self.name,
-                success=False,
-                output="",
-                error="email module not available (navig[email] not installed)",
-            )
-        except Exception as exc:
-            return ProviderResult(provider=self.name, success=False, output="", error=str(exc))
+        # NL→email sending is not implemented — the same shape CalendarProvider above
+        # already carries. `navig.commands.email` has never existed (the email CLI lives
+        # in the navig-email plugin), and no revision ever defined
+        # `send_from_instruction`: the real factory is
+        # navig.agent.proactive.imap_email.get_email_provider, which takes provider/
+        # address/password and returns a READER. So the old code could not have worked
+        # even with the import repaired.
+        #
+        # The ImportError branch made it worse than silent: it told the user "navig[email]
+        # not installed", sending them to install a plugin that would not have helped.
+        # When implementing, put the composer in navig.agent.proactive (core owns the
+        # providers) and call it here.
+        return ProviderResult(
+            provider=self.name,
+            success=False,
+            output="",
+            error="email instruction handling not implemented "
+                  "(email CLI: navig-email plugin)",
+        )
 
 
 class CalendarProvider(BaseTaskProvider):

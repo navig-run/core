@@ -6,7 +6,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from navig.browser._paths import screenshot_dir as _default_screenshot_dir
 from navig.browser.a11y import annotate_a11y_snapshot
+from navig.core.coerce import coerce_bool
 from navig.debug_logger import get_debug_logger
 
 logger = get_debug_logger()
@@ -42,7 +44,7 @@ class BrowserConfig:
     viewport_width: int = 1280
     viewport_height: int = 720
     user_data_dir: str | None = None
-    screenshot_dir: str = "~/.navig/screenshots"
+    screenshot_dir: str = field(default_factory=_default_screenshot_dir)
     proxy: str | None = None
     ignore_https_errors: bool = False
 
@@ -57,15 +59,17 @@ class BrowserConfig:
         viewport = browser_cfg.get("viewport", {})
 
         return cls(
-            enabled=browser_cfg.get("enabled", True),
+            enabled=coerce_bool(browser_cfg.get("enabled", True), default=True),
             headless=browser_cfg.get("headless", True),
             timeout_ms=browser_cfg.get("timeout_seconds", 30) * 1000,
             viewport_width=viewport.get("width", 1280),
             viewport_height=viewport.get("height", 720),
             user_data_dir=browser_cfg.get("user_data_dir"),
-            screenshot_dir=browser_cfg.get("screenshot_dir", "~/.navig/screenshots"),
+            screenshot_dir=browser_cfg.get("screenshot_dir") or _default_screenshot_dir(),
             proxy=browser_cfg.get("proxy"),
-            ignore_https_errors=browser_cfg.get("ignore_https_errors", False),
+            ignore_https_errors=coerce_bool(
+                browser_cfg.get("ignore_https_errors"), default=False
+            ),
             allowed_domains=browser_cfg.get("allowed_domains", []),
             blocked_domains=browser_cfg.get("blocked_domains", []),
         )
@@ -116,7 +120,11 @@ class BrowserController:
 
     async def start(self):
         """Start browser instance."""
-        if self._browser:
+        # Guard on a signal BOTH launch paths set: the persistent-context branch sets
+        # _context/_page but never _browser, so a `_browser`-only guard was a no-op there —
+        # a second start() would launch a second persistent context and orphan the first
+        # (stop() only closes the last-assigned refs).
+        if self._browser or self._context:
             logger.warning("Browser already started")
             return
 
@@ -199,13 +207,20 @@ class BrowserController:
             if pattern in domain:
                 return False
 
-        # Check allowed domains (if specified)
+        # Check allowed domains (if specified).
+        # Matched on the REGISTRABLE DOMAIN, never as a substring: `allowed_domains=["example.com"]`
+        # used to also permit `example.com.evil.net` and `notexample.com`. `origin_match` is the
+        # module that exists for exactly this ("no fuzzy/substring matching, ever" — it is
+        # public-suffix aware and IDN-normalising). Subdomains of an allowed domain still pass.
+        # The block list above deliberately keeps substring semantics: over-blocking is safe,
+        # tightening it would silently un-block existing config entries.
         if self.config.allowed_domains:
-            for allowed in self.config.allowed_domains:
-                pattern = allowed.lower().replace("*", "")
-                if pattern in domain:
-                    return True
-            return False
+            from navig.browser.origin_match import same_registrable_domain
+
+            return any(
+                same_registrable_domain(url, allowed.lower().replace("*", "").strip("."))
+                for allowed in self.config.allowed_domains
+            )
 
         return True
 

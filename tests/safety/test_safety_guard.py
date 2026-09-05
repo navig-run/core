@@ -1,8 +1,6 @@
 """Hermetic unit tests for navig.safety_guard — pure helper functions."""
 from __future__ import annotations
 
-import pytest
-
 # ---------------------------------------------------------------------------
 # _truncate
 # ---------------------------------------------------------------------------

@@ -164,6 +164,9 @@ def _maybe_handle_fast_path(argv: list[str]) -> bool:
             sys.stdout.write(__version__ + "\n")
             return True
 
+        if "--schema" in args:
+            return False
+
         # Includes explicit help flags and global-only no-command invocations.
         sys.stdout.write(_fast_help_text(__version__) + "\n")
         return True
@@ -387,14 +390,23 @@ def _run_startup_migrations() -> None:
     Failures are logged at DEBUG level and never crash the CLI.
     """
     try:
-        from pathlib import Path as _Path
-
         from navig.migrations.workspace_to_spaces import (
             ensure_no_stale_spaces_registration,
             migrate_workspace_to_spaces,
         )
+        from navig.platform.paths import config_dir
 
-        migrate_workspace_to_spaces(_Path.home() / ".navig", notify=lambda _m: None)
+        # The migration root is the CONFIGURED navig dir, not the real home. It rewrites
+        # `<root>/config.yaml` and `<root>/cache/active_space.txt` and moves
+        # `<root>/workspace` into `<root>/spaces/…` — all config-dir-scoped files, so the
+        # legacy layout this migrates lived at `<config_dir>/workspace`, never literally at
+        # `~/.navig/workspace`. Hardcoding the home split the migration in two: the payload
+        # moved into `~/.navig/spaces/default/`, while `_ensure_default_space()` (called
+        # inside the same function) scaffolded `config_dir()/spaces/default/`. It also
+        # CREATED `~/.navig/{config.yaml,cache/}` on machines that use a different dir and
+        # had no `~/.navig` at all. `config_dir()` IS `~/.navig` by default, so the default
+        # install is byte-for-byte unchanged.
+        migrate_workspace_to_spaces(config_dir(), notify=lambda _m: None)
         ensure_no_stale_spaces_registration()
     except Exception as exc:  # never crash main on migration failure
         import logging as _logging
@@ -722,8 +734,8 @@ def main() -> None:
         # Bind the process cwd to the active workshop (CLI only): the active
         # space *is* the working directory, so an agent's relative file/shell
         # ops land inside the space — not wherever the CLI was launched. The
-        # daemon serves many spaces concurrently and must NEVER chdir (its file
-        # tools resolve per-request via the session ContextVar instead).
+        # daemon must NEVER chdir — it is long-lived and the operator can switch the
+        # active space under it, so its tools resolve the space per call instead.
         try:
             import os as _os  # noqa: PLC0415
             from pathlib import Path as _Path  # noqa: PLC0415

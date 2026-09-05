@@ -1,4 +1,10 @@
-"""Tests for navig.tools.site_check — SiteCheckTool."""
+"""Tests for navig.tools.site_check — SiteCheckTool.
+
+Covers the SSRF hardening: this agent-invokable tool fetches a model-supplied URL, so it
+now validates the initial URL and re-checks every redirect hop via `navig.net.ssrf.check_url`
+before any network I/O (an unchecked `head(url)` let the agent reach 169.254.169.254 etc.).
+"""
+
 from __future__ import annotations
 
 import sys
@@ -6,11 +12,36 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from navig.net.ssrf import SsrfBlockedError
 from navig.tools.site_check import SiteCheckTool
 
 
+class _Resp:
+    """Minimal httpx-response stand-in for the manual redirect loop."""
+
+    def __init__(self, status_code: int = 200, location: str | None = None):
+        self.status_code = status_code
+        self.is_redirect = location is not None
+        self.headers = {"location": location} if location else {}
+
+
+def _client(head_impl):
+    """Build a FakeClient whose async .head(url) delegates to *head_impl*."""
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def head(self, url):
+            return head_impl(url)
+
+    return FakeClient
+
+
 def _make_mock_httpx(FakeClient):
-    """Build a sys.modules-compatible httpx mock."""
     mock = MagicMock()
     mock.AsyncClient.return_value = FakeClient()
     mock.ConnectError = ConnectionError
@@ -30,10 +61,6 @@ class TestSiteCheckTool:
 
 
 class TestSiteCheckRun:
-    @pytest.fixture
-    def tool(self):
-        return SiteCheckTool()
-
     async def test_missing_url_returns_error(self, tool):
         result = await tool.run({})
         assert result.success is False
@@ -44,91 +71,46 @@ class TestSiteCheckRun:
         assert result.success is False
 
     async def test_adds_https_prefix_for_bare_domain(self, tool):
-        """If no scheme provided, https:// is prepended."""
-        captured_urls = []
-
-        class FakeResp:
-            status_code = 200
-            history = []
-            url = "https://example.com"
-
-        class FakeClient:
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                pass
-
-            async def head(self, url):
-                captured_urls.append(url)
-                return FakeResp()
-
-        mock_httpx = _make_mock_httpx(FakeClient)
-        with patch.dict(sys.modules, {"httpx": mock_httpx}):
-            with patch("navig.tools.site_check._get_cert_expiry", new=AsyncMock(return_value=None)):
-                result = await tool.run({"url": "example.com"})
-
+        captured: list[str] = []
+        FakeClient = _client(lambda url: captured.append(url) or _Resp(200))
+        with patch("navig.tools.site_check.check_url"), patch.dict(
+            sys.modules, {"httpx": _make_mock_httpx(FakeClient)}
+        ), patch("navig.tools.site_check._get_cert_expiry", new=AsyncMock(return_value=None)):
+            result = await tool.run({"url": "example.com"})
         assert result.success is True
-        assert captured_urls[0].startswith("https://")
+        assert captured[0].startswith("https://")
 
     async def test_successful_response_has_output_keys(self, tool):
-        class FakeResp:
-            status_code = 200
-            history = []
-            url = "https://example.com"
-
-        class FakeClient:
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                pass
-
-            async def head(self, url):
-                return FakeResp()
-
-        mock_httpx = _make_mock_httpx(FakeClient)
-        with patch.dict(sys.modules, {"httpx": mock_httpx}):
-            with patch("navig.tools.site_check._get_cert_expiry", new=AsyncMock(return_value=None)):
-                result = await tool.run({"url": "https://example.com"})
-
+        FakeClient = _client(lambda url: _Resp(200))
+        with patch("navig.tools.site_check.check_url"), patch.dict(
+            sys.modules, {"httpx": _make_mock_httpx(FakeClient)}
+        ), patch("navig.tools.site_check._get_cert_expiry", new=AsyncMock(return_value=None)):
+            result = await tool.run({"url": "https://example.com"})
         assert result.success is True
-        for key in ("url", "status_code", "latency_ms", "online"):
+        for key in ("url", "status_code", "latency_ms", "online", "redirects", "final_url"):
             assert key in result.output
 
     async def test_connect_error_returns_failure(self, tool):
-        class FakeClient:
-            async def __aenter__(self):
-                return self
+        def _boom(url):
+            raise ConnectionError("refused")
 
-            async def __aexit__(self, *args):
-                pass
-
-            async def head(self, url):
-                raise ConnectionError("refused")
-
-        mock_httpx = _make_mock_httpx(FakeClient)
-        with patch.dict(sys.modules, {"httpx": mock_httpx}):
+        FakeClient = _client(_boom)
+        with patch("navig.tools.site_check.check_url"), patch.dict(
+            sys.modules, {"httpx": _make_mock_httpx(FakeClient)}
+        ):
             result = await tool.run({"url": "https://bad.example.com"})
-
         assert result.success is False
         assert "connection failed" in (result.error or "")
 
     async def test_timeout_returns_failure(self, tool):
-        class FakeClient:
-            async def __aenter__(self):
-                return self
+        def _boom(url):
+            raise TimeoutError("timeout")
 
-            async def __aexit__(self, *args):
-                pass
-
-            async def head(self, url):
-                raise TimeoutError("timeout")
-
-        mock_httpx = _make_mock_httpx(FakeClient)
-        with patch.dict(sys.modules, {"httpx": mock_httpx}):
+        FakeClient = _client(_boom)
+        with patch("navig.tools.site_check.check_url"), patch.dict(
+            sys.modules, {"httpx": _make_mock_httpx(FakeClient)}
+        ):
             result = await tool.run({"url": "https://slow.example.com"})
-
         assert result.success is False
         assert "timed out" in (result.error or "")
 
@@ -137,3 +119,45 @@ class TestSiteCheckRun:
             result = await tool.run({"url": "https://example.com"})
         assert result.success is False
         assert "httpx not installed" in (result.error or "")
+
+
+class TestSiteCheckSsrf:
+    """The URL is model-controlled — internal/metadata targets must be blocked, not fetched."""
+
+    async def test_blocked_url_is_not_fetched(self, tool):
+        fetched: list[str] = []
+        FakeClient = _client(lambda url: fetched.append(url) or _Resp(200))
+        with patch(
+            "navig.tools.site_check.check_url",
+            side_effect=SsrfBlockedError("http://169.254.169.254/", "169.254.169.254"),
+        ), patch.dict(sys.modules, {"httpx": _make_mock_httpx(FakeClient)}):
+            result = await tool.run({"url": "http://169.254.169.254/"})
+        assert result.success is False
+        assert "blocked by SSRF policy" in (result.error or "")
+        assert fetched == [], "the blocked URL must never be fetched"
+
+    async def test_redirect_to_blocked_target_is_stopped(self, tool):
+        # First hop OK; it 302s to the cloud-metadata endpoint. check_url raises on hop 2.
+        calls = {"n": 0}
+
+        def _fake_check(url, policy):
+            calls["n"] += 1
+            if calls["n"] >= 2:
+                raise SsrfBlockedError(url, "169.254.169.254")
+
+        FakeClient = _client(lambda url: _Resp(302, location="http://169.254.169.254/latest"))
+        with patch("navig.tools.site_check.check_url", side_effect=_fake_check), patch.dict(
+            sys.modules, {"httpx": _make_mock_httpx(FakeClient)}
+        ):
+            result = await tool.run({"url": "http://ok.example/"})
+        assert result.success is False
+        assert "blocked by SSRF policy" in (result.error or "")
+
+    async def test_too_many_redirects_is_bounded(self, tool):
+        FakeClient = _client(lambda url: _Resp(302, location="https://loop.example/next"))
+        with patch("navig.tools.site_check.check_url"), patch.dict(
+            sys.modules, {"httpx": _make_mock_httpx(FakeClient)}
+        ):
+            result = await tool.run({"url": "https://loop.example/"})
+        assert result.success is False
+        assert "too many redirects" in (result.error or "")

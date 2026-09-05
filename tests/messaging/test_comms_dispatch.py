@@ -5,11 +5,8 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 import navig.comms.dispatch as dispatch_mod
 from navig.comms.types import (
-    CommsChannel,
     DeliveryPriority,
     DeliveryResult,
     FanoutResult,
@@ -157,6 +154,28 @@ class TestSendTelegramChannel:
         target = NotificationTarget()  # No chat_id
         result = asyncio.run(dispatch_mod.send_user_notification("telegram", target, "msg"))
         assert result.ok is False
+
+    def test_a_rejected_send_is_not_reported_as_success(self):
+        """`TelegramNotifier.send` returns the REAL delivery result for CRITICAL —
+        that one goes out inline rather than being queued. Dispatch discarded the
+        bool and returned success unconditionally, so a must-deliver message the
+        transport had just rejected was reported as delivered."""
+        mock_notifier = MagicMock()
+        mock_notifier.send = AsyncMock(return_value=False)  # rejected
+        dispatch_mod._telegram_notifier = mock_notifier
+
+        result = asyncio.run(
+            dispatch_mod.send_user_notification(
+                "telegram",
+                _tg_target(),
+                "disk at 98%",
+                NotificationOptions(priority=DeliveryPriority.CRITICAL),
+            )
+        )
+
+        mock_notifier.send.assert_awaited_once()  # it DID try
+        assert result.ok is False
+        assert "reject" in (result.error or "").lower()
 
     def test_sends_via_telegram_notifier(self):
         mock_notifier = MagicMock()

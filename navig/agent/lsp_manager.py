@@ -23,6 +23,7 @@ from navig.agent.lsp_client import (
     file_uri,
     language_id_for_ext,
 )
+from navig.core.coerce import coerce_bool
 
 logger = logging.getLogger(__name__)
 
@@ -295,6 +296,6 @@ def _read_config_enabled() -> bool:
         mgr = get_config_manager()
         agent_cfg = mgr.global_config.get("agent", {})
         lsp_cfg = agent_cfg.get("lsp", {})
-        return bool(lsp_cfg.get("enabled", True))
+        return bool(coerce_bool(lsp_cfg.get("enabled", True), default=True))
     except Exception:
         return True

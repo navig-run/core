@@ -4,8 +4,6 @@ Tests for navig.agent.context.daily_log — DailyLog SQLite interactions.
 
 from __future__ import annotations
 
-import pytest
-
 from navig.agent.context.daily_log import (
     DEFAULT_RETENTION_DAYS,
     MAX_CONTEXT_CHARS,

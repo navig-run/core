@@ -666,9 +666,14 @@ class GitHubModelsProvider(LLMProvider):
             from navig.vault import get_vault
 
             vault = get_vault()
-            secret = vault.get_secret("github_models", "token", caller="github_models_provider")
-            if secret:
-                val = secret.reveal().strip() if hasattr(secret, "reveal") else str(secret).strip()
+            # `Vault.get_secret(label)` takes ONE argument. This passed three plus a
+            # `caller=` it has never defined, so it raised TypeError into the handler
+            # below and the vault was never actually consulted. `Vault.get(provider,
+            # profile_id=None, caller=…)` is the reader with this shape; the field name
+            # is a key inside the credential's data, not a positional argument.
+            cred = vault.get("github_models", caller="github_models_provider")
+            if cred is not None:
+                val = str(cred.data.get("token") or "").strip()
                 if val:
                     return val
         except Exception:  # noqa: BLE001

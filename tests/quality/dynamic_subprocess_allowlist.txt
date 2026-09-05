@@ -1,0 +1,34 @@
+# Dynamic-command subprocess sites: a CLASSIFIED register, not a permission list.
+#
+# The guard beside this file fails on any NEW entry and again when an entry stops
+# offending, so this can only shrink. It went 61 -> 58 -> 16 as the sites were given the
+# codec their child actually writes; what is left is almost entirely NOT debt.
+#
+# [python-child] The child is a Python process (sys.executable, pip, uv, `-m navig`, or a
+#   Python CLI such as pymobiledevice3). MEASURED on this machine: such a child writes the
+#   ANSI code page to a redirected pipe -- utf-8 RAISES on its output and cp866 returns
+#   garbage, while cp1251 is correct. `text=True` already means exactly that, so these are
+#   CORRECT AS THEY ARE. They are listed only because the guard cannot tell them apart from
+#   a genuinely unknown command. Converting them to the two-step decode would BREAK them.
+#
+# [mixed] The child may be either. Named separately because it is the one case where no
+#   answer is right for both, and picking one silently breaks the other half.
+
+# --- python-child: correct as-is (14) ------------------
+core/navig/cli/providers.py:226
+core/navig/commands/history.py:319
+core/navig/commands/host.py:946
+core/navig/commands/update.py:202
+core/navig/commands/update.py:231
+core/navig/commands/update.py:374
+core/navig/commands/upgrade.py:122
+core/navig/commands/upgrade.py:152
+core/navig/mcp_manager.py:390
+core/navig/update/lifecycle.py:352
+plugins/navig-mini/install.py:66
+plugins/navig-mobile/navig_mobile/engine/ios/device.py:53
+plugins/navig-msstore/navig_msstore/__init__.py:187
+plugins/navig-pipeline/navig_pipeline/telegram_import.py:166
+
+# --- mixed: python OR node, no single correct codec (1) ------
+core/navig/commands/skills.py:504

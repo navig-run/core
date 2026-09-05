@@ -11,8 +11,6 @@ import hashlib
 import json
 from unittest.mock import AsyncMock
 
-import pytest
-
 from navig.cloud import CloudManager, UplinkClient, api_key_hash
 
 
@@ -288,3 +286,130 @@ def test_manager_snapshot_merges_uplink_state():
     snap = m.snapshot()
     assert snap["status"] == "online"
     assert snap["lighthouse"]["requests_served"] == 3
+
+
+# ── reconnect backoff: storm protection ─────────────────────────────────────
+
+
+async def _drive_reconnect_loop(monkeypatch, *, connected_ago: float, n_serves: int):
+    """Run ``_run()`` with ``_connect_and_serve`` stubbed to a connection that came
+    up ``connected_ago`` seconds before it returns (i.e. was online that long),
+    ``n_serves`` times, and capture the un-jittered waits between reconnects.
+
+    ``asyncio.sleep`` is patched to record its argument and return instantly;
+    ``random.uniform`` is pinned to 1.0 so the recorded values equal the raw
+    backoff, making the growth assertion exact.
+    """
+    import asyncio
+
+    import navig.cloud.uplink as uplink_mod
+
+    c = _client()
+    calls = {"n": 0}
+
+    async def fake_serve():
+        calls["n"] += 1
+        # Simulate a WS that was up for `connected_ago` seconds, then closed cleanly
+        # (returns "normally", exactly like `async for msg in ws` ending on CLOSE).
+        c.state.connected_at = uplink_mod._now() - connected_ago
+        if calls["n"] >= n_serves:
+            c._stop = True
+
+    monkeypatch.setattr(c, "_connect_and_serve", fake_serve)
+
+    sleeps: list[float] = []
+
+    async def _record_sleep(secs):
+        sleeps.append(secs)
+
+    # Patch on the stdlib modules `uplink.py` resolves through, so this also works
+    # against the pre-fix source (which never imports `random`) without erroring.
+    monkeypatch.setattr(uplink_mod.asyncio, "sleep", _record_sleep)
+    monkeypatch.setattr("random.uniform", lambda a, b: 1.0)
+
+    await asyncio.wait_for(c._run(), timeout=5.0)
+    return sleeps
+
+
+async def test_backoff_grows_on_half_open_flapping_edge(monkeypatch):
+    # A connection that comes up then CLOSEs almost immediately (online for far less
+    # than the stable threshold) must NOT reset the backoff — otherwise a half-open
+    # edge that accepts-then-closes produces a ~1 reconnect/sec storm forever. The
+    # waits between attempts must grow: 1, 2, 4, ...
+    sleeps = await _drive_reconnect_loop(monkeypatch, connected_ago=0.0, n_serves=4)
+    assert sleeps == [1.0, 2.0, 4.0]
+
+
+async def test_backoff_resets_after_a_stable_connection(monkeypatch):
+    # A connection that stayed up well past the stable threshold and THEN dropped is
+    # a genuine reconnect — the backoff resets to the initial delay every time, so
+    # the operator's brain comes back fast after a real, long-lived session ends.
+    import navig.cloud.uplink as uplink_mod
+
+    sleeps = await _drive_reconnect_loop(
+        monkeypatch, connected_ago=uplink_mod._BACKOFF_STABLE_S + 5.0, n_serves=4
+    )
+    assert sleeps == [1.0, 1.0, 1.0]
+
+
+# ── honest connection state on drop (no phantom "online") ────────────────────
+
+
+async def _observe_state_across_reconnects(monkeypatch, *, raise_on_close: bool):
+    """Run ``_run`` with ``_connect_and_serve`` stubbed to a connection that comes up
+    (status="online", connected_at set) then drops — cleanly (returns) or with an
+    error (raises) — and capture ``(status, connected_at)`` as a ``snapshot()`` would
+    see them DURING each backoff wait (the window when the uplink is actually down).
+    """
+    import asyncio
+
+    import navig.cloud.uplink as uplink_mod
+
+    c = _client()
+    calls = {"n": 0}
+
+    async def fake_serve():
+        calls["n"] += 1
+        # `_connect_and_serve` leaves status "online" + connected_at set on BOTH a
+        # clean close and (until _mark_error) an error — reproduce that here.
+        c.state.status = "online"
+        c.state.connected_at = uplink_mod._now()
+        if calls["n"] >= 3:
+            c._stop = True
+        if raise_on_close:
+            raise RuntimeError("edge dropped")
+
+    monkeypatch.setattr(c, "_connect_and_serve", fake_serve)
+
+    observed: list = []
+
+    async def _record_sleep(secs):
+        observed.append((c.state.status, c.state.connected_at))
+
+    monkeypatch.setattr(uplink_mod.asyncio, "sleep", _record_sleep)
+    monkeypatch.setattr("random.uniform", lambda a, b: 1.0)
+
+    await asyncio.wait_for(c._run(), timeout=5.0)
+    return observed
+
+
+async def test_clean_close_does_not_leave_status_pinned_online(monkeypatch):
+    # A clean close returns from _connect_and_serve "normally" with status still
+    # "online" and connected_at set. While backing off to reconnect the uplink must
+    # NOT claim it's online (CloudManager.status derives from this, #649) and must not
+    # report a stale "connected since". Pre-fix: status stayed "online".
+    observed = await _observe_state_across_reconnects(monkeypatch, raise_on_close=False)
+    assert observed  # at least one backoff cycle was reached
+    for status, connected_at in observed:
+        assert status == "connecting"
+        assert connected_at is None
+
+
+async def test_error_drop_clears_connected_at(monkeypatch):
+    # On an error drop the except path sets status="error"; connected_at must also be
+    # cleared so snapshot() doesn't report a live "connected since" over a dead uplink.
+    observed = await _observe_state_across_reconnects(monkeypatch, raise_on_close=True)
+    assert observed
+    for status, connected_at in observed:
+        assert status == "error"
+        assert connected_at is None

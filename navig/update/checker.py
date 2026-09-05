@@ -42,8 +42,13 @@ class VersionChecker:
         except Exception:
             current = "unknown"
 
+        # `.git` lives at the monorepo ROOT, not inside `core/`, so `(src_dir/".git").exists()`
+        # is False on an editable install and this mis-reported "pip" (#533's trap). Ask git
+        # whether it actually tracks navig's source here.
+        from navig.commands.update import _is_navig_git_checkout
+
         src_dir = Path(__file__).resolve().parent.parent.parent
-        install_type = "git" if (src_dir / ".git").exists() else "pip"
+        install_type = "git" if _is_navig_git_checkout(src_dir) else "pip"
 
         latest = self._latest_cached()
 

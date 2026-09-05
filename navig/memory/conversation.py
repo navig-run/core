@@ -14,8 +14,31 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from navig.memory._util import _debug_log
+from navig.memory._util import _debug_log, safe_json_loads
 from navig.store.base import BaseStore
+
+
+def _loads_metadata(raw: object) -> dict:
+    """Parse a stored metadata blob into a dict, tolerating corruption.
+
+    A single row whose ``metadata`` is NULL or malformed JSON must never poison an
+    entire history/session fetch: a bare ``json.loads`` raising inside the row loop
+    would lose ALL rows (not the one), and a NULL would yield ``metadata=None``, which
+    breaks every caller that ``.get()``s it. This is a pure *read-side* degrade — the
+    message/session content lives in other columns, so dropping an unreadable auxiliary
+    blob to ``{}`` keeps the row retrievable, and (unlike the config/vault read paths)
+    nothing writes the ``{}`` back, so it can't erase the original. NAVIG only ever
+    writes ``json.dumps(dict)``, so a non-dict here means external/partial-write
+    corruption — note it at debug level rather than crash the whole read.
+    """
+    if isinstance(raw, dict):
+        return raw  # already parsed (an in-memory Message round-trip)
+    parsed = safe_json_loads(raw, {})  # NULL / empty / malformed → {}, never raises
+    if isinstance(parsed, dict):
+        return parsed
+    # Valid JSON, but an array/scalar where an object was stored — same corruption.
+    _debug_log(f"conversation: metadata was {type(parsed).__name__}, not an object; using {{}}")
+    return {}
 
 
 @dataclass
@@ -51,11 +74,7 @@ class Message:
             role=data["role"],
             content=data["content"],
             timestamp=datetime.fromisoformat(data["timestamp"]),
-            metadata=(
-                json.loads(data["metadata"])
-                if isinstance(data["metadata"], str)
-                else data["metadata"]
-            ),
+            metadata=_loads_metadata(data.get("metadata")),
             token_count=data.get("token_count", 0),
         )
 
@@ -326,7 +345,7 @@ class ConversationStore(BaseStore):
             updated_at=datetime.fromisoformat(row["updated_at"]),
             message_count=message_count,
             total_tokens=row["total_tokens"],
-            metadata=json.loads(row["metadata"]),
+            metadata=_loads_metadata(row["metadata"]),
         )
 
     def list_sessions(
@@ -366,7 +385,7 @@ class ConversationStore(BaseStore):
                     updated_at=datetime.fromisoformat(row["updated_at"]),
                     message_count=message_count,
                     total_tokens=row["total_tokens"],
-                    metadata=json.loads(row["metadata"]),
+                    metadata=_loads_metadata(row["metadata"]),
                 )
             )
 

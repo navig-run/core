@@ -145,6 +145,29 @@ def media_dir(kind: str) -> Path:
     return new_path
 
 
+def screenshot_dir() -> Path:
+    """Directory for browser / desktop screenshots: ``<config_dir>/screenshots``.
+
+    Lives here, not in a caller, because five modules shared one hardcoded
+    ``"~/.navig/screenshots"`` string. A default install is unaffected either way --
+    :func:`config_dir` *is* ``~/.navig`` there -- which is why they survived; an install
+    that moved its config got screenshots in the real home while config lived elsewhere.
+    Worse, ``BrowserController``/``StealthBrowser``/``DesktopController`` ``mkdir`` this in
+    ``__init__``, so constructing one wrote into the operator's home from the test suite.
+    """
+    return config_dir() / "screenshots"
+
+
+def browser_profile_dir(name: str) -> Path:
+    """Directory for a browser profile: ``<config_dir>/browser/profiles/<name>``.
+
+    Resolved per call, never a module constant: :func:`config_dir` reads
+    ``NAVIG_CONFIG_DIR`` live, and a constant would capture whatever was set when the
+    module first loaded.
+    """
+    return config_dir() / "browser" / "profiles" / name
+
+
 def log_dir() -> Path:
     """NAVIG log directory, following OS-idiomatic conventions.
 
@@ -281,7 +304,26 @@ def builtin_store_dir() -> Path:
 
 
 def vault_dir() -> Path:
-    """Encrypted vault storage directory."""
+    """Encrypted vault storage directory.
+
+    Respects ``NAVIG_VAULT_DIR``, like the sibling ``NAVIG_DATA_DIR`` /
+    ``NAVIG_STORE_DIR`` / ``NAVIG_LOG_DIR`` overrides.
+
+    This override has to live HERE, in core, even though the standalone navig-vault
+    package is what will grow a matching one. The vault is meant to be shared: navig and
+    a standalone `navig-vault` must resolve the SAME directory or a user ends up with two
+    vaults and secrets that silently do not appear in the other. If only one side honours
+    the variable, setting it produces exactly that split — so core reads it first, and
+    the extracted package mirrors this resolution rather than inventing its own.
+
+    Defaults (unchanged):
+        - ``$NAVIG_CONFIG_DIR/vault`` when that is set
+        - System service: ``/etc/navig/vault``
+        - User: ``~/.navig/vault``
+    """
+    env = os.environ.get("NAVIG_VAULT_DIR")
+    if env:
+        return Path(env)
     return config_dir() / "vault"
 
 

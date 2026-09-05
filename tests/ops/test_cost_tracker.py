@@ -105,6 +105,61 @@ class TestSessionCostTrackerRecord:
 
 
 # ---------------------------------------------------------------------------
+# Config-string coercion (regression)
+# ---------------------------------------------------------------------------
+
+class TestConfigStringCoercion:
+    """`navig config set cost_tracker.<flag> false` stores the STRING "false", which is
+    truthy — so a raw `cfg.get("enabled", True)` kept tracking/persisting despite the
+    kill-switch. Every boolean gate now runs through navig.core.coerce.coerce_bool."""
+
+    @pytest.mark.parametrize("falsey", ["false", "False", "off", "OFF", "no", "0", ""])
+    def test_string_disabled_stops_recording(self, falsey):
+        t = _make_tracker(cfg={"enabled": falsey, "persist": False})
+        t.record("gpt-4o", input_tokens=1000, output_tokens=200)
+        assert t.total_cost_usd() == 0.0
+        assert t.total_tokens() == (0, 0, 0)
+
+    @pytest.mark.parametrize("truthy", ["true", "on", "yes", "1"])
+    def test_string_enabled_still_records(self, truthy):
+        t = _make_tracker(cfg={
+            "enabled": truthy,
+            "persist": False,
+            "model_pricing": {"default": {"input": 0.0, "output": 0.0, "cache_read": 0.0}},
+        })
+        t.record("gpt-4o", input_tokens=1000, output_tokens=200)
+        inp, out, _ = t.total_tokens()
+        assert (inp, out) == (1000, 200)
+
+    def test_string_persist_false_skips_save(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(
+            SessionCostTracker,
+            "_history_path_static",
+            staticmethod(lambda: tmp_path / "session_costs.jsonl"),
+        )
+        t = _make_tracker(cfg={
+            "enabled": True,
+            "persist": "false",  # the string footgun — must NOT persist
+            "history_keep": 10,
+            "model_pricing": {},
+        })
+        t.record("gpt-4o-mini", input_tokens=100, output_tokens=50)
+        t.save()
+        assert not (tmp_path / "session_costs.jsonl").exists()
+
+    def test_get_session_tracker_honors_string_disabled(self, monkeypatch):
+        import navig.cost_tracker as ct
+
+        monkeypatch.setattr(ct, "_load_tracker_config", lambda: {"enabled": "false"})
+        reset_session_tracker()
+        tracker = get_session_tracker()
+        assert tracker.session_id == "disabled"
+
+    def teardown_method(self):
+        reset_session_tracker()
+
+
+# ---------------------------------------------------------------------------
 # format_summary
 # ---------------------------------------------------------------------------
 

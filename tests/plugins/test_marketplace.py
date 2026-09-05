@@ -13,7 +13,6 @@ import pytest
 from navig.plugins.marketplace import (
     MarketplaceStore,
     fetch_marketplace,
-    parse_marketplace_manifest,
 )
 
 

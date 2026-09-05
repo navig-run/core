@@ -20,7 +20,9 @@ def test_ai_provider_step_allows_enter_to_keep_existing_env_key(
     provider = SimpleNamespace(id="openai", display_name="OpenAI", requires_key=True)
     manifest = SimpleNamespace(env_vars=["OPENAI_API_KEY"])
 
+    monkeypatch.setattr("navig.providers.list_enabled_providers", lambda: [provider])
     monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [provider])
+    monkeypatch.setattr("navig.providers.get_provider", lambda _pid: manifest)
     monkeypatch.setattr("navig.providers.registry.get_provider", lambda _pid: manifest)
     prompt_answers = iter(["1", "n", "s"])
     monkeypatch.setattr("navig.onboarding.steps._prompt_masked", lambda *_a, **_k: "")
@@ -56,7 +58,9 @@ def test_ai_provider_step_prompts_llamacpp_url_and_saves_override(monkeypatch, t
         prompts.append((str(text), str(default)))
         return next(responses)
 
+    monkeypatch.setattr("navig.providers.list_enabled_providers", lambda: [provider])
     monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [provider])
+    monkeypatch.setattr("navig.providers.get_provider", lambda _pid: manifest)
     monkeypatch.setattr("navig.providers.registry.get_provider", lambda _pid: manifest)
     monkeypatch.setattr("typer.prompt", _fake_prompt)
     monkeypatch.setattr("typer.confirm", lambda *_a, **_k: False)
@@ -108,7 +112,9 @@ def test_ai_provider_step_imports_env_key_to_vault_and_runs_light_verification(
     fake_vault = _FakeVault()
     prompt_answers = iter(["1", "y", "s"])
 
+    monkeypatch.setattr("navig.providers.list_enabled_providers", lambda: [provider])
     monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [provider])
+    monkeypatch.setattr("navig.providers.get_provider", lambda _pid: manifest)
     monkeypatch.setattr("navig.providers.registry.get_provider", lambda _pid: manifest)
     monkeypatch.setattr("navig.vault.core.get_vault", lambda: fake_vault)
     monkeypatch.setattr("navig.onboarding.steps._prompt_masked", lambda *_a, **_k: "")

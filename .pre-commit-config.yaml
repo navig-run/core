@@ -125,7 +125,7 @@ repos:
       # NAVIG security audit
       - id: navig-security
         name: NAVIG Security Check
-        entry: bash scripts/precommit_navig_security.sh
+        entry: bash tools/precommit_navig_security.sh
         language: system
         files: "\\.yaml$|\\.py$"
         pass_filenames: false

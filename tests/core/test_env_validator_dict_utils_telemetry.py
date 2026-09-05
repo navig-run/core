@@ -1,7 +1,6 @@
 """Tests for env_validator.py, core/dict_utils.py, commands/telemetry.py — batch 53."""
 from __future__ import annotations
 
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -137,7 +136,6 @@ def test_truncate_output_long_text_truncated():
 
 
 def test_utc_now_is_timezone_aware():
-    from datetime import timezone
 
     from navig.core.dict_utils import utc_now
 

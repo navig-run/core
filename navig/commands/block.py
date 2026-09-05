@@ -102,7 +102,7 @@ def block_show(block_id: str = typer.Argument(..., help="Block id")) -> None:
     if b is None:
         ch.warning(f"block '{block_id}' not found.")
         raise typer.Exit(1)
-    ch.info(f"{b.name}  ({b.id} v{b.version})  [{b.category}] · {b.license}")
+    ch.info(f"{b.name}  ({b.id} v{b.version})  \\[{b.category}] · {b.license}")
     if b.description:
         ch.dim(f"  {b.description}")
     ch.info(f"  digest: {b.digest}")
@@ -115,7 +115,7 @@ def block_show(block_id: str = typer.Argument(..., help="Block id")) -> None:
     ch.info("  steps:")
     for s in b.steps:
         risk = capability_risk(s.capabilities)
-        ch.info(f"    - {s.id} [{s.kind}] risk={risk}")
+        ch.info(f"    - {s.id} \\[{s.kind}] risk={risk}")
     ch.info(f"  verify: {b.verify.kind} → {b.verify.level}")
     if b.marketplace:
         ch.info(f"  marketplace: {b.marketplace}")
@@ -298,20 +298,43 @@ def block_sign(block_id: str = typer.Argument(..., help="Block id (or path to a 
 @block_app.command("verify-receipt")
 def block_verify_receipt(
     path: str = typer.Argument(..., help="Path to a receipt JSON (e.g. ~/.navig/runtime/receipts/<id>.json)"),
+    as_json: bool = typer.Option(False, "--json", help="Emit the verdict and the chain as JSON."),
 ) -> None:
-    """Verify a receipt's device signature — proves it wasn't altered after the run."""
-    import json
+    """Verify a receipt's device signature — proves it wasn't altered after the run.
 
+    Also follows the block's child-receipt chain, so a composed outcome is
+    verifiable as a whole and not only at its top level.
+    """
     from navig.license.device_keys import verify_receipt_dict
 
     p = Path(path)
     if not p.exists():
-        ch.error(f"receipt not found: {path}")
+        if as_json:
+            ch.raw_print(json.dumps({"error": "receipt not found", "path": str(path)}, indent=2))
+        else:
+            ch.error(f"receipt not found: {path}")
         raise typer.Exit(1)
     data = json.loads(p.read_text(encoding="utf-8"))
     ok, reason = verify_receipt_dict(data)
     outcome = data.get("outcome", "?")
     cap = data.get("capability", "?")
+
+    if as_json:
+        # An agent verifying an outcome needs the same facts a human gets, chain
+        # included — otherwise the only machine-readable answer is "the top-level
+        # signature is fine", which is exactly the half-truth this fixes.
+        links = _chain_links(data, p)
+        ch.raw_print(json.dumps({
+            "receipt_id": data.get("receipt_id"),
+            "capability": cap,
+            "outcome": outcome,
+            "signature": "valid" if ok is True else "unsigned" if ok is None else "invalid",
+            "reason": reason,
+            "chain": links,
+            "chain_complete": all(x["resolved"] for x in links),
+        }, indent=2))
+        raise typer.Exit(1 if ok is False else 0)
+
     if ok is True:
         ch.success(f"receipt VALID · {cap} · {outcome} · device-signed, untampered")
     elif ok is None:
@@ -319,6 +342,83 @@ def block_verify_receipt(
     else:
         ch.error(f"receipt INVALID · {reason}")
         raise typer.Exit(1)
+
+    _verify_chain(data, p)
+
+
+def _verify_chain(data: dict, parent_path: Path) -> None:
+    """Follow the receipt's child-block chain and verify each link.
+
+    A block can call another block, and the parent records the children in
+    ``artifacts.chain``. Listing ids nobody resolves is not evidence — so each is
+    loaded and signature-checked here, and one that is MISSING is reported rather
+    than passed over. Missing children do not fail the command: the parent's own
+    signature is still sound, and conflating "this receipt was altered" with "a
+    child's file is gone" would make the exit code useless for the first.
+    """
+    from navig.console_helper import Table
+
+    links = _chain_links(data, parent_path)
+    if not links:
+        return
+
+    table = Table(box=None, show_header=True, padding=(0, 2))
+    table.add_column("child receipt", no_wrap=True)
+    table.add_column("capability", no_wrap=True)
+    table.add_column("outcome", no_wrap=True)
+    table.add_column("signature")  # the one wrappable column — it carries the reasons
+
+    for link in links:
+        if not link["resolved"]:
+            table.add_row(link["id"][:8], "[dim]—[/dim]", "[red]✗ missing[/red]",
+                          "[red]no receipt file for this id[/red]")
+            continue
+        sig = ("[green]● device-signed[/green]" if link["signature"] == "valid"
+               else f"[yellow]unsigned · {link['reason']}[/yellow]"
+               if link["signature"] == "unsigned"
+               else f"[red]✗ INVALID · {link['reason']}[/red]")
+        table.add_row(link["id"][:8], link["capability"] or "?", link["outcome"] or "?", sig)
+
+    ch.console.print(table)
+    missing = sum(1 for link in links if not link["resolved"])
+    if missing:
+        ch.warning(
+            f"{missing} of {len(links)} child receipt(s) missing — the chain is incomplete"
+        )
+    else:
+        ch.dim(f"  chain: {len(links)} child receipt(s), all resolved")
+
+
+def _chain_links(data: dict, parent_path: Path) -> list[dict[str, Any]]:
+    """Resolve and signature-check every child receipt the parent names.
+
+    One resolver for both renderings: the human table and ``--json`` must agree,
+    and the way they stop agreeing is by each doing the lookup itself.
+    """
+    from navig.blocks.receipts import receipts_dir
+    from navig.license.device_keys import verify_receipt_dict
+
+    links: list[dict[str, Any]] = []
+    for cid in (data.get("artifacts") or {}).get("chain") or []:
+        # Beside the parent first, so a copied bundle of receipts verifies as a
+        # unit; then the live store.
+        candidates = [parent_path.parent / f"{cid}.json", receipts_dir() / f"{cid}.json"]
+        found = next((c for c in candidates if c.exists()), None)
+        if found is None:
+            links.append({"id": str(cid), "resolved": False, "capability": None,
+                          "outcome": None, "signature": None, "reason": "no receipt file"})
+            continue
+        child = json.loads(found.read_text(encoding="utf-8"))
+        cok, creason = verify_receipt_dict(child)
+        links.append({
+            "id": str(cid),
+            "resolved": True,
+            "capability": child.get("capability"),
+            "outcome": child.get("outcome"),
+            "signature": "valid" if cok is True else "unsigned" if cok is None else "invalid",
+            "reason": creason,
+        })
+    return links
 
 
 _SCAFFOLD = """\
@@ -506,7 +606,7 @@ def apply_command(
         ch.info(f"{icon} {block.id} → {run.outcome} · verification: {run.verification_level}")
         for s in run.steps:
             mark = {"ok": "✓", "manual_ack": "◻", "failed": "✗", "blocked": "⛔"}.get(s.status, "·")
-            ch.dim(f"    {mark} {s.id} [{s.kind}] {s.status}")
+            ch.dim(f"    {mark} {s.id} \\[{s.kind}] {s.status}")
         if run.error:
             ch.warning(f"    {run.error}")
         ch.dim(f"  receipt: {path}")

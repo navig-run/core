@@ -16,6 +16,7 @@ Provides:
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -23,7 +24,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from navig.core.json_io import safe_json_loads
 from navig.platform.paths import config_dir
+
+logger = logging.getLogger(__name__)
 
 
 def _utc_now() -> datetime:
@@ -104,6 +108,7 @@ class BotStatsStore:
             self._local.conn.row_factory = sqlite3.Row
             # Enable WAL mode for better concurrency
             self._local.conn.execute("PRAGMA journal_mode=WAL")
+            self._local.conn.execute("PRAGMA busy_timeout=5000")  # wait for a lock, don't error instantly
         return self._local.conn
 
     def _init_schema(self):
@@ -434,7 +439,9 @@ class BotStatsStore:
             "mode": row["mode"],
             "persona": row["persona"],
             "started_at": row["started_at"],
-            "context": json.loads(row["context"]) if row["context"] else None,
+            # A corrupt context blob should mean "no context", not "AI state is
+            # permanently unreadable for this user".
+            "context": safe_json_loads(row["context"], None),
         }
 
     def set_ai_state(
@@ -504,7 +511,18 @@ class BotStatsStore:
                 conn.commit()
             return None
 
-        value = json.loads(row["value"])
+        # A cache entry that cannot be parsed is a MISS, not an exception — and it must be
+        # evicted, exactly like the expired branch above. Without this a single corrupt blob
+        # made every cache_get() for that key raise forever: the entry could never be
+        # replaced, because cache_set() was never reached.
+        _MISS = object()
+        value = safe_json_loads(row["value"], _MISS)
+        if value is _MISS:
+            logger.warning("cache_get: evicting unparseable entry for key %r", key)
+            with self._lock:
+                conn.execute("DELETE FROM cache WHERE key = ?", (key,))
+                conn.commit()
+            return None
 
         # Store in memory cache
         self._cache[key] = {"value": value, "expires_at": row["expires_at"]}

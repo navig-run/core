@@ -1,7 +1,6 @@
 """Tests for navig.mcp.tools.inventory — register and tool handlers."""
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import MagicMock
 
 from navig.mcp.tools.inventory import (
@@ -105,6 +104,7 @@ class TestListHosts:
     def test_result_has_expected_keys(self):
         server = _server(hosts=self._hosts())
         result = _tool_list_hosts(server, {})
+        assert result, "result was empty, so the loop below asserted nothing"
         for item in result:
             assert "name" in item
             assert "host" in item
@@ -172,6 +172,7 @@ class TestListApps:
     def test_result_has_name_type_host_fields(self):
         server = self._setup()
         result = _tool_list_apps(server, {})
+        assert result, "result was empty, so the loop below asserted nothing"
         for item in result:
             assert "name" in item
 
@@ -195,6 +196,23 @@ class TestHostInfo:
         server = _server(hosts={})
         result = _tool_host_info(server, {"name": "missing"})
         assert "missing" in result["error"]
+
+    def test_redacts_credentials(self):
+        """Non-secret fields survive; every credential-ish field is dropped —
+        not just ssh_password/root_password (an api_token used to leak)."""
+        hosts = {
+            "web": {
+                "host": "1.2.3.4",
+                "user": "admin",
+                "ssh_password": "s3cr3t",
+                "api_token": "tok-123",
+            }
+        }
+        result = _tool_host_info(_server(hosts=hosts), {"name": "web"})
+        assert result["host"] == "1.2.3.4"  # non-secret preserved
+        assert result["user"] == "admin"
+        assert "ssh_password" not in result
+        assert "api_token" not in result  # pre-fix: leaked
 
 
 # ── _tool_app_info ────────────────────────────────────────────
@@ -227,3 +245,34 @@ class TestAppInfo:
         result = _tool_app_info(server, {"name": "shared"})
         # global apps config is checked first
         assert result["type"] == "global"
+
+    def test_host_embedded_app_redacts_secrets(self):
+        """A host-EMBEDDED app config used to be returned raw (no redaction),
+        while a file-based app WAS redacted — the asymmetry leaked credentials."""
+        hosts = {
+            "web": {
+                "host": "1.1.1.1",
+                "user": "u",
+                "apps": {"fe": {"type": "node", "password": "hunter2", "api_key": "sk-x"}},
+            }
+        }
+        result = _tool_app_info(_server(hosts=hosts), {"name": "fe"})  # host-embedded path
+        assert result["name"] == "fe"
+        assert result["type"] == "node"  # non-secret preserved
+        assert "password" not in result  # pre-fix: leaked (raw **app_cfg)
+        assert "api_key" not in result
+
+    def test_file_app_redacts_token_and_nested_secret(self):
+        """File-based redaction now catches token-style keys (not just 'password')
+        and recurses into nested config."""
+        apps = {
+            "api": {
+                "type": "python",
+                "auth_token": "t0k",
+                "db": {"host": "x", "password": "p"},
+            }
+        }
+        result = _tool_app_info(_server(apps=apps), {"name": "api"})
+        assert result["type"] == "python"
+        assert "auth_token" not in result  # pre-fix: only 'password' keys were dropped
+        assert "password" not in result["db"]  # pre-fix: nested secret leaked

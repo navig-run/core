@@ -434,7 +434,6 @@ class TestSSHConnectionEncoding:
     """
 
     def test_run_handles_non_utf8_output_gracefully(self, monkeypatch):
-        import subprocess
         from unittest.mock import MagicMock, patch
 
         from navig.core.connection import SSHConnection

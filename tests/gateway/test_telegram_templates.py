@@ -12,6 +12,7 @@ from navig.gateway.channels.telegram_templates import (
     ACK_LIMIT,
     DEFAULT_LIMIT,
     GREETING_LIMIT,
+    SPLIT_THRESHOLD,
     TASK_DONE_LIMIT,
     FormattedMessage,
     TemplateID,
@@ -348,8 +349,13 @@ class TestEnforceResponseLimits(unittest.TestCase):
         self.assertIsNone(result.parts)
 
     def test_normal_long_splits(self):
-        long_text = "word " * 500
-        result = enforce_response_limits(long_text, verbosity="normal", max_single=100)
+        # A reply longer than SPLIT_THRESHOLD must fan out into >1 part. The split
+        # SIZE is SPLIT_THRESHOLD (not max_single — max_single only decides whether
+        # to enter the split path), so the text has to actually exceed it. The old
+        # test passed max_single=100 with a 2500-char body and relied on the default
+        # split_at (3500), so _smart_split never split it → a false 1-part failure.
+        long_text = "word " * (SPLIT_THRESHOLD // 2)  # ~2.5x the threshold
+        result = enforce_response_limits(long_text, verbosity="normal")
         self.assertIsNotNone(result.parts)
         self.assertGreater(len(result.parts), 1)
 

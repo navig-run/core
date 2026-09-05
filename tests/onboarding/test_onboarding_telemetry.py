@@ -2,11 +2,7 @@
 from __future__ import annotations
 
 import hashlib
-import platform
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from navig.onboarding.telemetry import (
     _CONSENT_LINES,

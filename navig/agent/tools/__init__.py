@@ -257,6 +257,28 @@ def register_browser_tools() -> None:
         logger.debug("Browser tool not available (skip): %s", exc)
 
 
+def register_todo_tools() -> None:
+    """Register todo_create / todo_update / todo_show.
+
+    The lists are per-conversation (the tools declare ``needs_session``), so no argument
+    is threaded through here — see ``todo_tools.get_todo_list``.
+    """
+    from navig.agent.tools.todo_tools import register_todo_tools as _register
+
+    _register()
+
+
+def register_skill_tools() -> None:
+    """Register ``manage_skills`` — the escape hatch when auto-activation misses.
+
+    Delegates to the module that owns the tool rather than re-registering here, so there
+    is exactly one registration site to keep correct.
+    """
+    from navig.agent.tools.skill_tools import register_skill_tools as _register
+
+    _register()
+
+
 def register_all_tools() -> None:
     """Register all available built-in agent tools.
 
@@ -278,6 +300,8 @@ def register_all_tools() -> None:
         ("remote_executor", register_remote_executor_tools),
         ("lsp", register_lsp_tools),
         ("browser", register_browser_tools),
+        ("skills", register_skill_tools),
+        ("todo", register_todo_tools),
     ]:
         try:
             fn()

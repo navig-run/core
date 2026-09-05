@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from navig.memory._util import _debug_log
+from navig.memory._util import _debug_log, safe_json_loads
 from navig.memory.embeddings import EmbeddingProvider
 
 
@@ -60,18 +60,22 @@ class KnowledgeEntry:
             key=data["key"],
             content=data["content"],
             summary=data.get("summary"),
-            tags=(json.loads(data["tags"]) if isinstance(data["tags"], str) else data["tags"]),
+            # safe_json_loads on the stored-blob branch only: from_dict runs inside
+            # `[from_dict(dict(row)) for row in ...]`, so one corrupt blob would take out
+            # the whole entry list. The non-str branch is import_entries handing us an
+            # ALREADY-parsed value, which must still pass through untouched.
+            tags=(safe_json_loads(data["tags"], []) if isinstance(data["tags"], str) else data["tags"]),
             source=data.get("source", ""),
             created_at=datetime.fromisoformat(data["created_at"]),
             expires_at=(
                 datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None
             ),
             metadata=(
-                json.loads(data["metadata"])
+                safe_json_loads(data["metadata"], {})
                 if isinstance(data["metadata"], str)
                 else data.get("metadata", {})
             ),
-            embedding=json.loads(data["embedding"]) if data.get("embedding") else None,
+            embedding=safe_json_loads(data.get("embedding"), None),
         )
 
     @property
@@ -145,6 +149,7 @@ class KnowledgeBase:
             )
             self._local.conn.row_factory = sqlite3.Row
             self._local.conn.execute("PRAGMA journal_mode=WAL")
+            self._local.conn.execute("PRAGMA busy_timeout=5000")  # wait for a lock, don't error instantly
         return self._local.conn
 
     def _init_schema(self) -> None:

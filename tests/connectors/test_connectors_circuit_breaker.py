@@ -2,9 +2,6 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import patch
-
-import pytest
 
 from navig.connectors.circuit_breaker import CircuitBreaker, CircuitState
 
@@ -209,3 +206,120 @@ class TestToDict:
         cb = CircuitBreaker("x", recovery_timeout=45.0)
         d = cb.to_dict()
         assert d["recovery_timeout"] == 45.0
+
+
+# ── HALF_OPEN admits exactly ONE probe ────────────────────────
+#
+# Regression: allow_request() returned True for *every* caller while HALF_OPEN
+# despite its own "allow one probe request" contract, so the moment the recovery
+# timeout elapsed a recovering upstream took the full concurrent herd -- the exact
+# stampede a circuit breaker exists to prevent. Measured pre-fix: 50 of 50 callers
+# admitted, and _total_trips reported 51 for a single outage because re-entering
+# OPEN while already OPEN counted another trip.
+
+
+class TestHalfOpenProbeIsExclusive:
+    def _half_open(self, recovery: float = 30.0) -> CircuitBreaker:
+        cb = _cb(threshold=1, recovery=recovery)
+        cb.record_failure()
+        assert cb._state is CircuitState.OPEN
+        # Move past the recovery window without sleeping for it.
+        cb._last_failure_time -= recovery + 1
+        assert cb.state is CircuitState.HALF_OPEN
+        return cb
+
+    def test_only_one_of_many_callers_is_admitted(self):
+        cb = self._half_open()
+        admitted = [cb.allow_request() for _ in range(50)]
+        assert admitted.count(True) == 1, (
+            f"HALF_OPEN admitted {admitted.count(True)} callers -- it must admit "
+            "exactly one probe, not stampede the recovering upstream"
+        )
+        assert admitted[0] is True, "the first caller should get the probe"
+
+    def test_probe_slot_is_released_by_success(self):
+        cb = self._half_open()
+        assert cb.allow_request() is True
+        cb.record_success()
+        assert cb.state is CircuitState.CLOSED
+        assert cb.allow_request() is True  # CLOSED admits everyone again
+
+    def test_probe_slot_is_released_by_failure(self):
+        cb = self._half_open(recovery=30.0)
+        assert cb.allow_request() is True
+        cb.record_failure()
+        assert cb.state is CircuitState.OPEN
+        assert cb.allow_request() is False  # back to OPEN, nothing gets through
+        # ...and a fresh recovery window hands out a new probe.
+        cb._last_failure_time -= 31.0
+        assert cb.allow_request() is True
+
+    def test_abandoned_probe_cannot_wedge_the_breaker_shut(self):
+        """A probe that never reports back must not lock the connector out forever.
+
+        The wrapper in connectors/base.py records the outcome from an
+        ``except Exception`` block, but ``asyncio.CancelledError`` derives from
+        ``BaseException`` -- a cancelled task never records. A boolean reservation
+        would stay set forever; the timestamp reservation expires.
+        """
+        cb = self._half_open(recovery=1.0)
+        assert cb.allow_request() is True  # probe taken...
+        assert cb.allow_request() is False  # ...and held
+        # The probe never calls record_success/record_failure (task cancelled).
+        cb._probe_started_at -= 1.5  # recovery_timeout elapses
+        assert cb.allow_request() is True, (
+            "an unreported probe must be treated as abandoned -- otherwise a single "
+            "cancelled task locks the connector out permanently"
+        )
+
+    def test_reset_releases_the_probe_slot(self):
+        cb = self._half_open()
+        assert cb.allow_request() is True
+        cb.reset()
+        assert cb._probe_started_at is None
+        assert cb.allow_request() is True
+
+
+class TestTripCountingIsPerOutage:
+    def test_concurrent_failures_during_one_outage_count_one_trip(self):
+        cb = _cb(threshold=3, recovery=30.0)
+        for _ in range(3):
+            cb.record_failure()
+        assert cb._state is CircuitState.OPEN
+        trips_after_open = cb._total_trips
+
+        # 50 calls that were already in flight when the breaker tripped now fail.
+        for _ in range(50):
+            cb.record_failure()
+
+        assert cb._total_trips == trips_after_open == 1, (
+            f"one outage reported {cb._total_trips} trips -- re-entering OPEN while "
+            "already OPEN must not count as a new trip"
+        )
+
+    def test_transition_to_same_state_is_a_noop(self):
+        cb = _cb(threshold=1)
+        cb.record_failure()
+        assert cb._state is CircuitState.OPEN
+        before = cb._total_trips
+        cb._transition(CircuitState.OPEN)
+        assert cb._total_trips == before
+
+    def test_distinct_outages_still_count_separately(self):
+        cb = _cb(threshold=1, recovery=30.0)
+        cb.record_failure()          # outage 1
+        cb.record_success()          # recovered
+        cb.record_failure()          # outage 2
+        assert cb._total_trips == 2
+
+
+class TestProbeDiagnostics:
+    def test_to_dict_reports_probe_in_flight(self):
+        cb = _cb(threshold=1, recovery=30.0)
+        assert cb.to_dict()["probe_in_flight"] is False
+        cb.record_failure()
+        cb._last_failure_time -= 31.0
+        assert cb.allow_request() is True
+        assert cb.to_dict()["probe_in_flight"] is True
+        cb.record_success()
+        assert cb.to_dict()["probe_in_flight"] is False

@@ -2,7 +2,6 @@
 Batch 84 — navig/core/renderer.py
 Tests for BlockType enum, progress_bar, renderBlock (stdout capture).
 """
-import pytest
 
 from navig.core.renderer import (
     _STYLES,

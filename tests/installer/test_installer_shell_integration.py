@@ -1,11 +1,8 @@
 """Tests for navig.installer.modules.shell_integration."""
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 import navig.installer.modules.shell_integration as si_mod
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result

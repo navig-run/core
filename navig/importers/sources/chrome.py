@@ -45,8 +45,7 @@ class ChromeImporter(BaseImporter):
 
             return items
         except Exception as exc:
-            logger.warning("[%s] %s", self.SOURCE_NAME, exc)
-            return []
+            return self._fail(exc)
 
     def _walk_node(self, items: list[ImportedItem], node: dict, folder_path: list[str]) -> None:
         node_type = node.get("type")

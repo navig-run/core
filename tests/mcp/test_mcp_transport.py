@@ -135,11 +135,23 @@ class TestSSETransportIsConnected:
         t._session.closed = True
         assert not t.is_connected()
 
-    def test_true_when_session_open(self):
+    def test_true_when_session_open_and_listener_alive(self):
         t = _make_sse_transport()
         t._session = MagicMock()
         t._session.closed = False
+        t._sse_task = MagicMock()
+        t._sse_task.done.return_value = False
         assert t.is_connected()
+
+    def test_false_when_listener_task_dead(self):
+        """Session open but the SSE listener died (non-200 / stream drop) → NOT connected:
+        every send() would hang with no listener to resolve it."""
+        t = _make_sse_transport()
+        t._session = MagicMock()
+        t._session.closed = False
+        t._sse_task = MagicMock()
+        t._sse_task.done.return_value = True
+        assert not t.is_connected()
 
 
 # ── StdioTransport helpers ────────────────────────────────────────────────────
@@ -176,10 +188,22 @@ class TestStdioTransportIsConnected:
         assert not t.is_connected()
 
     def test_true_when_process_running(self):
-        """returncode is None → process still alive → connected."""
+        """returncode is None AND the reader task is alive → connected."""
         t = _make_stdio_transport()
         t._process = _fake_stdio_process(returncode=None)
+        t._reader_task = MagicMock()
+        t._reader_task.done.return_value = False
         assert t.is_connected()
+
+    def test_false_when_reader_task_dead(self):
+        """Process alive but the reader loop died (e.g. a pre-limit stdout overrun) → NOT
+        connected: the client would hang every call, so it must read as disconnected so the
+        manager stops routing to it."""
+        t = _make_stdio_transport()
+        t._process = _fake_stdio_process(returncode=None)
+        t._reader_task = MagicMock()
+        t._reader_task.done.return_value = True
+        assert not t.is_connected()
 
 
 class TestStdioTransportDisconnect:
@@ -238,3 +262,135 @@ class TestStdioTransportSend:
 
         assert result is None
         assert not t._pending  # no future created for notification
+
+
+# ── StdioTransport: large responses + reader-death recovery ───────────────────
+
+
+class TestStdioTransportLargeResponse:
+    async def test_response_over_64kib_is_not_dropped(self, monkeypatch):
+        """A JSON-RPC response larger than asyncio's default 64 KiB StreamReader limit must
+        be read in full — pre-fix (no limit=) it overruns readline(), kills the reader loop,
+        strands the request, and send() times out while is_connected() stays True."""
+        import sys
+
+        from navig.mcp.transport import StdioTransport
+
+        # Child: read one JSON-RPC request line, echo a ~100 KiB single-line result (> 64 KiB).
+        child = (
+            "import sys, json, time\n"
+            "req = json.loads(sys.stdin.readline())\n"
+            "big = 'x' * 100000\n"
+            "sys.stdout.write(json.dumps({'jsonrpc': '2.0', 'id': req['id'],"
+            " 'result': {'content': [{'type': 'text', 'text': big}]}}) + '\\n')\n"
+            "sys.stdout.flush()\n"
+            "time.sleep(5)\n"
+        )
+        # Keep a pre-fix failure fast instead of a 30 s hang.
+        monkeypatch.setattr("navig.mcp.transport._REQUEST_TIMEOUT", 5.0)
+
+        t = StdioTransport(command=sys.executable, args=["-c", child])
+        await t.connect()
+        try:
+            resp = await t.send(
+                json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call"})
+            )
+            assert resp is not None
+            payload = json.loads(resp)
+            assert payload["result"]["content"][0]["text"] == "x" * 100000
+            # The reader is still alive and the transport still reports connected.
+            assert t._reader_task is not None and not t._reader_task.done()
+            assert t.is_connected()
+        finally:
+            await t.disconnect()
+
+
+class TestStdioTransportReaderDeath:
+    async def test_reader_exit_fails_pending_requests(self):
+        """When the reader loop exits (EOF / overrun / error), every in-flight request future
+        is failed immediately instead of hanging until _REQUEST_TIMEOUT."""
+        t = _make_stdio_transport()
+        proc = _fake_stdio_process(returncode=None)
+        proc.stdout = MagicMock()
+        proc.stdout.readline = AsyncMock(return_value=b"")  # immediate EOF → loop breaks
+        t._process = proc
+
+        fut: asyncio.Future = asyncio.get_running_loop().create_future()
+        t._pending[42] = fut
+
+        await t._read_loop()  # runs to completion, then fails pending
+
+        assert fut.done()
+        with pytest.raises(RuntimeError, match="reader terminated"):
+            fut.result()
+
+
+# ── SSETransport: listener death fails pending ────────────────────────────────
+
+
+class TestSSETransportListenerDeath:
+    async def test_listener_exit_fails_pending_requests(self):
+        """When the SSE listener exits (non-200 / stream drop / error), every in-flight
+        request future is failed immediately instead of hanging until _REQUEST_TIMEOUT."""
+        t = _make_sse_transport()
+        t._session = MagicMock()
+        t._session.closed = False
+        t._session.get = MagicMock(side_effect=RuntimeError("stream dropped"))
+
+        fut: asyncio.Future = asyncio.get_running_loop().create_future()
+        t._pending[7] = fut
+
+        await t._sse_listen_loop()  # raises internally → except → finally fails pending
+
+        assert fut.done()
+        with pytest.raises(RuntimeError, match="SSE listener terminated"):
+            fut.result()
+
+
+# ── WebSocketTransport: is_connected() + reader death ─────────────────────────
+
+
+def _make_ws_transport():
+    from navig.mcp.transport import WebSocketTransport
+
+    return WebSocketTransport(url="ws://host/mcp")
+
+
+class TestWebSocketTransportIsConnected:
+    def test_false_when_no_ws(self):
+        assert not _make_ws_transport().is_connected()
+
+    def test_true_when_ws_open_and_reader_alive(self):
+        t = _make_ws_transport()
+        t._ws = MagicMock()
+        t._ws.closed = False
+        t._reader_task = MagicMock()
+        t._reader_task.done.return_value = False
+        assert t.is_connected()
+
+    def test_false_when_reader_task_dead(self):
+        """ws open but the reader loop died (recv error / oversized frame) → NOT connected:
+        no reader means every call would hang, so it must read as disconnected."""
+        t = _make_ws_transport()
+        t._ws = MagicMock()
+        t._ws.closed = False
+        t._reader_task = MagicMock()
+        t._reader_task.done.return_value = True
+        assert not t.is_connected()
+
+
+class TestWebSocketTransportReaderDeath:
+    async def test_reader_exit_fails_pending_requests(self):
+        t = _make_ws_transport()
+        ws = MagicMock()
+        ws.recv = AsyncMock(side_effect=RuntimeError("connection reset"))
+        t._ws = ws
+
+        fut: asyncio.Future = asyncio.get_running_loop().create_future()
+        t._pending[9] = fut
+
+        await t._read_loop()  # recv raises → except break → post-loop fails pending
+
+        assert fut.done()
+        with pytest.raises(RuntimeError, match="WebSocket reader terminated"):
+            fut.result()

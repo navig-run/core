@@ -1,12 +1,26 @@
 """
-NAVIG Auth Guard — Access control for Telegram channel.
+NAVIG Auth Guard — allowlist helper. **NOT the live authorization gate.**
 
-Simple allowlist-based guard that checks user_id / username against
-configured allowed sets. When a user is NOT authorized, delegates
-to DecoyResponder for playful non-actionable responses.
+⚠ Do not wire this into the Telegram channel. The live gate is
+``TelegramChannel._is_user_authorized`` (``gateway/channels/telegram.py``),
+which this module does NOT feed — it has no importer anywhere in production.
+This docstring used to say "Designed to be imported by telegram.py and called
+at the permission check point", which is an instruction to replace a working
+check with this one.
 
-Designed to be imported by telegram.py and called at the permission
-check point before any real processing.
+That swap would WEAKEN authorization, because the two disagree on the empty
+case in opposite directions:
+
+* here            — empty ``allowed_users`` ⇒ **everyone is authorized**
+* the live gate   — ``require_auth`` on with an empty list ⇒ **deny all**
+                    (``require_auth`` off is the explicit open mode)
+
+Fail-open versus fail-closed on the same input. Keep the live gate; if this
+helper is ever adopted, port the live policy into it first.
+
+Simple allowlist-based check of user_id / chat_id against configured sets.
+Callers that deny are expected to answer via ``gateway/decoy_responder.py``
+(which telegram.py already uses directly).
 """
 
 import logging

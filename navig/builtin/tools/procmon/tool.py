@@ -28,7 +28,7 @@ def main() -> None:
     p_cap.add_argument("--filter", default=None, help="PMC filter config path")
     p_cap.add_argument("--dry-run", action="store_true", default=False)
 
-    p_stop = sub.add_parser("stop", help="Terminate any running Procmon instance")
+    sub.add_parser("stop", help="Terminate any running Procmon instance")
 
     args = parser.parse_args()
     params = vars(args)

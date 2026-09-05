@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from unittest.mock import patch
 
 import pytest
 
@@ -254,7 +253,6 @@ class TestCircuitBreaker:
         assert cb.state == CircuitState.HALF_OPEN
 
     def test_half_open_allows_request(self) -> None:
-        from navig.connectors.circuit_breaker import CircuitState
         cb = self._cb(failure_threshold=1, recovery_timeout=0.001)
         cb.record_failure()
         time.sleep(0.01)

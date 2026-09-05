@@ -155,13 +155,37 @@ class MissionExecutor:
                 mission.start()
                 self.store.flush()
                 await self._emit(mission)  # running
+
+                # Honour the timeout this mission already DECLARES (set above). Without the
+                # bound, a runner that never returns held a slot of the shared `_sem`
+                # forever — and since `_execute` shares it, a few hung board cards wedged
+                # ALL mission execution for the life of the daemon. The worker thread can't
+                # be force-killed (it's a blocking callable), but timing out releases the
+                # slot and leaves an honest TIMED_OUT mission + receipt instead of a
+                # mission that claims a timeout it never enforces.
+                timeout = mission.timeout_secs or self.default_timeout
                 try:
-                    result = await loop.run_in_executor(None, lambda: fn(*args))
+                    result = await asyncio.wait_for(
+                        loop.run_in_executor(None, lambda: fn(*args)), timeout=timeout
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Tracked mission %s timed out after %ss", mission.mission_id[:8], timeout
+                    )
+                    mission.timeout()
+                    self.store.record_receipt_from_mission(mission)
+                    self.store.flush()
+                    await self._emit(mission)
+                    raise
                 except Exception as exc:  # noqa: BLE001
                     self.store.complete_mission(mission.mission_id, succeeded=False, error=str(exc))
                     self.store.flush()
                     await self._emit(mission)
                     raise
+                # NOTE: ok()/summary() are CALLER-supplied callbacks — the board passes
+                # `lambda r: bool(r) and r.get("agent_status") != "failed"`, which raises on
+                # any truthy non-dict result. A raise here lands in the outer handler below
+                # rather than stranding the mission RUNNING.
                 succeeded = ok(result) if ok else True
                 if succeeded:
                     self.store.complete_mission(
@@ -176,6 +200,26 @@ class MissionExecutor:
                 self.store.flush()
                 await self._emit(mission)  # terminal
                 return result
+        except Exception as exc:  # noqa: BLE001 — never let a crash strand the mission
+            # The crash may have happened AFTER mission.start() flipped it RUNNING but
+            # before any terminal state was recorded — a store flush that raised, or a
+            # caller-supplied ok()/summary() that raised on an unexpected result shape.
+            # Without this the mission hangs RUNNING forever with no ExecutionReceipt (the
+            # Deck shows it live indefinitely and the audit trail is missing). `_execute`
+            # got this in #685; this sibling entry point was missed. Best-effort, and the
+            # original exception is always re-raised — the caller's contract is unchanged.
+            if not mission.is_terminal:
+                try:
+                    self.store.complete_mission(
+                        mission.mission_id, succeeded=False, error=f"tracked run crashed: {exc}"
+                    )
+                    self.store.flush()
+                    await self._emit(mission)
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "failed to finalize crashed tracked mission %s", mission.mission_id[:8]
+                    )
+            raise
         finally:
             self._active.discard(mission.mission_id)
 
@@ -250,6 +294,23 @@ class MissionExecutor:
                 await self._emit(mission)  # terminal
         except Exception as exc:  # noqa: BLE001 — never let a task die unobserved
             logger.error("Mission executor crashed on %s: %s", mission.mission_id[:8], exc)
+            # The crash may have happened AFTER the mission went RUNNING but before the
+            # runner recorded a terminal state (e.g. a store flush / SSE emit raised in
+            # the running-setup window) — leaving it stuck RUNNING forever with no
+            # receipt (the Deck shows it live indefinitely, and the audit trail is
+            # missing). Finalize a still-non-terminal mission as failed + record its
+            # receipt so it can't hang and every run ends with an ExecutionReceipt.
+            if not mission.is_terminal:
+                try:
+                    self.store.complete_mission(
+                        mission.mission_id, succeeded=False, error=f"executor crashed: {exc}"
+                    )
+                    self.store.flush()
+                    await self._emit(mission)
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "failed to finalize crashed mission %s", mission.mission_id[:8]
+                    )
         finally:
             self._active.discard(mission.mission_id)
         return mission

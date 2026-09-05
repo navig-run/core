@@ -4,7 +4,6 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
-from navig import __version__
 from navig.registry.meta import CommandMeta, get_meta_for_callback
 
 
@@ -200,7 +199,16 @@ def _entry_from_command(item: dict[str, Any]) -> dict[str, Any]:
         status = meta.status
     else:
         status = _public_status(item)
-    since = meta.since if meta is not None else __version__
+    # A command's `since` is authoritative ONLY when its author declared it via
+    # @command_meta(since=...). For a meta-less command we do NOT know when it was
+    # introduced, and stamping the CURRENT __version__ is actively wrong: it rewrote
+    # `since` for every meta-less command on each rebuild, so a version bump churned
+    # ~1300 rows in generated/commands.json and left the CI freshness gate permanently
+    # red (it could only pass on a manifest regenerated at the exact committed version).
+    # "" is honest and, crucially, STABLE across rebuilds. Consumers already tolerate it
+    # (validate_manifest requires the field present but not non-empty; the website does
+    # `cmd.since || null`; help renders "" as "—").
+    since = meta.since if meta is not None else ""
     tags = list(meta.tags) if meta is not None else []
     aliases = list(meta.aliases) if meta is not None else []
     examples = list(meta.examples) if (meta is not None and meta.examples) else [item["path"]]

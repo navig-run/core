@@ -8,10 +8,7 @@ Covers:
 - _build_local_state structure
 """
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 with patch("navig.debug_logger.get_debug_logger"):
     from navig.mesh.sync_manager import (

@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 
 from navig._daemon_defaults import _GATEWAY_PORT
-from navig.core.yaml_io import atomic_write_text
+from navig.core.yaml_io import atomic_write_text, read_text_retrying
 from navig.platform import paths
 
 # Test seam — when ``None`` (the normal state), ``_daemon_config_path()``
@@ -86,10 +86,17 @@ def _write_config_atomic(config: dict) -> None:
 
 
 def _load_config() -> dict:
-    """Load daemon config or return defaults."""
+    """Load daemon config or return defaults.
+
+    Reads through ``read_text_retrying`` so a transient OS lock (an antivirus/backup
+    agent, a read landing mid-``os.replace``) doesn't collapse to defaults at daemon
+    boot — which would silently run this session with the DEFAULT feature toggles
+    (gateway/scheduler/ports), ignoring the operator's config. A lock that survives the
+    retries still degrades to defaults; genuine corruption is not retried.
+    """
     if _daemon_config_path().exists():
         try:
-            payload = json.loads(_daemon_config_path().read_text(encoding="utf-8"))
+            payload = json.loads(read_text_retrying(_daemon_config_path()))
             if isinstance(payload, dict):
                 return payload
             logger.warning(
@@ -108,10 +115,18 @@ def save_default_config() -> Path:
     should_repair = not _daemon_config_path().exists()
     if not should_repair:
         try:
-            payload = json.loads(_daemon_config_path().read_text(encoding="utf-8"))
+            payload = json.loads(read_text_retrying(_daemon_config_path()))
             should_repair = not isinstance(payload, dict)
-        except (json.JSONDecodeError, OSError):
+        except json.JSONDecodeError:
+            # Genuinely corrupt. Writes are atomic (temp + os.replace), so this is never
+            # a half-written file we caught mid-flight — repair to defaults is safe.
             should_repair = True
+        except OSError:
+            # A transient read failure (an antivirus/backup agent holding the file, a read
+            # landing mid-replace) — NOT corruption. Overwriting with defaults here would
+            # silently reset the daemon's feature toggles (gateway/scheduler/ports). We
+            # can't verify it right now, so leave the existing config untouched.
+            should_repair = False
 
     if should_repair:
         _write_config_atomic(DEFAULT_DAEMON_CONFIG.copy())
@@ -142,6 +157,41 @@ def main() -> None:
             return
     except Exception:  # noqa: BLE001
         pass  # If anything goes wrong checking the flag, proceed normally.
+
+    # Already running? Then this launch is a duplicate — exit cleanly.
+    #
+    # THIS ENTRY POINT is what the Windows scheduled task runs
+    # (`runpy.run_module('navig.daemon.entry')`, see service_manager
+    # ._task_bootstrap_args) and what any tray/startup script reaches for. Until
+    # now only the CLI path (`navig service start` -> NavigDaemon.start) asked
+    # this question, so every OTHER launcher started a daemon unconditionally.
+    #
+    # Measured: with supervisor 8732 healthy and serving, two further launches
+    # produced supervisors 8968 and 75516 and daemon/state.json showed the
+    # NEWCOMER had taken over the pid file -- three supervisors, two gateways.
+    # This guard is the PRECONDITION for the autostart task's repeating watchdog
+    # trigger (#1180): a watchdog that re-runs this entry every few minutes would
+    # multiply daemons without it. The trigger was re-added on 2026-09-04 once
+    # this held and was measured holding; if you ever remove this guard, remove
+    # the repeating trigger in service_manager._schtasks_xml in the SAME change.
+    # tests/daemon/test_autostart_watchdog.py pins the pair together.
+    #
+    # Returning (not raising) matters: the launcher must see a SUCCESSFUL exit,
+    # or Task Scheduler records a failure for what is the correct outcome.
+    try:
+        from navig.daemon.supervisor import NavigDaemon as _Daemon
+
+        if _Daemon.is_running():
+            logger.info(
+                "Daemon already running (pid=%s) — this launch is a duplicate, exiting. "
+                "Use `navig service stop` first if you meant to replace it.",
+                _Daemon.read_pid(),
+            )
+            return
+    except Exception:  # noqa: BLE001
+        # Never let the guard itself stop a legitimate start: an unreadable pid
+        # file must fall through to starting, not to refusing.
+        pass
 
     # Load .env if available (for TELEGRAM_BOT_TOKEN etc.)
     try:

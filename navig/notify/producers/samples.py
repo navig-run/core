@@ -12,6 +12,11 @@ from typing import Any
 # monitor key → (notify_type, title, body, priority)
 _SAMPLES: dict[str, tuple[str, str, str, str]] = {
     "self_errors": ("self_error", "[Test] NAVIG error", "A sample self-error notification.", "high"),
+    # Dispatches the SAME type ConfigIncidentReporter uses ("config_incident"), so pressing
+    # Test exercises the real config-rescue → deck/telegram matrix. Without this entry the
+    # default-ON "Config rescues" monitor's Test button 400s "no sample for monitor".
+    "config_incidents": ("config_incident", "[Test] NAVIG config health",
+                         "A sample config-rescue notification (e.g. a wiped config restored, or a re-identified deck key).", "high"),
     "connectivity": ("connectivity", "[Test] Brain reachability", "A sample connectivity notification.", "normal"),
     "resources": ("system_alert", "[Test] Resource alert", "A sample disk/CPU/memory alert.", "normal"),
     "webcam": ("webcam_on", "[Test] Webcam in use", "A sample webcam-in-use notification.", "high"),

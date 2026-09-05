@@ -4,8 +4,6 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 
 class TestDaemonBase:
     def test_daemon_base_returns_url_string(self):
@@ -64,14 +62,13 @@ class TestRunBrowserTask:
                 mcls.return_value.__aenter__ = AsyncMock(return_value=mc)
                 mcls.return_value.__aexit__ = AsyncMock(return_value=False)
                 mc.post = AsyncMock(return_value=mock_resp)
-                try:
-                    result = await run_browser_task({"action": "screenshot"})
-                    return result
-                except Exception:
-                    return None  # acceptable — we just confirm it's callable
+                return await run_browser_task({"action": "screenshot"})
 
+        # Was `except Exception: return None` plus no assertion, so it passed whether the
+        # orchestrator worked, returned nothing, or blew up. The transport is mocked to a
+        # 200 with a known body, so the call has one correct answer -- assert it.
         result = asyncio.run(_run())
-        # We don't assert the result value — just that no crash occurred at call level
+        assert result is not None, "run_browser_task returned nothing for a mocked 200"
 
     def test_run_browser_task_max_hitl_retries_param(self):
         import inspect

@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import navig.agent.router.llm_classifier as llm_cls
 from navig.agent.router.llm_classifier import (
     CACHE_MAX_ENTRIES,
     CACHE_TTL_SECONDS,

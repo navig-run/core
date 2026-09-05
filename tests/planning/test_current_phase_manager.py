@@ -4,8 +4,6 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-import pytest
-
 from navig.plans.current_phase_manager import (
     CurrentPhaseManager,
     PhaseState,

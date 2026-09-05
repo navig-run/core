@@ -1,6 +1,31 @@
 """
 SmartLinker — Cross-Connector Relationship Engine
 
+.. warning::
+
+   **NOT WIRED.** Nothing outside this module constructs ``SmartLinker`` or calls
+   ``enrich`` / ``find_related`` — the only other references in the repo are its two
+   test files. ``tests/quality/test_dormant_modules.py`` asserts that and fails if it
+   stops being true.
+
+   Two things follow, and they matter if you are reading this because something looked
+   broken:
+
+   * ``find_related`` calls ``connector.search()`` **without hydrating the connector's
+     vault token** (contrast ``mcp/tools/connectors.py``, which raises
+     ``ConnectorAuthError`` first). Registry instances are singletons, so on a live
+     system those tokenless calls would be charged to the shared connector's
+     CircuitBreaker and could open it for everyone. Unreachable today; a prerequisite
+     to fix before wiring.
+   * It is the last caller of ``ConnectorRegistry.list_connected()``, which reports
+     only connectors this process happened to instantiate — the per-process staleness
+     fixed for the CLI in #743. Wiring this without addressing that would reintroduce
+     the same class.
+
+   Connecting it changes what agents see across connectors; deleting it removes a
+   built feature. Either is a deliberate call — make it on purpose rather than
+   discovering the dormancy from the inside.
+
 Links resources across connectors.  Phase 1 supports
 Gmail ↔ Google Calendar linking:
 

@@ -8,8 +8,6 @@ target; the primary activation path is the post-purchase web flow on
 
 from __future__ import annotations
 
-import sys
-
 import typer
 
 app = typer.Typer(help="Show, paste, or remove the NAVIG Deck license.", no_args_is_help=True)

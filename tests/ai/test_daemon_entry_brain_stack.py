@@ -1,10 +1,7 @@
 """Unit tests for daemon/entry.py helpers, commands/brain.py, and commands/stack.py."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # navig.daemon.entry — _as_bool, _as_int, DEFAULT_DAEMON_CONFIG
@@ -241,6 +238,7 @@ class TestPromptDirs:
 
     def test_all_items_are_paths(self):
         result = _prompt_dirs()
+        assert result, "result was empty, so the loop below asserted nothing"
         for item in result:
             assert isinstance(item, Path)
 

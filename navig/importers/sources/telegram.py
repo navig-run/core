@@ -62,8 +62,7 @@ class TelegramImporter(BaseImporter):
                 )
             return items
         except Exception as exc:
-            logger.warning("[%s] %s", self.SOURCE_NAME, exc)
-            return []
+            return self._fail(exc)
 
     def _load_contacts_payload(self, candidate: Path) -> dict | None:
         if candidate.is_dir():

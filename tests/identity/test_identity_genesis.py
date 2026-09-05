@@ -5,8 +5,6 @@ import asyncio
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 import navig.identity.genesis as genesis_mod
 
 
@@ -34,11 +32,8 @@ class TestActNoise:
         with patch.dict(sys.modules, {"rich.live": fake_rich_live, "rich.text": fake_rich_text}):
             with patch.object(genesis_mod, "asyncio") as mock_asyncio:
                 mock_asyncio.sleep = AsyncMock()
-                # Should not raise
-                try:
-                    await genesis_mod._act_noise()
-                except Exception:
-                    pass  # Module-level import timing may vary; what matters is no crash
+                # "Should not raise" was asserted by a try/except that accepted a raise.
+                await genesis_mod._act_noise()
 
 
 class TestActSigilAssembly:

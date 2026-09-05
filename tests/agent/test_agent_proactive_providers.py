@@ -122,6 +122,7 @@ class TestMockCalendar:
     def test_list_events_returns_calendar_events(self):
         mc = MockCalendar()
         result = asyncio.run(mc.list_events(NOW, LATER))
+        assert result, "result was empty, so the loop below asserted nothing"
         for event in result:
             assert isinstance(event, CalendarEvent)
 

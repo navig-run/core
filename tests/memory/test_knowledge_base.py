@@ -6,8 +6,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-import pytest
-
 from navig.memory.knowledge_base import KnowledgeEntry
 
 # ─── KnowledgeEntry defaults ──────────────────────────────────────────────────

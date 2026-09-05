@@ -48,6 +48,9 @@ class PgMirror:
         PostgreSQL connection URL.  Defaults to ``NAVIG_PG_URL`` env var.
     batch_size : int
         Number of events to buffer before auto-flushing (default 50).
+    max_buffer : int
+        Upper bound on retained (un-flushed) events; when exceeded, the oldest are
+        dropped. Bounds memory when PG stays unreachable (default 10000).
     """
 
     def __init__(
@@ -55,9 +58,14 @@ class PgMirror:
         pg_url: str | None = None,
         *,
         batch_size: int = 50,
+        max_buffer: int = 10_000,
     ):
         self.pg_url = pg_url or os.environ.get("NAVIG_PG_URL", "")
         self._batch_size = batch_size
+        # A failed flush now KEEPS its batch buffered for retry, so a persistently-
+        # unreachable PG could otherwise grow the buffer without bound — cap it (never
+        # below one batch) and drop the oldest when exceeded.
+        self._max_buffer = max(max_buffer, batch_size)
         self._buffer: list[dict[str, Any]] = []
         self._lock = threading.Lock()
         self._conn = None
@@ -97,6 +105,17 @@ class PgMirror:
             self._buffer.append(entry)
             if len(self._buffer) >= self._batch_size:
                 self._flush_unsafe()
+            # A failed flush keeps its batch buffered (so a transient PG blip doesn't drop
+            # audit events); bound memory if PG stays unreachable by dropping the OLDEST
+            # events — a mirror is best-effort and the most recent events matter most.
+            if len(self._buffer) > self._max_buffer:
+                dropped = len(self._buffer) - self._max_buffer
+                del self._buffer[:dropped]
+                logger.warning(
+                    "PG mirror buffer over cap (%d) — dropped %d oldest event(s); is PG reachable?",
+                    self._max_buffer,
+                    dropped,
+                )
 
     # ── Flush ─────────────────────────────────────────────────
 
@@ -106,18 +125,24 @@ class PgMirror:
             return self._flush_unsafe()
 
     def _flush_unsafe(self) -> int:
-        """Flush without acquiring the lock (caller holds it)."""
+        """Flush buffered writes to PG (caller holds the lock).
+
+        Buffered events are removed ONLY after the PG commit succeeds. If PG is
+        unreachable, or the connection drops mid-flush, or the commit fails, the batch
+        stays buffered and is retried on the next flush instead of being dropped — the
+        previous code cleared the buffer up front, so a transient PG blip silently lost
+        audit events. Memory is bounded by the cap enforced in ``emit``.
+        """
         if not self._buffer:
             return 0
 
+        conn = self._get_conn()
+        if conn is None:
+            # PG is unavailable right now — keep the buffer and retry on the next flush.
+            return 0
+
         batch = self._buffer[:]
-        self._buffer.clear()
-
         try:
-            conn = self._get_conn()
-            if conn is None:
-                return 0
-
             cursor = conn.cursor()
             flushed = 0
 
@@ -134,12 +159,24 @@ class PgMirror:
                     )
 
             conn.commit()
-            return flushed
 
         except Exception as exc:
-            logger.error("PG mirror flush failed: %s", exc)
-            # Re-buffer on failure (best-effort, no infinite retry)
+            # Transient failure (connection dropped mid-flush, commit error). Keep the
+            # batch buffered so nothing is lost, and drop the connection so the next
+            # flush reconnects.
+            logger.error("PG mirror flush failed, will retry: %s", exc)
+            try:
+                conn.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            self._conn = None
             return 0
+
+        # Commit succeeded — now it is safe to drop exactly the rows we sent. The lock is
+        # held throughout, so no concurrent emit changed the buffer; slicing off
+        # len(batch) rather than clear() is still the defensively-correct removal.
+        del self._buffer[: len(batch)]
+        return flushed
 
     # ── Connection ────────────────────────────────────────────
 

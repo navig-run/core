@@ -12,14 +12,9 @@ Coverage targets:
 from __future__ import annotations
 
 import importlib
-import os
-import socket
-import sys
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # Remediation module
@@ -454,28 +449,57 @@ class TestCheckSockets:
 
 
 class TestCheckFormations:
-    def test_empty_formations_dir(self, tmp_path):
-        with patch("navig.commands.doctor.config_dir", return_value=tmp_path):
-            results = check_formations()
+    """Formations are `formation.json` DIRS discovered from `_get_formations_roots()`
+    (#373 rewrite). We isolate the roots to a tmp dir via `_FORMATIONS_ROOTS` (the loader's
+    own override, read first by `_get_formations_roots`), then assert doctor is honest:
+    a broken formation.json is a ⚠, never counted-as-fine behind a green tick."""
+
+    @staticmethod
+    def _isolate_roots(monkeypatch, tmp_path):
+        # `_get_formations_roots` returns `_FORMATIONS_ROOTS` verbatim when it's truthy.
+        # monkeypatch auto-restores it, so no leak into other tests.
+        monkeypatch.setattr("navig.formations.loader._FORMATIONS_ROOTS", [tmp_path])
+
+    @staticmethod
+    def _formation(root, name, body):
+        d = root / name
+        d.mkdir()
+        (d / "formation.json").write_text(body, encoding="utf-8")
+        return d
+
+    def test_empty_root_warns_not_green(self, monkeypatch, tmp_path):
+        self._isolate_roots(monkeypatch, tmp_path)
+        results = check_formations()
         assert len(results) >= 1
+        _icon, ok, text = results[0]
+        assert ok is False and "0 discovered" in text
 
-    def test_valid_yaml_formation(self, tmp_path):
-        formations = tmp_path / "formations"
-        formations.mkdir()
-        (formations / "test.yaml").write_text("name: test\n", encoding="utf-8")
-        with patch("navig.commands.doctor.config_dir", return_value=tmp_path):
-            results = check_formations()
-        _, ok, _ = results[0]
-        assert ok is True
+    def test_valid_formation_is_green(self, monkeypatch, tmp_path):
+        self._formation(tmp_path, "good", '{"id": "good"}')
+        self._isolate_roots(monkeypatch, tmp_path)
+        results = check_formations()
+        _icon, ok, text = results[0]
+        assert ok is True and "1 discovered" in text
 
-    def test_invalid_formation_returns_failure(self, tmp_path):
-        formations = tmp_path / "formations"
-        formations.mkdir()
-        (formations / "bad.yaml").write_text(": :", encoding="utf-8")
-        with patch("navig.commands.doctor.config_dir", return_value=tmp_path):
-            results = check_formations()
-        _, ok, _ = results[0]
-        assert ok is False
+    def test_broken_formation_json_is_flagged_not_silently_skipped(self, monkeypatch, tmp_path):
+        self._formation(tmp_path, "good", '{"id": "good"}')
+        self._formation(tmp_path, "bad", "{ this is not valid json")
+        self._isolate_roots(monkeypatch, tmp_path)
+        results = check_formations()
+        # The good one still counts (summary stays green) …
+        assert results[0][1] is True and "1 discovered" in results[0][2]
+        # … but the broken one is surfaced as a ⚠, never silently skipped.
+        broken = [r for r in results if "bad" in r[2]]
+        assert broken, f"broken formation not surfaced: {results}"
+        assert all(r[1] is False for r in broken), "a broken formation must never render ✓"
+
+    def test_only_broken_formations_is_not_a_green_or_missing_store(self, monkeypatch, tmp_path):
+        self._formation(tmp_path, "bad", "not json at all")
+        self._isolate_roots(monkeypatch, tmp_path)
+        results = check_formations()
+        _icon, ok, text = results[0]
+        assert ok is False and "broken" in text and "missing" not in text
+        assert any("bad" in r[2] and r[1] is False for r in results)
 
 
 # ===========================================================================
@@ -486,7 +510,6 @@ class TestCheckFormations:
 class TestCheckSkills:
     def test_no_skills_dir_returns_warn(self, tmp_path):
         # navig package dir without skills
-        import navig
         fake_navig_file = tmp_path / "navig" / "__init__.py"
         fake_navig_file.parent.mkdir()
         fake_navig_file.write_text("")

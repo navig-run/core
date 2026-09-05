@@ -4,6 +4,7 @@ Tests for navig.scheduler.cron_service — JobStatus, CronConfig, CronJob, CronP
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timedelta
 
@@ -565,3 +566,637 @@ def test_one_malformed_job_entry_does_not_drop_the_rest(tmp_path):
     svc._reload_if_changed()
 
     assert {j.name for j in svc.jobs.values()} == {"good"}  # 'good' kept, 'broken' skipped
+
+
+# ─── CronService: per-job in-flight guard (no double-execution) ───────────────
+
+
+async def test_run_job_guarded_against_concurrent_double_execution(tmp_path, monkeypatch):
+    """A scheduled fire and a manual run_job_now() for the SAME job must not both execute:
+    that would run the command twice and race-write the job's last_run/status/next_run."""
+    svc = _svc(tmp_path)
+    job = _make_job(id="dup-1", command="echo hi")
+    svc.jobs[job.id] = job
+
+    calls = {"n": 0}
+    release = asyncio.Event()
+
+    async def _fake_exec(j):
+        calls["n"] += 1
+        await release.wait()  # hold the first run "in flight"
+        return "ok"
+
+    monkeypatch.setattr(svc, "_execute_job_command", _fake_exec)
+
+    # Start a scheduled run; it enters _run_job and blocks inside _execute_job_command.
+    scheduled = asyncio.create_task(svc._run_job(job, trigger="schedule"))
+    for _ in range(6):
+        await asyncio.sleep(0)  # let the task reach _fake_exec → job.id now in _running_jobs
+    assert job.id in svc._running_jobs
+
+    # A concurrent manual "run now" must be SKIPPED, not a second execution.
+    await svc.run_job_now(job.id)
+    assert calls["n"] == 1
+
+    # Release the first run; the guard clears so a LATER run can proceed normally.
+    release.set()
+    await asyncio.wait_for(scheduled, timeout=2.0)
+    assert job.id not in svc._running_jobs
+    assert calls["n"] == 1
+
+
+# ─── retry budget resets per failure episode (not once per lifetime) ──────────
+#
+# retry_count was reset ONLY on success, so once a job exhausted max_retries in one
+# failure episode it stayed at max_retries forever — the guard `retry_count <
+# max_retries` was then permanently False and NO later transient failure was ever
+# retried (auto-retry silently disabled until a run happened to succeed).
+
+
+async def test_retry_budget_resets_after_exhaustion(tmp_path, monkeypatch):
+    svc = _svc(tmp_path)
+    svc.config.retry_failed = True  # the guard needs it (default, pinned for clarity)
+    job = _make_job(id="retry-1", schedule="daily", command="boom", max_retries=2)
+    svc.jobs[job.id] = job
+
+    async def _boom(_j):
+        raise RuntimeError("simulated failure")
+
+    monkeypatch.setattr(svc, "_execute_job_command", _boom)
+
+    def soon() -> datetime:
+        return datetime.now() + timedelta(minutes=10)
+
+    # Episode 1, attempt 1: fails → retry scheduled (~+5min, well under an hour).
+    await svc._run_job_locked(job)
+    assert job.retry_count == 1
+    assert job.next_run < soon()  # a near-term retry, not the daily schedule
+
+    # Episode 1, attempt 2: budget exhausted (retry_count == max_retries). The
+    # counter must RESET so the next episode is fresh, and next_run falls back to the
+    # normal (daily) schedule rather than another +5min retry.
+    await svc._run_job_locked(job)
+    assert job.retry_count == 0  # ← the fix (was stuck at 2 before)
+    assert job.next_run > datetime.now() + timedelta(hours=1)
+
+    # A LATER scheduled failure must get a FRESH retry, not be silently un-retried.
+    await svc._run_job_locked(job)
+    assert job.retry_count == 1  # fresh episode (before the fix: 3, guard False, no retry)
+    assert job.next_run < soon()
+
+
+async def test_retry_count_still_resets_on_success(tmp_path, monkeypatch):
+    # Guard the existing behavior: a successful run clears any accumulated retry count.
+    svc = _svc(tmp_path)
+    job = _make_job(id="retry-2", schedule="daily", command="ok",
+                    max_retries=2, retry_count=1)
+    svc.jobs[job.id] = job
+
+    async def _ok(_j):
+        return "done"
+
+    monkeypatch.setattr(svc, "_execute_job_command", _ok)
+    await svc._run_job_locked(job)
+    assert job.last_status is JobStatus.SUCCESS
+    assert job.retry_count == 0
+
+
+async def test_timed_out_navig_subprocess_is_killed(tmp_path, monkeypatch):
+    """A `navig ` command cancelled by the timeout wrapper must have its subprocess
+    KILLED, not left running orphaned past the reported failure (a live infra command
+    would otherwise keep executing, and a retry could launch a second copy)."""
+    svc = _svc(tmp_path)
+    job = _make_job(command="navig backup run --all")
+
+    class _FakeProc:
+        def __init__(self):
+            self.returncode = None
+            self.killed = False
+            self.waited = False
+
+        async def communicate(self):
+            await asyncio.sleep(30)  # hang until the timeout wrapper cancels us
+            return (b"", b"")
+
+        def kill(self):
+            self.killed = True
+            self.returncode = -9
+
+        async def wait(self):
+            self.waited = True
+            return self.returncode
+
+    proc = _FakeProc()
+
+    async def _fake_create(*_a, **_k):
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create)
+
+    with pytest.raises((asyncio.TimeoutError, TimeoutError)):
+        await asyncio.wait_for(svc._execute_job_command(job), timeout=0.05)
+
+    assert proc.killed is True  # the orphan was terminated on cancellation
+    assert proc.waited is True  # and reaped, not left as a zombie
+
+
+async def test_completed_navig_subprocess_is_not_killed(tmp_path, monkeypatch):
+    """A normally-completing subprocess must NOT be killed (returncode is set)."""
+    svc = _svc(tmp_path)
+    job = _make_job(command="navig backup run --all")
+
+    class _DoneProc:
+        def __init__(self):
+            self.returncode = 0
+            self.killed = False
+
+        async def communicate(self):
+            return (b"ok\n", b"")
+
+        def kill(self):
+            self.killed = True
+
+        async def wait(self):
+            return self.returncode
+
+    proc = _DoneProc()
+
+    async def _fake_create(*_a, **_k):
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create)
+    out = await svc._execute_job_command(job)
+    assert out.strip() == "ok"
+    assert proc.killed is False  # happy path must not kill
+
+
+class _FakeGatewayNoneTurn:
+    """A gateway whose agent turn produces no text (run_agent_turn -> None)."""
+
+    event_queue = None
+
+    async def run_agent_turn(self, **_kwargs):
+        return None
+
+
+async def test_ai_job_with_empty_turn_is_success_not_spurious_failure(tmp_path):
+    """An AI-prompt job whose turn returns None must record SUCCESS with empty output,
+    not FAILED — the bare None used to crash `output[:5000]` (TypeError → job FAILED)."""
+    svc = CronService(gateway=_FakeGatewayNoneTurn(), storage_path=tmp_path)
+    job = _make_job(command="summarize my inbox")  # not a `navig ` command -> AI branch
+    svc.jobs[job.id] = job
+
+    await svc._run_job_locked(job)
+
+    assert job.last_status is JobStatus.SUCCESS  # was FAILED (TypeError) before the fix
+    assert job.last_output == ""  # empty output cleanly recorded, not an error string
+
+
+# ─── Time-pinned natural language ("daily at 9am") fires AT that time ──────────
+# Regression: "daily at 9am" matched the loose `daily` interval pattern and fired at
+# from_time-of-day (creation time), silently ignoring "9am". It is now converted to a cron.
+
+
+def test_daily_at_time_fires_at_that_hour_not_creation_time():
+    # Job created at 15:00 with "daily at 9am" must next fire at 09:00 the NEXT day —
+    # NOT 15:00 tomorrow (the old `from_time + 1 day` bug).
+    created = datetime(2026, 7, 24, 15, 0, 0)
+    nxt = CronParser.calculate_next("daily at 9am", created)
+    assert nxt == datetime(2026, 7, 25, 9, 0, 0)
+
+
+def test_to_cron_daily_time_forms():
+    assert CronParser._to_cron("daily at 9am") == "0 9 * * *"
+    assert CronParser._to_cron("every day at 9:30am") == "30 9 * * *"
+    assert CronParser._to_cron("daily at 9pm") == "0 21 * * *"
+    assert CronParser._to_cron("daily at noon") == "0 12 * * *"
+    assert CronParser._to_cron("daily at midnight") == "0 0 * * *"
+    assert CronParser._to_cron("daily at 21:00") == "0 21 * * *"
+    assert CronParser._to_cron("at 8am") == "0 8 * * *"  # bare time → daily
+
+
+def test_to_cron_weekday_forms_both_orderings():
+    assert CronParser._to_cron("monday at 6pm") == "0 18 * * 1"
+    assert CronParser._to_cron("every friday at noon") == "0 12 * * 5"
+    assert CronParser._to_cron("sundays at 10:30pm") == "30 22 * * 0"  # plural + minutes
+    # time-FIRST ordering ("at <time> on/every <day>") resolves the same weekday
+    assert CronParser._to_cron("at midnight on thursdays") == "0 0 * * 4"
+    assert CronParser._to_cron("at 9pm every friday") == "0 21 * * 5"
+
+
+def test_to_cron_weekdays_form():
+    assert CronParser._to_cron("weekdays at 8am") == "0 8 * * 1-5"
+    assert CronParser._to_cron("at noon on weekdays") == "0 12 * * 1-5"
+
+
+def test_to_cron_returns_none_for_intervals_crons_and_ambiguous():
+    # bare intervals + cron expressions are untouched, and a day-less "weekly at <t>" is
+    # ambiguous → left as None (falls back to the weekly interval).
+    for s in ("daily", "hourly", "every 30 minutes", "0 9 * * 1-5", "*/5 * * * *",
+              "weekly at 9am"):
+        assert CronParser._to_cron(s) is None, s
+
+
+def test_bare_intervals_still_parse_as_intervals():
+    # The fix must not change bare interval handling.
+    assert CronParser.parse("daily") == timedelta(days=1)
+    assert CronParser.parse("every 30 minutes") == timedelta(minutes=30)
+    assert CronParser.parse("daily at 9am") is None  # time-pinned → handled as cron, not interval
+
+
+def test_validate_accepts_time_pinned_schedules():
+    for good in ("daily at 9am", "monday at 6pm", "weekdays at 8am", "at midnight on thursdays"):
+        ok, reason = CronParser.validate(good)
+        assert ok, (good, reason)
+        assert reason is None
+
+
+# ─── Sparse & unsatisfiable cron next-run resolution ──────────────────────────
+# Regression: _next_cron_time scanned only a fixed ~1-year (366-day) window minute by
+# minute, then fell back to `from_time + 1h` on no match. That silently turned BOTH a
+# valid leap-only schedule (Feb 29, up to ~4 years out) AND a truly impossible one
+# (Feb 30) into an HOURLY-firing job — and paid a ~527k-iteration event-loop stall each
+# recompute. Now: the horizon spans a leap cycle, the loop skips whole non-matching days
+# (no cliff), and an impossible schedule is parked far in the future, never rescheduled +1h.
+
+
+def test_leap_only_schedule_resolves_to_next_leap_day():
+    # "0 0 29 2 *" from a NON-leap year must land on the next real Feb 29 (2028),
+    # not fall through to the +1h hourly-firing bug.
+    nxt = CronParser._next_cron_time("0 0 29 2 *", datetime(2026, 7, 24, 15, 0))
+    assert nxt == datetime(2028, 2, 29, 0, 0)
+
+
+def test_impossible_day_month_is_parked_not_hourly():
+    from_time = datetime(2026, 7, 24, 15, 0)
+    nxt = CronParser._next_cron_time("0 0 30 2 *", from_time)  # Feb 30 never occurs
+    # Parked far in the future — crucially NOT `from_time + 1h` (the old bug that made an
+    # impossible schedule fire every hour forever).
+    assert nxt != from_time + timedelta(hours=1)
+    assert nxt > from_time + timedelta(days=365 * 5)
+
+
+def test_impossible_time_field_is_parked_up_front():
+    # A minute/hour field that matches no valid value (slipped past validation) must be
+    # caught cheaply, not walked minute-by-minute for years.
+    from_time = datetime(2026, 7, 24, 15, 0)
+    nxt = CronParser._next_cron_time("0 99 * * *", from_time)  # hour 99 is impossible
+    assert nxt != from_time + timedelta(hours=1)
+    assert nxt > from_time + timedelta(days=365 * 5)
+
+
+def test_impossible_schedule_returns_quickly_no_scan_cliff():
+    # The day-skip must keep an unsatisfiable schedule cheap — a regression to the
+    # minute-by-minute scan would be ~2M iterations (seconds of event-loop stall).
+    import time as _time
+
+    start = _time.perf_counter()
+    CronParser._next_cron_time("0 0 30 2 *", datetime(2026, 7, 24, 15, 0))
+    elapsed = _time.perf_counter() - start
+    assert elapsed < 0.5, f"unsatisfiable scan took {elapsed:.2f}s — day-skip regressed"
+
+
+def test_monthly_on_31st_skips_short_months():
+    # From mid-February, "0 0 31 * *" must skip to the next month that HAS a 31st
+    # (March), never firing on a non-existent Feb 31.
+    nxt = CronParser._next_cron_time("0 0 31 * *", datetime(2026, 2, 15, 15, 0))
+    assert nxt == datetime(2026, 3, 31, 0, 0)
+
+
+def test_common_schedules_unaffected_by_dayskip_rewrite():
+    # Guard the hot paths after the rewrite.
+    base = datetime(2026, 7, 24, 15, 0)  # a Friday
+    assert CronParser._next_cron_time("0 9 * * *", base) == datetime(2026, 7, 25, 9, 0)
+    assert CronParser._next_cron_time("0 18 * * 1", base) == datetime(2026, 7, 27, 18, 0)  # Mon
+    # a time later today still fires today, not tomorrow
+    assert CronParser._next_cron_time("30 23 * * *", base) == datetime(2026, 7, 24, 23, 30)
+
+
+def test_next_cron_time_short_expression_falls_back():
+    # A malformed (<5 field) expression keeps the documented +1h fallback.
+    from_time = datetime(2026, 7, 24, 15, 0)
+    assert CronParser._next_cron_time("0 9 *", from_time) == from_time + timedelta(hours=1)
+
+
+# ─── validate() rejects unsatisfiable schedules at add-time ───────────────────
+# Every field can be individually in-range yet the COMBINATION never occurs (Feb 30,
+# April 31). Such a schedule used to pass validate() and get stored, then _next_cron_time
+# would silently park it decades out — a job that looks created but never fires. validate
+# now rejects it up front so both add surfaces (deck schedule.py, gateway cron.py) surface
+# a reason. _scan_next_cron is the shared satisfiability oracle (None == never occurs).
+
+
+def test_validate_rejects_impossible_day_month_combos():
+    # day-of-week is '*', so this is a pure AND: the DOM must exist in the month.
+    for bad in ("0 0 30 2 *", "0 0 31 4 *", "0 0 31 2 *", "0 0 31 6 *"):
+        ok, reason = CronParser.validate(bad)
+        assert ok is False, bad
+        assert reason and "never occurs" in reason, (bad, reason)
+
+
+def test_validate_accepts_valid_leap_only_and_sparse_schedules():
+    # Feb 29 is satisfiable (fires on leap years) and must NOT be rejected; nor may a
+    # 31st-of-the-month schedule that simply skips the short months. And per the Vixie
+    # OR rule, '30 2 1-5' fires on every weekday in February (the DOW branch matches)
+    # even though Feb 30 never occurs — so it must be ACCEPTED, not rejected.
+    for good in ("0 0 29 2 *", "0 0 31 * *", "0 9 * * 1-5", "0 0 1 1 *", "0 0 30 2 1-5"):
+        ok, reason = CronParser.validate(good)
+        assert ok is True, (good, reason)
+        assert reason is None
+
+
+def test_is_valid_false_for_impossible_schedule():
+    assert CronParser.is_valid("0 0 30 2 *") is False
+    assert CronParser.is_valid("0 0 29 2 *") is True  # leap-only is valid
+
+
+def test_field_range_error_precedes_satisfiability_reason():
+    # An out-of-range field gives the SPECIFIC range error, not the generic
+    # "never occurs" — field validation runs first.
+    ok, reason = CronParser.validate("0 25 * * *")
+    assert ok is False
+    assert "out of range" in reason and "never occurs" not in reason
+
+
+def test_scan_next_cron_is_the_satisfiability_oracle():
+    now = datetime(2026, 7, 24, 15, 0)
+    assert CronParser._scan_next_cron("0 0 30 2 *", now) is None  # impossible
+    assert CronParser._scan_next_cron("0 99 * * *", now) is None  # impossible time field
+    assert CronParser._scan_next_cron("0 0 29 2 *", now) == datetime(2028, 2, 29, 0, 0)  # leap
+    assert CronParser._scan_next_cron("0 9 * * *", now) == datetime(2026, 7, 25, 9, 0)
+
+
+# ─── scheduler loop dispatches fire-and-forget (a slow job can't stall the tick) ──
+# The loop used to `await asyncio.gather(*tasks)` every tick, so one job running up to
+# its timeout (default 300s) blocked the whole 10s cadence — newly-due reminders and
+# external-edit reloads waited minutes behind one unrelated job. _dispatch_due_jobs now
+# fires each due job as a tracked background task and returns at once.
+
+
+def _due(job, *, seconds_ago=1):
+    job.next_run = datetime.now() - timedelta(seconds=seconds_ago)
+    return job
+
+
+async def test_dispatch_fires_all_due_jobs_without_waiting_for_a_slow_one(tmp_path, monkeypatch):
+    svc = _svc(tmp_path)
+    slow = _due(_make_job(id="slow", command="slow"))
+    fast = _due(_make_job(id="fast", command="fast"))
+    svc.jobs = {slow.id: slow, fast.id: fast}
+
+    hang = asyncio.Event()
+    done = {"fast": False}
+
+    async def _exec(j):
+        if j.id == "slow":
+            await hang.wait()  # held for the whole assert window
+            return "slow-ok"
+        done["fast"] = True
+        return "fast-ok"
+
+    monkeypatch.setattr(svc, "_execute_job_command", _exec)
+
+    tasks = svc._dispatch_due_jobs(datetime.now())
+    assert len(tasks) == 2  # both spawned in a single tick
+    for _ in range(10):
+        await asyncio.sleep(0)  # let both start; the fast one runs to completion
+
+    # The fast job finished even though the slow one is still hanging — dispatch did
+    # NOT serialize on or await the slow job (the old gather would have blocked here).
+    assert done["fast"] is True
+    assert fast.last_status is JobStatus.SUCCESS
+    assert "slow" in svc._running_jobs  # still running, not awaited
+
+    hang.set()
+    await asyncio.wait_for(asyncio.gather(*tasks), timeout=2.0)
+
+
+async def test_dispatch_skips_a_job_already_running(tmp_path):
+    svc = _svc(tmp_path)
+    job = _due(_make_job(id="busy", command="x"))
+    svc.jobs = {job.id: job}
+    svc._running_jobs.add(job.id)  # pretend it is mid-execution
+    # It is "due" but already in flight → no throwaway task is spawned this tick.
+    assert svc._dispatch_due_jobs(datetime.now()) == []
+
+
+async def test_dispatch_ignores_disabled_future_and_unscheduled_jobs(tmp_path):
+    svc = _svc(tmp_path)
+    disabled = _due(_make_job(id="off", command="x", enabled=False))
+    future = _make_job(id="later", command="x")
+    future.next_run = datetime.now() + timedelta(hours=1)
+    unscheduled = _make_job(id="nonext", command="x")
+    unscheduled.next_run = None
+    svc.jobs = {j.id: j for j in (disabled, future, unscheduled)}
+    assert svc._dispatch_due_jobs(datetime.now()) == []
+
+
+async def test_inflight_task_is_referenced_then_released(tmp_path, monkeypatch):
+    svc = _svc(tmp_path)
+    job = _due(_make_job(id="tracked", command="x"))
+    svc.jobs = {job.id: job}
+
+    async def _exec(_j):
+        return "ok"
+
+    monkeypatch.setattr(svc, "_execute_job_command", _exec)
+
+    tasks = svc._dispatch_due_jobs(datetime.now())
+    assert tasks[0] in svc._inflight_tasks  # strong ref held so the loop can't GC it
+    await asyncio.wait_for(asyncio.gather(*tasks), timeout=2.0)
+    for _ in range(3):
+        await asyncio.sleep(0)  # let the done-callback run
+    assert svc._inflight_tasks == set()  # released on completion
+
+
+async def test_stop_cancels_inflight_jobs(tmp_path, monkeypatch):
+    svc = _svc(tmp_path)
+    job = _due(_make_job(id="hang", command="x"))
+    svc.jobs = {job.id: job}
+
+    hang = asyncio.Event()  # never set — the job only ends via stop()'s cancel
+
+    async def _exec(_j):
+        await hang.wait()
+        return "ok"
+
+    monkeypatch.setattr(svc, "_execute_job_command", _exec)
+    svc._running = True
+
+    tasks = svc._dispatch_due_jobs(datetime.now())
+    for _ in range(10):
+        await asyncio.sleep(0)  # let it start and reach hang.wait()
+    assert "hang" in svc._running_jobs
+
+    await svc.stop()  # must reap the still-running background job, not hang forever
+
+    assert tasks[0].cancelled()
+    assert svc._inflight_tasks == set()
+    assert "hang" not in svc._running_jobs  # _run_job's finally cleared the guard
+
+
+# ─── reload-during-run: a running job's object is preserved, not detached ─────────
+# Since the loop fires jobs fire-and-track (#611), an external `navig schedule` edit can
+# trigger _reload_if_changed WHILE a job is mid-run. Replacing the running job's object
+# with the disk snapshot would detach the in-flight task — its completion (status +
+# next_run advance) would write to a dropped object, and the snapshot's already-past
+# next_run would re-fire the job (a duplicate execution). _load_jobs now preserves the
+# live object of any job in _running_jobs (that the reload still contains).
+
+
+async def test_reload_preserves_running_job_object_and_updates_others(tmp_path):
+    svc = _svc(tmp_path)
+    running = _due(_make_job(id="run-1", command="x"))
+    idle = _make_job(id="idle", command="y")
+    svc.jobs = {running.id: running, idle.id: idle}
+    svc._save_jobs()  # snapshot both to disk
+    svc._running_jobs.add(running.id)  # run-1 is executing
+    svc._jobs_file_mtime = None  # force _reload_if_changed to reload
+
+    svc._reload_if_changed()
+
+    assert svc.jobs["run-1"] is running  # LIVE object preserved (in-flight task stays attached)
+    assert svc.jobs["idle"] is not idle  # a non-running job is reloaded fresh from disk
+    assert "idle" in svc.jobs
+
+
+async def test_reload_does_not_resurrect_an_externally_deleted_running_job(tmp_path):
+    svc = _svc(tmp_path)
+    running = _due(_make_job(id="run-1", command="x"))
+    svc.jobs = {running.id: running}
+    svc._save_jobs()
+    svc._running_jobs.add(running.id)
+
+    # External edit deletes the job while it runs.
+    svc._get_jobs_path().write_text(json.dumps({"counter": 0, "jobs": []}), encoding="utf-8")
+    svc._jobs_file_mtime = None
+
+    svc._reload_if_changed()
+
+    assert "run-1" not in svc.jobs  # a removed job is not resurrected despite _running_jobs
+
+
+async def test_reload_during_run_does_not_refire_the_running_job(tmp_path, monkeypatch):
+    svc = _svc(tmp_path)
+    job = _due(_make_job(id="A", schedule="daily", command="x"))
+    svc.jobs = {job.id: job}
+    svc._save_jobs()
+
+    runs = {"n": 0}
+    release = asyncio.Event()
+
+    async def _exec(_j):
+        runs["n"] += 1
+        await release.wait()
+        return "ok"
+
+    monkeypatch.setattr(svc, "_execute_job_command", _exec)
+
+    # Fire A (fire-and-track); it starts and blocks mid-run.
+    svc._dispatch_due_jobs(datetime.now())
+    for _ in range(6):
+        await asyncio.sleep(0)
+    assert runs["n"] == 1 and "A" in svc._running_jobs
+
+    # An external edit lands mid-run → reload. A's live object must be preserved.
+    svc._save_jobs()  # stand-in for the external writer touching the file
+    svc._jobs_file_mtime = None
+    svc._reload_if_changed()
+    assert svc.jobs["A"] is job  # preserved, not detached
+
+    # A finishes → next_run advances to the future on the LIVE (persisted) object.
+    release.set()
+    await asyncio.wait_for(asyncio.gather(*svc._inflight_tasks), timeout=2.0)
+    for _ in range(3):
+        await asyncio.sleep(0)
+    assert "A" not in svc._running_jobs
+    assert svc.jobs["A"].next_run > datetime.now()  # advanced, not a stale past value
+
+    # A must NOT re-fire — the detach/re-fire bug this guards against.
+    svc._dispatch_due_jobs(datetime.now())
+    for _ in range(6):
+        await asyncio.sleep(0)
+    assert runs["n"] == 1  # still one execution — no duplicate
+
+
+# ─── restart mid-run is at-most-once (claim next_run before executing) ─────────────
+# next_run used to advance only AFTER _run_job_locked completed, so a daemon killed
+# mid-run left the on-disk next_run in the past → the job re-fired on reboot (a duplicate
+# backup / deploy / reminder). _run_job_locked now claims + persists the next slot BEFORE
+# running the command, and start() reconciles any job left RUNNING on disk.
+
+
+async def test_next_run_claimed_and_persisted_before_execution(tmp_path, monkeypatch):
+    svc = _svc(tmp_path)
+    job = _due(_make_job(id="A", schedule="daily", command="x"))
+    svc.jobs = {job.id: job}
+    svc._save_jobs()  # persist the pre-run (past) next_run
+
+    seen = {}
+
+    async def _exec(_j):
+        # When the command runs, the on-disk next_run must ALREADY be advanced (the claim) —
+        # a crash at this instant would therefore NOT re-fire the job on restart.
+        disk = json.loads(svc._get_jobs_path().read_text(encoding="utf-8"))
+        seen["disk_next_run"] = disk["jobs"][0]["next_run"]
+        return "ok"
+
+    monkeypatch.setattr(svc, "_execute_job_command", _exec)
+    await svc._run_job_locked(job)
+
+    claimed = datetime.fromisoformat(seen["disk_next_run"])
+    assert claimed > datetime.now()  # claim was persisted to disk before the command ran
+
+
+async def test_restart_marks_a_running_job_as_interrupted(tmp_path):
+    svc = _svc(tmp_path)
+    job = _make_job(id="A", schedule="daily", command="x")
+    job.last_status = JobStatus.RUNNING  # persisted mid-run (the claim already advanced next_run)
+    job.next_run = datetime.now() + timedelta(days=1)
+    svc.jobs = {job.id: job}
+    svc._save_jobs()
+
+    # Simulate a reboot: a fresh service loads the file, then start() reconciles.
+    svc2 = _svc(tmp_path)
+    assert svc2.jobs["A"].last_status is JobStatus.RUNNING  # loaded as RUNNING
+    await svc2.start()
+    try:
+        assert svc2.jobs["A"].last_status is JobStatus.FAILED
+        assert svc2.jobs["A"].last_output == "interrupted by restart"
+        assert svc2.jobs["A"].next_run > datetime.now()  # claim preserved → not re-fired
+    finally:
+        await svc2.stop()
+
+
+async def test_successful_run_still_advances_next_run_from_completion(tmp_path, monkeypatch):
+    # The claim is only the crash-safety value; a normal run's next_run is still the
+    # authoritative end-of-run recompute (cadence unchanged).
+    svc = _svc(tmp_path)
+    job = _due(_make_job(id="A", schedule="daily", command="x"))
+    svc.jobs = {job.id: job}
+
+    async def _ok(_j):
+        return "ok"
+
+    monkeypatch.setattr(svc, "_execute_job_command", _ok)
+    await svc._run_job_locked(job)
+    assert job.last_status is JobStatus.SUCCESS
+    assert job.next_run > datetime.now()
+
+
+async def test_claim_does_not_break_retry_scheduling(tmp_path, monkeypatch):
+    # A failed job's ~5-min retry override must still win over the claim (which set the
+    # normal daily next_run before the run).
+    svc = _svc(tmp_path)
+    svc.config.retry_failed = True
+    job = _due(_make_job(id="A", schedule="daily", command="boom", max_retries=2))
+    svc.jobs = {job.id: job}
+
+    async def _boom(_j):
+        raise RuntimeError("fail")
+
+    monkeypatch.setattr(svc, "_execute_job_command", _boom)
+    await svc._run_job_locked(job)
+    assert job.last_status is JobStatus.FAILED
+    assert job.retry_count == 1
+    assert job.next_run < datetime.now() + timedelta(hours=1)  # ~5-min retry, not tomorrow

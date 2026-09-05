@@ -784,6 +784,22 @@ def load_entry_point_plugins() -> list[str]:
     except TypeError:  # Python <3.10: entry_points() returns a mapping
         eps = entry_points().get("navig.plugins", [])  # type: ignore[attr-defined]
 
+    def _bind_plugin_logging(obj: object, ep: Any) -> None:
+        """Put this plugin's package inside NAVIG's logging tree.
+
+        The package comes from the loaded object, falling back to the entry
+        point's declared module — an entry point may point at a callable, a class
+        or a module, and only the first two carry ``__module__``.
+        """
+        try:
+            from navig.core.logging import bind_plugin_logging
+
+            module = getattr(obj, "__module__", None) or getattr(ep, "module", "") or ""
+            if package := str(module).split(".", 1)[0]:
+                bind_plugin_logging(package)
+        except Exception:  # noqa: BLE001 — never block a plugin over its logging
+            pass
+
     # Disabled plugins must not register ANYTHING (routes, modules, hooks) —
     # `navig plugin disable <dist>` unwires every capability, not just CLI verbs.
     try:
@@ -804,6 +820,10 @@ def load_entry_point_plugins() -> list[str]:
                 _log.info("navig plugin skipped (disabled): %s", dist_name)
                 continue
             obj = ep.load()
+            # Before register(): a plugin that logs while wiring itself up is
+            # exactly the record worth keeping, and until this call a plugin's
+            # logs reached no handler at all. See `bind_plugin_logging`.
+            _bind_plugin_logging(obj, ep)
             reg = getattr(obj, "register", None)
             if callable(reg):
                 reg()

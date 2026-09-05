@@ -50,7 +50,13 @@ SHELL_TOOLS = {"Bash", "PowerShell"}
 # A shell command is dangerous when it runs a git verb that mutates the
 # working tree / index / HEAD of this checkout.
 _DANGEROUS_GIT = re.compile(
-    r"\bgit\b[^\n|&;]*?\b(checkout|switch|rebase|reset|merge|pull|cherry-pick"
+    # `merge(?!-)`: `merge-base` and `merge-tree` are READ-ONLY plumbing, but the
+    # hyphen is a word boundary so a bare `merge` matched them. That blocked the very
+    # command you reach for to check whether a detached HEAD or a stray branch holds
+    # unmerged work — the careful inspection you do BEFORE touching anything — and a
+    # guard that blocks the careful path pushes people toward `lock release --force`
+    # instead. Same shape as the `stash(?!…)` carve-out below; plain `merge` still matches.
+    r"\bgit\b[^\n|&;]*?\b(checkout|switch|rebase|reset|merge(?!-)|pull|cherry-pick"
     r"|revert|clean|restore|commit|add|rm|mv|am|apply"
     r"|stash(?!\s+(?:list|show)|@))\b"  # stash@{n} is a ref, not the verb
 )

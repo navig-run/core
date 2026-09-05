@@ -154,6 +154,12 @@ web_app = typer.Typer(
 @web_app.callback()
 def web_callback(ctx: typer.Context):
     """Web server management - run without subcommand for help."""
+    # Nine sibling modules already do this. The root `navig` callback ensures the dict,
+    # so through the real CLI this is a no-op; it matters when the sub-app is reached
+    # directly (a test, a programmatic invoke), where `ctx.obj[...]` would otherwise
+    # die with "'NoneType' object does not support item assignment" — a crash that is
+    # also non-zero, so an exit-code assertion can pass for entirely the wrong reason.
+    ctx.ensure_object(dict)
     if ctx.invoked_subcommand is None:
         show_subcommand_help("web", ctx)
         raise typer.Exit()
@@ -303,14 +309,18 @@ def web_hestia_remove(
     if resource == "user":
         from navig.commands.hestia import delete_user_cmd
 
-        delete_user_cmd(name, ctx.obj)
+        # delete_user_cmd prints its own failure and returns False. Discarding it exited 0,
+        # so `navig web remove user X && <next>` continued against a user still on the box.
+        if not delete_user_cmd(name, ctx.obj):
+            raise typer.Exit(1)
     elif resource == "domain":
         if not user:
             ch.error("Username required for domain deletion (--user)")
             raise typer.Exit(1)
         from navig.commands.hestia import delete_domain_cmd
 
-        delete_domain_cmd(user, name, ctx.obj)
+        if not delete_domain_cmd(user, name, ctx.obj):   # same shape as the user branch
+            raise typer.Exit(1)
     else:
         ch.error(f"Unknown resource type: {resource}. Use 'user' or 'domain'.")
         raise typer.Exit(1)
@@ -448,6 +458,11 @@ def enable_site(options: dict[str, Any]) -> None:
         from navig.cli.recovery import require_active_host  # noqa: PLC0415
         host_name = require_active_host(options, config_manager)
 
+        # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+        from navig.core import host_lock  # noqa: PLC0415
+
+        host_lock.guard_remote(config_manager, host_name, "navig web enable-site")
+
     if not app_name:
         from navig.cli.recovery import require_active_app  # noqa: PLC0415
         app_name = require_active_app(options, config_manager)
@@ -536,6 +551,11 @@ def disable_site(options: dict[str, Any]) -> None:
         from navig.cli.recovery import require_active_host  # noqa: PLC0415
         host_name = require_active_host(options, config_manager)
 
+        # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+        from navig.core import host_lock  # noqa: PLC0415
+
+        host_lock.guard_remote(config_manager, host_name, "navig web disable-site")
+
     if not app_name:
         from navig.cli.recovery import require_active_app  # noqa: PLC0415
         app_name = require_active_app(options, config_manager)
@@ -623,6 +643,11 @@ def enable_module(options: dict[str, Any]) -> None:
     if not host_name:
         from navig.cli.recovery import require_active_host  # noqa: PLC0415
         host_name = require_active_host(options, config_manager)
+
+        # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+        from navig.core import host_lock  # noqa: PLC0415
+
+        host_lock.guard_remote(config_manager, host_name, "navig web enable-module")
 
     if not app_name:
         from navig.cli.recovery import require_active_app  # noqa: PLC0415
@@ -713,6 +738,11 @@ def disable_module(options: dict[str, Any]) -> None:
         from navig.cli.recovery import require_active_host  # noqa: PLC0415
         host_name = require_active_host(options, config_manager)
 
+        # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+        from navig.core import host_lock  # noqa: PLC0415
+
+        host_lock.guard_remote(config_manager, host_name, "navig web disable-module")
+
     if not app_name:
         from navig.cli.recovery import require_active_app  # noqa: PLC0415
         app_name = require_active_app(options, config_manager)
@@ -797,6 +827,11 @@ def reload_server(options: dict[str, Any]) -> None:
     if not host_name:
         from navig.cli.recovery import require_active_host  # noqa: PLC0415
         host_name = require_active_host(options, config_manager)
+
+        # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+        from navig.core import host_lock  # noqa: PLC0415
+
+        host_lock.guard_remote(config_manager, host_name, "navig web reload")
 
     if not app_name:
         from navig.cli.recovery import require_active_app  # noqa: PLC0415

@@ -8,8 +8,6 @@ Deck UI depends on so a future provider addition can't silently break the flow.
 
 from __future__ import annotations
 
-import pytest
-
 from navig.tools.media_providers import (
     MEDIA_CATALOG,
     catalog_payload,

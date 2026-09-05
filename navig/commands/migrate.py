@@ -4,7 +4,7 @@
 Steps
 ------
 config     Migrate Documents\\.navig → ~/.navig config layout
-           (wraps scripts/migrate_navig_config.py logic)
+           (wraps tools/migrate_navig_config.py logic)
 addons     Migrate legacy addons/ → templates/ architecture
 all        Run all steps in dependency order (idempotent)
 """
@@ -102,7 +102,7 @@ def migrate_config_cmd(
         ch.success(f"Migration '{step}' already complete (use --force to re-run).")
         return
 
-    # Pull in the logic from scripts/migrate_navig_config.py
+    # Pull in the logic from tools/migrate_navig_config.py
     try:
         import sys
         from pathlib import Path

@@ -82,7 +82,7 @@ Want me to check the logs to confirm it's healthy?
 - "Show container resource usage"
 - "Docker stats"
 
-**Command:** `navig docker stats --no-stream`
+**Command:** `navig docker stats`
 
 **Response format:**
 ```

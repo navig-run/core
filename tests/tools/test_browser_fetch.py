@@ -2,7 +2,6 @@
 Tests for navig.tools.browser_fetch — pure helper functions.
 """
 
-import pytest
 
 from navig.tools.browser_fetch import BrowserFetchTool, _extract_text, _is_js_gated
 

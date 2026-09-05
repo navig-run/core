@@ -31,6 +31,32 @@ from navig.config import ConfigManager
 logger = logging.getLogger(__name__)
 
 
+def _result_signals_error(result: Any) -> bool:
+    """True when a tool's RETURN value signals failure by convention.
+
+    NAVIG's MCP tools report failure by RETURNING a sentinel, not by raising —
+    ``{"error": ...}``, ``{"ok": False}``, ``{"success": False}``, or (some
+    already, believing the dispatch honored it) ``{"isError": True}``. Without
+    recognizing that convention the dispatch wraps the failure as a NORMAL result,
+    so a failed real-infra op (a permission-denied write, a failed block apply)
+    reaches the MCP client as a phantom success — the protocol ``isError`` flag,
+    the one machine-readable failure signal, never set.
+
+    Only the UNAMBIGUOUS dict conventions are honored: a truthy ``isError`` /
+    ``error``, or ``ok``/``success`` explicitly ``False``. Deliberately NOT a bare
+    ``returncode`` (a non-zero exit is normal for grep/diff/test commands) nor any
+    string heuristic (would false-positive on content that opens with "Error"). A
+    tool wanting a non-zero exit surfaced as an error should return ``{"ok": False}``.
+    """
+    if not isinstance(result, dict):
+        return False
+    if result.get("isError"):
+        return True
+    if result.get("error"):
+        return True
+    return result.get("ok") is False or result.get("success") is False
+
+
 class MCPProtocolHandler:
     """Handles MCP JSON-RPC protocol over stdio."""
 
@@ -217,9 +243,15 @@ class MCPProtocolHandler:
 
         try:
             result = self._execute_tool(tool_name, arguments)
-            return {
+            envelope: dict[str, Any] = {
                 "content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]
             }
+            # A tool that signals failure by RETURNING a sentinel (not raising) must
+            # surface as a protocol-level error, not a phantom success — an MCP
+            # client keyed on isError would otherwise record a failed op as done.
+            if _result_signals_error(result):
+                envelope["isError"] = True
+            return envelope
         except Exception as e:
             return {
                 "isError": True,
@@ -993,12 +1025,34 @@ def _memory_store():
 
 
 async def memory_retrieve(query: str, limit: int = 10, token_budget: int = 2000) -> dict:
-    """Retrieve ranked key facts matching query within token budget."""
+    """Retrieve ranked key facts matching query within token budget.
+
+    ``FactRetriever.retrieve(query, category=None, max_tokens=None, config_override=None)``
+    returns a ``FactRetrievalResult``, not a list. This used to call it with
+    ``limit=`` and ``token_budget=`` — neither parameter exists — and then iterate the
+    result object, which is a dataclass and not iterable. Both raise TypeError, so the
+    tool was dead on arrival; the facts live on ``result.facts`` as ``RankedFact``
+    wrappers. ``navig/mcp/tools/memory.py`` has always done this correctly.
+    """
     from navig.memory.fact_retriever import FactRetriever
 
     retriever = FactRetriever(_memory_store())
-    facts = retriever.retrieve(query=query, limit=limit, token_budget=token_budget)
-    return {"facts": [f.model_dump() if hasattr(f, "model_dump") else vars(f) for f in facts]}
+    result = retriever.retrieve(query, max_tokens=token_budget)
+    ranked = (getattr(result, "facts", None) or [])[:limit]
+    return {
+        "facts": [
+            {
+                "id": rf.fact.id,
+                "content": rf.fact.content,
+                "category": rf.fact.category,
+                "tags": rf.fact.tags,
+                "confidence": rf.fact.confidence,
+                "score": rf.combined_score,
+                "created_at": rf.fact.created_at,
+            }
+            for rf in ranked
+        ]
+    }
 
 
 async def memory_remember(text: str, source: str = "mcp") -> dict:

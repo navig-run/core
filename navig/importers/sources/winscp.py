@@ -36,7 +36,12 @@ class WinSCPImporter(BaseImporter):
 
     def _parse_ini(self, path: Path) -> list[ImportedItem]:
         try:
-            parser = configparser.ConfigParser()
+            # interpolation=None: WinSCP values are LITERAL and routinely contain `%`
+            # (it URL-encodes them — `deploy%40example.com`). ConfigParser's default
+            # BasicInterpolation treats `%` as a template escape and raises on read, and
+            # because the `try` below wraps the whole section loop that dropped EVERY
+            # session, not just the one with the `%`.
+            parser = configparser.ConfigParser(interpolation=None)
             parser.optionxform = str
             loaded = parser.read(path, encoding="utf-8-sig")
             if not loaded:
@@ -72,8 +77,7 @@ class WinSCPImporter(BaseImporter):
                 )
             return items
         except Exception as exc:
-            logger.warning("[%s] %s", self.SOURCE_NAME, exc)
-            return []
+            return self._fail(exc)
 
     def _parse_reg(self, path: Path) -> list[ImportedItem]:
         try:
@@ -126,8 +130,7 @@ class WinSCPImporter(BaseImporter):
                 )
             return items
         except Exception as exc:
-            logger.warning("[%s] %s", self.SOURCE_NAME, exc)
-            return []
+            return self._fail(exc)
 
     @staticmethod
     def _normalize_port(value: str) -> str:

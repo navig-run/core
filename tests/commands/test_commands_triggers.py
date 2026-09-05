@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-import pytest
-
 from navig.commands.triggers import (
     ActionType,
     Trigger,

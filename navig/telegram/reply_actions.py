@@ -12,10 +12,13 @@ works everywhere — DM, group, and business.
 
 Security: only the SANDBOXED no-tools LLM ops (translate/summarize/explain/
 context) plus owner-local helpers (save/refine/pin) are reachable — a reply can
-never touch the shell. In business chats the set is further restricted to
-``BUSINESS_ACTIONS`` and every result is DM'd to the owner PRIVATELY, never into
-the conversation. Non-LLM actions are owner-gated; LLM ops self-gate via the
-per-tool policy in :mod:`navig.telegram.permissions`.
+never touch the shell. In business chats the set is restricted to
+``BUSINESS_ACTIONS`` and only the OWNER may trigger one; a content op posts its
+result INTO the conversation AS the owner (like any message you send) and deletes
+the trigger word, while ``save`` — and any keyword ended with ``?`` (``translate?``,
+the "read it for myself" escape hatch) — stays a private owner-only DM. Non-LLM
+actions are owner-gated; LLM ops self-gate via the per-tool policy in
+:mod:`navig.telegram.permissions`.
 """
 
 from __future__ import annotations
@@ -173,7 +176,9 @@ def help_text() -> str:
         "🔖 <code>save</code> · 🔁 <code>refine</code> · 📌 <code>pin</code> / <code>unpin</code>\n\n"
         "🌍 Also in FR · RU · ES · DE · PT — e.g. <code>traduis</code>, <code>переведи</code>, "
         "<code>resumen</code>, <code>übersetze</code>, <code>traduza</code>.\n"
-        "💡 For translate, add a target: reply <code>translate fr</code>."
+        "💡 For translate, add a target: reply <code>translate fr</code>.\n"
+        "🔒 In a business chat, end a keyword with <code>?</code> (<code>translate?</code>) "
+        "to keep the result private — I'll DM it only to you."
     )
 
 
@@ -290,6 +295,11 @@ async def run_bot_reply(
                 chat_id, markdown=body, reply_to_message_id=reply_to_message_id
             )
         except Exception:  # noqa: BLE001
+            sent = None
+        # send_rich_message returns None when BOTH the rich send AND its HTML fallback
+        # were rejected (no exception) — the except above misses that, so fall back to
+        # plain text rather than owning the message (return True) with nothing delivered.
+        if sent is None:
             sent = await channel.send_message(chat_id, result, parse_mode=None)
         # Remember our output so the user can chain another keyword onto it (the
         # rich reply itself comes back with empty text when replied to).
@@ -349,7 +359,7 @@ async def run_bot_reply(
             if not permissions.can_use("download", is_owner=is_owner):
                 await channel.send_message(chat_id, "⛔ Not permitted.", parse_mode=None)
                 return True
-            await tt._do_analyse(channel, chat_id, url)
+            await tt.analyse_link(channel, chat_id, url)
             return True
         except Exception:  # noqa: BLE001
             logger.debug("reply tiktok action failed", exc_info=True)
@@ -420,13 +430,61 @@ async def _refine(
 # ── business-chat dispatch (owner-only, private) ─────────────────────────────
 
 
+async def _delete_business_trigger(channel: Any, bcid: str | None, mid: int | None) -> None:
+    """Best-effort remove the owner's keyword trigger from the business chat so the
+    counterparty never sees the bare command word. Business chats require
+    ``deleteBusinessMessages`` (needs can_delete on the connection)."""
+    if not (bcid and mid is not None):
+        return
+    try:
+        await channel._api_call(
+            "deleteBusinessMessages",
+            {"business_connection_id": bcid, "message_ids": [mid]},
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def _send_into_business_chat(
+    channel: Any, chat_id: int | None, text: str, bcid: str | None,
+    *, reply_to: int | None = None,
+) -> Any:
+    """Post a reply-action result INTO the business conversation, AS the owner.
+
+    Needs ``business_connection_id`` (a plain ``send_message`` can't post as the
+    business account). Threads onto the original message when possible; retries
+    without the reply link if Telegram rejects it, then falls back to a plain send.
+    Sent as plain text (no parse_mode) — the content is arbitrary AI output.
+    """
+    if chat_id is None:
+        return None
+    data: dict[str, Any] = {"chat_id": chat_id, "text": text}
+    if bcid:
+        data["business_connection_id"] = bcid
+    if reply_to is not None:
+        data["reply_parameters"] = {"message_id": reply_to, "allow_sending_without_reply": True}
+    try:
+        return await channel._api_call("sendMessage", data)
+    except Exception:  # noqa: BLE001
+        data.pop("reply_parameters", None)  # some setups reject reply threading
+        try:
+            return await channel._api_call("sendMessage", data)
+        except Exception:  # noqa: BLE001
+            logger.debug("business in-chat reply-action send failed", exc_info=True)
+            return None
+
+
 async def run_business_reply(
     channel: Any, msg: dict, *, is_owner: bool, owner_id: int | None
 ) -> bool:
     """Owner replied to a business message with a keyword → run a sandboxed action
-    and DM the result PRIVATELY to the owner (the counterparty never sees it).
+    and post the result INTO the same business chat, AS the owner (the counterparty
+    sees it, exactly like any message you send). The owner's trigger word is deleted
+    so the chat shows only the clean result.
 
-    Best-effort deletes the owner's keyword message from the business chat.
+    Two exceptions stay a PRIVATE owner-only DM: ``save`` (a local bookmark, no
+    chat-facing output), and any keyword the owner ends with ``?`` (e.g. ``translate?``)
+    — the "read it for myself" escape hatch, so the counterparty never sees it.
     Owner-only; restricted to the ``BUSINESS_ACTIONS`` subset. Returns True if an
     action ran (caller stops further handling).
     """
@@ -435,16 +493,22 @@ async def run_business_reply(
     reply = msg.get("reply_to_message")
     if not isinstance(reply, dict):
         return False
-    action, arg = parse(msg.get("text") or "")
+    raw = (msg.get("text") or "").strip()
+    # A trailing "?" (translate?, summarize?) keeps the result PRIVATE — DM'd to the
+    # owner instead of posted into the chat. parse() strips the "?" before resolving.
+    private = raw.endswith("?")
+    action, arg = parse(raw)
     if not action or action not in BUSINESS_ACTIONS:
         return False
 
     chat_id = (msg.get("chat") or {}).get("id")
+    bcid = msg.get("business_connection_id")
+    trigger_id = msg.get("message_id")
     rid = reply.get("message_id")
     target = _target_text(reply, chat_id, rid)
     if not target:
-        # Resolved keyword but no readable text → tell the owner privately rather
-        # than silently doing nothing.
+        # Resolved keyword but no readable text → tell the owner privately (a bare
+        # "⚠️ …" posted into the chat would be worse), then clean up the trigger.
         try:
             await channel.send_message(
                 owner_id, f"⚠️ I couldn't read any text in that message to {action}.",
@@ -452,51 +516,65 @@ async def run_business_reply(
             )
         except Exception:  # noqa: BLE001
             pass
+        await _delete_business_trigger(channel, bcid, trigger_id)
         return True
 
     if action in LLM_ACTIONS:
         res = await _run_llm(action, target, is_owner=True, arg=arg)
-        if not res.get("ok"):
-            # Tell the owner privately rather than silently doing nothing.
+        result = (res.get("result") or "").strip() if res.get("ok") else ""
+        if not res.get("ok") or not result:
+            # Report the failure to the owner privately rather than silently doing
+            # nothing — never leak the bare keyword or an error into the chat.
             logger.warning("business reply action %s failed: %s", action, res.get("reason"))
+            note = (f"⚠️ Couldn't {action} that message right now."
+                    if not res.get("ok") else f"⚠️ Got an empty {action} result.")
             try:
-                await channel.send_message(
-                    owner_id, f"⚠️ Couldn't {action} that message right now.", parse_mode=None
-                )
+                await channel.send_message(owner_id, note, parse_mode=None)
             except Exception:  # noqa: BLE001
                 pass
+            await _delete_business_trigger(channel, bcid, trigger_id)
             return True
-        body = f"**{_LLM_LABELS.get(action, action.title())}**\n\n{res['result']}"
-    elif action == "save":
-        if not _save_to_wiki(chat_id, target):
-            return False
-        body = "🔖 Saved to your wiki inbox."
-    else:  # not reachable given BUSINESS_ACTIONS, but keep total
-        return False
+        body = f"{_LLM_LABELS.get(action, action.title())}\n\n{result}"
+        if private:
+            # "read it for myself" (keyword ended with "?") — DM the owner privately,
+            # rich with a plain fallback; the counterparty never sees it.
+            rich = f"**{_LLM_LABELS.get(action, action.title())}**\n\n{result}"
+            sent = None
+            try:
+                sent = await channel.send_rich_message(owner_id, markdown=rich)
+            except Exception:  # noqa: BLE001
+                sent = None
+            # None = rich send AND its HTML fallback both rejected (no exception) — send
+            # the private "translate?" result as plain text instead of losing it silently.
+            if sent is None:
+                try:
+                    await channel.send_message(owner_id, body, parse_mode=None)
+                except Exception:  # noqa: BLE001
+                    logger.debug("business reply-action private DM failed", exc_info=True)
+        else:
+            # Default: post the result INTO the chat, AS the owner.
+            sent = await _send_into_business_chat(channel, chat_id, body, bcid, reply_to=rid)
+            # Remember our output so a follow-up keyword can chain onto it (a reply
+            # onto a rich/AI message comes back with empty text).
+            try:
+                if isinstance(sent, dict):
+                    remember_output(sent.get("message_id"), result)
+            except Exception:  # noqa: BLE001
+                pass
+        await _delete_business_trigger(channel, bcid, trigger_id)
+        return True
 
-    try:
-        # Rich markdown (bold label, code blocks, expandable quotes) with a plain
-        # DM fallback — mirrors run_bot_reply. send_rich_message already degrades to
-        # HTML where rich isn't supported; the plain send covers a hard failure.
+    if action == "save":
+        # A local bookmark — no chat-facing output, so confirm to the owner privately.
+        ok = _save_to_wiki(chat_id, target)
         try:
-            await channel.send_rich_message(owner_id, markdown=body)
-        except Exception:  # noqa: BLE001
-            await channel.send_message(owner_id, body, parse_mode=None)
-    except Exception:  # noqa: BLE001
-        logger.debug("business reply-action DM failed", exc_info=True)
-        return False
-
-    # Best-effort: remove the owner's keyword message from the business chat so the
-    # counterparty never sees the trigger word (needs can_delete on the connection).
-    # Business chats require deleteBusinessMessages, not deleteMessage.
-    bcid = msg.get("business_connection_id")
-    mid = msg.get("message_id")
-    try:
-        if bcid and mid is not None:
-            await channel._api_call(
-                "deleteBusinessMessages",
-                {"business_connection_id": bcid, "message_ids": [mid]},
+            await channel.send_message(
+                owner_id, "🔖 Saved to your wiki inbox." if ok else "⚠️ Couldn't save that.",
+                parse_mode=None,
             )
-    except Exception:  # noqa: BLE001
-        pass
-    return True
+        except Exception:  # noqa: BLE001
+            pass
+        await _delete_business_trigger(channel, bcid, trigger_id)
+        return True
+
+    return False  # not reachable given BUSINESS_ACTIONS, but keep total

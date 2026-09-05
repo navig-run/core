@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.core.json_io import safe_json_loads
 from navig.store.base import BaseStore, _utcnow
 
 logger = logging.getLogger(__name__)
@@ -109,13 +110,16 @@ class ScheduledPostStore(BaseStore):
         return {
             "id": row["id"],
             "body": row["body"] or "",
-            "content": json.loads(row["content_json"] or "{}"),
-            "targets": json.loads(row["targets_json"] or "[]"),
+            # safe_json_loads, not json.loads: these mappers run inside
+            # `[_row_to_dict(r) for r in rows]`, so one corrupt blob would take out the
+            # whole queue listing rather than degrade the single post.
+            "content": safe_json_loads(row["content_json"], {}),
+            "targets": safe_json_loads(row["targets_json"], []),
             "status": row["status"],
             "schedule_kind": row["schedule_kind"],
             "run_at": row["run_at"],
             "cron_expr": row["cron_expr"],
-            "receipts": json.loads(row["receipts_json"] or "[]"),
+            "receipts": safe_json_loads(row["receipts_json"], []),
             "last_error": row["last_error"],
             "created_at": row["created_at"] or "",
             "updated_at": row["updated_at"] or "",

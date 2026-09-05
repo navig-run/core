@@ -10,9 +10,6 @@ Covers: normalize_profile_name, ContinuationPolicy, _to_bool, _to_int,
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any
-
-import pytest
 
 # --------------- helpers ---------------
 
@@ -289,3 +286,51 @@ class TestBusySuppression:
         ctx = {"continuation": {"busy_until": past}}
         is_busy, _, _ = get_busy_suppression(ctx)
         assert is_busy is False
+
+
+class TestPolicyFlagCoercion:
+    """`_to_bool` returned *default* for anything that was not a bool or str.
+
+    Hardening rather than a live bug: every current caller passes real Python bools and
+    `policy_to_context` persists bools, so the round-trip was never broken. But
+    `merge_policy(**updates)` defaults each field to its CURRENT value, so a numeric
+    flag from a JSON payload would have been silently dropped rather than merely
+    mis-read — the caller's explicit instruction discarded.
+
+    The widened string forms resolve in the safe direction: `dry_run="y"` used to mean
+    False (a REAL execution when a dry run was asked for) and `paused="y"` used to
+    leave the agent running.
+    """
+
+    def test_numeric_flags_are_honoured_not_discarded(self):
+        from navig.core.continuation import _to_bool
+
+        assert _to_bool(1, False) is True
+        assert _to_bool(0, True) is False, "a numeric 0 must not fall through to True"
+
+    def test_single_letter_affirmatives_resolve_safely(self):
+        from navig.core.continuation import _to_bool
+
+        assert _to_bool("y", False) is True
+        assert _to_bool("n", True) is False
+
+    def test_documented_forms_are_unchanged(self):
+        from navig.core.continuation import _to_bool
+
+        for v in ("1", "true", "yes", "on", True):
+            assert _to_bool(v, False) is True
+        for v in ("0", "false", "no", "off", "", False):
+            assert _to_bool(v, True) is False
+
+    def test_unknown_still_falls_back_to_the_default(self):
+        from navig.core.continuation import _to_bool
+
+        assert _to_bool("banana", True) is True
+        assert _to_bool(None, False) is False
+
+    def test_a_dry_run_request_is_not_silently_a_real_run(self):
+        """The failure this prevents: dry_run="y" meaning False."""
+        from navig.core.continuation import merge_policy, policy_from_context
+
+        ctx = merge_policy({}, dry_run="y")
+        assert policy_from_context(ctx).dry_run is True

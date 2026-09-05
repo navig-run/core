@@ -2,7 +2,6 @@ import json
 import os
 import platform
 import re
-import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -197,6 +196,31 @@ def register(server: Any) -> None:
         }
     )
 
+    # Safety classification consulted by the approval gate
+    # (navig.mcp_server._gate_tool). Unlisted defaults to "safe", so anything
+    # that acts on the machine MUST appear here or it runs ungated and unaudited.
+    # A module's register() must be self-sufficient: register_all_tools creates this
+    # dict, but a direct `module.register(server)` call (tests, a plugin host) does not,
+    # and assuming it exists raised AttributeError. cdp.py already guarded; these did not.
+    if not hasattr(server, "_tool_safety"):
+        server._tool_safety = {}
+    server._tool_safety.update({
+        "navig_agent_service_install": "dangerous",    # installs a system service
+        "navig_agent_service_uninstall": "dangerous",  # removes a system service
+        "navig_agent_component_restart": "dangerous",  # restarts a live component
+        "navig_agent_goal_start": "dangerous",         # sets the agent acting on the system
+        "navig_agent_remediation_retry": "dangerous",  # re-runs a system change
+        "navig_agent_goal_add": "moderate",
+        "navig_agent_goal_cancel": "moderate",
+        "navig_agent_learning_run": "moderate",
+        # read-only — recorded explicitly so a missing entry is a build failure,
+        # not a silent default to "safe".
+        "navig_agent_status_get": "safe",
+        "navig_agent_goal_list": "safe",
+        "navig_agent_remediation_list": "safe",
+        "navig_agent_service_status": "safe",
+    })
+
 
 def _tool_agent_status_get(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Return agent install/runtime status for control plane clients."""
@@ -207,21 +231,13 @@ def _tool_agent_status_get(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     pid: int | None = None
 
     if pid_path.exists():
-        try:
-            pid = int(pid_path.read_text(encoding="utf-8").strip())
-            if platform.system().lower().startswith("win"):
-                result = subprocess.run(
-                    ["tasklist", "/FI", f"PID eq {pid}"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                running = str(pid) in result.stdout
-            else:
-                os.kill(pid, 0)
-                running = True
-        except Exception:
-            running = False
+        # The third copy of this check, and the third to treat "some process holds that
+        # number" as "the agent is running". One canonical answer now, so a recycled PID
+        # cannot report a dead agent as alive to a control-plane client.
+        from navig.daemon.single_instance import pid_from_pidfile  # noqa: PLC0415
+
+        pid = pid_from_pidfile(pid_path)
+        running = pid is not None
 
     mode = None
     personality = None

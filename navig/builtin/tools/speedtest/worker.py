@@ -17,7 +17,9 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "_lib"))
-from common import Timer, current_os, emit, err, ok  # noqa: E402
+from common import Timer, emit, err, ok  # noqa: E402
+
+from navig.core.proc_text import console_encoding
 
 TOOL = "speedtest"
 
@@ -139,8 +141,10 @@ def _ping_stats(host: str, count: int = 5) -> tuple[float | None, float | None]:
     else:
         cmd = ["ping", "-c", str(count), host]
 
+    # `ping` is a console tool: its output is the console code page on Windows (UTF-8 on
+    # POSIX, where console_encoding() returns exactly what was hardcoded here before).
     r = subprocess.run(
-        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+        cmd, capture_output=True, encoding=console_encoding(), errors="replace"
     )
     out = r.stdout + r.stderr
 

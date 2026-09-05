@@ -86,8 +86,8 @@ Do nothing
         except Exception as e:
             return f"Validation Error: {e}"
 
-    def _save(self, goal: str, artifact: str):
-        """Save to skills/[name]/SKILL.md."""
+    def _save(self, goal: str, artifact: str) -> bool:
+        """Save to skills/[name]/SKILL.md. Returns True only if written."""
         try:
             parts = artifact.split("---", 2)
             frontmatter = yaml.safe_load(parts[1])
@@ -103,5 +103,8 @@ Do nothing
                 f.write(artifact)
 
             success(f"Skill saved to {path}")
+            return True
         except Exception as e:
+            self._save_error = f"Failed to save skill: {e}"
             error(f"Failed to save skill: {e}")
+            return False

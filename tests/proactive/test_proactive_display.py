@@ -4,8 +4,6 @@ Tests for navig.proactive.proactive_display — ProactiveDisplay warnings.
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

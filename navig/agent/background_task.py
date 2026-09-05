@@ -18,6 +18,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from navig.core.aio_subprocess import terminate_process_tree
 from navig.platform.paths import config_dir
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,14 @@ class BackgroundTaskManager:
     start / status / output / kill / list / cleanup operations.
     """
 
+    #: Brief window after spawn during which ``start()`` lets an immediately-failing
+    #: command settle, so it returns an accurate ``is_running`` instead of a phantom
+    #: "running" for a process that never came up (a typo → shell exit 127, an instant
+    #: crash). A healthy long-running task simply uses the full window; a dying one is
+    #: detected within one poll interval, so the common fast-command case barely waits.
+    _START_GRACE_SECONDS: float = 0.3
+    _STARTUP_POLL_INTERVAL: float = 0.02
+
     def __init__(self, output_dir: Path | None = None) -> None:
         self._tasks: dict[int, BackgroundTask] = {}
         self._processes: dict[int, asyncio.subprocess.Process] = {}
@@ -101,7 +110,11 @@ class BackgroundTaskManager:
     ) -> BackgroundTask:
         """Start a background task.
 
-        Returns immediately after spawning the subprocess.
+        Returns shortly after spawning the subprocess — after a brief liveness
+        grace (``_START_GRACE_SECONDS``) so a command that dies on startup is
+        already reflected in ``task.is_running`` rather than looking identical to
+        a healthy background task. A genuinely long-running task returns still
+        running; a fast one may already be complete.
 
         Raises
         ------
@@ -168,11 +181,18 @@ class BackgroundTaskManager:
         fut = asyncio.ensure_future(self._monitor(task, proc, output_fh))
         self._monitor_futures[task.task_id] = fut
 
+        # Liveness grace: let an immediately-failing command settle so the caller
+        # sees `is_running == False` (and the exit code) rather than a phantom
+        # "started" for a process that never came up. The monitor is the single
+        # writer of exit state; we just wait briefly for it to fire.
+        await self._await_startup(task)
+
         logger.debug(
-            "Background task #%d started: %s (pid %s)",
+            "Background task #%d started: %s (pid %s, running=%s)",
             task.task_id,
             task.label,
             task.pid,
+            task.is_running,
         )
         return task
 
@@ -242,12 +262,14 @@ class BackgroundTaskManager:
             return False
 
         try:
-            proc.terminate()
-            try:
-                await asyncio.wait_for(proc.wait(), timeout=_PROC_GRACEFUL_TIMEOUT)
-            except asyncio.TimeoutError:
-                proc.kill()
-                await asyncio.wait_for(proc.wait(), timeout=_PROC_GRACEFUL_TIMEOUT)
+            # `proc` is a SHELL — start() spawns via create_subprocess_shell — so on Windows
+            # this pid is cmd.exe and the command the user actually asked to run is its CHILD.
+            # terminate() there is TerminateProcess: it kills the shell INSTANTLY, so the
+            # graceful wait returns success, we report killed... and the real command keeps
+            # running forever, orphaned, still holding the log file it inherited. Escalating
+            # to a tree kill afterwards can't help either — by then the shell is reaped and the
+            # tree is unwalkable. terminate_process_tree snapshots the descendants up front.
+            await terminate_process_tree(proc, grace=_PROC_GRACEFUL_TIMEOUT)
         except (ProcessLookupError, OSError) as exc:
             logger.debug("Error killing task #%d: %s", task_id, exc)
             # Mark completed anyway
@@ -298,15 +320,21 @@ class BackgroundTaskManager:
         This ensures all file handles are closed and asyncio tasks are
         collected — important for clean teardown on Windows.
         """
-        # Kill all running processes
-        for tid, task in list(self._tasks.items()):
-            if task.is_running:
-                proc = self._processes.get(tid)
-                if proc:
-                    try:
-                        proc.terminate()
-                    except (ProcessLookupError, OSError):
-                        pass  # best-effort: process gone or IO error; skip
+        # Kill all running processes — the whole tree, not just the shell. Terminating the
+        # shell alone orphans the real command (see kill()), so a plain terminate() here left
+        # every backgrounded command the agent ever started running after teardown.
+        # Concurrently: each call has its own grace period, and serialising them would make
+        # shutdown take grace × N.
+        victims = [
+            proc
+            for tid, task in list(self._tasks.items())
+            if task.is_running and (proc := self._processes.get(tid)) is not None
+        ]
+        if victims:
+            await asyncio.gather(
+                *(terminate_process_tree(p, grace=_PROC_GRACEFUL_TIMEOUT) for p in victims),
+                return_exceptions=True,  # best-effort: a gone process must not block teardown
+            )
         # Wait for all monitors to finish (they close file handles)
         pending = [
             fut for fut in self._monitor_futures.values()
@@ -321,6 +349,21 @@ class BackgroundTaskManager:
     # Maximum wall-clock seconds a background task may run before the monitor
     # logs a warning.  Does NOT kill the process — use kill() for that.
     _STALL_WARN_SECONDS: float = 300.0  # 5 minutes
+
+    async def _await_startup(self, task: BackgroundTask) -> None:
+        """Give a just-spawned task a brief window to fail on startup.
+
+        A command that dies immediately (a typo → shell exit 127, an instant
+        crash) is indistinguishable from a healthy background task at the moment
+        ``start()`` returns — so the agent tool would report a phantom
+        "started (pid …)" for a process that never came up. We poll the monitor
+        (the single writer of exit state) until the task either survives the grace
+        window or records an exit: a healthy long-running task waits the full
+        window, a dying one returns as soon as the monitor sees it.
+        """
+        deadline = time.monotonic() + self._START_GRACE_SECONDS
+        while task.is_running and time.monotonic() < deadline:
+            await asyncio.sleep(self._STARTUP_POLL_INTERVAL)
 
     async def _monitor(
         self,

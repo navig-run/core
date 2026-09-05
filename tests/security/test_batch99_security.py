@@ -11,8 +11,6 @@ from __future__ import annotations
 import os
 from unittest.mock import patch
 
-import pytest
-
 from navig.core.security import (
     _hash_id,
     get_managed_system,

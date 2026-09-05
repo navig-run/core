@@ -3,11 +3,11 @@ name: ssh-tunnel
 description: Create and manage SSH tunnels to access remote services (databases, web panels, APIs)
 user-invocable: true
 navig-commands:
-  - navig tunnel list
+  - navig tunnel show
   - navig tunnel add {name} -l {local_port} -r {remote_port}
   - navig tunnel start {name}
   - navig tunnel stop {name}
-  - navig tunnel status
+  - navig tunnel show
 examples:
   - "Create a tunnel to the database"
   - "I need to access the remote Grafana dashboard"
@@ -23,7 +23,7 @@ When the user needs to access remote services locally (databases, admin panels, 
 ## Steps
 
 1. **Identify what they need**: Which remote service/port?
-2. **Check existing tunnels**: `navig tunnel list`
+2. **Check existing tunnels**: `navig tunnel show`
 3. **Create or start tunnel**: Use appropriate `navig tunnel` command
 
 ## Common Tunnels
@@ -76,7 +76,7 @@ navig tunnel start redis
 ### List All Tunnels
 
 ```bash
-navig tunnel list
+navig tunnel show
 ```
 
 **Response:**

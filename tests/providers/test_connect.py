@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import pytest
 
-from navig.providers import connect as connect_mod
 from navig.providers.connect import (
     CONNECTION_TEMPLATES,
     connect_provider,

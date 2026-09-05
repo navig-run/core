@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from navig.mcp.client import MCPClient, MCPClientConfig
+from navig.mcp.client import MCPClient, MCPClientConfig, _error_text_from_content
 from navig.mcp.protocol import (
     JSONRPCRequest,
     JSONRPCResponse,
@@ -192,6 +192,23 @@ class TestMCPClientConfig:
         assert config.command == "python"
         assert config.args == ["-m", "my_server"]
 
+    def test_config_from_dict_coerces_string_bools(self):
+        """`navig config set mcp.clients.<id>.enabled false` stores the STRING
+        "false" (truthy). from_dict must coerce enabled/auto_connect so a config-set
+        toggle takes effect — the registry gates on the parsed `cfg.enabled`."""
+        for off in ("false", "False", "0", "off", "no"):
+            cfg = MCPClientConfig.from_dict("x", {"enabled": off, "auto_connect": off})
+            assert cfg.enabled is False, off
+            assert cfg.auto_connect is False, off
+        for on in ("true", "True", "1", "on", "yes"):
+            cfg = MCPClientConfig.from_dict("x", {"enabled": on, "auto_connect": on})
+            assert cfg.enabled is True, on
+            assert cfg.auto_connect is True, on
+        # real bools pass through; missing keys keep the True defaults
+        assert MCPClientConfig.from_dict("x", {"enabled": False}).enabled is False
+        assert MCPClientConfig.from_dict("x", {}).enabled is True
+        assert MCPClientConfig.from_dict("x", {}).auto_connect is True
+
 
 class TestMCPClient:
     """Tests for MCPClient class."""
@@ -213,6 +230,57 @@ class TestMCPClient:
     def test_client_id(self, client):
         """Client should expose id from config."""
         assert client.config.id == "test-client"
+
+    async def test_discover_tools_skips_malformed_and_keeps_valid(self, client):
+        """One malformed tool (missing 'name') must be skipped, not abort discovery —
+        otherwise connect() catches the raise and the WHOLE client fails to connect,
+        losing every other tool the server offered."""
+        client._send_request = AsyncMock(
+            return_value=JSONRPCResponse(
+                id=1,
+                result={
+                    "tools": [
+                        {"description": "no name"},  # malformed → KeyError, skipped
+                        {"name": "good", "inputSchema": {}},  # valid
+                    ]
+                },
+            )
+        )
+        await client._discover_tools()  # must NOT raise
+        assert "good" in client._tools
+        assert len(client._tools) == 1
+
+    async def test_discover_resources_skips_malformed_and_keeps_valid(self, client):
+        client._send_request = AsyncMock(
+            return_value=JSONRPCResponse(
+                id=1,
+                result={
+                    "resources": [
+                        {"name": "no uri"},  # malformed → KeyError, skipped
+                        {"uri": "file:///a", "name": "good"},  # valid
+                    ]
+                },
+            )
+        )
+        await client._discover_resources()
+        assert "file:///a" in client._resources
+        assert len(client._resources) == 1
+
+    async def test_discover_prompts_skips_malformed_and_keeps_valid(self, client):
+        client._send_request = AsyncMock(
+            return_value=JSONRPCResponse(
+                id=1,
+                result={
+                    "prompts": [
+                        {"description": "no name"},  # malformed → KeyError, skipped
+                        {"name": "good"},  # valid
+                    ]
+                },
+            )
+        )
+        await client._discover_prompts()
+        assert "good" in client._prompts
+        assert len(client._prompts) == 1
 
 
 class TestMCPClientManager:
@@ -275,3 +343,59 @@ class TestMCPClientManager:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ── call_tool must surface a remote tool-level failure (result.isError) ──────
+
+
+def _connected_client() -> MCPClient:
+    """A client that passes _assert_connected with one registered tool."""
+    client = MCPClient(MCPClientConfig(id="t", command="echo", args=["x"]))
+    transport = MagicMock()
+    transport.is_connected = MagicMock(return_value=True)
+    client._transport = transport
+    client._initialized = True  # is_connected requires the handshake flag too
+    client._tools = {"mytool": object()}
+    return client
+
+
+def test_error_text_from_content_extracts_text():
+    assert (
+        _error_text_from_content([{"type": "text", "text": "boom"}]) == "boom"
+    )
+    assert (
+        _error_text_from_content(
+            [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}]
+        )
+        == "a b"
+    )
+    assert _error_text_from_content("plain") == "plain"
+    assert _error_text_from_content(None) == "remote tool reported an error"
+    assert _error_text_from_content([]) == "remote tool reported an error"
+
+
+async def test_call_tool_raises_on_result_iserror():
+    """A tool-level failure (result.isError true, JSON-RPC OK) must RAISE, not be
+    returned as a normal value — the phantom-success mirror of the server bug."""
+    client = _connected_client()
+    client._send_request = AsyncMock(
+        return_value=JSONRPCResponse(
+            id=1,
+            result={
+                "isError": True,
+                "content": [{"type": "text", "text": "permission denied"}],
+            },
+        )
+    )
+    with pytest.raises(RuntimeError, match="permission denied"):
+        await client.call_tool("mytool", {})
+
+
+async def test_call_tool_success_unwraps_text():
+    client = _connected_client()
+    client._send_request = AsyncMock(
+        return_value=JSONRPCResponse(
+            id=1, result={"content": [{"type": "text", "text": "ok result"}]}
+        )
+    )
+    assert await client.call_tool("mytool", {}) == "ok result"

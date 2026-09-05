@@ -46,8 +46,15 @@ def _api_get_json(
     import urllib.parse
     import urllib.request
 
+    from navig.net.ssrf import SsrfBlockedError, check_url, policy_from_config
+
     endpoint = url
     try:
+        # SSRF: `url` is agent-controlled ("fetch JSON from any endpoint"), so a
+        # prompt-injected call could target internal infra (cloud metadata, the
+        # local daemon, a LAN host). Validate before the request — secure by
+        # default; opt in with net.ssrf.allow_private_network.
+        check_url(url, policy_from_config())
         if params:
             qs = urllib.parse.urlencode(params)
             url = f"{url}?{qs}" if "?" not in url else f"{url}&{qs}"
@@ -69,6 +76,12 @@ def _api_get_json(
             source=ApiSource(tool="web.api.get_json", endpoint=endpoint),
         ).to_dict()
 
+    except SsrfBlockedError as e:
+        return ApiToolResult.from_error(
+            tool="web.api.get_json",
+            error=f"SSRF policy blocked: {e}",
+            endpoint=endpoint,
+        ).to_dict()
     except Exception as e:
         return ApiToolResult.from_error(
             tool="web.api.get_json",
@@ -88,8 +101,13 @@ def _api_post_json(
     import urllib.error
     import urllib.request
 
+    from navig.net.ssrf import SsrfBlockedError, check_url, policy_from_config
+
     endpoint = url
     try:
+        # SSRF: `url` is agent-controlled — block private/internal targets before
+        # the request (secure by default; opt in with net.ssrf.allow_private_network).
+        check_url(url, policy_from_config())
         data = json.dumps(body or {}).encode("utf-8")
         req = urllib.request.Request(url, data=data, method="POST")
         req.add_header("Content-Type", "application/json")
@@ -109,6 +127,12 @@ def _api_post_json(
             source=ApiSource(tool="web.api.post_json", endpoint=endpoint),
         ).to_dict()
 
+    except SsrfBlockedError as e:
+        return ApiToolResult.from_error(
+            tool="web.api.post_json",
+            error=f"SSRF policy blocked: {e}",
+            endpoint=endpoint,
+        ).to_dict()
     except Exception as e:
         return ApiToolResult.from_error(
             tool="web.api.post_json",

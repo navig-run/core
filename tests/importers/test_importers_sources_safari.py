@@ -7,9 +7,7 @@ from __future__ import annotations
 
 import plistlib
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from navig.importers.sources.safari import SafariImporter
 
@@ -84,10 +82,57 @@ class TestSafariImporterParse:
         assert len(items) == 1
 
     def test_item_label_equals_title(self, tmp_path):
+        # A `Title` on a LEAF is a shape Safari never actually writes (see below) —
+        # kept as the backward-compat guard: where it IS present, it still wins.
         node = {"Title": "My Site", "URLString": "https://my.site"}
         p = _build_plist([node], tmp_path)
         items = SafariImporter().parse(str(p))
         assert items[0].label == "My Site"
+
+    def test_leaf_title_comes_from_uridictionary(self, tmp_path):
+        """The shape Safari REALLY writes: only folders carry a top-level `Title`;
+        a bookmark's name lives in URIDictionary['title']. Reading only `Title`
+        labelled every real bookmark with its own URL."""
+        node = {
+            "WebBookmarkType": "WebBookmarkTypeLeaf",
+            "URLString": "https://www.anthropic.com/",
+            "URIDictionary": {"title": "Anthropic"},
+        }
+        p = _build_plist([node], tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert items[0].label == "Anthropic"  # pre-fix: the URL
+        assert items[0].value == "https://www.anthropic.com/"
+
+    def test_url_is_still_the_last_resort_label(self, tmp_path):
+        """No Title and no URIDictionary title → fall back to the URL (unchanged)."""
+        node = {"WebBookmarkType": "WebBookmarkTypeLeaf", "URLString": "https://bare.example"}
+        p = _build_plist([node], tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert items[0].label == "https://bare.example"
+
+    def test_malformed_uridictionary_does_not_raise(self, tmp_path):
+        """URIDictionary of the wrong type must degrade to the URL, not explode."""
+        node = {"URLString": "https://odd.example", "URIDictionary": "not-a-dict"}
+        p = _build_plist([node], tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert items[0].label == "https://odd.example"
+
+    def test_folder_titles_still_build_the_folder_path(self, tmp_path):
+        """Folders really do carry `Title` — the folder path must keep using it."""
+        leaf = {
+            "WebBookmarkType": "WebBookmarkTypeLeaf",
+            "URLString": "https://nested.example",
+            "URIDictionary": {"title": "Nested"},
+        }
+        folder = {
+            "Title": "Favorites",
+            "WebBookmarkType": "WebBookmarkTypeList",
+            "Children": [leaf],
+        }
+        p = _build_plist([folder], tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert items[0].label == "Nested"
+        assert items[0].meta["folder"] == "Favorites"
 
     def test_item_value_equals_url(self, tmp_path):
         node = {"Title": "X", "URLString": "https://x.com"}

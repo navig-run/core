@@ -47,18 +47,34 @@ def test_system_default_shows_python():
 
 
 def test_system_info_command():
-    # system_info calls system_default(None) — ctx may be None causing AttributeError
-    # invocation should not crash the runner harness
+    """`navig system info` must SUCCEED, not merely fail tidily.
+
+    These two tests used to assert `exit_code in (0, 1)` with a comment naming the exact
+    defect — "system_info calls system_default(None) — ctx may be None causing
+    AttributeError". It did, every time: the callback's first statement dereferences
+    `ctx`, so the command crashed for the whole of its existence while the suite stayed
+    green. A test that accepts the failure it documents is not a test.
+    """
     with patch("platform.uname", return_value=_mock_uname()):
         result = runner.invoke(system_app, ["info"])
-    assert result.exit_code in (0, 1)
+    assert result.exit_code == 0, f"`system info` failed: {result.output}"
 
 
 def test_system_info_shows_machine():
     with patch("platform.uname", return_value=_mock_uname()):
         result = runner.invoke(system_app, ["info"])
-    # Output available only when exit_code == 0
-    assert result.exit_code in (0, 1)
+    assert result.exit_code == 0
+    assert "x86_64" in result.output
+
+
+def test_system_info_matches_the_bare_group_output():
+    """`info` and the bare group render the same overview — they share one helper now,
+    and the duplication that let them drift is what hid the crash."""
+    with patch("platform.uname", return_value=_mock_uname()):
+        bare = runner.invoke(system_app, [])
+        info = runner.invoke(system_app, ["info"])
+    assert bare.exit_code == 0 and info.exit_code == 0
+    assert "Linux" in bare.output and "Linux" in info.output
 
 
 def test_system_clean_dry_run_lists_targets():

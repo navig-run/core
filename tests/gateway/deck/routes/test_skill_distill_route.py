@@ -46,6 +46,10 @@ def _record(
     host: str | None = None,
     error: str = "",
     exit_code: int = 0,
+    reversibility: str = "",
+    undo_data: dict | None = None,
+    tags: list[str] | None = None,
+    args: dict | None = None,
 ):
     from navig.operation_recorder import OperationRecord, OperationStatus, OperationType
 
@@ -57,9 +61,25 @@ def _record(
         host=host,
         error=error,
         exit_code=exit_code,
+        reversibility=reversibility,
+        undo_data=undo_data or {},
+        tags=tags or [],
+        args=args or {},
     )
     recorder.record(rec)
     return rec
+
+
+#: A config_change that passes every ``ensure_undoable`` check — the shape a real
+#: `navig config set` records (green label + captured previous/new value).
+_UNDO_DATA = {"key": "ui.theme", "previous_value": "light", "new_value": "dark"}
+
+
+def _record_green_config(recorder, **kw):
+    kw.setdefault("op_type", "config_change")
+    kw.setdefault("reversibility", "green")
+    kw.setdefault("undo_data", dict(_UNDO_DATA))
+    return _record(recorder, "navig config set ui.theme dark", **kw)
 
 
 def _seed(recorder):
@@ -365,3 +385,122 @@ async def test_ledger_recent_redacts_raw_secret_at_display_time(tmp_path, monkey
         cmd = (await r.json())["data"]["operations"][0]["command"]
         assert "hunter2" not in cmd
         assert "REDACTED" in cmd
+
+
+# ──────────────── ledger recent: the `undoable` gate ────────────────
+# A green reversibility label is NOT enough to offer an Undo button — the undo
+# route enforces eight rules (navig.undo.ensure_undoable), and three of them
+# reject operations that ARE labeled green. These prove /ledger/recent answers
+# with the same verdict the undo route would, so a UI never renders a button
+# whose only possible outcome is a 409.
+
+
+async def test_recent_marks_a_green_success_op_undoable(tmp_path, monkeypatch):
+    from aiohttp.test_utils import TestClient, TestServer
+
+    rec = _make_recorder(tmp_path / "hist")
+    _record_green_config(rec)
+
+    async with TestClient(TestServer(_app(rec, tmp_path / "store", monkeypatch))) as client:
+        op = (await (await client.get("/api/deck/ledger/recent")).json())["data"]["operations"][0]
+        assert op["undoable"] is True
+        assert op["undo_blocked"] is None
+
+
+async def test_recent_blocks_undo_on_a_non_success_op(tmp_path, monkeypatch):
+    """A green-labeled but INTERRUPTED op is not undoable — the shipped UI bug.
+
+    The Activity timeline gated its Undo button on `reversibility === 'green'`
+    alone, so an interrupted green op (e.g. a killed `navig db dump`) rendered a
+    button that could only ever 409 ("did not succeed — nothing to undo").
+    """
+    from aiohttp.test_utils import TestClient, TestServer
+
+    rec = _make_recorder(tmp_path / "hist")
+    _record_green_config(rec, status="interrupted", exit_code=-1)
+
+    async with TestClient(TestServer(_app(rec, tmp_path / "store", monkeypatch))) as client:
+        op = (await (await client.get("/api/deck/ledger/recent")).json())["data"]["operations"][0]
+        assert op["reversibility"] == "green"  # still green-labeled…
+        assert op["undoable"] is False  # …but not undoable
+        assert op["undo_blocked"] == "not_success"
+
+
+async def test_recent_blocks_undo_on_an_already_undone_op(tmp_path, monkeypatch):
+    """Once undone, the target must stop offering Undo (it would 409)."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    rec = _make_recorder(tmp_path / "hist")
+    target = _record_green_config(rec, minutes_ago=10)
+    # The undo itself: recorded AFTER the target, carrying args.undo_of + the tag.
+    _record(
+        rec,
+        f"navig undo {target.id}",
+        minutes_ago=5,
+        op_type="config_change",
+        reversibility="green",
+        undo_data=dict(_UNDO_DATA),
+        tags=["undo"],
+        args={"undo_of": target.id},
+    )
+
+    async with TestClient(TestServer(_app(rec, tmp_path / "store", monkeypatch))) as client:
+        ops = (await (await client.get("/api/deck/ledger/recent")).json())["data"]["operations"]
+        by_id = {o["id"]: o for o in ops}
+        assert by_id[target.id]["undoable"] is False
+        assert by_id[target.id]["undo_blocked"] == "already_undone"
+
+
+async def test_recent_blocks_undo_on_the_undo_itself(tmp_path, monkeypatch):
+    """An undo op is never re-undoable — redo by re-running the original."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    rec = _make_recorder(tmp_path / "hist")
+    target = _record_green_config(rec, minutes_ago=10)
+    undo = _record(
+        rec,
+        f"navig undo {target.id}",
+        minutes_ago=5,
+        op_type="config_change",
+        reversibility="green",
+        undo_data=dict(_UNDO_DATA),
+        tags=["undo"],
+        args={"undo_of": target.id},
+    )
+
+    async with TestClient(TestServer(_app(rec, tmp_path / "store", monkeypatch))) as client:
+        ops = (await (await client.get("/api/deck/ledger/recent")).json())["data"]["operations"]
+        by_id = {o["id"]: o for o in ops}
+        assert by_id[undo.id]["undoable"] is False
+        assert by_id[undo.id]["undo_blocked"] == "is_undo"
+
+
+async def test_recent_blocks_undo_on_a_non_green_op(tmp_path, monkeypatch):
+    from aiohttp.test_utils import TestClient, TestServer
+
+    rec = _make_recorder(tmp_path / "hist")
+    _record(rec, "navig service restart nginx", op_type="service_restart", reversibility="red")
+
+    async with TestClient(TestServer(_app(rec, tmp_path / "store", monkeypatch))) as client:
+        op = (await (await client.get("/api/deck/ledger/recent")).json())["data"]["operations"][0]
+        assert op["undoable"] is False
+        assert op["undo_blocked"] == "not_green"
+
+
+async def test_recent_never_leaks_the_refusal_MESSAGE_only_the_code(tmp_path, monkeypatch):
+    """`undo_blocked` is a coarse slug — refusal messages can name a config key
+    or a vault ref, which must not ride along in a bulk listing."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    rec = _make_recorder(tmp_path / "hist")
+    _record_green_config(
+        rec,
+        undo_data={"key": "secret.api_token", "sensitive": True, "vault_ref": "vault://tok/1"},
+    )
+
+    async with TestClient(TestServer(_app(rec, tmp_path / "store", monkeypatch))) as client:
+        body = await (await client.get("/api/deck/ledger/recent")).text()
+        op = (await (await client.get("/api/deck/ledger/recent")).json())["data"]["operations"][0]
+        assert op["undoable"] is False
+        assert op["undo_blocked"] == "sensitive"
+        assert "vault://tok/1" not in body  # the ref never rides along

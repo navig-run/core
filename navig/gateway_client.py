@@ -108,7 +108,22 @@ def gateway_request_headers() -> dict[str, str]:
     try:
         from navig.config import get_config_manager
 
-        raw = get_config_manager()._load_global_config()
+        # MUST NOT be `_load_global_config()`. That returns the PYDANTIC-VALIDATED
+        # view (`validate_global_config(...).model_dump()`), which keeps only fields
+        # the schema declares -- and the schema does not declare `gateway.auth`.
+        # Measured on the operator's machine: config.yaml held
+        # `gateway: {auth: {token: ...}, mesh_token: ...}` while
+        # `_load_global_config()` reported
+        # `gateway: {allowed_origins, enabled, host, port, require_auth}` -- every
+        # real key replaced by schema defaults. So this helper could never find a
+        # token and every CLI -> gateway admin request went out unauthenticated;
+        # all seven `navig cron` commands answered 401. The gateway's own 401 body
+        # says "(The NAVIG CLI does this for you.)" -- it did not.
+        #
+        # `get_global_config()` preserves undeclared keys, which is what a
+        # credential read requires. `gateway_cli_defaults` above may keep using the
+        # validated view: port/host ARE schema-declared.
+        raw = get_config_manager().get_global_config() or {}
     except Exception:
         raw = {}
 
@@ -130,3 +145,29 @@ def gateway_request(method: str, path: str, **kwargs):
     extra_headers = kwargs.pop("headers", None) or {}
     headers.update(extra_headers)
     return requests.request(method, f"{gateway_base_url()}{path}", headers=headers, **kwargs)
+
+
+def unwrap_envelope(body: object) -> object:
+    """The payload inside a gateway ``json_ok`` response.
+
+    Gateway routes answer with an envelope — ``{"ok": …, "data": <payload>, "error": …}``
+    (``routes/common.envelope_ok``) — so a CLI that reads a field straight off the decoded
+    body always misses: the field lives one level down. That mistake silently emptied the
+    whole ``navig flux`` surface (#713) and the whole ``navig cron`` surface, because the
+    miss looks exactly like "the daemon has nothing to report".
+
+    Recognised ONLY by the full three-key signature, so a payload that merely happens to
+    carry an ``ok`` key is never unwrapped by accident. Anything that isn't an envelope —
+    a bare list, an already-unwrapped payload, a route that returns a raw ``web.Response``
+    — is returned unchanged, so this is safe to apply at any call site. A ``data`` of
+    ``None`` becomes ``{}`` so display code can keep chaining ``.get()``.
+    """
+    if (
+        isinstance(body, dict)
+        and "ok" in body
+        and "data" in body
+        and "error" in body
+    ):
+        payload = body["data"]
+        return {} if payload is None else payload
+    return body

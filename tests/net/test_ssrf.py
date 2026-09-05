@@ -87,6 +87,35 @@ class TestIsBlocked:
         assert not _is_blocked(addr), f"{ip} should NOT be blocked"
 
 
+class TestIpv6EmbeddedIpv4Bypass:
+    """An IPv6 address that TUNNELS a private IPv4 (IPv4-mapped / 6to4 / Teredo / NAT64) is a
+    classic SSRF bypass: the IPv6 matches no blocked net, yet the connection reaches the
+    embedded internal IPv4. The embedded IPv4 must be unwrapped and re-checked."""
+
+    @pytest.mark.parametrize("ip,why", [
+        ("2002:7f00:0001::", "6to4 -> 127.0.0.1 loopback"),
+        ("2002:a9fe:a9fe::", "6to4 -> 169.254.169.254 cloud metadata"),
+        ("64:ff9b::a9fe:a9fe", "NAT64 -> 169.254.169.254 cloud metadata"),
+        ("64:ff9b::7f00:1", "NAT64 -> 127.0.0.1 loopback"),
+        ("2001:0:4136:e378:8000:63bf:3fff:fdd2", "Teredo -> TEST-NET client 192.0.2.45"),
+        ("::ffff:127.0.0.1", "IPv4-mapped loopback"),
+        ("::ffff:169.254.169.254", "IPv4-mapped cloud metadata"),
+    ])
+    def test_tunneled_private_ipv4_is_blocked(self, ip, why):
+        addr = _parse_ip(ip)
+        assert addr is not None
+        assert _is_blocked(addr), f"{ip} ({why}) must be blocked"
+
+    @pytest.mark.parametrize("ip,why", [
+        ("2002:0808:0808::", "6to4 embedding PUBLIC 8.8.8.8 — no false positive"),
+        ("2606:4700:4700::1111", "plain public IPv6 (Cloudflare) — no false positive"),
+    ])
+    def test_public_embedded_or_plain_ipv6_allowed(self, ip, why):
+        addr = _parse_ip(ip)
+        assert addr is not None
+        assert not _is_blocked(addr), f"{ip} ({why}) must NOT be blocked"
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # check_url
 # ──────────────────────────────────────────────────────────────────────────────
@@ -137,6 +166,13 @@ class TestCheckUrl:
             with pytest.raises(SsrfBlockedError):
                 check_url("http://router.local/")
 
+    def test_host_resolving_to_nat64_metadata_is_blocked(self):
+        # The realistic attack: a hostname resolves to an IPv6 that NAT64-tunnels the cloud
+        # metadata endpoint. check_url must block it via the embedded-IPv4 unwrap.
+        with _mock_resolve("64:ff9b::a9fe:a9fe"):
+            with pytest.raises(SsrfBlockedError):
+                check_url("https://evil.example/steal-creds")
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # is_safe_url
@@ -154,6 +190,12 @@ class TestIsSafeUrl:
 
     def test_invalid_scheme_false(self):
         assert is_safe_url("ftp://example.com/") is False
+
+    def test_unresolvable_host_returns_false_not_raise(self):
+        # resolve_host raises socket.gaierror (an OSError). The non-raising filter must
+        # return False (can't verify → treat as unsafe), never propagate the exception.
+        with patch("navig.net.ssrf.resolve_host", side_effect=socket.gaierror("no such host")):
+            assert is_safe_url("http://nope.invalid/") is False
 
 
 # ──────────────────────────────────────────────────────────────────────────────

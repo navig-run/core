@@ -67,7 +67,8 @@ def run_script(
             script_path = local_path
         else:
             ch.error(f"Script not found: {name}")
-            return
+            ch.info("List them with: navig script list")
+            raise typer.Exit(2)
 
     ch.info(f"Running script: {script_path.name}")
 
@@ -78,9 +79,16 @@ def run_script(
     try:
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError as e:
+        # The script IS the command: a failed run must not report success, or
+        # `navig script run deploy && <next>` runs the next step on a failed deploy.
+        # Exit 1 rather than propagating e.returncode — a signal death is negative and
+        # would be remapped by the shell into something meaningless. The real code stays
+        # in the message.
         ch.error(f"Script failed with exit code {e.returncode}")
+        raise typer.Exit(1) from e
     except Exception as e:
-        ch.error(f"Failed to run script: {e}")
+        ch.error(f"Failed to run script: {type(e).__name__}: {e}")
+        raise typer.Exit(1) from e
 
 
 @script_app.command("edit")
@@ -93,7 +101,8 @@ def edit_script(
 
     if not script_path.exists():
         ch.error(f"Script not found: {name}")
-        return
+        ch.info("List them with: navig script list")
+        raise typer.Exit(2)
 
     editor = os.environ.get("EDITOR", "notepad" if sys.platform == "win32" else "nano")
     subprocess.run([editor, str(script_path)])
@@ -111,7 +120,8 @@ def new_script(
     script_path = scripts_dir / f"{name}.py"
     if script_path.exists():
         ch.error(f"Script already exists: {name}")
-        return
+        ch.info(f"Edit it with: navig script edit {name}")
+        raise typer.Exit(2)
 
     content = ""
     if template == "basic":

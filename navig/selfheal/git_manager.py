@@ -29,6 +29,7 @@ from loguru import logger
 
 # Single canonical upstream reference used throughout the codebase.
 UPSTREAM_REPO = "navig-run/core"
+from navig.core.proc_text import decode_console_result
 from navig.platform.paths import config_dir as _navig_config_dir
 
 UPSTREAM_URL = f"https://github.com/{UPSTREAM_REPO}.git"
@@ -81,14 +82,13 @@ def _run_git(
     work_dir = cwd or core_repo_dir()
     logger.debug("git {}", " ".join(args[: min(len(args), 4)]))
     try:
-        result = subprocess.run(
+        result = decode_console_result(subprocess.run(
             cmd,
             cwd=str(work_dir),
             capture_output=True,
-            text=True,
-            timeout=timeout,
+                        timeout=timeout,
             check=True,
-        )
+        ))
         return result.stdout.strip()
     except subprocess.CalledProcessError as exc:
         if ignore_errors:

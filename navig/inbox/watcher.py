@@ -44,6 +44,46 @@ def _project_inbox_dir(project_root: Path | None = None) -> Path:
     return root / ".navig" / "wiki" / "inbox"
 
 
+def _mtime_key(path: Path) -> str | None:
+    """A change-detection key (path + mtime), or ``None`` when the file vanished or can't be
+    stat'd between listing and now.
+
+    Files come and go under the inbox constantly (temp files, another process cleaning up,
+    the router moving an item out). A ``stat()`` on a file that disappeared raises
+    ``FileNotFoundError`` — so this must be caught and the file skipped, never allowed to
+    propagate and kill the polling thread.
+    """
+    try:
+        return f"{path}:{path.stat().st_mtime}"
+    except OSError:
+        return None
+
+
+def _iter_inbox_files(dirs: list[Path]):
+    """Yield ``(path, change_key)`` for each regular, non-hidden file across *dirs*.
+
+    Resilient to a directory or file disappearing (or becoming unreadable) mid-scan — a
+    ``TOCTOU`` between listing and access skips that entry rather than raising, so one
+    vanished file can never stop the watcher.
+    """
+    for d in dirs:
+        if not d.is_dir():
+            continue
+        try:
+            entries = list(d.iterdir())
+        except OSError:
+            continue  # dir removed / unreadable this tick — retry on the next scan
+        for path in entries:
+            try:
+                if not path.is_file() or path.name.startswith("."):
+                    continue
+            except OSError:
+                continue  # e.g. a broken symlink raced away
+            key = _mtime_key(path)
+            if key is not None:
+                yield path, key
+
+
 # ── WatchfilesBackend ─────────────────────────────────────────
 
 
@@ -89,32 +129,29 @@ class _PollingBackend:
         self._stop = threading.Event()
 
     def _scan(self) -> None:
-        for d in self._dirs:
-            if not d.is_dir():
-                continue
-            for path in d.iterdir():
-                if path.is_file() and not path.name.startswith("."):
-                    key = f"{path}:{path.stat().st_mtime}"
-                    if key not in self._seen:
-                        self._seen.add(key)
-                        try:
-                            self._callback(path)
-                        except Exception as exc:
-                            logger.exception("Callback error for %s: %s", path, exc)
+        current: set[str] = set()
+        for path, key in _iter_inbox_files(self._dirs):
+            current.add(key)
+            if key not in self._seen:
+                try:
+                    self._callback(path)
+                except Exception as exc:
+                    logger.exception("Callback error for %s: %s", path, exc)
+        # Rebuild from what's actually present so keys for files routed out of the inbox don't
+        # accumulate forever — the set was previously append-only (unbounded growth in a
+        # long-running daemon). A file that reappears with the same mtime is genuinely new again.
+        self._seen = current
 
     def run(self) -> None:
         logger.info("Inbox watcher started (polling, %.1fs) on: %s", self._interval, self._dirs)
-        # Initial scan — don't fire callbacks for pre-existing files
-        for d in self._dirs:
-            if not d.is_dir():
-                continue
-            for path in d.iterdir():
-                if path.is_file():
-                    key = f"{path}:{path.stat().st_mtime}"
-                    self._seen.add(key)
+        # Seed with the current contents so pre-existing files don't fire as "new".
+        self._seen = {key for _path, key in _iter_inbox_files(self._dirs)}
 
         while not self._stop.wait(self._interval):
-            self._scan()
+            try:
+                self._scan()
+            except Exception as exc:  # a single bad scan must never kill the watcher thread
+                logger.exception("Inbox polling scan failed (continuing): %s", exc)
 
     def stop(self) -> None:
         self._stop.set()

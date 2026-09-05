@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -117,7 +117,7 @@ def test_clipboard_get_falls_back_to_powershell_when_no_win32clipboard() -> None
         ),
     ):
         # Re-import to pick up patched modules
-        from importlib import import_module, reload
+        from importlib import reload
 
         import navig.mcp.tools.windows as wm
 

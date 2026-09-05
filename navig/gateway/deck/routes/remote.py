@@ -26,6 +26,7 @@ try:
 except ImportError:
     web = None
 
+from navig.core.background import spawn
 from navig.gateway.deck.routes._utils import run_on_host
 
 logger = logging.getLogger(__name__)
@@ -253,7 +254,7 @@ async def handle_deck_remote_deploy(request: "web.Request") -> "web.Response":
                 "result": {"host": host, "ok": False, "steps": [{"name": "deploy", "ok": False, "detail": str(exc)}]},
             }
 
-    asyncio.create_task(_run_deploy())
+    spawn(_run_deploy())
     return _ok({"host": host, "started": True, "running": True})
 
 

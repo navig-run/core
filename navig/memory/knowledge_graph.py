@@ -36,6 +36,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from navig.core import incidents
+from navig.memory._util import safe_json_loads
+
 logger = logging.getLogger("navig.memory.knowledge_graph")
 
 # ─────────────────────────── schema ──────────────────────────────────────────
@@ -80,15 +83,34 @@ CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
     content_rowid='rowid'
 );
 
-CREATE TRIGGER IF NOT EXISTS facts_fts_insert AFTER INSERT ON facts BEGIN
+"""
+
+# `facts_fts` is an EXTERNAL-CONTENT table (``content='facts'``), so its index may only
+# be maintained with the command syntax — a plain ``DELETE FROM facts_fts …`` is illegal
+# for `content=` tables. It happens not to corrupt this schema today (fts5's own
+# 'integrity-check' passes), but it is the same defect that made editing a bookmark twice
+# raise "database disk image is malformed" (#530c0a21), and `navig doctor` now reports it.
+# Corrected here rather than shipped as a known-unsafe trigger.
+#
+# DROPped and recreated on open, NOT `CREATE TRIGGER IF NOT EXISTS`: databases written
+# before this change already carry the old definition, which IF NOT EXISTS would keep.
+_TRIGGERS = """
+DROP TRIGGER IF EXISTS facts_fts_insert;
+DROP TRIGGER IF EXISTS facts_fts_delete;
+
+CREATE TRIGGER facts_fts_insert AFTER INSERT ON facts BEGIN
     INSERT INTO facts_fts(rowid, subject, predicate, object, source)
     VALUES (new.rowid, new.subject, new.predicate, new.object, new.source);
 END;
 
-CREATE TRIGGER IF NOT EXISTS facts_fts_delete AFTER DELETE ON facts BEGIN
-    DELETE FROM facts_fts WHERE rowid=old.rowid;
+CREATE TRIGGER facts_fts_delete AFTER DELETE ON facts BEGIN
+    INSERT INTO facts_fts(facts_fts, rowid, subject, predicate, object, source)
+    VALUES ('delete', old.rowid, old.subject, old.predicate, old.object, old.source);
 END;
 """
+
+# Bumped when the FTS index itself must be rebuilt (not the `facts` table schema).
+_FTS_SCHEMA_VERSION = 1
 
 # ─────────────────────────── data models ─────────────────────────────────────
 
@@ -124,9 +146,9 @@ class Routine:
         self.name: str = row["name"]
         self.schedule: str = row["schedule"]
         self.description: str | None = row.get("description")
-        self.task_spec: dict[str, Any] | None = (
-            json.loads(row["task_spec"]) if row.get("task_spec") else None
-        )
+        # safe_json_loads: Routine is built inside `[Routine(dict(r)) for r in rows]`,
+        # so one corrupt task_spec would take out the whole routine list.
+        self.task_spec: dict[str, Any] | None = safe_json_loads(row.get("task_spec"), None)
         self.last_run: datetime | None = (
             datetime.fromisoformat(row["last_run"]) if row.get("last_run") else None
         )
@@ -159,12 +181,59 @@ class KnowledgeGraph:
 
     def __init__(self, db_path: Path) -> None:
         self._path = db_path
+        # Captured BEFORE connect(): a repair on a brand-new database is initialisation,
+        # not damage, and must not be reported as an incident.
+        pre_existing = db_path.exists()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._con = sqlite3.connect(str(db_path), check_same_thread=False)
         self._con.row_factory = sqlite3.Row
         self._con.execute("PRAGMA journal_mode=WAL")
+        self._con.execute("PRAGMA busy_timeout=5000")  # wait for a lock, don't error instantly
         self._con.executescript(_SCHEMA)
+        self._con.executescript(_TRIGGERS)
         self._con.commit()
+        self._repair_fts_index_once(pre_existing=pre_existing)
+
+    def _repair_fts_index_once(self, *, pre_existing: bool = True) -> None:
+        """Rebuild the FTS index once, for databases written by the old delete trigger.
+
+        Swapping the trigger only stops new damage; ``'rebuild'`` regenerates the index
+        from the content table (also the documented repair for a malformed fts5 index).
+        Gated on ``PRAGMA user_version`` so it runs once, not on every open.
+
+        A repair on an EXISTING store is recorded as an incident — a self-heal nobody can
+        see is the failure mode `navig.core.incidents` exists to kill.
+        """
+        row = self._con.execute("PRAGMA user_version").fetchone()
+        if row is not None and int(row[0]) >= _FTS_SCHEMA_VERSION:
+            return
+        try:
+            self._con.execute("INSERT INTO facts_fts(facts_fts) VALUES('rebuild')")
+        except sqlite3.DatabaseError:
+            # Never brick the graph over its search index: recall/remember don't need FTS
+            # and search_facts falls back to LIKE. Loud, because a silent failed self-heal
+            # is indistinguishable from a healthy install.
+            logger.warning(
+                "knowledge graph: could not rebuild the FTS index for %s — full-text "
+                "search falls back to LIKE until it is repaired",
+                self._path,
+                exc_info=True,
+            )
+            if pre_existing:
+                incidents.record(
+                    incidents.FTS_INDEX_UNREPAIRABLE,
+                    store="knowledge_graph",
+                    path=str(self._path),
+                )
+            return
+        self._con.execute(f"PRAGMA user_version = {_FTS_SCHEMA_VERSION}")
+        self._con.commit()
+        if pre_existing:
+            incidents.record(
+                incidents.FTS_INDEX_REPAIRED,
+                store="knowledge_graph",
+                path=str(self._path),
+            )
 
     # ─────────────────────── facts ─────────────────────────────────────────
 
@@ -243,7 +312,10 @@ class KnowledgeGraph:
                    ORDER BY rank LIMIT ?""",
                 (query, limit),
             ).fetchall()
-        except sqlite3.OperationalError:
+        except sqlite3.DatabaseError:
+            # DatabaseError, not OperationalError: a damaged index raises the PARENT class
+            # ("database disk image is malformed"), so catching only the child let search
+            # hard-fail on exactly the databases that needed this fallback.
             like = f"%{query}%"
             rows = self._con.execute(
                 "SELECT * FROM facts WHERE subject LIKE ? OR predicate LIKE ? OR object LIKE ? LIMIT ?",

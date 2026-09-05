@@ -104,27 +104,27 @@ class PerplexityClient(BaseProviderClient):
             model: Model to use (sonar, sonar-pro, sonar-reasoning)
             timeout: Request timeout
         """
-        super().__init__()
-        # Resolve API key from env if not provided
+        # Resolve the key BEFORE _detect_base_url() — that helper reads self.api_key.
         self.api_key = api_key or self._resolve_api_key()
         self.model = model
-        self.timeout = timeout
+        self._base_url = base_url if base_url else self._detect_base_url()
 
-        # Determine base URL from key type
-        if base_url:
-            self._base_url = base_url
-        else:
-            self._base_url = self._detect_base_url()
-
-        self._client = None
-
-        # Create a minimal config for parent class
-        self.config = ProviderConfig(
-            name="perplexity",
-            base_url=self._base_url,
-            api=ModelApi.OPENAI_COMPLETIONS,
-            models=PERPLEXITY_MODELS,
-            env_key="PERPLEXITY_API_KEY",
+        # BaseProviderClient.__init__ REQUIRES `config`. This used to call super().__init__() with
+        # no arguments — a TypeError on EVERY construction, so the client was unusable — and then
+        # built a ProviderConfig with a non-existent `env_key` field (a second TypeError behind
+        # the first). super() sets self.config / self.api_key / self.timeout / self._client.
+        super().__init__(
+            ProviderConfig(
+                name="perplexity",
+                base_url=self._base_url,
+                api=ModelApi.OPENAI_COMPLETIONS,
+                models=PERPLEXITY_MODELS,
+                # ProviderConfig.api_key "can be a literal key or an env var name" — the env var
+                # name here, matching the module-level PERPLEXITY_PROVIDER below.
+                api_key="PERPLEXITY_API_KEY",
+            ),
+            api_key=self.api_key,
+            timeout=timeout,
         )
 
     def _resolve_api_key(self) -> str | None:

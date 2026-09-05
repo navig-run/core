@@ -43,6 +43,38 @@ from navig.tools.media_providers import resolve_media_key
 
 logger = get_debug_logger()
 
+# How many times to wait out a 429 before giving up. Replicate's throttle window is
+# seconds, not minutes, so a handful of retries covers it without hiding a real problem.
+_THROTTLE_RETRIES = 4
+
+
+class VideoGenerationError(RuntimeError):
+    """The provider refused the job — credit, plan, key, or a malformed request."""
+
+
+def _check(resp: Any, what: str) -> None:
+    """Raise with the provider's OWN message rather than a bare status code.
+
+    The failures that actually happen are 401 (bad key) and 402 (no credit), and those
+    are entirely different actions for the user. `raise_for_status()` reports neither —
+    it says "Client error '402 Payment Required'", while the body says exactly where to
+    go and to wait a few minutes after paying.
+    """
+    if resp.status_code < 400:
+        return
+    detail: Any = None
+    try:
+        payload = resp.json()
+        if isinstance(payload, dict):
+            detail = payload.get("detail") or payload.get("title") or payload
+        else:
+            detail = payload
+    except Exception:  # noqa: BLE001 — a non-JSON error body is still worth reporting
+        detail = (resp.text or "").strip()[:300] or None
+    raise VideoGenerationError(
+        f"{what} failed ({resp.status_code}): {detail or 'no detail returned'}"
+    )
+
 
 class VideoProvider(Enum):
     """Supported video generation providers."""
@@ -144,6 +176,7 @@ class VideoGenerator:
         image_url: str | None = None,
         save: bool = True,
         seed: int | None = None,
+        extra_input: dict[str, Any] | None = None,
     ) -> GeneratedVideo:
         """Generate a video from a text prompt (optionally seeded with an image).
 
@@ -155,7 +188,7 @@ class VideoGenerator:
         if provider == VideoProvider.GEMINI_VEO:
             video = await self._generate_veo(prompt, image_url)
         elif provider == VideoProvider.REPLICATE:
-            video = await self._generate_replicate(prompt, image_url, seed)
+            video = await self._generate_replicate(prompt, image_url, seed, extra_input)
         elif provider == VideoProvider.RUNWAY:
             video = await self._generate_runway(prompt, image_url)
         elif provider == VideoProvider.LUMA:
@@ -229,7 +262,8 @@ class VideoGenerator:
 
     # ── Replicate (predictions API) ──────────────────────────────────────────
     async def _generate_replicate(
-        self, prompt: str, image_url: str | None, seed: int | None = None
+        self, prompt: str, image_url: str | None, seed: int | None = None,
+        extra_input: dict[str, Any] | None = None,
     ) -> GeneratedVideo:
         token = resolve_media_key("replicate", "REPLICATE_API_TOKEN")
         if not token:
@@ -242,14 +276,31 @@ class VideoGenerator:
             model_input["seed"] = seed
         if image_url:
             model_input["start_image"] = image_url
+        # Model-specific inputs the caller knows about and this client cannot: aspect
+        # ratio, resolution, frame count. Without a way to ask for 9:16, vertical output
+        # can only be reached by generating widescreen and cropping ~70% of it away,
+        # which throws out the framing the model was asked for.
+        if extra_input:
+            model_input.update(extra_input)
 
         # Uses the model-scoped predictions endpoint (official model slug).
-        resp = await client.post(
-            f"https://api.replicate.com/v1/models/{self.config.replicate_model}/predictions",
-            headers=headers,
-            json={"input": model_input},
-        )
-        resp.raise_for_status()
+        url = f"https://api.replicate.com/v1/models/{self.config.replicate_model}/predictions"
+        # Replicate throttles hard on a low balance — "6 requests per minute with a burst
+        # of 1 while you have less than $5.0 in credit". A reel submits one job per shot,
+        # so the SECOND shot fails immediately unless the throttle is waited out. The
+        # response says exactly how long to wait, so honour it rather than failing a job
+        # that would succeed four seconds later.
+        for attempt in range(_THROTTLE_RETRIES):
+            resp = await client.post(url, headers=headers, json={"input": model_input})
+            if resp.status_code != 429 or attempt == _THROTTLE_RETRIES - 1:
+                break
+            try:
+                wait = float(resp.json().get("retry_after") or 5)
+            except Exception:  # noqa: BLE001 — a malformed throttle body still means wait
+                wait = 5.0
+            logger.info("Replicate throttled; retrying in %.0fs", wait)
+            await asyncio.sleep(min(wait, 60) + 1)
+        _check(resp, f"Replicate ({self.config.replicate_model})")
         pred = resp.json()
         get_url = pred.get("urls", {}).get("get")
 
@@ -259,7 +310,7 @@ class VideoGenerator:
                 raise TimeoutError("Replicate generation timed out")
             await asyncio.sleep(self.config.poll_interval)
             poll = await client.get(get_url, headers=headers)
-            poll.raise_for_status()
+            _check(poll, "Replicate poll")
             pred = poll.json()
 
         if pred.get("status") != "succeeded":

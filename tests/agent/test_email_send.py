@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 import navig.agent.proactive.imap_email as mod
-from navig.agent.proactive.imap_email import GmailProvider, IMAPEmailProvider
+from navig.agent.proactive.imap_email import GmailProvider, IMAPEmailProvider, OutlookProvider
 
 pytestmark = pytest.mark.integration
 
@@ -68,3 +68,46 @@ async def test_imap_send_uses_configured_host(monkeypatch):
     ok = await p.send_email(["x@corp.com"], "Sub", "Body")
     assert ok is True
     assert _FakeSMTP.captured["host"] == "smtp.corp.com"
+
+
+class _FakeSMTPStartTLS:
+    """Stand-in for smtplib.SMTP (plaintext + STARTTLS) that records the exchange."""
+
+    captured: dict = {}
+
+    def __init__(self, host, port):
+        _FakeSMTPStartTLS.captured = {"host": host, "port": port, "starttls": False}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def starttls(self):
+        _FakeSMTPStartTLS.captured["starttls"] = True
+
+    def login(self, user, pw):
+        _FakeSMTPStartTLS.captured["login"] = (user, pw)
+
+    def send_message(self, msg):
+        _FakeSMTPStartTLS.captured["msg"] = msg
+
+
+async def test_outlook_send_uses_starttls_on_587(monkeypatch):
+    # Outlook/Office 365 submit on 587 (STARTTLS). Using SMTP_SSL there fails the
+    # handshake, so send_email must go through plain SMTP + starttls(), never SMTP_SSL.
+    monkeypatch.setattr(mod, "SMTP", _FakeSMTPStartTLS, raising=False)
+
+    def _ssl_boom(*a, **k):
+        raise AssertionError("SMTP_SSL must not be used for a STARTTLS (587) provider")
+
+    monkeypatch.setattr(mod, "SMTP_SSL", _ssl_boom)
+
+    p = OutlookProvider(email_address="me@outlook.com", password="pw")
+    ok = await p.send_email(["bob@x.com"], "Hi", "Body")
+    assert ok is True
+    c = _FakeSMTPStartTLS.captured
+    assert c["host"] == "smtp.office365.com" and c["port"] == 587
+    assert c["starttls"] is True  # explicit TLS negotiated before login
+    assert c["login"] == ("me@outlook.com", "pw")

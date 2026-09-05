@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 runner = CliRunner()
@@ -14,12 +13,16 @@ runner = CliRunner()
 # ---------------------------------------------------------------------------
 
 
-def _make_engine(sources=("browser", "ssh_config"), results=None):
+def _make_engine(sources=("browser", "ssh_config"), results=None, errors=None):
     engine = MagicMock()
     engine.list_sources.return_value = list(sources)
     engine.run_all.return_value = results or {}
     engine.run_one.return_value = []
     engine.export_json.return_value = json.dumps(results or {})
+    # A bare MagicMock invents `errors` as a truthy Mock, so the command would read every
+    # stubbed run as "the source could not be read" and exit 1. Mirror the real
+    # UniversalImporter: `errors` is a plain dict, empty when nothing failed.
+    engine.errors = dict(errors or {})
     return engine
 
 
@@ -181,7 +184,6 @@ def test_run_version_default_is_not_json():
 
 def test_run_upgrade_check_non_git(tmp_path):
     """Non-git directory: just prints version, no subprocess needed."""
-    import subprocess
 
     from navig.commands.upgrade import run_upgrade
 

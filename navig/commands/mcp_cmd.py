@@ -103,10 +103,10 @@ def mcp_install_config(
     existing servers. VS Code → .vscode/mcp.json · Cursor → .cursor/mcp.json.
     Then run `navig mcp serve --transport stdio` (or let the client launch it).
     """
-    import json
     from pathlib import Path
 
     from navig import console_helper as ch
+    from navig.core.json_io import JsonReadError, atomic_write_json, load_json_for_update
     from navig.mcp_server import generate_vscode_mcp_config
 
     server_def = generate_vscode_mcp_config().get("mcpServers", {}).get("navig", {})
@@ -119,21 +119,26 @@ def mcp_install_config(
         cfg_path = root / ".cursor" / "mcp.json"
         top_key = "mcpServers"  # Cursor uses `mcpServers`
 
-    existing: dict = {}
-    if cfg_path.exists():
-        try:
-            existing = json.loads(cfg_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            ch.warning(f"Could not parse existing {cfg_path}; leaving it and writing a backup.")
-            cfg_path.with_suffix(".json.bak").write_text(cfg_path.read_text(encoding="utf-8"), encoding="utf-8")
-            existing = {}
+    try:
+        existing: dict = load_json_for_update(cfg_path, default={})
+    except JsonReadError:
+        # Present but transiently unreadable (a lock / a half-written read). Merging into
+        # {} and writing back would DROP the user's other MCP servers — abort, leave the
+        # file untouched, and let them retry once it's free.
+        ch.error(
+            f"Could not read {cfg_path} (is it open or locked?); leaving it untouched. "
+            "Re-run once the file is free."
+        )
+        raise typer.Exit(1)
+    # A genuinely corrupt file is quarantined as <name>.corrupt by load_json_for_update
+    # (its contents are unparseable anyway) and we start fresh — no silent data loss.
 
     servers = existing.get(top_key) if isinstance(existing.get(top_key), dict) else {}
     servers["navig"] = server_def
     existing[top_key] = servers
 
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+    atomic_write_json(existing, cfg_path)
     ch.success(f"Wired {client.value} → {cfg_path}")
     ch.dim("  Restart the editor, then the agent can call navig_block_list / navig_block_apply.")
 
@@ -149,29 +154,57 @@ def mcp_tools(
         def __init__(self):
             self.tools: dict = {}
             self._tool_handlers: dict = {}
+            self._tool_safety: dict = {}
 
     probe = _Probe()
     from navig.mcp.tools import register_all_tools
 
     register_all_tools(probe)
 
+    # The approval level each tool runs under (navig.mcp_server._gate_tool). Showing it
+    # here is the point of classifying them: "what an editor/agent can call" is only half
+    # the answer — the other half is which of those calls pass through the gate.
+    safety: dict[str, str] = getattr(probe, "_tool_safety", {}) or {}
+    marker = {
+        "dangerous": "[red]gated[/red]",
+        "moderate": "[yellow]moderate[/yellow]",
+        "safe": "[dim]safe[/dim]",
+    }
+
     if json_out:
-        ch.emit_json(list(probe.tools.values()))
+        ch.emit_json(
+            [
+                {**schema, "safety": safety.get(name, "safe")}
+                for name, schema in sorted(probe.tools.items())
+            ]
+        )
         return
 
     # Group by prefix (navig_agent_*, navig_block_*, desktop_*, …) for readability.
-    groups: dict[str, list[tuple[str, str]]] = {}
+    groups: dict[str, list[tuple[str, str, str]]] = {}
     for name, schema in sorted(probe.tools.items()):
         parts = name.split("_")
         group = parts[1] if name.startswith("navig_") and len(parts) > 1 else parts[0]
-        groups.setdefault(group, []).append((name, schema.get("description", "")))
+        level = safety.get(name, "safe")
+        groups.setdefault(group, []).append((name, schema.get("description", ""), level))
+
+    counts: dict[str, int] = {}
+    for level in safety.values():
+        counts[level] = counts.get(level, 0) + 1
 
     ch.info(f"NAVIG MCP exposes {len(probe.tools)} tools across {len(groups)} groups:\n")
     for group, tools in sorted(groups.items()):
         ch.console.print(f"[bold]{group}[/bold] ({len(tools)})")
-        for name, desc in tools:
-            ch.console.print(f"  [green]{name}[/green]  [dim]{desc[:80]}[/dim]")
-    ch.dim("\nWire an editor:  navig mcp install-config --client vscode   ·   Serve:  navig mcp serve")
+        for name, desc, level in tools:
+            tag = marker.get(level, f"[red]{level}[/red]")
+            ch.console.print(f"  [green]{name}[/green] {tag}  [dim]{desc[:70]}[/dim]")
+
+    summary = " · ".join(
+        f"{counts.get(lvl, 0)} {lbl}"
+        for lvl, lbl in (("dangerous", "gated"), ("moderate", "moderate"), ("safe", "safe"))
+    )
+    ch.dim(f"\nApproval: {summary} — gated tools go through the approval gate and are audited.")
+    ch.dim("Wire an editor:  navig mcp install-config --client vscode   ·   Serve:  navig mcp serve")
 
 
 @mcp_app.command("list")

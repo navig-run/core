@@ -50,6 +50,20 @@ def _scanned_roots() -> list[Path]:
     return roots
 
 
+def test_the_plugin_tree_is_actually_in_scope() -> None:
+    """A scope that silently resolves to nothing passes every assertion.
+
+    This guard now runs for PLUGIN changes too, and running a vacuous check more often
+    protects nothing. `PLUGINS` is `CORE.parents[1] / "plugins"` — one layout change, one
+    move of this file, and the glob matches zero directories while every test here stays
+    green. The sibling `test_sqlite_busy_timeout.py` already pins its scope this way.
+    """
+    roots = [r.name for r in _scanned_roots()]
+    assert any(r.startswith("navig-") for r in roots), (
+        f"no plugin package is in scope, so this guard is only checking core: {roots}"
+    )
+
+
 def _python_files() -> list[Path]:
     files: list[Path] = []
     for root in _scanned_roots():

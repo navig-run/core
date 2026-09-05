@@ -13,6 +13,7 @@ def boot_show():
     from navig import console_helper as ch
 
     ch.warning("navig boot is not yet implemented in this build.")
+    raise typer.Exit(1)
 
 
 @boot_app.command("run")
@@ -21,3 +22,4 @@ def boot_run(dry_run: bool = typer.Option(False, "--dry-run", help="Preview with
     from navig import console_helper as ch
 
     ch.warning("navig boot run is not yet implemented in this build.")
+    raise typer.Exit(1)

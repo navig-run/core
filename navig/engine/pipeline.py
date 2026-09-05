@@ -197,8 +197,17 @@ class ToolPipeline:
             t_step = time.monotonic()
             status_log: list[str] = []
 
-            def _on_status(msg: str) -> None:
-                status_log.append(msg)  # noqa: B023
+            # A StatusCallback is `async (step, detail, progress)`. This used to be a
+            # SYNC one-argument function, which every correctly-written tool broke on:
+            # `browser_fetch` and `pdf_tool` `await on_status(step, detail, pct)` directly,
+            # so a pipeline step running either raised TypeError and was recorded as a
+            # failed step. Tools that report through `BaseTool._emit` fared no better —
+            # that helper swallows the error at debug level, so their status was silently
+            # dropped instead.
+            async def _on_status(step: str, detail: str = "", progress: int = 0) -> None:
+                status_log.append(  # noqa: B023
+                    f"{step}: {detail}" if detail else step
+                )
 
             try:
                 tool_result = await self._registry.run_tool(

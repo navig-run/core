@@ -10,17 +10,41 @@ from navig import console_helper as ch
 from navig.config import get_config_manager
 from navig.server_template_manager import ServerTemplateManager
 
-config_manager = get_config_manager()
-template_manager = ServerTemplateManager(config_manager)
+# Built on FIRST USE, not at import. Constructing ServerTemplateManager scans the template
+# directories, and a directory without a manifest prints "Skipping 'ahk': no template.yaml
+# or template.json found" via ch.warning -- to STDOUT, at import time. Importing this module
+# alone emitted 136 bytes of warnings before doing anything, which meant every CLI
+# invocation that builds the command tree paid a disk scan and, worse, any machine-readable
+# stdout was corrupted: `navig --schema` produced warnings followed by its JSON, so the
+# document would not parse. Deferring also honours the repo's lazy-import rule -- nothing
+# heavy at import.
+_config_manager = None
+_template_manager = None
+
+
+def _cm():
+    """The shared ConfigManager, created on first use."""
+    global _config_manager
+    if _config_manager is None:
+        _config_manager = get_config_manager()
+    return _config_manager
+
+
+def _tm():
+    """The ServerTemplateManager, created on first use (it scans templates)."""
+    global _template_manager
+    if _template_manager is None:
+        _template_manager = ServerTemplateManager(_cm())
+    return _template_manager
 
 
 def list_server_templates_cmd(options: dict[str, Any]):
     """List template configurations for a server."""
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
-    server = require_active_server(options, config_manager)
+    server = require_active_server(options, _cm())
 
     enabled_only = options.get("enabled_only", False)
-    templates = template_manager.list_server_templates(server, enabled_only=enabled_only)
+    templates = _tm().list_server_templates(server, enabled_only=enabled_only)
 
     if not templates:
         if enabled_only:
@@ -68,14 +92,14 @@ def list_server_templates_cmd(options: dict[str, Any]):
 def show_template_config_cmd(template_name: str, options: dict[str, Any]):
     """Show merged configuration for a server template."""
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
-    server = require_active_server(options, config_manager)
+    server = require_active_server(options, _cm())
 
-    config = template_manager.get_template_config(server, template_name, include_template=True)
+    config = _tm().get_template_config(server, template_name, include_template=True)
 
     if config is None:
         # (used to say "Run 'navig server inspect'" — no such command exists.)
         ch.error(f"Template '{template_name}' not initialized for server '{server}'")
-        return
+        raise typer.Exit(2)
 
     if options.get("raw"):
         import json
@@ -117,13 +141,13 @@ def show_template_config_cmd(template_name: str, options: dict[str, Any]):
 def enable_server_template_cmd(template_name: str, options: dict[str, Any]):
     """Enable an template for a server."""
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
-    server = require_active_server(options, config_manager)
+    server = require_active_server(options, _cm())
 
     if options.get("dry_run"):
         ch.dim(f"Would enable template '{template_name}' for server '{server}'")
         return
 
-    success = template_manager.enable_template(server, template_name)
+    success = _tm().enable_template(server, template_name)
     if not success and options.get("verbose"):
         ch.dim("Check if template is initialized: navig server template list")
 
@@ -131,19 +155,19 @@ def enable_server_template_cmd(template_name: str, options: dict[str, Any]):
 def disable_server_template_cmd(template_name: str, options: dict[str, Any]):
     """Disable an template for a server."""
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
-    server = require_active_server(options, config_manager)
+    server = require_active_server(options, _cm())
 
     if options.get("dry_run"):
         ch.dim(f"Would disable template '{template_name}' for server '{server}'")
         return
 
-    template_manager.disable_template(server, template_name)
+    _tm().disable_template(server, template_name)
 
 
 def set_template_value_cmd(template_name: str, key_path: str, value: str, options: dict[str, Any]):
     """Set a custom value for a server template configuration."""
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
-    server = require_active_server(options, config_manager)
+    server = require_active_server(options, _cm())
 
     if options.get("dry_run"):
         ch.dim(
@@ -160,7 +184,7 @@ def set_template_value_cmd(template_name: str, key_path: str, value: str, option
         # Keep as string if not valid JSON
         parsed_value = value
 
-    success = template_manager.set_template_custom_value(
+    success = _tm().set_template_custom_value(
         server, template_name, key_path, parsed_value
     )
 
@@ -173,7 +197,7 @@ def set_template_value_cmd(template_name: str, key_path: str, value: str, option
 def sync_template_cmd(template_name: str, options: dict[str, Any]):
     """Sync template configuration from template."""
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
-    server = require_active_server(options, config_manager)
+    server = require_active_server(options, _cm())
 
     preserve_custom = not options.get("force", False)
 
@@ -190,7 +214,7 @@ def sync_template_cmd(template_name: str, options: dict[str, Any]):
             ch.warning("Sync cancelled")
             return
 
-    success = template_manager.sync_template_from_template(
+    success = _tm().sync_template_from_template(
         server, template_name, preserve_custom=preserve_custom
     )
 
@@ -204,7 +228,7 @@ def sync_template_cmd(template_name: str, options: dict[str, Any]):
 def init_template_cmd(template_name: str, options: dict[str, Any]):
     """Manually initialize an template for a server."""
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
-    server = require_active_server(options, config_manager)
+    server = require_active_server(options, _cm())
 
     enabled = options.get("enable", False)
 
@@ -213,7 +237,7 @@ def init_template_cmd(template_name: str, options: dict[str, Any]):
         ch.dim(f"Would initialize template '{template_name}' for server '{server}' ({status})")
         return
 
-    success = template_manager.initialize_template_manually(server, template_name, enabled=enabled)
+    success = _tm().initialize_template_manually(server, template_name, enabled=enabled)
 
     if success and options.get("verbose"):
         ch.dim(
@@ -228,6 +252,16 @@ def init_template_cmd(template_name: str, options: dict[str, Any]):
 import typer  # noqa: E402
 
 server_template_app = typer.Typer(help="Manage per-server template configurations")
+
+
+@server_template_app.callback()
+def server_template_callback(ctx: typer.Context) -> None:
+    """Per-server template configuration."""
+    # This app had no group callback at all, so its eleven `ctx.obj[...]` writes had
+    # nowhere to be guarded. The root `navig` callback ensures the dict, making this a
+    # no-op through the real CLI; it matters when the sub-app is reached directly.
+    ctx.ensure_object(dict)
+
 
 
 @server_template_app.command("list")

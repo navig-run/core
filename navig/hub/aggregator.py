@@ -193,6 +193,17 @@ def _modules() -> list[StoreItem]:
         mid = str(m.get("id", ""))
         if not mid or mid.startswith("plugin:"):
             continue  # installed CC plugins are covered by the plugin collector
+        if mid.startswith("tg:"):
+            # Telegram extensions are a Telegram surface, not store items: they
+            # belong to /extensions and Deck → Social → Telegram, and 18 of them
+            # would otherwise swamp `navig store`.
+            #
+            # Scoped to `tg:` rather than to `hidden`, deliberately. `hidden`
+            # means "not an app-grid tile", which is NOT the same question —
+            # `contacts`, `schedule` and `health` are hidden and have always been
+            # listed here, so filtering on it would quietly drop three rows that
+            # have nothing to do with this change.
+            continue
         locked = bool(m.get("locked"))
         enabled = bool(m.get("enabled"))
         state = WireState.WIRED if enabled and not locked else WireState.UNWIRED
@@ -290,6 +301,7 @@ def _skills() -> list[StoreItem]:
 
 def _mcp_servers() -> list[StoreItem]:
     from navig.config import get_config_manager
+    from navig.core.coerce import coerce_bool
     from navig.plugins.package import installed_plugin_roots, load_package
 
     items: list[StoreItem] = []
@@ -299,7 +311,12 @@ def _mcp_servers() -> list[StoreItem]:
     clients = cfg.get("mcp", {}).get("clients", {}) if isinstance(cfg, dict) else {}
     if isinstance(clients, dict):
         for name, client_cfg in clients.items():
-            enabled = bool(client_cfg.get("enabled", True)) if isinstance(client_cfg, dict) else True
+            # `mcp.clients.<name>.enabled false` stores the STRING "false" (truthy under
+            # bool()) — coerce so the store badge matches what MCPClientConfig actually loads.
+            enabled = (
+                coerce_bool(client_cfg.get("enabled", True), default=True)
+                if isinstance(client_cfg, dict) else True
+            )
             seen.add(name)
             items.append(StoreItem(
                 id=f"mcp:{name}",

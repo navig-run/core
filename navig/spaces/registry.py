@@ -14,13 +14,22 @@ Atomic JSON read/write mirrors the gateway ``cron_jobs.json``/``tasks.json`` pat
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from navig.core.yaml_io import atomic_write_text
+from navig.core.json_io import (
+    JsonReadError,
+    atomic_write_json,
+    load_json_for_update,
+    load_json_safe,
+)
+from navig.debug_logger import get_debug_logger
 from navig.platform import paths
+
+logger = get_debug_logger()
+
+_DEFAULT_REGISTRY: dict[str, Any] = {"version": 1, "active": None, "spaces": []}
 
 
 def _registry_file() -> Path:
@@ -34,27 +43,46 @@ def _norm(p: str | Path) -> str:
         return str(p)
 
 
+def _normalize(data: Any) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        return dict(_DEFAULT_REGISTRY)
+    data.setdefault("version", 1)
+    data.setdefault("active", None)
+    if not isinstance(data.get("spaces"), list):
+        data["spaces"] = []
+    return data
+
+
 def load_registry() -> dict[str, Any]:
-    f = _registry_file()
-    if not f.exists():
-        return {"version": 1, "active": None, "spaces": []}
+    """Read-only view for discovery / list / is_enabled / is_trusted — degrades to a
+    fresh registry on ANY failure (a corrupt or transiently-locked file must not break
+    discovery). NEVER use this for a load-modify-save; use ``load_registry_for_update``."""
+    return _normalize(load_json_safe(_registry_file(), default=dict(_DEFAULT_REGISTRY)))
+
+
+def load_registry_for_update() -> dict[str, Any]:
+    """Load for a load-MODIFY-save. Raises :class:`JsonReadError` when the file exists
+    but is transiently unreadable (a lock that outlives the retries), so a mutator ABORTS
+    its save instead of persisting an empty registry over every space and its
+    trust/enabled/active state. A corrupt file is quarantined ``spaces.json.corrupt`` and
+    then treated as empty (the bytes are already lost)."""
+    return _normalize(load_json_for_update(_registry_file(), default=dict(_DEFAULT_REGISTRY)))
+
+
+def _load_for_mutation() -> dict[str, Any] | None:
+    """The registry to mutate, or ``None`` when it is transiently unreadable — in which
+    case the caller MUST skip its save. Silently wiping every space (and the user's
+    trust decisions) is far worse than skipping one update; the lock is temporary."""
     try:
-        data = json.loads(f.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            raise ValueError("registry is not an object")
-        data.setdefault("version", 1)
-        data.setdefault("active", None)
-        data.setdefault("spaces", [])
-        if not isinstance(data["spaces"], list):
-            data["spaces"] = []
-        return data
-    except Exception:  # noqa: BLE001 — corrupt registry must not break discovery
-        return {"version": 1, "active": None, "spaces": []}
+        return load_registry_for_update()
+    except JsonReadError as exc:
+        logger.warning("spaces registry unreadable — skipping update to avoid wiping it: %s", exc)
+        return None
 
 
 def save_registry(reg: dict[str, Any]) -> None:
     try:
-        atomic_write_text(_registry_file(), json.dumps(reg, indent=2) + "\n")
+        atomic_write_json(reg, _registry_file())
     except OSError:
         pass  # best-effort
 
@@ -76,8 +104,18 @@ def register(
     enabled: bool = True,
 ) -> dict[str, Any]:
     """Add or update a space in the registry. Existing ``enabled`` is preserved."""
-    reg = load_registry()
     rp = _norm(path)
+    entry = {
+        "id": id or Path(rp).name,
+        "name": name or Path(rp).name,
+        "path": rp,
+        "source": source,
+        "enabled": enabled,
+        "last_active": None,
+    }
+    reg = _load_for_mutation()
+    if reg is None:
+        return entry  # registry locked — not persisted now; usable in-memory, next write persists
     existing = next((e for e in reg["spaces"] if _norm(e.get("path", "")) == rp), None)
     if existing is not None:
         if id:
@@ -87,14 +125,6 @@ def register(
         existing["source"] = source
         save_registry(reg)
         return existing
-    entry = {
-        "id": id or Path(rp).name,
-        "name": name or Path(rp).name,
-        "path": rp,
-        "source": source,
-        "enabled": enabled,
-        "last_active": None,
-    }
     reg["spaces"].append(entry)
     save_registry(reg)
     return entry
@@ -104,7 +134,9 @@ def ensure_registered(
     path: str | Path, *, id: str | None = None, name: str | None = None, source: str = "root"
 ) -> None:
     """Register *path* only if unknown — idempotent, writes at most once per space."""
-    reg = load_registry()
+    reg = _load_for_mutation()
+    if reg is None:
+        return  # registry locked — skip; a corrupt/locked read must not wipe it
     rp = _norm(path)
     if any(_norm(e.get("path", "")) == rp for e in reg["spaces"]):
         return
@@ -116,7 +148,9 @@ def ensure_registered(
 
 
 def set_enabled(id_or_path: str, enabled: bool) -> bool:
-    reg = load_registry()
+    reg = _load_for_mutation()
+    if reg is None:
+        return False  # registry locked — leave every space untouched
     e = _find(reg, id_or_path)
     if e is None:
         return False
@@ -126,7 +160,9 @@ def set_enabled(id_or_path: str, enabled: bool) -> bool:
 
 
 def forget(id_or_path: str) -> bool:
-    reg = load_registry()
+    reg = _load_for_mutation()
+    if reg is None:
+        return False  # registry locked — don't drop anyone
     rp = _norm(id_or_path)
     before = len(reg["spaces"])
     reg["spaces"] = [
@@ -159,7 +195,9 @@ def is_trusted(path: str | Path) -> bool | None:
 
 
 def set_trusted(id_or_path: str, trusted: bool) -> bool:
-    reg = load_registry()
+    reg = _load_for_mutation()
+    if reg is None:
+        return False  # registry locked — never silently reset trust decisions
     e = _find(reg, id_or_path)
     if e is None:
         return False
@@ -169,7 +207,9 @@ def set_trusted(id_or_path: str, trusted: bool) -> bool:
 
 
 def mark_active(path: str | Path) -> None:
-    reg = load_registry()
+    reg = _load_for_mutation()
+    if reg is None:
+        return  # registry locked — don't lose every space to record an active pointer
     rp = _norm(path)
     reg["active"] = rp
     e = next((x for x in reg["spaces"] if _norm(x.get("path", "")) == rp), None)

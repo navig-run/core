@@ -8,9 +8,7 @@ Batch 114: tests for
 """
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -365,7 +363,6 @@ def test_system_clean_yes_removes_cache(tmp_path):
 # ---------------------------------------------------------------------------
 
 from navig.voice.playback import (
-    ASSETS_DIR,
     NotificationSound,
     _resolve_asset,
     list_sounds,

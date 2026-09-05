@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import random
 
-from . import ai_actions, autoreply, biz_commands, permissions, reply_actions
+from . import autoreply, biz_commands, permissions, reply_actions
 
 logger = logging.getLogger(__name__)
 
@@ -240,9 +240,17 @@ async def handle_business_message(channel, msg: dict, *, edited: bool = False) -
     owner_id = resolve_owner(msg.get("business_connection_id"))
     is_owner = bool(owner_id and sender_id == owner_id)
     text = msg.get("text") or msg.get("caption") or ""
+    # Routing metadata only -- NOT the message body. This logged 50 chars of every
+    # private business message at INFO, so `~/.navig/logs/gateway.log` accumulated a
+    # plaintext transcript of the operator's conversations with third parties who
+    # never consented to it, in a file that gets tailed during debugging and pasted
+    # into issues. It bought nothing: the text is already persisted deliberately by
+    # `upsert_message` below, which is the catalog feature and the right place to
+    # read it. `integrations/telegram_voice_bot.py` sets the precedent -- log the
+    # LENGTH, not the content.
     logger.info(
-        "business message: chat=%s from=%s owner=%s is_owner=%s text=%.50r",
-        chat_id, sender_id, owner_id, is_owner, text,
+        "business message: chat=%s from=%s owner=%s is_owner=%s chars=%d",
+        chat_id, sender_id, owner_id, is_owner, len(text),
     )
     try:
         _store().upsert_room(chat_id, type="business",
@@ -267,8 +275,8 @@ async def handle_business_message(channel, msg: dict, *, edited: bool = False) -
         logger.debug("business autoreply command skipped", exc_info=True)
     # Owner reply-keyword action: the owner replies to a message with a bare
     # keyword (translate/summarize/explain/context) → run the sandboxed no-tools
-    # AI op on the replied-to message and DM the result to the owner PRIVATELY.
-    # Replaces emoji reactions (which Telegram never delivers in business chats).
+    # AI op on the replied-to message and post the result INTO the chat AS the owner
+    # (save stays a private DM). Replaces emoji reactions (never delivered here).
     try:
         if await reply_actions.run_business_reply(channel, msg, is_owner=is_owner, owner_id=owner_id):
             return

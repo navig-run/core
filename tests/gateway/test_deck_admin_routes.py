@@ -11,10 +11,7 @@ Tests cover:
 from __future__ import annotations
 
 import sys
-from types import ModuleType
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from navig.gateway.deck.routes.admin import (
     _load_admin_settings,

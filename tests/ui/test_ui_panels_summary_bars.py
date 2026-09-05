@@ -1,11 +1,13 @@
 """Batch 71 — ui/panels, ui/summary, ui/bars."""
 from __future__ import annotations
 
+import io
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
-import pytest
+from rich.console import Console
 
-from navig.ui.models import ActionItem, CauseScore, DiffLine, Metric, SummaryResult
+from navig.ui.models import CauseScore, Metric, SummaryResult
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -14,6 +16,21 @@ from navig.ui.models import ActionItem, CauseScore, DiffLine, Metric, SummaryRes
 def _mock_console(module_path: str):
     """Context manager that patches `console` on the given module."""
     return patch(f"{module_path}.console", new_callable=MagicMock)
+
+
+@contextmanager
+def _rendered(module_path: str):
+    """Swap in a REAL Rich console and yield what it actually renders.
+
+    A MagicMock console records the markup string that was passed in, which is not what
+    the user sees — Rich still has to parse it. Every bracket bug in this repo survives a
+    mock and only appears once something really renders, so assertions about output must
+    go through a real Console.
+    """
+    buf = io.StringIO()
+    console = Console(file=buf, width=100, force_terminal=False, no_color=True)
+    with patch(f"{module_path}.console", console):
+        yield buf
 
 
 # ---------------------------------------------------------------------------
@@ -160,20 +177,29 @@ class TestRenderExplanation:
 
 class TestRenderMetricsPanel:
     def test_delegates_to_render_metric_bars(self):
+        """The panel is a thin delegator — assert the delegation, not just 'no raise'.
+
+        This used to open `with patch(...): pass` twice and assert nothing, so the name
+        was the only thing claiming delegation happened.
+        """
         metrics = [Metric(label="cpu", value="50%", bar_fill=0.5)]
-        with patch("navig.ui.panels.render_metrics_panel"):
-            pass  # ensure import works
-        with patch("navig.ui.bars.console"):
+        with patch("navig.ui.bars.render_metric_bars") as mock_bars:
             from navig.ui.panels import render_metrics_panel
-            render_metrics_panel(metrics)  # should not raise
+            render_metrics_panel(metrics, title="Signals")
+
+        mock_bars.assert_called_once()
+        args, kwargs = mock_bars.call_args
+        assert args[0] == metrics, "the metrics must be passed straight through"
+        assert kwargs["title"] == "Signals", "the title must be forwarded, not dropped"
 
     def test_no_raise_on_exception(self):
-        with patch("navig.ui.panels.render_metrics_panel", side_effect=RuntimeError):
-            pass  # render_metrics_panel IS the function, can't patch it this way
-        # Instead just call it — bars.console will be patched
-        with patch("navig.ui.bars.console"):
+        # The failure must come from the code under test, not from a patch of the
+        # function itself — the previous version patched `render_metrics_panel` and
+        # discarded it in a `pass` block, admitting in a comment that it did nothing.
+        with patch("navig.ui.bars.console") as mock_c:
+            mock_c.print.side_effect = RuntimeError("boom")
             from navig.ui.panels import render_metrics_panel
-            render_metrics_panel([])
+            render_metrics_panel([Metric(label="cpu", value="1", bar_fill=0.1)])
 
 
 # ---------------------------------------------------------------------------
@@ -188,11 +214,18 @@ class TestRenderNextStep:
         mock_c.print.assert_called_once()
 
     def test_command_in_output(self):
-        with patch("navig.ui.summary.console") as mock_c:
-            mock_c.print.side_effect = lambda s: print(s)
+        """The command a user must type has to survive rendering.
+
+        This used to redirect the console through `print()` and assert nothing — the
+        name claimed the command was in the output and nothing checked it.
+        """
+        with _rendered("navig.ui.summary") as out:
             from navig.ui.summary import render_next_step
             render_next_step("navig db list", label="Run this")
-        # output captured by side_effect — just assert no raise
+
+        rendered = out.getvalue()
+        assert "navig db list" in rendered, rendered
+        assert "Run this" in rendered, rendered
 
     def test_no_raise_on_exception(self):
         with patch("navig.ui.summary.console") as mock_c:
@@ -248,3 +281,80 @@ class TestRenderAiResponse:
             mock_c.print.side_effect = RuntimeError("boom")
             from navig.ui.summary import render_ai_response
             render_ai_response("text")
+
+
+# ---------------------------------------------------------------------------
+# Bracketed data must survive Rich — the shapes that shipped three times before
+# ---------------------------------------------------------------------------
+
+class TestBracketedDataSurvivesRendering:
+    """Rich parses `[...]` as markup, so DATA interpolated into a markup string is
+    mis-rendered unless escaped. Measured on this module before the fix:
+
+      * a label `net [eth0]` rendered as `net` — the interface silently gone;
+      * a value `[/dev/sda1]` raised MarkupError (it reads as an orphan CLOSING tag),
+        so the whole panel collapsed into the bare-`print` fallback, losing the table.
+
+    Neither was visible to the existing tests because they assert against a MagicMock
+    console, which records the markup string without ever parsing it. These render for
+    real, which is the only way this class is observable.
+    """
+
+    def test_a_bracketed_label_is_not_swallowed(self):
+        with _rendered("navig.ui.bars") as out:
+            from navig.ui.bars import render_metric_bars
+            render_metric_bars([Metric(label="net [eth0]", value="1Gb", bar_fill=0.9)])
+
+        rendered = out.getvalue()
+        assert "[eth0]" in rendered, f"the interface name was eaten as markup: {rendered!r}"
+
+    def test_a_value_that_looks_like_a_closing_tag_still_renders(self):
+        with _rendered("navig.ui.bars") as out:
+            from navig.ui.bars import render_metric_bars
+            render_metric_bars([Metric(label="mnt", value="[/dev/sda1]", bar_fill=0.2)])
+
+        rendered = out.getvalue()
+        # Unescaped this raises MarkupError, the panel is abandoned mid-render and the
+        # bar never appears — so assert the BAR too, not just the text.
+        assert "[/dev/sda1]" in rendered, rendered
+        assert "█" in rendered or "#" in rendered, f"the panel never rendered: {rendered!r}"
+
+    def test_escaping_does_not_disturb_column_alignment(self):
+        """Anti-vacuity: escaping is only correct if the columns still line up.
+
+        `escape()` inserts a backslash that Rich renders as nothing, so escaping BEFORE
+        padding would over-pad and bend the bar column. Two labels of different literal
+        length must still start their bars at the same offset.
+        """
+        with _rendered("navig.ui.bars") as out:
+            from navig.ui.bars import render_metric_bars
+            render_metric_bars([
+                Metric(label="cpu", value="50%", bar_fill=0.5),
+                Metric(label="net [eth0]", value="1Gb", bar_fill=0.5),
+            ])
+
+        rows = [ln for ln in out.getvalue().splitlines() if "█" in ln]
+        assert len(rows) == 2, out.getvalue()
+        offsets = {ln.index("█") for ln in rows}
+        assert len(offsets) == 1, f"bars are misaligned across rows: {offsets} in {rows!r}"
+
+    def test_model_output_keeps_its_brackets(self):
+        """`render_ai_response` carries LLM text — the data most likely to hold `[...]`."""
+        with _rendered("navig.ui.summary") as out:
+            from navig.ui.summary import render_ai_response
+            render_ai_response("check [1] and the path [/tmp/x] before retrying")
+
+        rendered = out.getvalue()
+        assert "[1]" in rendered, rendered
+        assert "[/tmp/x]" in rendered, rendered
+
+    def test_a_bracketed_cause_description_survives(self):
+        # `[tcp]` deliberately, NOT `[8080]`: a numeric tag renders literally even
+        # unescaped, so a digits-only case passes with the bug present and has no teeth.
+        # Whether the bracket survives depends on the VALUE — which is exactly why this
+        # class works in testing and disappears on real data.
+        with _rendered("navig.ui.panels") as out:
+            from navig.ui.panels import render_explanation
+            render_explanation([CauseScore(confidence=80, description="socket [tcp] refused")])
+
+        assert "[tcp]" in out.getvalue(), out.getvalue()

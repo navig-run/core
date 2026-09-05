@@ -384,6 +384,18 @@ class TestTodoCreateTool:
 
         set_todo_list(TodoList(session_id="test"))
 
+    def teardown_method(self):
+        """Unpin the override — it is PROCESS-GLOBAL and wins for every session key.
+
+        Without this the pinned list outlives the file, so every later test that expects
+        per-conversation todo lists silently gets this one instead. Measured: it reddened
+        two isolation tests in tests/regression, and only in a run where this file came
+        first — the exact "passes alone, fails in the suite" shape.
+        """
+        from navig.agent.tools.todo_tools import reset_todo_lists
+
+        reset_todo_lists()
+
     def test_create_json_array(self):
         result = self._run({"items": '[{"title": "Read code"}, {"title": "Write tests"}]'})
         assert result.success
@@ -436,6 +448,12 @@ class TestTodoUpdateTool:
 
         tool = TodoUpdateTool()
         return asyncio.run(tool.run(args))
+
+    def teardown_method(self):
+        """Unpin the process-global override — see TestTodoCreateTool.teardown_method."""
+        from navig.agent.tools.todo_tools import reset_todo_lists
+
+        reset_todo_lists()
 
     def setup_method(self):
         from navig.agent.tools.todo_tools import set_todo_list
@@ -492,6 +510,12 @@ class TestTodoShowTool:
 
         tool = TodoShowTool()
         return asyncio.run(tool.run({}))
+
+    def teardown_method(self):
+        """Unpin the process-global override — see TestTodoCreateTool.teardown_method."""
+        from navig.agent.tools.todo_tools import reset_todo_lists
+
+        reset_todo_lists()
 
     def setup_method(self):
         from navig.agent.tools.todo_tools import set_todo_list

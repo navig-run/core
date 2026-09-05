@@ -48,6 +48,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from navig.core.background import spawn
+
 try:
     from aiohttp import web
 except ImportError:  # pragma: no cover - aiohttp always present at runtime
@@ -132,7 +134,8 @@ def _emit(request: "web.Request", kind: str, payload: dict) -> None:
             logger.debug("telegram mtproto SSE emit failed: %s", exc)
 
     try:
-        asyncio.get_running_loop().create_task(_send())
+        asyncio.get_running_loop()  # require a running loop; else drop silently
+        spawn(_send())
     except RuntimeError:  # no running loop — drop silently
         pass
 

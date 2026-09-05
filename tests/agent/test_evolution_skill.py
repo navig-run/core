@@ -1,9 +1,7 @@
 """Tests for navig.core.evolution.skill — SkillEvolver._validate() and .evolve()."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 

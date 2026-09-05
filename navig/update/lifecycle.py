@@ -100,9 +100,16 @@ class UpdateEngine:
         auto_rollback: bool = True,
         channel: str = "stable",
         on_progress: ProgressCallback | None = None,
+        restart: bool = True,
     ) -> UpdateResult:
-        """Execute updates. Returns an UpdateResult."""
+        """Execute updates. Returns an UpdateResult.
+
+        ``restart`` (default True): after a verified LOCAL install, reload the running
+        daemon so the new code goes live. Without it, an editable/pip install refreshes
+        disk while the running bot keeps executing the code it loaded at boot.
+        """
         t_global = time.monotonic()
+        self._restart = restart
         p = self.plan(force=force)
 
         node_results: list[NodeResult] = []
@@ -218,8 +225,41 @@ class UpdateEngine:
             _step("rollback", lambda: self._rollback_node(target, old_version))
             nr.rolled_back = True
 
+        # Reload the LOCAL daemon so the freshly-installed code goes live. Best-effort:
+        # a reload issue is surfaced but never fails an already-applied update (disk is
+        # updated, verify passed). Remote nodes reload themselves — _install_ssh delegates
+        # to `navig update run` on the remote, which walks this same path there.
+        if ok and target.is_local and getattr(self, "_restart", True):
+            self._reload_local_daemon(nr, on_progress)
+
         nr.elapsed_seconds = time.monotonic() - t0
         return nr
+
+    def _reload_local_daemon(
+        self, nr: NodeResult, on_progress: ProgressCallback | None
+    ) -> None:
+        """Restart the local daemon so the new code is live. Never raises: a reload
+        problem must not fail an update whose bits are already on disk — it's recorded
+        as a soft step note (e.g. an elevated daemon that needs a manual --admin restart)."""
+        self._emit(on_progress, nr.node_id, "reload", "running", "")
+        try:
+            from navig.commands.update import _step_reload_daemon
+
+            try:
+                interactive = bool(sys.stdin) and sys.stdin.isatty()
+            except Exception:  # noqa: BLE001
+                interactive = False
+            res = _step_reload_daemon(interactive)
+        except Exception as exc:  # noqa: BLE001
+            nr.steps.append(f"reload:fail:{str(exc)[:80]}")
+            self._emit(on_progress, nr.node_id, "reload", "fail", str(exc)[:80])
+            return
+        if res.ok:
+            nr.steps.append("reload:ok")
+            self._emit(on_progress, nr.node_id, "reload", "ok", res.note)
+        else:
+            nr.steps.append(f"reload:warn:{res.note[:80]}")
+            self._emit(on_progress, nr.node_id, "reload", "skip", res.note)
 
     # ------------------------------------------------------------------
     # Install helpers
@@ -228,10 +268,12 @@ class UpdateEngine:
     def _install_local(self, channel: str) -> None:
         from pathlib import Path
 
-        from navig.commands.update import _step_git, _step_pypi
+        from navig.commands.update import _is_navig_git_checkout, _step_git, _step_pypi
 
         src_dir = Path(__file__).resolve().parent.parent.parent
-        is_git = (src_dir / ".git").exists()
+        # `.git` lives at the monorepo ROOT, not inside `core/`, so `(src_dir/".git").exists()`
+        # was False on an editable install and this took the pip path (never pulling).
+        is_git = _is_navig_git_checkout(src_dir)
 
         if is_git:
             result = _step_git(src_dir, force=True)

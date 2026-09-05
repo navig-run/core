@@ -900,7 +900,7 @@ def _space_list(
             continue
         marker = "▸" if canonical == active_canonical else " "
         suffix = "" if enabled else " (disabled)"
-        table.add_row(f"{marker} {canonical}{suffix}", f"[{cfg.scope}] {cfg.path}")
+        table.add_row(f"{marker} {canonical}{suffix}", f"\\[{cfg.scope}] {cfg.path}")
 
     _console.print(table)
 
@@ -1026,13 +1026,13 @@ def space_create(
     # ── Report — show that existing content was left untouched ────────────────
     nc, ns, nx = len(summary["created"]), len(summary["skipped"]), len(summary["conflicts"])
     for m in summary.get("migrated", []):
-        ch.info(f"  {'[dry-run] would migrate' if dry_run else 'migrated'}: {m}")
+        ch.info(f"  {'DRY RUN: would migrate' if dry_run else 'migrated'}: {m}")
     if dry_run:
-        ch.info(f"[dry-run] Would create {nc} item(s) in {space_path}; {ns} already present (kept).")
+        ch.info(f"[yellow]DRY RUN:[/yellow] Would create {nc} item(s) in {space_path}; {ns} already present (kept).")
         for item in summary["created"]:
             ch.info(f"  + {item}")
         if book:
-            ch.info(f"[dry-run] Would set the finance book: {book}")
+            ch.info(f"[yellow]DRY RUN:[/yellow] Would set the finance book: {book}")
     else:
         verb = "Initialized structure in existing" if existed else "Created"
         ch.success(f"{verb} space '{name}'.", details=str(space_path))

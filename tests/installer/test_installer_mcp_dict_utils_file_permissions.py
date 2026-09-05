@@ -221,11 +221,10 @@ class TestSetOwnerOnlyPermissions:
 
     def test_does_not_raise_on_missing_path(self, tmp_path: Path) -> None:
         from navig.core.file_permissions import set_owner_only_file_permissions
-        # Should not raise even for non-existent path (best-effort)
-        try:
-            set_owner_only_file_permissions(tmp_path / "nonexistent.txt")
-        except Exception:
-            pass  # best-effort — no raise expected but we just verify it doesn't crash test
+        # The try/except swallowed the exact raise this test exists to detect, so it passed
+        # whether the call was best-effort or blew up. An uncaught exception IS the failure
+        # signal for a "does not raise" test -- calling it plainly is the assertion.
+        set_owner_only_file_permissions(tmp_path / "nonexistent.txt")
 
     @pytest.mark.skipif(os.name != "nt", reason="Windows-only path")
     def test_runs_icacls_on_windows(self, tmp_path: Path) -> None:

@@ -1,10 +1,6 @@
 """Batch 110: tests for wiki_rag (WikiDocument, TextTokenizer, BM25Index) and workspace."""
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 # ---------------------------------------------------------------------------
 # wiki_rag — WikiDocument
 # ---------------------------------------------------------------------------

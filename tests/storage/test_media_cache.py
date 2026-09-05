@@ -1,10 +1,6 @@
 """Tests for navig.gateway.channels.media_engine.media_cache — MediaCache."""
 from __future__ import annotations
 
-import json
-import time
-from pathlib import Path
-
 import pytest
 
 from navig.gateway.channels.media_engine.media_cache import MediaCache

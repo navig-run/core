@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
 from navig.gateway.keyed_queue import KeyedQueue
 
 

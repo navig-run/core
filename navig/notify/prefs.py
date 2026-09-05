@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from navig.core.coerce import coerce_bool
 from navig.notify import store
 from navig.notify.types import CHANNEL_KEYS, TYPE_KEYS
 
@@ -88,7 +89,9 @@ def get_settings() -> dict[str, Any]:
     raw = {r["key"]: r["value"] for r in rows}
 
     def _bool(k: str) -> bool:
-        return raw.get(k, "0") in ("1", "true", "yes", "True")
+        # Values persist as "1"/"0" (see set_setting); coerce_bool also tolerates any
+        # legacy true/false/yes/no/on/off row, case-insensitively.
+        return coerce_bool(raw.get(k, "0"))
 
     def _int(k: str, default: int) -> int:
         try:

@@ -219,7 +219,13 @@ def _register_core_actions(reg: ActionRegistry) -> None:
             WorkflowEvolver,  # type: ignore[import]
         )
 
-        return f"Created: {WorkflowEvolver().evolve(params.get('goal', ''))}"
+        # Report what actually happened: this used to prefix "Created:" onto the
+        # result's repr whether or not anything was created (and dump the whole
+        # artifact plus history snippets into the agent's context with it).
+        result = WorkflowEvolver().evolve(params.get("goal", ""))
+        if not result.success:
+            raise RuntimeError(result.error or "Workflow evolution failed")
+        return f"Created workflow (after {result.attempts} attempt(s))"
 
     # ── Engine-dependent actions ─────────────────────────────────────────────
 

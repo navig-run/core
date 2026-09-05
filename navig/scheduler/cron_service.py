@@ -19,6 +19,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from navig.core.aio_subprocess import kill_process_tree
 from navig.core.json_io import JsonReadError, atomic_write_json, load_json_for_update
 from navig.debug_logger import get_debug_logger
 
@@ -136,6 +137,75 @@ class CronParser:
         (r"weekly", lambda m: timedelta(weeks=1)),
     ]
 
+    # Weekday name → cron day-of-week (Sunday = 0). Common short forms included.
+    _WEEKDAYS = {
+        "sunday": 0, "sun": 0,
+        "monday": 1, "mon": 1,
+        "tuesday": 2, "tue": 2, "tues": 2,
+        "wednesday": 3, "wed": 3,
+        "thursday": 4, "thu": 4, "thur": 4, "thurs": 4,
+        "friday": 5, "fri": 5,
+        "saturday": 6, "sat": 6,
+    }
+
+    @classmethod
+    def _parse_time_of_day(cls, text: str) -> tuple[int, int] | None:
+        """Extract an ``at <time>`` clause → ``(minute, hour)`` in 24h, else None.
+
+        Accepts ``at 9am`` · ``at 9:30pm`` · ``at 21:00`` · ``at 9`` · ``at noon`` ·
+        ``at midnight``. ``\\bat`` won't match the ``at`` inside ``saturday``.
+        """
+        m = re.search(r"\bat\s+(noon|midnight|\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", text)
+        if not m:
+            return None
+        base, minute_s, ampm = m.group(1), m.group(2), m.group(3)
+        minute = int(minute_s) if minute_s else 0
+        if base == "noon":
+            hour = 12
+        elif base == "midnight":
+            hour = 0
+        else:
+            hour = int(base)
+            if ampm == "pm" and hour != 12:
+                hour += 12
+            elif ampm == "am" and hour == 12:
+                hour = 0
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            return None  # e.g. "at 25:00" — let it fall back rather than emit a dead cron
+        return minute, hour
+
+    @classmethod
+    def _to_cron(cls, schedule: str) -> str | None:
+        """Convert a *time-pinned* natural-language schedule to a 5-field cron, else None.
+
+        Fixes the trap where ``"daily at 9am"`` matched the loose ``daily`` interval pattern
+        and fired at *creation-time-of-day* instead of 9am. Handles the unambiguous cases —
+        ``daily`` / a single weekday / ``weekdays``, each with ``at <time>`` — and returns
+        None for everything else (bare intervals, cron expressions, and the ambiguous bare
+        ``weekly at <time>`` with no weekday).
+        """
+        s = schedule.lower().strip()
+        tod = cls._parse_time_of_day(s)
+        if tod is None:
+            return None
+        minute, hour = tod
+        # The day specifier is whatever REMAINS once the `at <time>` clause and the filler
+        # words "every"/"on" are removed — so both "daily at 9am" (day-first) and
+        # "at midnight on thursdays" (time-first) resolve the same day token.
+        day_part = re.sub(
+            r"\bat\s+(?:noon|midnight|\d{1,2})(?::\d{2})?\s*(?:am|pm)?\b", " ", s
+        )
+        day_part = re.sub(r"\b(?:every|on)\b", " ", day_part)
+        day_part = re.sub(r"\s+", " ", day_part).strip()
+        if day_part in ("", "day", "daily"):
+            return f"{minute} {hour} * * *"
+        if day_part in ("weekday", "weekdays"):
+            return f"{minute} {hour} * * 1-5"
+        key = day_part if day_part in cls._WEEKDAYS else day_part.rstrip("s")  # "mondays" → "monday"
+        if key in cls._WEEKDAYS:
+            return f"{minute} {hour} * * {cls._WEEKDAYS[key]}"
+        return None
+
     @classmethod
     def parse(cls, schedule: str) -> timedelta | None:
         """
@@ -145,6 +215,12 @@ class CronParser:
         For complex cron expressions, returns None (use calculate_next instead).
         """
         schedule_lower = schedule.lower().strip()
+
+        # A time-pinned natural-language schedule ("daily at 9am") is NOT a bare interval —
+        # calculate_next turns it into a cron so it fires at the requested time. Return None
+        # here so it doesn't match the loose `daily`/`weekly` prefix patterns below.
+        if cls._to_cron(schedule) is not None:
+            return None
 
         # Try natural language patterns
         for pattern, handler in cls.PATTERNS:
@@ -200,6 +276,8 @@ class CronParser:
             return False, "schedule is empty"
         if cls.parse(schedule) is not None:
             return True, None  # natural-language interval
+        if cls._to_cron(schedule) is not None:
+            return True, None  # time-pinned natural language ("daily at 9am") → cron
         parts = schedule.strip().split()
         if len(parts) < 5 or not all(cls._is_cron_field(p) for p in parts[:5]):
             return False, (
@@ -210,6 +288,15 @@ class CronParser:
             err = cls._field_error(value, lo, hi, label)
             if err:
                 return False, err
+        # Every field is individually valid, but the COMBINATION can still never occur
+        # (e.g. '0 0 30 2 *' — Feb 30; '0 0 31 4 *' — April has no 31st). Reject it at
+        # add-time instead of storing a job _next_cron_time will silently park decades
+        # out and never fire. (Feb 29 IS satisfiable — it resolves on the next leap year.)
+        if cls._scan_next_cron(schedule, datetime.now()) is None:
+            return False, (
+                f"schedule {schedule!r} never occurs — check the day/month combination "
+                "(e.g. day 30 in February)"
+            )
         return True, None
 
     @classmethod
@@ -264,6 +351,13 @@ class CronParser:
         """
         from_time = from_time or datetime.now()
 
+        # A time-pinned natural-language schedule ("daily at 9am", "monday at 6pm") fires AT
+        # that time-of-day — convert to a cron and compute the next matching minute, instead
+        # of the old `from_time + 1 day` which fired at whatever time the job was created.
+        cron = cls._to_cron(schedule)
+        if cron is not None:
+            return cls._next_cron_time(cron, from_time)
+
         # Try simple interval
         interval = cls.parse(schedule)
         if interval:
@@ -279,55 +373,106 @@ class CronParser:
 
     @classmethod
     def _next_cron_time(cls, cron_expr: str, from_time: datetime) -> datetime:
-        """
-        Calculate next run time for cron expression.
+        """Next time *cron_expr* fires at or after ``from_time`` (minute resolution).
 
-        Simple implementation - for complex cron expressions,
-        consider using croniter library.
+        Thin wrapper over :meth:`_scan_next_cron`: a malformed (<5 field) expression
+        keeps the documented ``from_time + 1h`` fallback, a satisfiable one returns
+        its next occurrence, and a genuinely unsatisfiable one (``0 0 30 2 *`` — Feb
+        30) is parked far in the future and logged rather than rescheduled hourly.
+        The old code walked minute-by-minute across a fixed ~1-year window (up to
+        527 040 iterations = a synchronous event-loop stall) and fell back to +1h on
+        no match — silently turning BOTH a *valid* leap-only schedule (Feb 29, up to
+        ~8 years out with the century rule) and an *impossible* one into an
+        hourly-firing job.
+        """
+        if len(cron_expr.strip().split()) < 5:
+            return from_time + timedelta(hours=1)
+        return cls._scan_next_cron(cron_expr, from_time) or cls._park_unsatisfiable(
+            cron_expr, from_time
+        )
+
+    @classmethod
+    def _scan_next_cron(cls, cron_expr: str, from_time: datetime) -> datetime | None:
+        """The next time *cron_expr* fires at/after ``from_time`` (minute resolution),
+        or ``None`` if it never occurs within the horizon. The single source of truth
+        for both next-run calculation (:meth:`_next_cron_time`) and add-time
+        satisfiability (:meth:`validate`).
+
+        **Skips a whole day at once** whenever the calendar date can't match, so a
+        sparse or impossible schedule costs ~days of iterations, not ~minutes. The
+        horizon spans the maximal Feb-29 gap — **8 years**, because a century that is
+        not a leap year (2100, 2200, …) stretches ``2096→2104`` — so a valid
+        leap-only schedule resolves instead of being mistaken for unsatisfiable.
         """
         parts = cron_expr.strip().split()
         if len(parts) < 5:
-            return from_time + timedelta(hours=1)
+            return None
 
         minute, hour, day, month, weekday = parts[:5]
 
-        # Start from next minute
+        # A minute/hour field that matches no value in its range can never fire (e.g.
+        # an out-of-range literal that slipped past validation). Detect it up front —
+        # cheap (24 + 60 checks) — so we don't walk millions of doomed minutes below.
+        if not (
+            any(cls._matches_field(h, hour, 0, 23) for h in range(24))
+            and any(cls._matches_field(m, minute, 0, 59) for m in range(60))
+        ):
+            return None
+
         candidate = from_time.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        # +2 days of margin covers the from_time offset and the Feb-29 boundary. Past
+        # this horizon the schedule is treated as impossible.
+        horizon = candidate + timedelta(days=366 * 8 + 2)
 
-        # Scan up to ~1 year of minutes so sparse schedules resolve (monthly-on-31st,
-        # yearly). The loop exits on the FIRST match, so common schedules stay cheap;
-        # only a genuinely unsatisfiable expression (e.g. Feb 30) pays the full scan.
-        max_iterations = 60 * 24 * 366
-
-        for _ in range(max_iterations):
-            if cls._matches_cron(candidate, minute, hour, day, month, weekday):
+        while candidate <= horizon:
+            if not cls._date_matches(candidate, day, month, weekday):
+                # The date itself can't match — jump straight to the next midnight
+                # instead of walking all 1440 minutes of a doomed day.
+                candidate = (candidate + timedelta(days=1)).replace(hour=0, minute=0)
+                continue
+            if cls._matches_field(candidate.minute, minute, 0, 59) and cls._matches_field(
+                candidate.hour, hour, 0, 23
+            ):
                 return candidate
             candidate += timedelta(minutes=1)
 
-        # Fallback
-        return from_time + timedelta(hours=1)
+        return None
 
     @classmethod
-    def _matches_cron(
-        cls, dt: datetime, minute: str, hour: str, day: str, month: str, weekday: str
-    ) -> bool:
-        """Check if a datetime matches the five cron fields.
+    def _park_unsatisfiable(cls, cron_expr: str, from_time: datetime) -> datetime:
+        """A schedule that never occurs is parked ~10 years out (and logged), NEVER
+        rescheduled +1h — an impossible schedule must not become an hourly-firing job."""
+        logger.warning(
+            "cron schedule %r never occurs (unsatisfiable, e.g. 'Feb 30'); parking it "
+            "far in the future so it does not fire hourly",
+            cron_expr,
+        )
+        return from_time + timedelta(days=366 * 10)
 
-        Day-of-month and day-of-week follow the standard (Vixie) cron rule: when
-        BOTH are restricted (neither is ``*``) the day matches if EITHER matches
-        (an OR); otherwise it is the usual AND.
-        """
-        if not (
-            cls._matches_field(dt.minute, minute, 0, 59)
-            and cls._matches_field(dt.hour, hour, 0, 23)
-            and cls._matches_field(dt.month, month, 1, 12)
-        ):
+    @classmethod
+    def _date_matches(cls, dt: datetime, day: str, month: str, weekday: str) -> bool:
+        """Whether *dt*'s calendar date satisfies the month/day-of-month/day-of-week
+        fields, per the standard (Vixie) rule: when BOTH day-of-month and day-of-week
+        are restricted (neither ``*``) the date matches if EITHER matches (an OR);
+        otherwise both must match (AND)."""
+        if not cls._matches_field(dt.month, month, 1, 12):
             return False
         day_ok = cls._matches_field(dt.day, day, 1, 31)
         dow_ok = cls._matches_weekday(dt.weekday(), weekday)
         if day != "*" and weekday != "*":
             return day_ok or dow_ok
         return day_ok and dow_ok
+
+    @classmethod
+    def _matches_cron(
+        cls, dt: datetime, minute: str, hour: str, day: str, month: str, weekday: str
+    ) -> bool:
+        """Check if a datetime matches all five cron fields (minute/hour + date)."""
+        return (
+            cls._matches_field(dt.minute, minute, 0, 59)
+            and cls._matches_field(dt.hour, hour, 0, 23)
+            and cls._date_matches(dt, day, month, weekday)
+        )
 
     @classmethod
     def _matches_field(cls, value: int, field: str, min_val: int, max_val: int) -> bool:
@@ -468,6 +613,16 @@ class CronService:
         # Semaphore for concurrent job limit
         self._semaphore = asyncio.Semaphore(self.config.max_concurrent_jobs)
 
+        # Per-job in-flight guard: ids of jobs currently executing, so a scheduler tick and
+        # a manual run_job_now() (or two manual runs) can't double-execute the same job.
+        self._running_jobs: set[str] = set()
+
+        # Background job tasks the loop has fired but not awaited. The loop dispatches
+        # due jobs fire-and-forget (so one slow job can't stall the whole tick), so we
+        # must hold a strong reference — else the event loop may GC a pending task
+        # mid-run — and reap them on stop().
+        self._inflight_tasks: set[asyncio.Task] = set()
+
         # Job counter for ID generation
         self._job_counter = 0
 
@@ -540,6 +695,20 @@ class CronService:
                 new_jobs[job.id] = job
             except Exception as e:  # one malformed entry must not drop every job
                 logger.error("cron: skipping a malformed job entry: %s", e)
+
+        # Preserve any job currently EXECUTING (fire-and-track, #611): a reload can now
+        # land mid-run, and swapping its object for the disk snapshot would DETACH the
+        # in-flight task — its completion (status + next_run advance) would write to a
+        # dropped object while the snapshot's already-past next_run re-fires the job on the
+        # next tick. Keep the live instance so completion still lands in self.jobs. Only
+        # preserve a job the reload STILL contains — a job an external edit removed is not
+        # resurrected (its completion save then simply won't include it). An external edit
+        # to a *running* job's schedule is applied after that run finishes.
+        for job_id in self._running_jobs:
+            if job_id in new_jobs:
+                live = self.jobs.get(job_id)
+                if live is not None:
+                    new_jobs[job_id] = live
         self.jobs = new_jobs
         self._job_counter = data.get("counter", 0)
         try:
@@ -550,10 +719,11 @@ class CronService:
 
     def _reload_if_changed(self) -> None:
         """Resync from disk when cron_jobs.json was edited by another writer (the
-        `navig … schedule` CLI). No-op for our own saves — we compare against the
-        mtime we last wrote. Called at the top of each scheduler tick, when no job
-        is mid-run (the loop awaits its jobs before sleeping), so replacing the job
-        set is safe."""
+        `navig … schedule` CLI). No-op for our own saves — we compare against the mtime
+        we last wrote. Called at the top of each scheduler tick; since the loop fires
+        jobs fire-and-track (#611) a job may be mid-run here, so `_load_jobs` preserves
+        any currently-executing job's live object rather than replacing it with the disk
+        snapshot (which would detach the in-flight task and re-fire the job)."""
         try:
             mtime = self._get_jobs_path().stat().st_mtime
         except OSError:
@@ -677,6 +847,20 @@ class CronService:
 
         self._running = True
 
+        # A job persisted as RUNNING was interrupted by a restart — nothing is executing yet
+        # at boot, so RUNNING on disk can only mean the previous process died mid-run. Its
+        # next_run was already advanced before that run started (the claim in _run_job_locked),
+        # so it will NOT re-fire; clear the stale RUNNING here so last_status stays honest
+        # instead of showing a job "running" for hours after a crash.
+        for job in self.jobs.values():
+            if job.last_status == JobStatus.RUNNING:
+                job.last_status = JobStatus.FAILED
+                job.last_output = "interrupted by restart"
+                logger.warning(
+                    "cron: job %s was interrupted by a restart; that occurrence was skipped",
+                    job.name,
+                )
+
         # Calculate next run times for all jobs
         for job in self.jobs.values():
             if job.enabled and not job.next_run:
@@ -699,6 +883,18 @@ class CronService:
                 await self._task
             except asyncio.CancelledError:
                 pass  # task cancelled; expected during shutdown
+
+        # The loop fires jobs fire-and-forget, so shutdown must reap them explicitly
+        # (the old await-gather cancelled its children when the loop task was cancelled;
+        # this restores that). Snapshot first — the done-callback mutates the set.
+        inflight = list(self._inflight_tasks)
+        for task in inflight:
+            task.cancel()
+        if inflight:
+            await asyncio.gather(*inflight, return_exceptions=True)
+        # The done-callbacks that discard from the set fire via call_soon (after this
+        # gather resumes), so clear it here to leave stop() deterministically empty.
+        self._inflight_tasks.clear()
 
         self._save_jobs()
         logger.info("Cron service stopped")
@@ -803,30 +999,21 @@ class CronService:
         return self.jobs.get(job_id)
 
     async def _scheduler_loop(self) -> None:
-        """Main scheduler loop."""
+        """Main scheduler loop.
+
+        Each tick reloads external edits, fires every due job as a tracked background
+        task, then sleeps — it does **not** await the jobs. Awaiting them (the old
+        ``asyncio.gather``) made the whole 10s cadence hostage to the slowest job: a
+        single job running up to its ``timeout_seconds`` (default 300s) stalled the
+        tick, so newly-due reminders and external-edit reloads waited minutes behind
+        one unrelated job. Concurrency is still bounded by the per-job in-flight guard
+        and the semaphore (:meth:`_dispatch_due_jobs`).
+        """
         while self._running:
             try:
                 # Pick up external edits (the schedule CLI) before evaluating jobs.
                 self._reload_if_changed()
-
-                now = datetime.now()
-
-                # Find jobs due to run
-                due_jobs = [
-                    job
-                    for job in self.jobs.values()
-                    if job.enabled and job.next_run and job.next_run <= now
-                ]
-
-                # Run due jobs (with concurrency limit)
-                tasks = []
-                for job in due_jobs:
-                    task = asyncio.create_task(self._run_job(job))
-                    tasks.append(task)
-
-                if tasks:
-                    await asyncio.gather(*tasks, return_exceptions=True)
-
+                self._dispatch_due_jobs(datetime.now())
                 # Sleep until next check
                 await asyncio.sleep(10)  # Check every 10 seconds
 
@@ -836,14 +1023,80 @@ class CronService:
                 logger.error("Scheduler loop error: %s", e)
                 await asyncio.sleep(30)
 
+    def _dispatch_due_jobs(self, now: datetime) -> list[asyncio.Task]:
+        """Fire every job due at *now* as a tracked background task and return at once.
+
+        Skips a job already executing (its ``next_run`` hasn't advanced yet, so it
+        would otherwise be re-selected every tick) — the in-flight guard in
+        :meth:`_run_job` is the atomicity backstop for the manual-trigger race, but the
+        loop shouldn't even spawn a throwaway task for it. At most one task exists per
+        job; the semaphore bounds how many actually run at once. Returns the spawned
+        tasks (for callers/tests); the loop ignores the return.
+        """
+        due = [
+            job
+            for job in self.jobs.values()
+            if job.enabled
+            and job.next_run
+            and job.next_run <= now
+            and job.id not in self._running_jobs
+        ]
+        spawned: list[asyncio.Task] = []
+        for job in due:
+            task = asyncio.create_task(self._run_job(job))
+            self._inflight_tasks.add(task)
+            task.add_done_callback(self._on_job_task_done)
+            spawned.append(task)
+        return spawned
+
+    def _on_job_task_done(self, task: asyncio.Task) -> None:
+        """Release a finished background job and surface any unexpected crash.
+
+        A fire-and-forget task's exception is otherwise swallowed until GC ('Task
+        exception was never retrieved'); retrieving it here both silences that and logs
+        a real failure. (Cancellations — from :meth:`stop` — are expected, not logged.)
+        """
+        self._inflight_tasks.discard(task)
+        if not task.cancelled():
+            exc = task.exception()
+            if exc is not None:
+                logger.error("Cron job task crashed unexpectedly: %s", exc)
+
     async def _run_job(self, job: CronJob, trigger: str = "schedule") -> None:
-        """Execute a cron job."""
+        """Execute a cron job — guarded so a scheduler tick and a manual run_job_now() (or two
+        manual runs) can't double-execute the same job: two subprocesses / AI turns plus racy
+        writes to last_run/last_status/next_run. The in-flight check+add is synchronous (no
+        await between them) so it's atomic under asyncio's single thread."""
+        if job.id in self._running_jobs:
+            logger.info(
+                "Cron job already running, skipping duplicate %s trigger: %s", trigger, job.name
+            )
+            return
+        self._running_jobs.add(job.id)
+        try:
+            await self._run_job_locked(job, trigger)
+        finally:
+            self._running_jobs.discard(job.id)
+
+    async def _run_job_locked(self, job: CronJob, trigger: str = "schedule") -> None:
         async with self._semaphore:
             logger.info("Running cron job: %s", job.name)
 
             start_time = datetime.now()
             job.last_run = start_time
             job.last_status = JobStatus.RUNNING
+
+            # Claim the next slot and persist it BEFORE running the command, so a daemon
+            # killed mid-run does NOT re-fire this job on restart — at-most-once for a
+            # non-idempotent job (a duplicate backup / deploy / reminder is worse than a
+            # single skipped occurrence). The authoritative next_run is recomputed from the
+            # completion time below (preserving interval-job cadence); this is only the
+            # crash-safety claim, durably fsync'd by _save_jobs before any command runs. A
+            # crash BEFORE this save leaves next_run in the past → the job re-fires, which is
+            # correct because its command never started. The persisted RUNNING status is how
+            # start() detects an interrupted run on the next boot.
+            job.next_run = CronParser.calculate_next(job.schedule, start_time)
+            self._save_jobs()
 
             try:
                 # Run the command
@@ -909,6 +1162,15 @@ class CronService:
                 # Schedule retry sooner
                 job.next_run = datetime.now() + timedelta(minutes=5)
                 logger.info("Job %s will retry in 5 minutes", job.name)
+            elif job.last_status == JobStatus.FAILED:
+                # This failure episode is over — the retry budget is spent (or retries
+                # are disabled). Reset the counter so the NEXT scheduled run begins a
+                # FRESH episode. Without this, retry_count stays at max_retries forever
+                # after one exhausted episode, leaving `retry_count < max_retries`
+                # permanently False — so every later transient failure is silently
+                # never retried until a run happens to succeed. next_run keeps the
+                # normal schedule set above, so there is no rapid-retry loop.
+                job.retry_count = 0
 
             self._log_run(job, trigger, start_time, (datetime.now() - start_time).total_seconds())
             self._save_jobs()
@@ -921,6 +1183,25 @@ class CronService:
         # _poll_due_reminders() (telegram.py:615) picks it up within 15 seconds.
         # Format: NAVIG_HABIT_REMINDER:<chat_id>:<base64_message>
         if command.startswith("NAVIG_HABIT_REMINDER:"):
+            # Habits switched off → do not queue anything. Guarding HERE rather
+            # than in the poller is deliberate: nothing is written, so there is no
+            # orphan row to reap later and no ambiguity with the operator's own
+            # /remindme reminders (habit reminders are stored with user_id=0 and
+            # no other discriminator, so a poller-side guard would either
+            # under-block or eat personal reminders).
+            #
+            # The schedule itself is NEVER rewritten. `navig habit pause` is the
+            # operator's per-habit switch and this must not fight it: rewriting
+            # cron rows here would need a "which did I pause?" snapshot, and
+            # re-enabling would resurrect habits they had deliberately paused.
+            # Cost: the job still fires and exits here, which is why the return
+            # string says so — the run log becomes the standing proof that the
+            # schedule is healthy and the feature is off, two facts a paused job
+            # cannot tell apart.
+            from navig.gateway.channels.telegram_extensions import is_enabled
+
+            if not is_enabled("habits"):
+                return "skipped: the Habits extension is off (/extensions to turn it on)"
             try:
                 import base64 as _b64
 
@@ -951,7 +1232,20 @@ class CronService:
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            stdout_bytes, stderr_bytes = await process.communicate()
+            try:
+                stdout_bytes, stderr_bytes = await process.communicate()
+            finally:
+                # If we leave before the child exited — the timeout wrapper in
+                # _run_job_locked cancels us right here at communicate(), or an error
+                # propagates — kill it. Cancelling communicate() stops draining the
+                # pipes but does NOT signal the child, and GC of the Process object
+                # won't either. And a bare kill of the direct child is not enough: a
+                # `navig …` infra command spawns grandchildren (backup → pg_dump, db
+                # dump → mysqldump, host → ssh) that would keep running orphaned past
+                # the timeout — and the 5-min retry could launch a second concurrent
+                # copy against live infra. Kill the whole tree.
+                if process.returncode is None:
+                    await kill_process_tree(process)
 
             output = stdout_bytes.decode()
             if stderr_bytes:
@@ -969,7 +1263,12 @@ class CronService:
             message=command,
         )
 
-        return response
+        # run_agent_turn is annotated -> str but returns whatever _call_ai produced,
+        # which can be None (an empty/no-op turn). This method is -> str and the caller
+        # slices the result (`job.last_output = output[:5000]`), so a bare None here
+        # raised TypeError and the job was recorded as a spurious FAILURE instead of a
+        # success with empty output. Normalise to a string.
+        return response or ""
 
     async def run_job_now(self, job_id: str) -> dict[str, Any] | None:
         """Manually trigger a job.

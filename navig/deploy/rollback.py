@@ -2,9 +2,13 @@
 navig.deploy.rollback — Remote snapshot creation and restoration.
 
 Strategy:
-  - Pre-push: `cp -r <target> <snapshot_dir>/<timestamp>` on the remote host.
-    This is instantaneous (same-disk copy), no bandwidth required.
-  - On failure: `rm -rf <target> && mv <snapshot_path> <target>`.
+  - Pre-push: `cp -a <target> <snapshot_dir>/<timestamp>` on the remote host.
+    This is instantaneous (same-disk copy), no bandwidth required. `-a` so the snapshot
+    round-trips: mode, ownership and timestamps all survive.
+  - On failure: stage the current deployment aside, copy the snapshot into place, then
+    drop the staged copy — and put it back if the copy fails. The deployment is never
+    removed before a replacement exists, and the snapshot is preserved so rollback can
+    be run again.
   - Pruning: keep only the N most recent snapshots per app.
   - Local state: ~/.navig/cache/last_deploy_<app>.json tracks the last snapshot.
 """
@@ -25,6 +29,12 @@ logger = logging.getLogger(__name__)
 
 class RollbackManager:
     """Manages remote snapshots and rollback for a single deploy target."""
+
+    # Exit codes the restore script uses to say WHICH step failed, so the caller can
+    # tell "your deployment is untouched" from "your deployment was put back".
+    _EXIT_SNAPSHOT_MISSING = 3
+    _EXIT_SETASIDE_FAILED = 4
+    _EXIT_COPY_FAILED = 5
 
     def __init__(
         self,
@@ -80,8 +90,13 @@ class RollbackManager:
         if r.returncode != 0:
             raise RuntimeError(f"Could not create snapshot dir {self._snapshot_base}: {r.stderr}")
 
-        # Create snapshot (cp, not rsync — same disk = fast)
-        cp_cmd = f"cp -r {target_safe} {snap_path_safe}"
+        # Create snapshot (cp, not rsync — same disk = fast).
+        # `-a`, not `-r`: `cp -r` resets every timestamp to the moment of the snapshot
+        # and does not carry ownership, so restoring one handed back a deployment that
+        # differed from the original — enough to invalidate mtime-based caches and
+        # incremental rsync, and to change file ownership when the deploy user differs
+        # from the service user. A backup has to round-trip.
+        cp_cmd = f"cp -a {target_safe} {snap_path_safe}"
         r = self._remote.execute_command(cp_cmd, self._server)
         if r.returncode != 0:
             raise RuntimeError(f"Snapshot failed: {r.stderr or r.stdout}")
@@ -110,10 +125,47 @@ class RollbackManager:
 
         target_safe = shlex.quote(self._target)
         snap_path_safe = shlex.quote(snap_path)
+        staged = f"{self._target}.navig-rollback-tmp"
+        staged_safe = shlex.quote(staged)
 
-        # Swap: remove current deployment, move snapshot into place
-        cmd = f"rm -rf {target_safe} && mv {snap_path_safe} {target_safe}"
-        r = self._remote.execute_command(cmd, self._server)
+        # The restore used to be `rm -rf <target> && mv <snapshot> <target>`, which
+        # destroys the live deployment BEFORE knowing whether it can be replaced:
+        #   * a snapshot that no longer exists (pruned, wrong host, stale state file)
+        #     left the target deleted and nothing put back;
+        #   * any `mv` failure — permissions, a full disk — did the same;
+        #   * `mv` CONSUMES the snapshot, so running `navig deploy rollback` twice
+        #     deleted the deployment and then failed, with nothing left to restore from.
+        #
+        # This sequence never removes the deployment until a copy is in place, keeps the
+        # snapshot so rollback is repeatable, and puts the original back if the copy
+        # fails. `cp -a` (not `-r`) preserves mode, ownership and timestamps.
+        script = (
+            f"if [ ! -e {snap_path_safe} ]; then exit {self._EXIT_SNAPSHOT_MISSING}; fi; "
+            f"rm -rf {staged_safe}; "
+            f"if [ -e {target_safe} ]; then "
+            f"mv {target_safe} {staged_safe} || exit {self._EXIT_SETASIDE_FAILED}; fi; "
+            f"if cp -a {snap_path_safe} {target_safe}; then rm -rf {staged_safe}; else "
+            f"rm -rf {target_safe}; "
+            f"if [ -e {staged_safe} ]; then mv {staged_safe} {target_safe}; fi; "
+            f"exit {self._EXIT_COPY_FAILED}; fi"
+        )
+        r = self._remote.execute_command(script, self._server)
+
+        if r.returncode == self._EXIT_SNAPSHOT_MISSING:
+            return False, (
+                f"Snapshot {snap_path} no longer exists on the host — "
+                f"{self._target} was left untouched."
+            )
+        if r.returncode == self._EXIT_SETASIDE_FAILED:
+            return False, (
+                f"Could not move {self._target} aside — it was left untouched. "
+                f"{r.stderr or r.stdout}".rstrip()
+            )
+        if r.returncode == self._EXIT_COPY_FAILED:
+            return False, (
+                f"Restore failed while copying {snap_path}; {self._target} was put back. "
+                f"{r.stderr or r.stdout}".rstrip()
+            )
         if r.returncode != 0:
             return False, f"Restore failed: {r.stderr or r.stdout}"
 

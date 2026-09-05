@@ -251,11 +251,32 @@ async def handle_connector_call(
     # refreshes if expired). Without this, OAuth connectors raise
     # "no access token" because the token lives in the vault, not the instance.
     if operation in ("search", "fetch", "act") and getattr(connector.manifest, "requires_oauth", True):
+        from navig.connectors.auth_manager import ConnectorAuthManager
+        from navig.connectors.errors import ConnectorAuthError
+
+        injected = False
         try:
-            from navig.connectors.auth_manager import ConnectorAuthManager
-            await ConnectorAuthManager().inject_token(connector)
+            injected = await ConnectorAuthManager().inject_token(connector)
         except Exception as _inj_exc:  # noqa: BLE001
-            logger.debug("Token injection for %s failed: %s", connector_id, _inj_exc)
+            logger.warning("Token injection for %s failed: %s", connector_id, _inj_exc)
+
+        if not injected:
+            # Fail fast, and say why. Previously the return value was discarded and
+            # execution continued tokenless, so the agent got whatever confusing
+            # error the connector or the upstream API produced ("no access token",
+            # a bare 401) instead of "connect it in Settings".
+            #
+            # Worse, search/fetch/act are wrapped by the connector CircuitBreaker,
+            # so those auth failures were charged to the breaker's failure budget:
+            # three calls to a *disconnected* connector opened it for 30 s, and the
+            # user's first call after finally connecting was rejected with "circuit
+            # breaker is open". An auth problem is not an upstream outage, so it
+            # must never reach the wrapped method.
+            raise ConnectorAuthError(
+                connector_id,
+                "not connected, or its stored token could not be refreshed — "
+                "connect it in Settings → Connectors",
+            )
 
     if operation == "search":
         query = params.get("query", "")
@@ -410,3 +431,38 @@ def register(server: Any) -> None:
         )
     else:
         logger.debug("MCP connector bridge: no connectors registered, no tools added.")
+
+    # Safety classification consulted by the approval gate (navig.mcp_server._gate_tool).
+    # These tools are generated per connector, so they cannot be listed statically — the
+    # classification has to be derived from the capability, here, or it does not happen
+    # at all. It did not: every connector tool ran ungated AND unaudited, while cdp_eval
+    # was gated as a credential-exfiltration vector.
+    #
+    #   *_act    → dangerous. `_act_input_schema` covers reply/create/update/delete/
+    #              archive/label/send/move, so this is "send mail as the operator",
+    #              "delete the message", "write the row" — outward-facing and often
+    #              irreversible.
+    #   *_search → moderate. Reads private third-party data (mailbox, drive, bank,
+    #              Stripe). Not "safe": safe means an operator never needs to know.
+    #   *_fetch  → moderate, for the same reason.
+    safety: dict[str, str] = {
+        "connector_list": "safe",     # names and capability flags only
+        "connector_health": "safe",   # reachability, no content
+    }
+    for t in tool_list:
+        name = t["name"]
+        if name in safety:
+            continue
+        if name.endswith("_act"):
+            safety[name] = "dangerous"
+        elif name.endswith(("_search", "_fetch")):
+            safety[name] = "moderate"
+        else:
+            # An unrecognised capability suffix must not silently become "safe".
+            safety[name] = "dangerous"
+    # A module's register() must be self-sufficient: register_all_tools creates this
+    # dict, but a direct `module.register(server)` call (tests, a plugin host) does not,
+    # and assuming it exists raised AttributeError. cdp.py already guarded; these did not.
+    if not hasattr(server, "_tool_safety"):
+        server._tool_safety = {}
+    server._tool_safety.update(safety)

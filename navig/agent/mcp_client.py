@@ -39,6 +39,8 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any
 
+from navig.core.aio_subprocess import terminate_process_tree
+
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────
@@ -50,6 +52,13 @@ _MAX_RECONNECT_ATTEMPTS = 5
 _RECONNECT_BASE_DELAY = 1.0  # seconds
 _RECONNECT_MAX_DELAY = 60.0
 _RPC_TIMEOUT = 30.0  # seconds per request
+
+# asyncio's default subprocess StreamReader limit is 64 KiB, but MCP responses are
+# newline-delimited JSON that routinely exceed that (a big tools/list, a large tools/call
+# result). A single line over the limit makes readline() raise, killing the reader loop and
+# bricking the connection (the #692 class, fixed there for navig.mcp.transport). Give stdout
+# a generous limit.
+_STDOUT_LIMIT = 8 * 1024 * 1024  # 8 MiB
 
 
 # ─────────────────────────────────────────────────────────────
@@ -76,6 +85,10 @@ class MCPToolSpec:
     description: str
     input_schema: dict[str, Any]
     server_name: str
+    #: The server's own ``annotations``. Carries ``readOnlyHint``, which is what lets a
+    #: well-behaved server's read run without prompting. Read ONLY by
+    #: :mod:`navig.mcp.trust`.
+    annotations: dict[str, Any] = field(default_factory=dict)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -103,6 +116,7 @@ class _StdioTransport:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=safe_env,
+            limit=_STDOUT_LIMIT,
         )
         self._reader_task = asyncio.create_task(self._reader_loop())
 
@@ -112,13 +126,13 @@ class _StdioTransport:
             self._reader_task.cancel()
         if self._process:
             try:
-                self._process.terminate()
-                await asyncio.wait_for(self._process.wait(), timeout=5.0)
-            except (ProcessLookupError, asyncio.TimeoutError):
-                try:
-                    self._process.kill()
-                except ProcessLookupError:
-                    pass
+                # The tree, not just our pid: the documented command form is
+                # ["npx", "-y", "@modelcontextprotocol/server-…"], and on Windows npx resolves
+                # to npx.CMD, which CreateProcess runs through cmd.exe. Terminating that shell
+                # orphans the node server it spawned, which keeps running with our pipes open.
+                await terminate_process_tree(self._process, grace=5.0)
+            except (ProcessLookupError, OSError):
+                pass  # already gone
         # Fail any pending futures
         for fut in self._pending.values():
             if not fut.done():
@@ -127,7 +141,17 @@ class _StdioTransport:
 
     @property
     def is_alive(self) -> bool:
-        return self._process is not None and self._process.returncode is None
+        # The reader task must be alive too: if it died (a stdout line over the limit, or the
+        # server closed stdout) the subprocess can still be running with returncode None, so
+        # checking the process alone reports a phantom-connected client that hangs every call
+        # for _RPC_TIMEOUT. Requiring a live reader makes the dead state visible so callers
+        # reconnect instead of routing to a dead reader.
+        return (
+            self._process is not None
+            and self._process.returncode is None
+            and self._reader_task is not None
+            and not self._reader_task.done()
+        )
 
     async def send_request(
         self, method: str, params: dict[str, Any] | None = None
@@ -212,6 +236,16 @@ class _StdioTransport:
             pass  # expected during task cancellation
         except Exception as exc:
             logger.debug("MCP reader loop error: %s", exc)
+        finally:
+            # The reader has exited (stdout overrun / EOF / error / cancel) and will resolve
+            # no further responses. Fail every in-flight request now so callers get an
+            # immediate ConnectionError instead of hanging until _RPC_TIMEOUT — and, with the
+            # reader-aware is_alive above, the transport reads as dead so the next call
+            # reconnects instead of routing to a dead reader.
+            for fut in self._pending.values():
+                if not fut.done():
+                    fut.set_exception(ConnectionError("MCP stdio reader terminated"))
+            self._pending.clear()
 
     def _handle_notification(self, msg: dict[str, Any]) -> None:
         """Handle server-initiated notifications."""
@@ -358,6 +392,30 @@ class MCPClient:
         """Discovered tools from this server."""
         return list(self._tools)
 
+    def _tool_is_declared_read(self, name: str) -> bool:
+        """Whether *name* is safe to re-send after an interrupted call.
+
+        Only a tool the server declared read-only may be retried; everything else — an
+        unannotated tool included — is treated as having a side effect whose outcome is
+        unknown. Uses the same classifier as the approval gate, so "safe to retry" and
+        "runs without asking" can never mean different things.
+        """
+        try:
+            from navig.mcp.trust import ToolMode, classify_tool, honor_read_only_hint
+
+            spec = next((t for t in self._tools if t.name == name), None)
+            if spec is None:
+                return False
+            classified = classify_tool(
+                name,
+                server=self.config.name,
+                annotations=getattr(spec, "annotations", None),
+                honor_read_only=honor_read_only_hint(),
+            )
+            return classified.mode is ToolMode.READ
+        except Exception:  # noqa: BLE001 — cannot classify ⇒ do not retry
+            return False
+
     @property
     def is_connected(self) -> bool:
         return self._connected and self._transport is not None and self._transport.is_alive
@@ -464,12 +522,27 @@ class MCPClient:
             return []
 
         raw_tools = result.get("tools", [])
+        # Bound one server's contribution to the agent's tool schema, which is sent to
+        # the model on every request. Never silently: a cut catalog says so.
+        from navig.mcp.trust import MAX_TOOLS_PER_SERVER
+
+        if len(raw_tools) > MAX_TOOLS_PER_SERVER:
+            logger.warning(
+                "MCP server %r advertised %d tools; using the first %d.",
+                self.config.name,
+                len(raw_tools),
+                MAX_TOOLS_PER_SERVER,
+            )
+            raw_tools = raw_tools[:MAX_TOOLS_PER_SERVER]
         self._tools = [
             MCPToolSpec(
                 name=t.get("name", ""),
                 description=t.get("description", ""),
                 input_schema=t.get("inputSchema", {"type": "object", "properties": {}}),
                 server_name=self.config.name,
+                annotations=(
+                    t.get("annotations") if isinstance(t.get("annotations"), dict) else {}
+                ),
             )
             for t in raw_tools
             if t.get("name")
@@ -509,7 +582,20 @@ class MCPClient:
                 {"name": name, "arguments": arguments or {}},
             )
         except ConnectionError:
-            # Transport died — try reconnect
+            # The request was already written and drained before the transport died, so
+            # the server may well have executed it. Re-sending is only safe when the
+            # call has no effect to duplicate.
+            #
+            # "Outcome unknown" is a distinct state from "it failed", and collapsing
+            # them is how a retry silently applies a write twice — a payment sent
+            # twice, an issue filed twice. Reads retry; anything else stops here and
+            # says plainly that it does not know.
+            if not self._tool_is_declared_read(name):
+                raise ConnectionError(
+                    f"MCP call {name!r} on {self.config.name!r} was interrupted after "
+                    f"it had been sent, so it may or may not have taken effect. Check "
+                    f"the server before trying it again."
+                ) from None
             if await self.reconnect():
                 result = await self._transport.send_request(  # type: ignore[union-attr]
                     "tools/call",
@@ -692,37 +778,75 @@ class MCPClientPool:
             logger.debug("AgentToolRegistry not available — MCP tools not registered")
             return
 
-        toolset_name = f"mcp:{client.config.name}"
+        from navig.mcp.trust import (
+            classify_tool,
+            honor_read_only_hint,
+            trust_for_server,
+        )
+        from navig.tools.approval import record_external_tool
+
+        server = client.config.name
+        toolset_name = f"mcp:{server}"
+        trust = trust_for_server(server)
+        honor_read_only = honor_read_only_hint()
 
         for spec in client.tools:
-            # Create a wrapper BaseTool-like object
+            # The registry key is NAMESPACED (`mcp__<server>__<tool>`), not the raw
+            # upstream name. Two reasons, both load-bearing: it stops a server shadowing
+            # a first-party tool, and it is how the approval gate — which holds only a
+            # string — can tell that this name was chosen by a third party.
+            classified = classify_tool(
+                spec.name,
+                server=server,
+                annotations=getattr(spec, "annotations", None),
+                trust=trust,
+                description=spec.description,
+                honor_read_only=honor_read_only,
+            )
             wrapper = _MCPToolWrapper(
-                tool_name=spec.name,
+                tool_name=classified.registry_name,
                 description=spec.description,
                 input_schema=spec.input_schema,
                 client=client,
+                wire_name=spec.name,
             )
             try:
+                record_external_tool(
+                    classified.registry_name,
+                    mode=classified.mode.value,
+                    auto_approvable=classified.auto_approvable,
+                    server=server,
+                )
                 _AGENT_REGISTRY.register(
                     tool=wrapper,
                     toolset=toolset_name,
+                    origin="external",
                 )
-                logger.debug("Registered MCP tool %r in toolset %r", spec.name, toolset_name)
+                logger.debug(
+                    "Registered MCP tool %r as %r (%s) in toolset %r",
+                    spec.name,
+                    classified.registry_name,
+                    classified.mode.value,
+                    toolset_name,
+                )
             except Exception as exc:
                 logger.debug("Failed to register MCP tool %r: %s", spec.name, exc)
 
     def _deregister_tools(self, client: MCPClient) -> None:
-        """Remove a client's tools from the registry."""
+        """Remove a client's tools from the registry and drop their classifications."""
         try:
             from navig.agent.agent_tool_registry import _AGENT_REGISTRY
         except ImportError:
             return
 
-        for spec in client.tools:
-            try:
-                _AGENT_REGISTRY.deregister(spec.name)
-            except KeyError:
-                pass  # best-effort: key absent; skip
+        from navig.tools.approval import forget_external_tools
+
+        server = client.config.name
+        # By TOOLSET, not by iterating the server's current tool list: `refresh_tools`
+        # deregisters before refreshing, so a tool the server had dropped was absent
+        # from that list and never removed — it stayed callable forever.
+        _AGENT_REGISTRY.deregister_toolset(f"mcp:{server}")
+        forget_external_tools(server)
     # ── Resource listing (PlanContext integration) ──
 
     async def list_resources(self, timeout: float = 2.0) -> list[dict[str, str]]:
@@ -782,15 +906,21 @@ class _MCPToolWrapper:
         description: str,
         input_schema: dict[str, Any],
         client: MCPClient,
+        wire_name: str | None = None,
     ) -> None:
         self.name: str = tool_name
+        #: What the server calls it. `name` is the namespaced registry key the model and
+        #: the approval gate see; the wire protocol only knows this one, so the two must
+        #: not be conflated — calling upstream with the namespaced name is a 'tool not
+        #: found' from the server.
+        self.wire_name: str = wire_name or tool_name
         self.description: str = description
         self.parameters: dict[str, Any] = input_schema  # Already JSON Schema
         self._client = client
 
     async def run(self, args: dict[str, Any], **kwargs: Any) -> Any:
         """Call the MCP tool and return a ToolResult-compatible object."""
-        output = await self._client.call_tool(self.name, args)
+        output = await self._client.call_tool(self.wire_name, args)
         # Return a simple namespace with .output and .error
         return _ToolResultCompat(output=output, error=None)
 

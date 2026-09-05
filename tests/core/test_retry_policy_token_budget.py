@@ -5,7 +5,7 @@ Pure-logic tests, no I/O. Async helpers mocked to avoid real sleeps.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 

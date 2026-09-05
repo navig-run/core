@@ -4,8 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from navig.installer.contracts import Action, InstallerContext, ModuleState
 from navig.installer.modules import migrate_legacy as ml_mod
 

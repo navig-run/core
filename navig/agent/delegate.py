@@ -1,20 +1,38 @@
 """
 navig.agent.delegate — Subagent delegation tool (F-10).
 
-Enables the parent agent to spawn a **child** agentic session with a scoped
-toolset and a shared iteration budget.  The child runs in isolation (its own
-conversation history) and returns only its final text answer.
+⚠ **NOT WIRED.** :func:`register_delegate_tool` has no caller anywhere, and
+``agent.tools.register_all_tools`` does not include it — so ``delegate_task`` is
+never in the registry and selecting the ``delegation`` toolset yields an agent
+with **zero** tools. The live multi-agent path is :mod:`navig.agent.coordinator`,
+which is registered and which caps recursion by stripping
+``delegation``/``full``/``coordinator`` from the toolsets it hands its children.
 
-Usage inside the ReAct loop::
+Kept as the recorded design rather than deleted, but **read the two notes below
+before wiring it** — the dormancy is what makes them survivable:
+
+  1. :meth:`DelegateTool._run_child` accepts a ``depth`` argument and never uses
+     it, and ``run_agentic`` has no depth parameter to carry it through. So a
+     child registers its own ``delegate_task`` at ``parent_depth=0`` and the
+     ``MAX_AGENT_DEPTH`` ceiling below **cannot hold**: delegation would recurse
+     without bound, each level holding its own semaphore slot, and each level
+     spending tokens. Fix that before the first caller, not after.
+  2. :class:`AgentDepthError` is caught in :meth:`DelegateTool.run` and raised
+     nowhere — the ceiling returns an error *result* instead. The handler is
+     vestigial; the check itself is real.
+
+``tests/quality/test_dormant_modules.py`` asserts this file stays unreferenced,
+so wiring it fails a test that points here rather than shipping (1) silently.
+
+Intended design (for whoever picks this up)::
 
     # The LLM asks to call ``delegate_task``
     # → AgentToolRegistry dispatches to DelegateTool.run()
     # → spawns a child ConversationalAgent.run_agentic()
     # → returns the child's final text response
 
-Safety:
-    - Max depth: 2 (parent=0, child=1, grandchild=2). Exceeding raises
-      :class:`AgentDepthError`.
+Safety (as designed — see caveat 1 above for what does not currently hold):
+    - Max depth: 2 (parent=0, child=1, grandchild=2).
     - Max concurrent children: 3 (semaphore).
     - Child budget: ``min(parent_remaining * 0.5, 30)`` iterations.
     - Child toolset: intersection of parent's active toolset and requested
@@ -252,8 +270,12 @@ def register_delegate_tool(
 ) -> None:
     """Register ``delegate_task`` in the :data:`_AGENT_REGISTRY`.
 
-    Called by the parent :meth:`run_agentic` when the ``delegation`` toolset
-    is requested.
+    ⚠ **This function has no caller.** It was documented as "called by the parent
+    ``run_agentic`` when the ``delegation`` toolset is requested", which has never
+    been true: ``run_agentic`` reaches the registry through
+    ``agent.tools.register_all_tools``, and that list does not include delegation.
+    A registrar nobody invokes is why the ``delegation`` toolset resolves to
+    nothing. See the module docstring before wiring it.
     """
     try:
         from navig.agent.agent_tool_registry import _AGENT_REGISTRY

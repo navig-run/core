@@ -6,6 +6,8 @@ NAVIG tracks every asset. Every server. Every operation.
 
 from typing import Any
 
+import typer
+
 from navig import console_helper as ch
 from navig.config import get_config_manager
 from navig.discovery import ServerDiscovery
@@ -70,7 +72,7 @@ def use_server(name: str, options: dict[str, Any]):
             f"Server '{name}' not found",
             "Use 'navig server list' to see available servers.",
         )
-        return
+        raise typer.Exit(2)
 
     config_manager.set_active_server(name)
 
@@ -95,13 +97,14 @@ def show_current_server(options: dict[str, Any]):
         ch.print_server_info(active, config)
     except Exception as e:
         ch.error("Error loading server config", str(e))
+        raise typer.Exit(1) from e
 
 
 def set_default_server(name: str, options: dict[str, Any]):
     """Set default server."""
     if not config_manager.server_exists(name):
         ch.error(f"Server '{name}' not found")
-        return
+        raise typer.Exit(2)
 
     config_manager.update_global_config({"default_server": name})
 
@@ -113,7 +116,7 @@ def add_server(name: str, options: dict[str, Any]):
     """Add new server configuration (interactive wizard with auto-discovery)."""
     if config_manager.server_exists(name):
         ch.error(f"Server '{name}' already exists.")
-        return
+        raise typer.Exit(2)
 
     ch.info(f"Adding new server: {name}")
     ch.dim("Press Ctrl+C to cancel at any time.\n")
@@ -324,7 +327,7 @@ def remove_server(name: str, options: dict[str, Any]):
     """Remove server configuration."""
     if not config_manager.server_exists(name):
         ch.error(f"Server '{name}' not found.")
-        return
+        raise typer.Exit(2)
 
     if not options.get("yes"):
         if not ch.confirm_action(f"Are you sure you want to remove server '{name}'?"):
@@ -353,7 +356,7 @@ def inspect_server(options: dict[str, Any]):
     active = config_manager.get_active_server()
     if not active:
         ch.error("No active server. Use 'navig host use <name>' first.")
-        return
+        raise typer.Exit(2)
 
     ch.info(f"Inspecting server: {active}\n")
 
@@ -362,7 +365,7 @@ def inspect_server(options: dict[str, Any]):
         server_config = config_manager.load_server_config(active)
     except Exception as e:
         ch.error(f"Error loading server config: {e}")
-        return
+        raise typer.Exit(1) from e
 
     # Run discovery
     ssh_config = {
@@ -380,7 +383,7 @@ def inspect_server(options: dict[str, Any]):
     # Test connection
     if not discovery.test_connection():
         ch.error("✗ Could not connect to server")
-        return
+        raise typer.Exit(1)
 
     # Run full discovery
     discovered = discovery.discover_all(progress=True)
@@ -465,12 +468,8 @@ def inspect_server(options: dict[str, Any]):
     if updates["metadata"]["mysql_version"]:
         ch.console.print(f"[green]Database: {updates['metadata']['mysql_version']}[/green]")
     if detected_templates:
-        ch.info(f"Templates: {', '.join(detected_templates.keys())}", style="cyan")
+        ch.console.print(f"[cyan]Templates: {', '.join(detected_templates.keys())}[/cyan]")
 
-
-from typing import Any
-
-import typer
 
 from navig.cli import deprecation_warning
 
@@ -484,6 +483,12 @@ server_app = typer.Typer(
 @server_app.callback()
 def server_callback(ctx: typer.Context):
     """Server management - DEPRECATED, use 'navig host'."""
+    # Nine sibling modules already do this. The root `navig` callback ensures the dict,
+    # so through the real CLI this is a no-op; it matters when the sub-app is reached
+    # directly (a test, a programmatic invoke), where `ctx.obj[...]` would otherwise
+    # die with "'NoneType' object does not support item assignment" — a crash that is
+    # also non-zero, so an exit-code assertion can pass for entirely the wrong reason.
+    ctx.ensure_object(dict)
     deprecation_warning("navig server", "navig host")
     if ctx.invoked_subcommand is None:
         import os as _os  # noqa: PLC0415
@@ -553,6 +558,7 @@ def server_show(
             docker_inspect(container, ctx.obj, format=None)
     else:
         ch.error("Specify --container <name>")
+        raise typer.Exit(2)
 
 
 @server_app.command("test")
@@ -636,6 +642,7 @@ def server_run(
         system_maintenance(ctx.obj)
     else:
         ch.error("Specify an action (--restart, --enable, --disable, etc.)")
+        raise typer.Exit(2)
 
 
 # ============================================================================

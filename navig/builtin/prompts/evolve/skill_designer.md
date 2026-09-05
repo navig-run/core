@@ -17,7 +17,7 @@ Output Format (SKILL.md):
     category: automation|devops|life|code|data
     tags: [tag1, tag2]
     dependencies: [pip_package_name]
-    commands: ["navig skill invoke skill_name [args]"]
+    commands: ["navig skill run skill_name [args]"]
 
   Then a "# Instructions" section with:
     - Input requirements

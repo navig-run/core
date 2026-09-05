@@ -172,6 +172,45 @@ class TestManagerStart:
 
 
 # ─────────────────────────────────────────────────────────────
+# BackgroundTaskManager — startup liveness grace
+# ─────────────────────────────────────────────────────────────
+
+
+class TestManagerStartupGrace:
+    """start() settles an immediately-failing command before returning.
+
+    Regression: start() used to return the instant the shell was spawned, so a
+    command that died on startup (a typo → shell exit 127, an instant crash) still
+    looked ``is_running`` — the agent tool then reported a phantom "started (pid …)"
+    for a process that never came up.
+    """
+
+    async def test_immediate_failure_is_settled_on_return(self, manager):
+        """A command that exits non-zero on startup is already ``not is_running``
+        when start() returns — no polling needed."""
+        manager._START_GRACE_SECONDS = 2.0  # ample margin for a loaded CI
+        cmd = "exit 7" if os.name != "nt" else "cmd /c exit 7"
+        task = await manager.start(cmd, label="doomed")
+        assert not task.is_running
+        assert task.exit_code not in (None, 0)
+
+    async def test_immediate_success_is_settled_on_return(self, manager):
+        """A command that exits 0 on startup settles too (still a success)."""
+        manager._START_GRACE_SECONDS = 2.0
+        task = await manager.start("echo hi", label="quickie")
+        assert not task.is_running
+        assert task.exit_code == 0
+
+    async def test_long_running_task_survives_the_grace(self, manager):
+        """A genuinely long-running command is still running after the grace."""
+        cmd = "ping -n 10 127.0.0.1 >nul" if os.name == "nt" else "sleep 10"
+        task = await manager.start(cmd, label="alive")
+        assert task.is_running
+        assert task.exit_code is None
+        await manager.kill(task.task_id)
+
+
+# ─────────────────────────────────────────────────────────────
 # BackgroundTaskManager — _monitor() / completion
 # ─────────────────────────────────────────────────────────────
 
@@ -387,9 +426,15 @@ class TestManagerCleanup:
     async def test_cleanup_keeps_running_tasks(self, manager):
         cmd = "ping -n 30 127.0.0.1 >nul" if os.name == "nt" else "sleep 30"
         task = await manager.start(cmd)
-        removed = manager.cleanup(max_age=0)  # Even with age=0
-        assert removed == 0
-        await manager.kill(task.task_id)
+        try:
+            removed = manager.cleanup(max_age=0)  # Even with age=0
+            assert removed == 0
+        finally:
+            # try/finally, not a bare call: a failed assert used to skip the kill and
+            # leave a 30s process holding its log open in the tmp dir. That locked
+            # directory then crashed a LATER pytest run's tmpdir GC (WinError 32) as an
+            # INTERNALERROR — a green suite failing for a reason in nobody's diff.
+            await manager.kill(task.task_id)
 
     async def test_cleanup_deletes_output_file(self, manager, tmp_output_dir):
         task = await manager.start("echo cleanup_me")
@@ -909,3 +954,61 @@ class TestEdgeCases:
     async def test_max_concurrent_constant(self):
         """MAX_CONCURRENT is 10."""
         assert MAX_CONCURRENT == 10
+
+
+# ─────────────────────────────────────────────────────────────
+# Killing a task must kill the COMMAND, not just the shell
+# ─────────────────────────────────────────────────────────────
+
+
+class TestKillReapsTheWholeTree:
+    """`start()` spawns via ``create_subprocess_shell``, so the tracked pid is a SHELL.
+
+    On Windows ``terminate()`` is ``TerminateProcess``: it kills ``cmd.exe`` instantly and
+    ORPHANS the real command. The graceful wait then returned promptly and ``kill()`` reported
+    ``True`` — while the process the operator asked to kill kept running forever, holding the
+    log file it inherited open (which is how this was found: a locked temp dir crashed a later
+    pytest run's GC with WinError 32).
+    """
+
+    async def test_kill_reaps_the_grandchild_not_just_the_shell(self, manager):
+        psutil = pytest.importorskip("psutil")
+
+        cmd = "ping -n 30 127.0.0.1 >nul" if os.name == "nt" else "sleep 30"
+        task = await manager.start(cmd)
+        proc = manager._processes[task.task_id]
+
+        # Wait for the shell to actually spawn the command before killing.
+        deadline = time.time() + 5.0
+        kids: list = []
+        while time.time() < deadline:
+            try:
+                kids = psutil.Process(proc.pid).children(recursive=True)
+            except psutil.Error:
+                kids = []
+            if kids:
+                break
+            await asyncio.sleep(0.05)
+
+        if os.name == "nt":
+            # Anti-vacuity: on Windows cmd.exe ALWAYS forks the command, so seeing no child
+            # means we measured nothing and the assertions below would pass for free.
+            assert kids, "expected the shell to have spawned a child — the test proves nothing without one"
+
+        try:
+            assert await manager.kill(task.task_id) is True
+
+            survivors = []
+            for child in kids:
+                try:
+                    if child.is_running():
+                        survivors.append((child.pid, child.name()))
+                except psutil.Error:
+                    pass  # vanished — the good case
+            assert not survivors, f"kill() left orphaned descendants running: {survivors}"
+        finally:
+            for child in kids:
+                try:
+                    child.kill()
+                except psutil.Error:
+                    pass

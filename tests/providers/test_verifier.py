@@ -6,7 +6,6 @@ Covers: _is_soft_issue, ProviderVerificationResult, _check_probe, verify_provide
 
 from __future__ import annotations
 
-import socket
 from unittest.mock import MagicMock, patch
 
 import pytest

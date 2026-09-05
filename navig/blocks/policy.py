@@ -20,11 +20,13 @@ these checks run **before** the runner touches a subprocess:
 
 from __future__ import annotations
 
-import json
 import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+
+from navig.core.json_io import atomic_write_json, load_json_for_update, load_json_safe
+from navig.core.proc_text import decode_console_result
 
 # First-party trusted source (owner/repo). Everything else needs --dev-untrusted
 # until publisher signing lands (Stage 3).
@@ -116,7 +118,13 @@ def capability_risk(capabilities: list[str], *, workdir: Path | None = None) -> 
                 if workdir is None or not _within(target, workdir):
                     return RISK_DESTRUCTIVE
 
-    if has_exec:
+    # `has_network` was computed and then never read, so a step declaring `network:` was
+    # classified SAFE — the risk label on its receipt, and in every surface that shows it,
+    # said a block reaching the network could not do anything of consequence. Blocks are
+    # installable marketplace content (four shipped registry blocks declare `network:`), so
+    # that label is a trust signal, not decoration. Network is moderate for the same reason
+    # exec is: it is not destructive by itself, but it is not nothing.
+    if has_exec or has_network:
         risk = _max_risk(risk, RISK_MODERATE)
     return risk
 
@@ -197,13 +205,11 @@ def lockfile_path(project_root: Path) -> Path:
 
 
 def read_lockfile(project_root: Path) -> dict:
-    p = lockfile_path(project_root)
-    if not p.exists():
-        return {"version": 1, "blocks": {}}
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {"version": 1, "blocks": {}}
+    # Read-only view (verify_locked_digest): degrade to an empty lock on any failure so a
+    # verify never crashes. The MUTATING path (write_lock_entry) reads via
+    # load_json_for_update instead, so a transient lock there RAISES rather than returning
+    # empty and letting the write wipe every other block's pinned digest.
+    return load_json_safe(lockfile_path(project_root), default={"version": 1, "blocks": {}})
 
 
 def write_lock_entry(
@@ -216,7 +222,14 @@ def write_lock_entry(
     trust: str,
     installed_at: str,
 ) -> None:
-    lock = read_lockfile(project_root)
+    p = lockfile_path(project_root)
+    # load_json_for_update RAISES JsonReadError when the lockfile exists-with-content but
+    # is transiently unreadable (a Windows AV/backup lock). Propagate it: the caller
+    # (commands/install.py) already degrades to "(lockfile not updated)". The old
+    # read_lockfile returned an EMPTY lock on that lock, so this write pinned only the new
+    # block and wiped every previously-pinned digest — silently disabling tamper detection
+    # for all other installed blocks.
+    lock = load_json_for_update(p, default={"version": 1, "blocks": {}})
     lock.setdefault("blocks", {})[block_id] = {
         "version": version,
         "digest": digest,
@@ -224,9 +237,8 @@ def write_lock_entry(
         "trust": trust,
         "installed_at": installed_at,
     }
-    p = lockfile_path(project_root)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(lock, indent=2), encoding="utf-8")
+    atomic_write_json(lock, p)
 
 
 def verify_locked_digest(project_root: Path, block_id: str, digest: str) -> None:
@@ -415,8 +427,8 @@ def run_detect_probes(requires: dict | None, *, timeout: float = 10.0) -> list[P
             out.append(ProbeResult(label, False, "probe has no valid 'run' argv list", hint))
             continue
         try:
-            proc = subprocess.run(  # noqa: S603 — argv list, shell=False
-                run, capture_output=True, text=True, timeout=timeout, shell=False)
+            proc = decode_console_result(subprocess.run(  # noqa: S603 — argv list, shell=False
+                run, capture_output=True, timeout=timeout, shell=False))
         except subprocess.TimeoutExpired:
             out.append(ProbeResult(label, False, f"probe timed out after {timeout:g}s", hint))
             continue

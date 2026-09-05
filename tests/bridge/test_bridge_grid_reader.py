@@ -2,12 +2,9 @@
 from __future__ import annotations
 
 import json
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 import navig.providers.bridge_grid_reader as bgr
 

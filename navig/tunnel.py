@@ -24,6 +24,7 @@ else:
 
 import logging
 
+from navig.core.coerce import coerce_bool
 from navig.core.connection import _resolve_ssh_bin
 
 logger = logging.getLogger(__name__)
@@ -234,7 +235,9 @@ class TunnelManager:
         # default to StrictHostKeyChecking=yes (rejects unknown hosts) unless
         # trust_new_host is explicitly set in the server config (e.g. initial setup).
         _strict_hk = (
-            "accept-new" if server_config.get("trust_new_host", False) else "yes"
+            "accept-new"
+            if coerce_bool(server_config.get("trust_new_host"), default=False)
+            else "yes"
         )
         ssh_args = [
             _resolve_ssh_bin(),
@@ -404,11 +407,33 @@ class TunnelManager:
             return False
 
     def restart_tunnel(self, server_name: str | None = None) -> dict[str, Any]:
-        """Restart tunnel."""
+        """Restart tunnel.
+
+        Raises RuntimeError when the running tunnel could not be stopped.
+
+        `stop_tunnel` returns False for two very different things: "there was
+        nothing to stop" and "the process is still alive and I could not kill it"
+        (`AccessDenied`) — and in the second case it deletes the cache entry
+        anyway. Discarding that bool meant `start_tunnel` then saw no tunnel at
+        all, found the expected local port occupied by the survivor, and quietly
+        chose a **different** port from the range. So `navig tunnel restart`
+        reported success on a port nobody asked for while the original ssh
+        process kept running forever, untracked. Distinguish the two by asking
+        whether it was running before we tried.
+        """
         if server_name is None:
             server_name = self.config.get_active_server()
 
-        self.stop_tunnel(server_name)
+        was_running = self.get_tunnel_status(server_name) is not None
+        stopped = self.stop_tunnel(server_name)
+        if was_running and not stopped:
+            self._log(f"[ERROR] Restart aborted — could not stop tunnel: {server_name}")
+            raise RuntimeError(
+                f"Could not stop the running tunnel for '{server_name}'; refusing to "
+                "start a second one over it. Check the ssh process and its permissions, "
+                "then retry."
+            )
+
         time.sleep(1)
         return self.start_tunnel(server_name)
 

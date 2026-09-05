@@ -153,9 +153,23 @@ class ConnectorRegistry:
         singleton pointer ``_instance``.  Subsequent ``ConnectorRegistry()``
         calls return the same object (now with empty registrations).
         Do **not** use this for live reconfiguration.
+
+        Also invalidates the bootstrap's "already loaded" flag: emptying the registry is
+        precisely what makes that claim false, and leaving the two to disagree strands the
+        whole process connector-less with no way to retry (see
+        :func:`navig.connectors.bootstrap.invalidate`). The two pieces of state are written
+        here together so a caller cannot clear one and forget the other.
         """
         self._classes.clear()
         self._instances.clear()
+        # Imported inside the method: bootstrap imports this module, so a module-level
+        # import would be a cycle. Best-effort — a reset must not raise.
+        try:
+            from navig.connectors import bootstrap
+
+            bootstrap.invalidate()
+        except Exception:  # noqa: BLE001 - test-isolation helper, never fatal
+            pass
 
 
 # ---------------------------------------------------------------------------

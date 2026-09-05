@@ -29,6 +29,7 @@ import logging
 import os
 import re
 import tempfile
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -38,9 +39,30 @@ logger = logging.getLogger(__name__)
 
 _mdv2_escape = escape_mdv2
 
-# Metadata cache for received audio files: file_id -> dict
-# Populated in _handle_audio_file_message; read by the audmsg: callback handler.
-_af_cache: dict = {}
+# Metadata cache for received audio files: short_id -> dict.
+# Populated in _handle_audio_file_message; read by the audmsg: callback handler
+# (telegram_keyboards.py). BOUNDED: the always-on bot writes one entry per audio message
+# received and nothing ever deletes them, so a plain dict grows the daemon's RAM without
+# limit. This LRU keeps the 500 most-recent (older callback buttons degrade to defaults),
+# and preserves the exact `_af_cache[id] = …` / `_af_cache.get(id, default)` interface the
+# cross-module reader relies on.
+class _BoundedCache(OrderedDict):
+    _MAX = 500
+
+    def __setitem__(self, key, value):
+        if key in self:
+            self.move_to_end(key)
+        super().__setitem__(key, value)
+        while len(self) > self._MAX:
+            self.popitem(last=False)
+
+
+_af_cache: OrderedDict = _BoundedCache()
+
+# One constant for the "speed up" button: the label, the filename suffix and the
+# rate actually applied all read from here, so a button that says 1.5x cannot ship
+# something else.
+_SPEED_UP_RATE = 1.5
 
 _VOICE_HTTP_TIMEOUT: int = 30  # TTS provider request timeout (audio synthesis can be slow)
 
@@ -407,8 +429,10 @@ class TelegramVoiceMixin:
                 except Exception as _e:
                     logger.debug("Could not mark voice as processed: %s", _e)
 
-            # "Heard" echo — only in /trace debug mode
-            _debug_active = any(
+            # "Heard" echo — only in /trace debug mode, and PER-USER: the sender's
+            # own debug flag, not "any allowed user has debug on" (which leaked the
+            # echo to everyone the moment one user enabled it). user_id is in scope.
+            _debug_active = self._is_debug_mode(user_id) if user_id else any(
                 uid in getattr(self, "_debug_users", set()) for uid in self.allowed_users
             )
             if _debug_active:
@@ -760,6 +784,162 @@ class TelegramVoiceMixin:
             except OSError:
                 pass  # best-effort cleanup
 
+    # ── editing a received audio file ─────────────────────────────────────────
+    #
+    # Telegram's Bot API caps a bot download at 20 MB. That is a hard remote limit, not
+    # something a retry fixes, so it is checked BEFORE spending a getFile round-trip and
+    # reported as a plain sentence rather than surfacing as an opaque HTTP failure.
+    TELEGRAM_DOWNLOAD_LIMIT = 20 * 1024 * 1024
+
+    async def _download_telegram_file(self, file_id: str) -> str | None:
+        """Download a Telegram file to a temp path, or None. Caller owns the unlink."""
+        import aiohttp
+
+        try:
+            file_path = await self._get_file_path(file_id)
+        except Exception as exc:  # noqa: BLE001 — network/API shape varies
+            logger.warning("_download_telegram_file: getFile failed: %s", exc)
+            return None
+
+        suffix = "." + file_path.rsplit(".", 1)[-1] if "." in file_path else ".audio"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            async with aiohttp.ClientSession() as sess, sess.get(
+                self._build_file_url(file_path)
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning("_download_telegram_file: HTTP %s", resp.status)
+                    os.unlink(tmp_path)
+                    return None
+                with open(tmp_path, "wb") as fh:
+                    fh.write(await resp.read())
+            return tmp_path
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("_download_telegram_file: %s", exc)
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            return None
+
+    async def _send_audio_document(
+        self,
+        chat_id: int,
+        file_path: str,
+        title: str,
+        performer: str = "",
+        caption: str = "",
+        reply_to_message_id: int | None = None,
+    ) -> bool:
+        """Upload an edited track with ``sendAudio``.
+
+        Deliberately NOT ``_send_voice_file``: that sends a voice NOTE, which Telegram
+        renders as a waveform with no title and which a user cannot forward as a track.
+        An edited song should come back as a song.
+        """
+        import mimetypes
+
+        try:
+            with open(file_path, "rb") as fh:
+                data = fh.read()
+        except OSError as exc:
+            logger.warning("_send_audio_document: unreadable %s: %s", file_path, exc)
+            return False
+
+        ext = os.path.splitext(file_path)[1].lower() or ".mp3"
+        mime_type, _ = mimetypes.guess_type(file_path)
+        payload = {"chat_id": str(chat_id), "title": title}
+        if performer:
+            payload["performer"] = performer
+        if caption:
+            payload["caption"] = caption
+        if reply_to_message_id:
+            payload["reply_to_message_id"] = str(reply_to_message_id)
+        try:
+            result = await self._api_call_multipart(
+                "sendAudio",
+                data=payload,
+                files={"audio": (f"{title}{ext}", data, mime_type or "audio/mpeg")},
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("_send_audio_document: sendAudio failed: %s", exc)
+            return False
+        # A falsy/error response is a FAILED send. Returning True here would tell the
+        # caller to report success for a file the user never received.
+        if not result or not result.get("ok", True):
+            logger.warning("_send_audio_document: Telegram rejected sendAudio: %s", result)
+            return False
+        return True
+
+    async def _edit_audio_and_reply(
+        self,
+        chat_id: int,
+        file_id: str,
+        mode: str,
+        meta: dict | None = None,
+        reply_to_message_id: int | None = None,
+    ) -> tuple[bool, str]:
+        """Download → re-time → send back. Returns (ok, message_for_the_user).
+
+        The message is always usable text: every failure here is one the user can act on
+        (install ffmpeg, send a smaller file, resend an expired card), so returning a
+        bare False would throw away the only part they need.
+        """
+        from navig.media.audio_edit import AudioEditError, slowed, speed
+
+        meta = meta or {}
+        size = int(meta.get("file_size") or 0)
+        if size and size > self.TELEGRAM_DOWNLOAD_LIMIT:
+            mb = self.TELEGRAM_DOWNLOAD_LIMIT // (1024 * 1024)
+            return False, f"That file is larger than {mb} MB — Telegram won't let a bot download it."
+
+        src = await self._download_telegram_file(file_id)
+        if not src:
+            return False, "Couldn't download that file from Telegram."
+
+        stem = os.path.splitext(os.path.basename(src))[0]
+        ext = os.path.splitext(src)[1] or ".mp3"
+        dst = os.path.join(os.path.dirname(src), f"{stem}-{mode}{ext}")
+        base_title = str(meta.get("title") or "audio")
+        # ffmpeg runs through a BLOCKING subprocess with a 300s ceiling. Called directly
+        # from this coroutine it would hold the event loop for the whole conversion —
+        # freezing every other chat, the uplink heartbeat and the daemon's timers along
+        # with it. Off-thread, as `asyncio.to_thread` is already used for the blocking
+        # metadata read in this module.
+        try:
+            if mode == "slowed":
+                result = await asyncio.to_thread(slowed, Path(src), Path(dst))
+                label, title = "🐢 Slowed", f"{base_title} (slowed)"
+            else:
+                result = await asyncio.to_thread(speed, Path(src), Path(dst), _SPEED_UP_RATE)
+                label, title = f"⏩ {_SPEED_UP_RATE:g}×", f"{base_title} ({_SPEED_UP_RATE:g}x)"
+        except AudioEditError as exc:
+            return False, str(exc)
+        finally:
+            try:
+                os.unlink(src)
+            except OSError:
+                pass
+
+        try:
+            sent = await self._send_audio_document(
+                chat_id,
+                str(result.path),
+                title=title,
+                performer=str(meta.get("performer") or ""),
+                caption=label,
+                reply_to_message_id=reply_to_message_id,
+            )
+        finally:
+            try:
+                os.unlink(result.path)
+            except OSError:
+                pass
+        if not sent:
+            return False, "Converted it, but Telegram refused the upload."
+        return True, label
+
     async def _handle_audio_file_message(
         self,
         chat_id: int,
@@ -836,11 +1016,17 @@ class TelegramVoiceMixin:
                     "callback_data": f"audmsg:lang:{short_id}",
                 }
             )
-        # Third row: Dismiss
+        # Third row: re-timing. Two presets only — the CLI (`navig audio speed|slowed`)
+        # takes any rate, and a keyboard of rates would bury the actions people came for.
         row3 = [
+            {"text": f"⏩ {_SPEED_UP_RATE:g}× faster", "callback_data": f"audmsg:speed:{short_id}"},
+            {"text": "🐢 Slowed", "callback_data": f"audmsg:slowed:{short_id}"},
+        ]
+        # Fourth row: Dismiss
+        row4 = [
             {"text": "❌ Dismiss", "callback_data": f"audmsg:dismiss:{short_id}"},
         ]
-        keyboard = [row1, row2, row3]
+        keyboard = [row1, row2, row3, row4]
 
         await self.send_message(
             chat_id,

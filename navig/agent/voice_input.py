@@ -92,6 +92,38 @@ class TranscriptionResult:
 # ---------------------------------------------------------------------------
 
 
+#: What to tell a user who has no way to transcribe speech. ONE string: the
+#: transcriber's own error and every caller's "I couldn't listen" note read from
+#: it, so the advice cannot drift between the two places a user meets it.
+STT_INSTALL_HINT = (
+    "install faster-whisper (pip install faster-whisper) "
+    "or set OPENAI_API_KEY / DEEPGRAM_API_KEY"
+)
+
+
+def stt_unavailable_reason() -> str | None:
+    """Why speech cannot be transcribed on this install, or None when it can.
+
+    The mirror of :func:`navig.core.ocr.ocr_unavailable_reason`, and it exists for
+    the same reason: without it, "this clip is silent" and "I have no way to
+    listen" reach the user as the *same* answer — an empty result — and the second
+    one is a missing dependency the user could fix in one command.
+
+    Reads the handler's OWN resolved backend rather than re-detecting, so it can
+    never disagree with what :meth:`VoiceInputHandler.transcribe` will do (a
+    status light that calls a different function from the consumer is how a green
+    light comes to sit over a broken install).
+    """
+    try:
+        return (
+            "no transcription backend is installed"
+            if get_voice_handler().config.backend == TranscriptionBackend.NONE
+            else None
+        )
+    except Exception:  # noqa: BLE001 — a caveat must never break the answer it annotates
+        return None
+
+
 def detect_transcription_backend() -> TranscriptionBackend:
     """Auto-detect the best available transcription backend.
 
@@ -232,13 +264,18 @@ class VoiceInputHandler:
         if self.config.backend == TranscriptionBackend.NONE:
             return TranscriptionResult(
                 success=False,
-                error=(
-                    "No transcription backend available. Install faster-whisper "
-                    "(pip install faster-whisper) or set OPENAI_API_KEY / DEEPGRAM_API_KEY."
-                ),
+                error=f"No transcription backend available. To enable it, {STT_INSTALL_HINT}.",
             )
 
-        lang = language or self.config.language  # None means auto-detect
+        # `user.language` is written by a human, so it holds a NAME ("Russian").
+        # Speech models take ISO codes and reject anything else outright, so the
+        # name has to be converted HERE — at the one seam every backend passes
+        # through — rather than at each caller, which is how a pinned language
+        # came to switch transcription off across navig instead of steering it.
+        # An unmappable value becomes None, i.e. auto-detect, never a hard fail.
+        from navig.core.language import language_code
+
+        lang = language_code(language or self.config.language)
 
         # ── Dispatch ──────────────────────────────────────────────────
         if self.config.backend == TranscriptionBackend.FASTER_WHISPER:

@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from navig.config import get_config_manager
+from navig.core.coerce import coerce_bool
 from navig.gateway.channels.matrix import MatrixChannelAdapter
 from navig.gateway.server import NavigGateway
 from navig.messaging.registry import (
@@ -66,11 +67,17 @@ def _deck_config() -> dict:
     cfg = get_config_manager().global_config or {}
     deck_cfg = cfg.get("deck", {}) if isinstance(cfg, dict) else {}
     return {
-        "enabled": deck_cfg.get("enabled", True),
+        # coerce_bool: `navig config set` stores raw strings and bool("false") is
+        # True, so a deck.enabled the operator disabled would stay ON (this daemon
+        # gate is separate from the gateway-server one #482 already coerced). deck
+        # is a feature (UI/routes), default True — safe to honor "false".
+        "enabled": coerce_bool(deck_cfg.get("enabled", True), default=True),
         "port": deck_cfg.get("port", 3080),
         "bind": deck_cfg.get("bind", "127.0.0.1"),
         "static_dir": deck_cfg.get("static_dir"),
-        "dev_mode": deck_cfg.get("dev_mode", False),
+        # dev_mode gates the local auth bypass; configure_deck_auth also coerces it
+        # (#532), but keep the builder dict honest too.
+        "dev_mode": coerce_bool(deck_cfg.get("dev_mode", False), default=False),
         "auth_max_age": deck_cfg.get("auth_max_age", 3600),
     }
 
@@ -80,7 +87,9 @@ def _matrix_config() -> dict:
     cfg = get_config_manager().global_config or {}
     matrix_cfg = cfg.get("matrix", {}) if isinstance(cfg, dict) else {}
     return {
-        "enabled": matrix_cfg.get("enabled", False),
+        # Matrix is opt-in (default False); coerce so `config set matrix.enabled
+        # false` (string "false", truthy) doesn't leave it trying to start.
+        "enabled": coerce_bool(matrix_cfg.get("enabled", False), default=False),
         "homeserver": matrix_cfg.get("homeserver", ""),
         "user_id": matrix_cfg.get("user_id", ""),
         "access_token": matrix_cfg.get("access_token", ""),
@@ -100,7 +109,7 @@ def _mcp_bridge_config() -> dict:
             or f"ws://127.0.0.1:{BRIDGE_DEFAULT_PORT}"
         ),
         "token": (os.getenv("NAVIG_BRIDGE_LLM_TOKEN") or bridge_cfg.get("token", "")),
-        "auto_connect": bridge_cfg.get("mcp_auto_connect", True),
+        "auto_connect": coerce_bool(bridge_cfg.get("mcp_auto_connect", True), default=True),
         "reconnect_interval": bridge_cfg.get("mcp_reconnect_interval", 60),
     }
 
@@ -137,8 +146,10 @@ async def _start_gateway_http(gateway: NavigGateway, tg_config: dict, deck_cfg: 
 
     register_all_routes(gateway._app, gateway)
 
-    # Register deck routes with full auth config
-    if deck_cfg.get("enabled", True):
+    # Register deck routes with full auth config. coerce_bool (as the deck auth dict above
+    # already does): `config set deck.enabled false` stores the truthy string "false", so a
+    # raw read here would register the deck routes even when the operator disabled the deck.
+    if coerce_bool(deck_cfg.get("enabled", True), default=True):
         try:
             from navig.gateway.deck import register_deck_routes
 

@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # ChatTurn
@@ -95,7 +92,7 @@ class TestChatSession:
         assert s.first_user_message == ""
 
     def test_turn_count_with_turns(self):
-        from navig.commands.sessions import ChatSession, ChatTurn
+        from navig.commands.sessions import ChatTurn
         s = self._make()
         s.turns = [
             ChatTurn(role="user", text="Hi"),
@@ -104,7 +101,7 @@ class TestChatSession:
         assert s.turn_count == 2
 
     def test_user_count_filters_correctly(self):
-        from navig.commands.sessions import ChatSession, ChatTurn
+        from navig.commands.sessions import ChatTurn
         s = self._make()
         s.turns = [
             ChatTurn(role="user", text="Q1"),
@@ -114,7 +111,7 @@ class TestChatSession:
         assert s.user_count == 2
 
     def test_first_user_message_returns_text(self):
-        from navig.commands.sessions import ChatSession, ChatTurn
+        from navig.commands.sessions import ChatTurn
         s = self._make()
         s.turns = [
             ChatTurn(role="assistant", text="Welcome"),
@@ -123,7 +120,7 @@ class TestChatSession:
         assert s.first_user_message == "What is 2+2?"
 
     def test_first_user_message_truncated_at_200(self):
-        from navig.commands.sessions import ChatSession, ChatTurn
+        from navig.commands.sessions import ChatTurn
         s = self._make()
         s.turns = [ChatTurn(role="user", text="X" * 300)]
         assert len(s.first_user_message) <= 200

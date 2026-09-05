@@ -166,6 +166,12 @@ def test_capability_risk():
     from navig.blocks.policy import capability_risk
 
     assert capability_risk(["filesystem:write:workdir"]) == "safe"
+    # Network ALONE, so this actually covers the network dimension. The combined
+    # ["exec:steamcmd", "network:x"] case below passes on `exec:` whichever way network is
+    # classified — it looked like network coverage and was not, which is how a `has_network`
+    # that was computed and never used survived here.
+    assert capability_risk(["network:x"]) == "moderate"
+    assert capability_risk(["exec:steamcmd"]) == "moderate"
     assert capability_risk(["exec:steamcmd", "network:x"]) == "moderate"
     assert capability_risk(["sudo", "exec:apt"]) == "destructive"
     assert capability_risk(["publish"]) == "destructive"
@@ -1063,3 +1069,411 @@ def test_vaulted_block_input_missing_secret_falls_through(tmp_path, monkeypatch)
     inp = BlockInput(key="api_key", type="secret", vault="{vault.NOPE}")
     # The vault miss must fall through to the prompt — never resolve to a wrong secret.
     assert _default_secret_resolver(inp) == "PROMPTED"
+
+
+# ── Verification honesty ──────────────────────────────────────────────
+#
+# A Block's whole value proposition is the receipt: "this outcome was applied,
+# and here is the proof". So a verify that could not actually run must report
+# FAILED, never passed - the same rule `navig doctor` learned when a row printed
+# a green tick over a check it had skipped. These pin the ways a verify could
+# end up proving nothing while the receipt said `verification: self-check`.
+
+
+_EMPTY_CAPTURE = """\
+---
+id: {id}
+spec_version: 1
+name: {id}
+version: 0.1.0
+category: general
+license: MIT
+target: local
+inputs: []
+outputs:
+  - key: report
+steps:
+  - id: emit
+    kind: command
+    capabilities: [exec:python]
+    argv: ["{py}", "-c", "print('report:')"]
+    capture:
+      report: 'report:\\s*(\\S*)'
+verify:
+  kind: file_exists
+  level: self-check
+  path: "{{{{outputs.report}}}}"
+---
+b
+"""
+
+
+def test_file_exists_verify_with_empty_path_does_not_pass(space):
+    """A path that resolves to "" is `Path(".")`, and the cwd always exists.
+
+    The block captures a report path off stdout with a regex whose group can
+    match empty - a tool that printed no path. Before the fix that produced
+    `verification: self-check` on evidence `{"path": ".", "ok": true}`: the
+    strongest claim the product makes, sold on the strength of a receipt,
+    asserting only that the current directory exists.
+    """
+    from navig.blocks.loader import parse_block_file
+    from navig.blocks.runner import apply_block
+
+    body = _EMPTY_CAPTURE.format(id="emptycap", py=sys.executable.replace("\\", "/"))
+    block = parse_block_file(_write_block(space, "emptycap", body))
+    run = apply_block(block, {}, yes=True, workdir=space)
+
+    assert run.outputs.get("report") == "", "precondition: the capture matched empty"
+    assert run.verification_level == "none", (
+        f"verified nothing but claimed {run.verification_level!r}: {run.evidence}"
+    )
+    assert run.outcome == "failed"
+
+
+def test_file_exists_verify_with_unresolvable_path_still_writes_a_result(space):
+    """An unresolved token at verify time must fail the verify, not the process.
+
+    The steps have already run and changed the system; a PolicyError escaping
+    from verification destroys the receipt for a run that really happened.
+    """
+    from navig.blocks.loader import parse_block_file
+    from navig.blocks.runner import apply_block
+
+    body = _MATERIALIZE.format(id="unres").replace(
+        'path: "{{workdir}}/.navig/out/unres.txt"', 'path: "{{outputs.never_set}}"'
+    )
+    block = parse_block_file(_write_block(space, "unres", body))
+    run = apply_block(block, {"message": "hi"}, yes=True, workdir=space)
+
+    assert run.outcome == "failed"
+    assert run.verification_level == "none"
+    assert "never_set" in json.dumps(run.evidence)
+
+
+def test_command_verify_with_no_argv_fails_instead_of_crashing(space):
+    """`verify: {kind: command}` with no argv reaches `subprocess.run([])`.
+
+    That raises a bare OSError (WinError 87) which the old handler did not catch,
+    so the whole apply died after the steps had already run - no receipt at all
+    for a run that changed the system.
+    """
+    from navig.blocks.loader import parse_block_file
+    from navig.blocks.runner import apply_block
+
+    body = _MATERIALIZE.format(id="noargv").replace(
+        'verify:\n  kind: file_exists\n  level: self-check\n  path: "{{workdir}}/.navig/out/noargv.txt"',
+        "verify:\n  kind: command\n  level: self-check\n  argv: []",
+    )
+    assert "kind: command" in body, "precondition: the verify block was rewritten"
+    block = parse_block_file(_write_block(space, "noargv", body))
+    run = apply_block(block, {"message": "hi"}, yes=True, workdir=space)
+
+    assert run.outcome == "failed"
+    assert run.verification_level == "none"
+
+
+# ── Validation is enforced on EVERY path that can run a block ─────────
+#
+# `navig block apply` and the MCP tool both refuse an invalid manifest. The two
+# paths that did not were a child-block step and a trigger firing on a schedule
+# - i.e. the two with no human watching.
+
+
+_INVALID_BLOCK = """\
+---
+id: {id}
+spec_version: 1
+name: {id}
+version: 0.1.0
+category: general
+license: MIT
+target: local
+inputs: []
+steps:
+  - id: s
+    kind: command
+    capabilities: [exec:echo]
+    argv: ["echo", "{{{{inputs.undeclared}}}}"]
+verify:
+  kind: file_exists
+  level: self-check
+---
+b
+"""
+
+
+def test_child_block_is_validated_before_it_runs(space):
+    """A valid parent must not inherit an invalid child's outcome.
+
+    Asserts on the REASON, not just the failure: without the check the child is
+    executed and fails on its own broken step, which looks the same from the
+    parent's exit code. "Rejected as invalid" and "ran and failed" are different
+    events, and only the first one keeps the child's steps from starting.
+    """
+    from navig.blocks.loader import parse_block_file, validate_block
+    from navig.blocks.runner import apply_block
+
+    child = parse_block_file(_write_block(space, "badchild", _INVALID_BLOCK.format(id="badchild")))
+    assert validate_block(child), "precondition: the child really is invalid"
+
+    parent_body = """\
+---
+id: parent
+spec_version: 1
+name: parent
+version: 0.1.0
+category: general
+license: MIT
+target: local
+inputs: []
+steps:
+  - id: call
+    kind: block
+    use: badchild
+    capabilities: [exec:echo]
+verify: {kind: none}
+---
+b
+"""
+    parent = parse_block_file(_write_block(space, "parent", parent_body))
+    run = apply_block(parent, {}, yes=True, workdir=space)
+
+    assert run.outcome == "failed"
+    assert "invalid" in (run.error or ""), run.error
+
+
+def test_trigger_refuses_an_invalid_block(space, monkeypatch):
+    """A scheduled trigger must not run what `navig block apply` rejects."""
+    from navig.blocks.loader import parse_block_file, validate_block
+    from navig.commands import triggers as trig
+
+    block = parse_block_file(_write_block(space, "badtrig", _INVALID_BLOCK.format(id="badtrig")))
+    assert validate_block(block), "precondition: the block really is invalid"
+
+    ran: list[str] = []
+
+    def _boom(*a, **k):  # pragma: no cover - must never be reached
+        ran.append("applied")
+        # Deliberately worded WITHOUT the word this test matches on: the first
+        # version said "invalid", so the mutation's own error text satisfied
+        # `assert "invalid" in msg` and the guard half-passed while broken.
+        raise AssertionError("apply_block ran a block that failed validation")
+
+    monkeypatch.setattr("navig.blocks.runner.apply_block", _boom)
+
+    engine = trig.TriggerManager.__new__(trig.TriggerManager)
+    ok, msg = trig.TriggerManager._run_workflow(engine, "badtrig", {})
+
+    assert ok is False
+    assert "invalid" in msg
+    assert not ran
+
+
+def test_verify_level_is_a_closed_vocabulary(space):
+    """`level` is author text that is PRINTED as the run's trust label.
+
+    `navig block apply` renders `verification: <level>`, the receipt stores it,
+    and the MCP tool hands it to an agent - so an unconstrained value lets a
+    block label its own run `navig-certified`. Rejected by validation, and
+    clamped at runtime to the weakest TRUE claim if one ever gets past it.
+    """
+    from navig.blocks.loader import parse_block_file, validate_block
+    from navig.blocks.runner import apply_block
+
+    body = _MATERIALIZE.format(id="fakelevel").replace(
+        "level: self-check", "level: navig-certified"
+    )
+    block = parse_block_file(_write_block(space, "fakelevel", body))
+
+    problems = validate_block(block)
+    assert any("level" in p and "navig-certified" in p for p in problems), problems
+
+    # Second line: even run directly, the label it prints is not the author's.
+    run = apply_block(block, {"message": "hi"}, yes=True, workdir=space)
+    assert run.outcome == "succeeded"
+    assert run.verification_level == "self-check", run.verification_level
+
+
+def test_verify_level_external_check_is_still_honoured(space):
+    """The clamp must not flatten the legitimate stronger level.
+
+    Two blocks in the registry declare `external-check`; if the clamp swallowed
+    it, the guard above would pass while quietly deleting a real distinction.
+    """
+    from navig.blocks.loader import parse_block_file, validate_block
+    from navig.blocks.runner import apply_block
+
+    body = _MATERIALIZE.format(id="extlevel").replace(
+        "level: self-check", "level: external-check"
+    )
+    block = parse_block_file(_write_block(space, "extlevel", body))
+    assert validate_block(block) == []
+
+    run = apply_block(block, {"message": "hi"}, yes=True, workdir=space)
+    assert run.verification_level == "external-check"
+
+
+# ── The receipt chain must lead somewhere ─────────────────────────────
+#
+# A block can call another block, and the parent's receipt advertises the
+# children in `artifacts.chain`. Receipts are filed under a UUID `receipt_id`
+# while the chain used to carry `run_id`s, so every entry resolved to nothing -
+# a parent claiming "proven by the child's receipt" with no such receipt in
+# existence. On the tier people pay for, that is the phantom verify again.
+
+
+_CHILD = """\
+---
+id: {id}
+spec_version: 1
+name: {id}
+version: 0.1.0
+category: general
+license: MIT
+target: local
+inputs: []
+steps:
+  - id: w
+    kind: materialize
+    capabilities: [filesystem:write:workdir]
+    dest: "{{{{workdir}}}}/.navig/out/{id}.txt"
+    content: "hi\n"
+verify:
+  kind: file_exists
+  level: self-check
+  path: "{{{{workdir}}}}/.navig/out/{id}.txt"
+---
+b
+"""
+
+_PARENT = """\
+---
+id: {id}
+spec_version: 1
+name: {id}
+version: 0.1.0
+category: general
+license: MIT
+target: local
+inputs: []
+steps:
+  - id: call
+    kind: block
+    use: {child}
+    capabilities: [filesystem:write:workdir]
+verify: {{kind: none}}
+---
+b
+"""
+
+
+def _apply_parent_with_child(space, *, parent_id="par", child_id="kid"):
+    from navig.blocks.loader import parse_block_file
+    from navig.blocks.receipts import build_receipt, persist_receipt
+    from navig.blocks.runner import apply_block
+
+    _write_block(space, child_id, _CHILD.format(id=child_id))
+    parent = parse_block_file(
+        _write_block(space, parent_id, _PARENT.format(id=parent_id, child=child_id))
+    )
+    run = apply_block(parent, {}, yes=True, workdir=space)
+    assert run.outcome == "succeeded", run.error
+    receipt = build_receipt(parent, run, {}, trust="first-party")
+    return run, receipt, persist_receipt(receipt)
+
+
+def test_child_block_receipt_is_persisted_and_the_chain_resolves(space):
+    from navig.blocks.receipts import receipts_dir
+
+    run, receipt, _ = _apply_parent_with_child(space)
+
+    chain = receipt.artifacts["chain"]
+    assert chain, "the child step produced no chain entry"
+    for cid in chain:
+        assert (receipts_dir() / f"{cid}.json").exists(), (
+            f"chain lists {cid!r} but no receipt file exists for it"
+        )
+    # And the child's own receipt describes the child, not the parent.
+    child_data = json.loads((receipts_dir() / f"{chain[0]}.json").read_text(encoding="utf-8"))
+    assert child_data["capability"] == "block:kid"
+    assert child_data["outcome"] == "succeeded"
+
+
+def test_child_receipt_that_cannot_be_written_is_not_named(space, monkeypatch):
+    """No receipt is better than a receipt id that leads nowhere.
+
+    If persisting the child fails, the step must report NO child receipt rather
+    than an id the chain cannot resolve - the dangling claim being fixed here.
+    """
+    from navig.blocks import receipts as receipts_mod
+
+    real = receipts_mod.persist_receipt
+
+    # Only the CHILD's write fails - the helper persists the parent too, and a
+    # blanket failure would break the test setup rather than the case under test.
+    def _boom(receipt):
+        if receipt.capability == "block:kid2":
+            raise OSError("disk full")
+        return real(receipt)
+
+    monkeypatch.setattr(receipts_mod, "persist_receipt", _boom)
+
+    run, receipt, _ = _apply_parent_with_child(space, parent_id="par2", child_id="kid2")
+    assert receipt.artifacts["chain"] == []
+    assert all(s.child_receipt is None for s in run.steps)
+
+
+def test_verify_receipt_reports_a_missing_child(space):
+    """A chain nobody follows is not evidence, and a gap must be SAID."""
+    from typer.testing import CliRunner
+
+    from navig.blocks.receipts import receipts_dir
+    from navig.commands.block import block_app
+
+    run, receipt, path = _apply_parent_with_child(space, parent_id="par3", child_id="kid3")
+    cli = CliRunner()
+
+    res = cli.invoke(block_app, ["verify-receipt", str(path)])
+    assert res.exit_code == 0, res.output
+    assert "all resolved" in res.output
+
+    for cid in receipt.artifacts["chain"]:
+        (receipts_dir() / f"{cid}.json").unlink()
+    res2 = cli.invoke(block_app, ["verify-receipt", str(path)])
+    # The parent's own signature is still sound, so this warns rather than
+    # failing - conflating "altered" with "a child file is gone" would make the
+    # exit code useless for the first.
+    assert res2.exit_code == 0, res2.output
+    assert "missing" in res2.output
+    assert "chain is incomplete" in res2.output
+
+
+def test_verify_receipt_json_reports_chain_completeness(space):
+    """The machine answer must carry the chain, not just the top-level signature.
+
+    An agent that can only learn "the outer signature is fine" has been told the
+    same half-truth a human would have been, one layer down.
+    """
+    from typer.testing import CliRunner
+
+    from navig.blocks.receipts import receipts_dir
+    from navig.commands.block import block_app
+
+    _run, receipt, path = _apply_parent_with_child(space, parent_id="par4", child_id="kid4")
+    cli = CliRunner()
+
+    data = json.loads(cli.invoke(block_app, ["verify-receipt", str(path), "--json"]).output)
+    assert data["signature"] == "valid"
+    assert data["chain_complete"] is True
+    assert data["chain"][0]["capability"] == "block:kid4"
+    assert data["chain"][0]["resolved"] is True
+
+    for cid in receipt.artifacts["chain"]:
+        (receipts_dir() / f"{cid}.json").unlink()
+    res = cli.invoke(block_app, ["verify-receipt", str(path), "--json"])
+    after = json.loads(res.output)
+    assert after["chain_complete"] is False
+    assert after["chain"][0]["resolved"] is False
+    # Still exit 0: the parent's signature is sound. Only tampering is exit 1.
+    assert res.exit_code == 0

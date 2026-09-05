@@ -68,17 +68,17 @@ class TestBootCmd:
     def test_boot_show(self):
         with patch.object(_ch, "warning"):
             result = _runner.invoke(boot_app, ["show"])
-        assert result.exit_code == 0
+        assert result.exit_code != 0, "an unimplemented command must not report success"
 
     def test_boot_run(self):
         with patch.object(_ch, "warning"):
             result = _runner.invoke(boot_app, ["run"])
-        assert result.exit_code == 0
+        assert result.exit_code != 0, "an unimplemented command must not report success"
 
     def test_boot_run_dry_run(self):
         with patch.object(_ch, "warning"):
             result = _runner.invoke(boot_app, ["run", "--dry-run"])
-        assert result.exit_code == 0
+        assert result.exit_code != 0, "an unimplemented command must not report success"
 
     def test_boot_no_args_shows_help(self):
         result = _runner.invoke(boot_app, [])
@@ -99,17 +99,17 @@ class TestWatchCmd:
     def test_watch_start_default_path(self):
         with patch.object(_ch, "warning"):
             result = _wrunner.invoke(watch_app, ["start"])
-        assert result.exit_code == 0
+        assert result.exit_code != 0, "an unimplemented command must not report success"
 
     def test_watch_start_custom_path(self):
         with patch.object(_ch, "warning"):
             result = _wrunner.invoke(watch_app, ["start", "/tmp"])
-        assert result.exit_code == 0
+        assert result.exit_code != 0, "an unimplemented command must not report success"
 
     def test_watch_list(self):
         with patch.object(_ch, "warning"):
             result = _wrunner.invoke(watch_app, ["list"])
-        assert result.exit_code == 0
+        assert result.exit_code != 0, "an unimplemented command must not report success"
 
 
 # ---------------------------------------------------------------------------
@@ -134,8 +134,6 @@ class TestSystemCmd:
 
     def test_system_clean_dry_run(self, tmp_path, monkeypatch):
         """Without --yes flag, shows what would be removed and prompts."""
-        import navig.commands.system_cmd as _sys_mod
-        from navig.platform.paths import config_dir as real_config_dir
 
         fake_cache = tmp_path / "cache"
         fake_cache.mkdir()

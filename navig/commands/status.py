@@ -19,7 +19,12 @@ def get_gateway_status() -> dict[str, Any]:
 
         response = requests.get(f"{gateway_base_url()}/status", timeout=2)
         if response.status_code == 200:
-            data = response.json()
+            # /status answers json_ok(...), so the payload is under ["data"] — reading
+            # these fields off the raw body made `navig status` report a running daemon
+            # with no uptime, 0 sessions, and empty heartbeat/cron sections.
+            from navig.gateway_client import unwrap_envelope
+
+            data = unwrap_envelope(response.json())
             return {
                 "running": True,
                 "uptime": data.get("uptime_seconds"),
@@ -168,8 +173,10 @@ def _print_cloud_status_section(*, show_all: bool) -> None:
     import urllib.request
 
     from navig.core import Config
+    from navig.core.coerce import coerce_bool
     cfg = Config()
-    enabled = bool(cfg.get("cloud.enabled", False))
+    # coerce_bool so a stored "false" string (navig config set) reads as disabled.
+    enabled = coerce_bool(cfg.get("cloud.enabled", False))
     if not enabled and not show_all:
         return
 

@@ -4,9 +4,7 @@ Pure-logic and I/O-mocked tests.
 """
 from __future__ import annotations
 
-import os
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -347,7 +345,6 @@ class TestSetOwnerOnlyFilePermissions:
             assert mock_run.call_count >= 1
 
     def test_windows_subprocess_failure_does_not_raise(self, tmp_path):
-        import subprocess
         target = tmp_path / "secret.txt"
         target.write_text("data")
         with patch("os.name", "nt"), \

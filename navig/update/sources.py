@@ -94,7 +94,7 @@ class PyPISource(_BaseSource):
 class GitHubSource(_BaseSource):
     """Fetch latest release tag from GitHub."""
 
-    def __init__(self, repo: str = "navig-os/navig-core", token: str | None = None):
+    def __init__(self, repo: str = "navig-run/core", token: str | None = None):
         self._repo = repo
         self._token = token
 
@@ -150,7 +150,7 @@ class GitRepoSource(_BaseSource):
         else:
             cmd = ["git", "-C", self._path, "tag", "--sort=version:refname"]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=15, encoding="utf-8", errors="replace")
             if r.returncode != 0:
                 raise SourceError(f"git command failed: {r.stderr.strip()[:120]}")
         except FileNotFoundError as _exc:
@@ -248,7 +248,7 @@ def build_source(cfg: dict[str, Any], channel: str = "stable") -> _BaseSource:
         return PyPISource(package=cfg.get("package", "navig"), channel=channel)
 
     if src_type == "github":
-        return GitHubSource(repo=cfg.get("repo", "navig-os/navig-core"), token=cfg.get("token"))
+        return GitHubSource(repo=cfg.get("repo", "navig-run/core"), token=cfg.get("token"))
 
     if src_type == "git-repo":
         return GitRepoSource(repo_path=cfg.get("path", "."), remote=cfg.get("remote"))

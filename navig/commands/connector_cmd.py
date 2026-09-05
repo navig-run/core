@@ -13,10 +13,14 @@ Commands:
 
 from __future__ import annotations
 
+import logging
+
 import typer
 
 from navig import console_helper as ch
 from navig.commands._async_utils import run_sync as _run
+
+logger = logging.getLogger("navig.connectors.cli")
 
 connector_app = typer.Typer(
     name="connector",
@@ -51,6 +55,15 @@ def connector_list(
     else:
         connectors = registry.list_all()
 
+    # registry.list_all() derives status from in-process instances, of which a fresh
+    # CLI process has none — so every row read "disconnected" even for linked
+    # accounts. Overlay the vault, the durable truth, before rendering *or* emitting.
+    linked = _vault_connected_ids()
+    for c in connectors:
+        if c["id"] in linked and c["status"] == "disconnected":
+            c["status"] = "connected"
+            c["account"] = linked[c["id"]]
+
     if json_output:
         ch.emit_json(connectors)
         return
@@ -62,11 +75,14 @@ def connector_list(
     from rich.table import Table
 
     table = Table(title="Connectors", show_lines=False)
+    # Column discipline: no_wrap on the short, known-width columns so a narrow
+    # terminal never truncates a connector id — Name/Account absorb the wrapping.
     table.add_column("", width=3)
-    table.add_column("ID", style="cyan")
+    table.add_column("ID", style="cyan", no_wrap=True)
     table.add_column("Name")
-    table.add_column("Domain", style="dim")
-    table.add_column("Status")
+    table.add_column("Domain", style="dim", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Account", style="dim")
 
     for c in connectors:
         status_val = c["status"]
@@ -84,9 +100,15 @@ def connector_list(
             c["display_name"],
             c["domain"],
             status_style,
+            c.get("account") or "",
         )
 
     ch.console.print(table)
+    connected_n = sum(1 for c in connectors if c["status"] == "connected")
+    ch.dim(
+        f"{connected_n}/{len(connectors)} connected"
+        + ("" if connected_n else " · connect one with navig connector connect <id>")
+    )
 
 
 # ── status ───────────────────────────────────────────────────────────────
@@ -101,7 +123,7 @@ def connector_status(
 
     _ensure_connectors_loaded()
     registry = get_connector_registry()
-    connected = registry.list_connected()
+    connected = _resolve_connected(registry)
 
     if not connected:
         ch.dim("No connectors connected. Use `navig connector connect <id>`.")
@@ -110,6 +132,8 @@ def connector_status(
     async def _check_all():
         results = []
         for c in connected:
+            # health_check() hits the real API, so it needs the vault token too.
+            await _hydrate(c)
             health = await c.health_check()
             results.append((c, health))
         return results
@@ -240,7 +264,7 @@ def connector_search(
             raise typer.Exit(1)
         connectors = [registry.get(source)]
     else:
-        connectors = registry.list_connected()
+        connectors = _resolve_connected(registry)
 
     if not connectors:
         ch.warning("No connectors connected. Use `navig connector connect <id>` first.")
@@ -249,6 +273,12 @@ def connector_search(
     async def _search():
         all_results = []
         for c in connectors:
+            cid = c.manifest.id
+            if not await _hydrate(c) and getattr(c.manifest, "requires_oauth", True):
+                # Without this the connector raised "has no access token" — an opaque
+                # message for what is simply a connector that needs linking.
+                ch.warning(f"{cid} is not connected — run: navig connector connect {cid}")
+                continue
             try:
                 try:
                     results = await c.search(query, limit=limit)
@@ -256,7 +286,7 @@ def connector_search(
                     results = await c.search(query)
                 all_results.extend(results[:limit])
             except Exception as exc:
-                ch.warning(f"Search failed on {c.manifest.id}: {exc}")
+                ch.warning(f"Search failed on {cid}: {exc}")
         return all_results[:limit]
 
     results = _run(_search())
@@ -315,6 +345,14 @@ def connector_fetch(
     connector = registry.get(connector_id)
 
     async def _fetch():
+        if not await _hydrate(connector) and getattr(
+            connector.manifest, "requires_oauth", True
+        ):
+            ch.error(
+                f"{connector_id} is not connected — "
+                f"run: navig connector connect {connector_id}"
+            )
+            raise typer.Exit(1)
         return await connector.fetch(resource_id)
 
     result = _run(_fetch())
@@ -359,6 +397,11 @@ def connector_health(
             ch.error(f"Unknown connector: {connector_id!r}")
             raise typer.Exit(1) from None
 
+        # A lazily-created instance is DISCONNECTED until its vault token is loaded,
+        # so this guard rejected every healthy connector in a fresh CLI process.
+        # _hydrate() marks it CONNECTED on success.
+        _run(_hydrate(connector))
+
         if connector.status not in (ConnectorStatus.CONNECTED, ConnectorStatus.DEGRADED):
             ch.dim(
                 f"Connector '{connector_id}' is not connected. "
@@ -391,6 +434,59 @@ def _ensure_connectors_loaded() -> None:
     from navig.connectors.bootstrap import ensure_connectors_loaded
 
     ensure_connectors_loaded()
+
+
+def _vault_connected_ids() -> dict[str, str]:
+    """Return ``{connector_id: account_email}`` for everything linked, from the **vault**.
+
+    The vault is the durable source of truth for "is this connector connected".
+    ``registry.list_connected()`` is not: it filters ``_instances``, and instances are
+    created *lazily* on first ``registry.get()``. A fresh CLI process has created none,
+    so that set is always empty — which is why `navig connector status` and a
+    source-less `navig connector search` reported "No connectors connected" on a
+    perfectly healthy install, no matter what the user had linked.
+    """
+    try:
+        from navig.connectors.auth_manager import ConnectorAuthManager
+
+        return ConnectorAuthManager().list_connected_accounts()
+    except Exception as exc:  # noqa: BLE001 — a vault problem must not kill `list`
+        logger.warning("Could not read connected connectors from the vault: %s", exc)
+        return {}
+
+
+def _resolve_connected(registry) -> list:
+    """Connector instances that are actually usable, vault first.
+
+    Union of the vault-backed ids and any instance this process already marked
+    connected, so non-OAuth connectors (which keep no vault credential) are not
+    dropped from the list.
+    """
+    out: dict[str, object] = {}
+    for cid in _vault_connected_ids():
+        if registry.has(cid):
+            out[cid] = registry.get(cid)
+    for inst in registry.list_connected():
+        out.setdefault(inst.manifest.id, inst)
+    return list(out.values())
+
+
+async def _hydrate(connector) -> bool:
+    """Load *connector*'s stored vault token into the instance.
+
+    Connectors keep their access token in memory but the durable token lives in the
+    vault, so a freshly-created instance has none and ``_get_access_token()`` raises
+    ``RuntimeError: Connector 'x' has no access token``. Every CLI process builds
+    fresh instances, so search/fetch/health had to hydrate — and did not.
+    """
+    from navig.connectors.auth_manager import ConnectorAuthManager
+    from navig.connectors.types import ConnectorStatus
+
+    ok = await ConnectorAuthManager().inject_token(connector)
+    if ok:
+        # So list_connected() reflects reality for the rest of this process.
+        connector.status = ConnectorStatus.CONNECTED
+    return ok
 
 
 def _register_oauth_config(connector_id: str, auth) -> None:

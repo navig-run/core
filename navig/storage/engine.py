@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import platform
 import sqlite3
 import threading
@@ -102,8 +103,15 @@ class _StmtCache:
         if cursor is None:
             cursor = self._conn.cursor()
             if len(self._cache) >= self._max:
-                # Evict oldest (FIFO)
+                # Evict oldest (FIFO) — close its cursor first, exactly like
+                # clear() does. Dropping the dict entry without closing leaked the
+                # cursor until GC finalization (delayed / never on non-CPython),
+                # which can hold a statement (and its read lock) open.
                 oldest = next(iter(self._cache))
+                try:
+                    self._cache[oldest].close()
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
                 del self._cache[oldest]
             self._cache[key] = cursor
         return cursor.execute(sql, params)
@@ -442,14 +450,29 @@ class Engine:
 
         Progress is done in 256-page steps to avoid blocking writers
         for extended periods.
+
+        The backup is written to a sibling temp file and atomically moved into place
+        only after it completes. A failed or interrupted backup (locked source, disk
+        full, killed process) therefore never leaves a partial/corrupt file at *dest* —
+        which a later "restore from the newest backup" would trustingly pick up, and
+        which, written straight over a prior good backup, would destroy it.
         """
         dest.parent.mkdir(parents=True, exist_ok=True)
         src = self.connect(db_path)
-        dst = sqlite3.connect(str(dest))
+        tmp = dest.with_name(dest.name + ".tmp")
+        tmp.unlink(missing_ok=True)  # clear any leftover from an earlier interrupted run
+        dst = sqlite3.connect(str(tmp))
         try:
             src.backup(dst, pages=pages_per_step)
-        finally:
-            dst.close()
+            dst.close()  # close BEFORE the rename — Windows can't move an open file
+            os.replace(tmp, dest)  # atomic: dest is the old backup or the new one, never partial
+        except BaseException:
+            try:
+                dst.close()
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; may already be closed
+            tmp.unlink(missing_ok=True)  # discard the partial temp; leave dest untouched
+            raise
         return dest
 
     # ── Lifecycle ─────────────────────────────────────────────

@@ -708,7 +708,7 @@ cp .env.example .env
 
 ```bash
 cd navig-core
-sudo bash scripts/install_navig_factory_server.sh
+sudo bash installers/install_navig_factory_server.sh
 sudo systemctl status navig-factory
 ```
 
@@ -718,10 +718,10 @@ Use these from `navig-core/`:
 
 ```bash
 # Linux
-bash scripts/install_navig_linux.sh
+bash installers/install_navig_linux.sh
 
 # macOS
-bash scripts/install_navig_macos.sh
+bash installers/install_navig_macos.sh
 ```
 
 ```powershell

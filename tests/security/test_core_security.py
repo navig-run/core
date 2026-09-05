@@ -347,3 +347,34 @@ class TestSecurityFinding:
         f = SecurityFinding("X", "info", "T", "D")
         assert f.check_id == "X"
         assert f.severity == "info"
+
+
+class TestElevenLabsKeyRedaction:
+    """ElevenLabs keys are `sk_` + hex — an UNDERSCORE, not the `sk-` OpenAI uses.
+
+    The two look alike enough that the gap went unnoticed: every other media provider in
+    the vault (Replicate `r8_`, Suno `syt_`, fal `fal_`) had a pattern and this one did
+    not, so the key reached logs and crash reports in full.
+    """
+
+    def test_an_elevenlabs_key_is_redacted(self):
+        key = "sk_" + "a1b2c3d4" * 6  # 3 + 48, the real shape
+        result = redact_sensitive_text(f"xi-api-key: {key}")
+        assert key not in result
+        assert "REDACTED" in result
+
+    def test_the_openai_hyphen_form_still_works(self):
+        key = "sk-" + "A1b2C3d4" * 6
+        assert key not in redact_sensitive_text(f"Authorization: Bearer {key}")
+
+    def test_a_stripe_live_key_is_still_redacted_by_its_own_rule(self):
+        # The new pattern sits before Stripe's; `[A-Za-z0-9]` cannot cross the underscore
+        # in `sk_live_`, so it must not shadow it.
+        key = "sk_live_" + "9" * 20
+        result = redact_sensitive_text(f"stripe={key}")
+        assert key not in result
+        assert "REDACTED" in result
+
+    def test_a_short_sk_underscore_token_is_left_alone(self):
+        # Not a key shape; redacting it would corrupt ordinary text.
+        assert "sk_short" in redact_sensitive_text("variable sk_short = 1")

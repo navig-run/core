@@ -34,7 +34,12 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_HABIT_NAME_PREFIX = "habit:"
+# The one definition. A cron job IS a habit exactly when its name carries this prefix, so
+# every surface that creates, lists or strips it must agree — and four modules each kept
+# their own private copy. They happen to match today; the moment one does not, habits
+# silently split into two populations (created under one prefix, listed under another).
+# This module writes the rows, so it owns the key.
+HABIT_NAME_PREFIX = "habit:"
 _STORE_LOCK = threading.Lock()
 
 # Deck routes used by the HTTP-first path (loopback, discovered via gateway.json).
@@ -210,7 +215,7 @@ def list_jobs() -> list[dict[str, Any]]:
 
 
 def list_habit_jobs() -> list[dict[str, Any]]:
-    return [j for j in list_jobs() if str(j.get("name", "")).startswith(_HABIT_NAME_PREFIX)]
+    return [j for j in list_jobs() if str(j.get("name", "")).startswith(HABIT_NAME_PREFIX)]
 
 
 def create_job(
@@ -252,6 +257,50 @@ def create_job(
         timeout_seconds=timeout_seconds,
     )
     return job_obj.to_dict()
+
+
+def _is_meant(name: str, job_id: Any, key: str | None) -> bool:
+    """Does this job match what the caller asked for? Habits only, never other crons.
+
+    ``key=None`` means "every habit" — deliberately scoped to the ``habit:`` prefix so
+    a blanket pause can never silently switch off the operator's unrelated cron jobs.
+    """
+    name = str(name)
+    if not name.startswith(HABIT_NAME_PREFIX):
+        return False
+    if key is None:
+        return True
+    return name == key or name == f"{HABIT_NAME_PREFIX}{key}" or job_id == key
+
+
+def set_jobs_enabled(key: str | None, *, enabled: bool) -> list[str]:
+    """Turn habit reminders on or off. Returns the habit keys actually changed.
+
+    Pausing is not deleting: the job keeps its schedule and the tracker keeps every
+    row, so resuming restores the day exactly as it was. A tracker you cannot switch
+    off gets muted at the OS instead, and a muted reminder is indistinguishable from a
+    broken one — which is how a silent failure hides for a week.
+    """
+    changed: list[str] = []
+    svc = _live_service()
+    if svc is None:
+        resp = _gateway_json("GET", _CRONS_ROUTE)
+        if resp is not None:
+            verb = "enable" if enabled else "disable"
+            for job in resp.get("jobs") or []:
+                if not _is_meant(job.get("name", ""), job.get("id"), key):
+                    continue
+                if _gateway_json("POST", f"{_CRONS_ROUTE}/{job['id']}/{verb}") is not None:
+                    changed.append(str(job["name"]).removeprefix(HABIT_NAME_PREFIX))
+            return changed
+        svc = _detached_service()
+
+    for job_id, job in list(svc.jobs.items()):
+        if not _is_meant(job.name, job.id, key):
+            continue
+        if svc.enable_job(job_id) if enabled else svc.disable_job(job_id):
+            changed.append(job.name.removeprefix(HABIT_NAME_PREFIX))
+    return changed
 
 
 def delete_jobs(key: str) -> int:

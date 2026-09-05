@@ -1,12 +1,8 @@
 """Tests for navig.memory._util and navig.memory.paths."""
 from __future__ import annotations
 
-import logging
-import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 # ---------------------------------------------------------------------------
 # navig.memory._util
@@ -44,7 +40,6 @@ class TestMemoryUtil:
 class TestMemoryPaths:
     def test_navig_home_uses_env_var(self, monkeypatch, tmp_path):
         monkeypatch.setenv("NAVIG_HOME", str(tmp_path))
-        from importlib import import_module, reload
 
         import navig.memory.paths as p
         result = p.navig_home()

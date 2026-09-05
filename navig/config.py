@@ -500,7 +500,6 @@ class ConfigManager:
             Path to the local host configuration file
         """
         import socket
-        import sys
 
         local_host_file = self.hosts_dir / "local.yaml"
 
@@ -910,6 +909,9 @@ class ConfigManager:
             path,
             err,
         )
+        # Only report a backup we actually made — claiming a copy that failed would
+        # send the operator looking for a file that is not there.
+        preserved: str | None = None
         try:
             backup = path.parent / (path.name + ".corrupt")
             if path.exists() and not backup.exists():
@@ -917,6 +919,11 @@ class ConfigManager:
 
                 shutil.copy2(path, backup)
                 logger.error("  a copy of the unreadable file is preserved at %s", backup)
+                preserved = str(backup)
+            elif backup.exists():
+                # An earlier failure already quarantined it; that copy is still the
+                # recovery path, so it is worth naming.
+                preserved = str(backup)
         except Exception:  # noqa: BLE001 — never fail the load on the backup
             pass
 
@@ -926,6 +933,9 @@ class ConfigManager:
             path=str(path),
             error=f"{type(err).__name__}: {err}",
             recovered=bool(recovered),
+            # The log line above is the only place this address existed; the
+            # incident carried the failure but not the way back from it.
+            **({"backup": preserved} if preserved else {}),
         )
         if recovered:
             logger.error(

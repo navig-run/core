@@ -12,13 +12,9 @@ from __future__ import annotations
 
 import json
 import os
-import pathlib
-import threading
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -304,7 +300,6 @@ class TestConfigProviderProtocol:
         from navig.core.protocols import ConfigProvider  # noqa: F401
 
     def test_app_config_dir_in_protocol(self):
-        import inspect
 
         from navig.core.protocols import ConfigProvider
 
@@ -313,7 +308,6 @@ class TestConfigProviderProtocol:
         assert "app_config_dir" in members
 
     def test_global_config_dir_in_protocol(self):
-        import inspect
 
         from navig.core.protocols import ConfigProvider
 
@@ -392,7 +386,7 @@ class TestPluginMetadata:
         assert meta.dependencies == []
 
     def test_to_dict_shape(self):
-        from navig.core.plugins import PluginMetadata, PluginType
+        from navig.core.plugins import PluginMetadata
 
         meta = PluginMetadata(name="myplugin", version="2.0.0", description="great")
         d = meta.to_dict()

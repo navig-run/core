@@ -9,7 +9,7 @@ if (-not (Test-Path $composeFile)) {
   throw "Missing $composeFile"
 }
 if (-not (Test-Path $envFile)) {
-  throw "Missing $envFile. Run scripts/install_matrix_synapse_windows.ps1 first."
+  throw "Missing $envFile. Run installers/install_matrix_synapse_windows.ps1 first."
 }
 
 docker compose --env-file $envFile -f $composeFile up -d

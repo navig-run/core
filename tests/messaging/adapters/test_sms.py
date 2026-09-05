@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from navig.messaging.adapter import DeliveryReceipt, DeliveryStatus, InboundEvent
+from navig.messaging.adapter import InboundEvent
 from navig.messaging.adapters.sms import SmsAdapter
 
 
@@ -223,3 +223,39 @@ class TestSendMessage:
         receipt = _run(adapter.send_message("+33612345678", "Hello"))
         assert receipt.ok is False
         assert "network error" in receipt.error
+
+    def test_attachments_are_refused_not_silently_dropped(self):
+        """SMS is text-only; passing attachments used to be accepted-and-ignored with a
+        success() receipt. It must now fail — and send nothing — so the record is honest."""
+        adapter = SmsAdapter({"provider": "twilio", "twilio": {}})
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = MagicMock(sid="SM123")  # a send WOULD succeed
+        adapter._client = mock_client
+        receipt = _run(
+            adapter.send_message("+33612345678", "hi", attachments=[{"url": "https://x/a.png"}])
+        )
+        assert receipt.ok is False  # refused — NOT the old silent success()
+        assert "attachment" in (receipt.error or "").lower()
+        mock_client.messages.create.assert_not_called()  # nothing was sent
+
+    def test_twilio_send_is_offloaded_to_a_thread(self):
+        """The synchronous Twilio SDK call must run via asyncio.to_thread so a slow provider
+        can't block the single-threaded gateway loop (every other message/notification would
+        freeze until it returned)."""
+        adapter = SmsAdapter({"provider": "twilio", "twilio": {}})
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = MagicMock(sid="SM1")
+        adapter._client = mock_client
+
+        offloaded = []
+        real_to_thread = asyncio.to_thread
+
+        async def _spy(func, *args, **kwargs):
+            offloaded.append(func)
+            return await real_to_thread(func, *args, **kwargs)
+
+        with patch("navig.messaging.adapters.sms.asyncio.to_thread", new=_spy):
+            receipt = _run(adapter.send_message("+33612345678", "hi"))
+        assert receipt.ok is True
+        # the blocking SDK call went through to_thread, not a direct call on the loop
+        assert mock_client.messages.create in offloaded

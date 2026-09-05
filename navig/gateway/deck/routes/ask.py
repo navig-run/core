@@ -26,11 +26,24 @@ except ImportError:  # pragma: no cover - aiohttp always present at runtime
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_PROMPT = (
-    "You are NAVIG, a precise systems assistant embedded in the NAVIG Deck. "
-    "Answer the user's question directly and concisely. Prefer actionable, "
-    "factual replies over filler."
-)
+def _system_prompt() -> str:
+    """Deck Ask's system prompt — guardrail floor first, then the persona.
+
+    This is a free-form operator chat box, so it gets the same boundaries as
+    every other surface the agent speaks on. The one-line floor is used rather
+    than the full block because this is deliberately a quick-answer seam
+    (``_MAX_QUERY_CHARS``), and one sentence carries the rules a short answer can
+    actually violate: fabricating a fact, acting without consent, and giving
+    medical or financial advice.
+    """
+    from navig.agent.conv.guardrails import guardrail_floor_minimal
+
+    return (
+        f"{guardrail_floor_minimal()}\n\n"
+        "You are NAVIG, a precise systems assistant embedded in the NAVIG Deck. "
+        "Answer the user's question directly and concisely. Prefer actionable, "
+        "factual replies over filler."
+    )
 
 # Guardrail: keep palette prompts short so this stays a quick-answer seam, not
 # an unbounded chat transcript endpoint.
@@ -72,7 +85,7 @@ async def handle_deck_ask(request: "web.Request") -> "web.Response":
         max_tokens = 1024
 
     messages: list[dict[str, str]] = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "system", "content": _system_prompt()},
         {"role": "user", "content": query},
     ]
 

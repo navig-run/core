@@ -131,6 +131,18 @@ def cdp_status(json_out: bool = typer.Option(False, "--json")):
 
     from navig.console_helper import Table
 
+    # A browser NAVIG launched and is still tracking, which `discover_targets` cannot see:
+    # headless, or holding the ephemeral port `--remote-debugging-port=0` takes. It is
+    # healthy and it is RUNNING — so it is neither a "live target" nor a leak, and it was
+    # listed in NEITHER place. `cdp status` then printed "No live CDP targets" with a
+    # tracked browser very much alive (reproduced: port 30187 headless; `cdp launched`
+    # said "live" in the same second). That silence is what tells the next agent it is
+    # safe to bulk-kill debug browsers — while another session is driving one.
+    discovered_ports = {tgt.port for tgt in found}
+    tracked_unseen = [
+        b for b in running if b["kind"] == "tracked" and b["port"] not in discovered_ports
+    ]
+
     if found:
         table = Table(box=None, show_header=True, padding=(0, 2))
         table.add_column("Port", no_wrap=True)
@@ -143,39 +155,50 @@ def cdp_status(json_out: bool = typer.Option(False, "--json")):
             kind = "[green]browser[/green]" if tgt.attachable else f"[dim]{tgt.kind}[/dim]"
             table.add_row(str(tgt.port), kind, tgt.browser, str(len(tgt.tabs)), top or "—")
         ch.console.print(table)
+    elif tracked_unseen:
+        # "No live CDP targets" would be false here, and falsely reassuring.
+        ch.info("No attachable target — but NAVIG-launched browser(s) are running (below).")
     else:
         ch.warning("No live CDP targets. Launch one: navig cdp launch chrome")
 
-    # Leaked browsers are NOT discoverable above: a headless one shows no window, and
-    # one launched with --remote-debugging-port=0 sits on an ephemeral port no scan
-    # can guess. They only appear in a process scan — which is why they went unseen
-    # long enough to pile up. Show them here, even when there are no live targets.
+    # Leaked browsers are NOT discoverable above either, for the same reasons. They only
+    # appear in a process scan — which is why they went unseen long enough to pile up.
+    # Show both here, even when there are no live targets.
     stray = [b for b in running if b["kind"] != "tracked"]
-    if not stray:
+    listed = tracked_unseen + stray
+    if not listed:
         return
 
     orphans = sum(1 for b in stray if b["kind"] == "orphan")
+    foreign = len(stray) - orphans
 
     ch.console.print("")
     if orphans:
         # WE leaked these. That is a warning.
         ch.warning(f"{orphans} browser(s) NAVIG launched and never closed:")
-    else:
+    elif foreign and tracked_unseen:
+        ch.info(f"{len(listed)} debug browser(s) running:")
+    elif foreign:
         # Only browsers we did not launch — very possibly the operator's OWN
         # deliberately-debugged browser. That is information, not a problem, and
         # warning about it would train them to ignore the warning that matters.
-        ch.info(f"{len(stray)} debug browser(s) running that NAVIG did not launch:")
+        ch.info(f"{foreign} debug browser(s) running that NAVIG did not launch:")
+    else:
+        # Only healthy tracked ones. Informational — nothing here needs doing.
+        ch.info(f"{len(tracked_unseen)} NAVIG-launched browser(s) running:")
     leaks = Table(box=None, show_header=True, padding=(0, 2))
     leaks.add_column("PID", no_wrap=True)
     leaks.add_column("Port", no_wrap=True)
     leaks.add_column("Owner", no_wrap=True)
     leaks.add_column("Mode", no_wrap=True)
     leaks.add_column("Profile")
-    for b in stray:
-        owner = (
-            "[yellow]navig (leaked)[/yellow]" if b["kind"] == "orphan"
-            else "[dim]not navig[/dim]"
-        )
+    for b in listed:
+        if b["kind"] == "tracked":
+            owner = "[green]navig (live)[/green]"
+        elif b["kind"] == "orphan":
+            owner = "[yellow]navig (leaked)[/yellow]"
+        else:
+            owner = "[dim]not navig[/dim]"
         leaks.add_row(
             str(b["pid"]),
             str(b["port"]) if b["port"] else "[dim]ephemeral[/dim]",
@@ -185,9 +208,14 @@ def cdp_status(json_out: bool = typer.Option(False, "--json")):
         )
     ch.console.print(leaks)
 
+    if tracked_unseen:
+        ch.dim(
+            f"{len(tracked_unseen)} live and tracked — a session is using it. "
+            "Close one with: navig cdp stop --port <port>"
+        )
     if orphans:
         ch.dim(f"{orphans} leaked by NAVIG · reclaim them with: navig cdp stop --all")
-    if len(stray) - orphans:
+    if foreign:
         ch.dim(
             "NAVIG never touches a browser it did not launch — it may be yours, or another "
             "tool may still be driving it. Close one with: taskkill /PID <pid> /T /F"
@@ -290,7 +318,11 @@ def cdp_new(
 
 @cdp_app.command("stop")
 def cdp_stop(
-    port: int = typer.Option(9222, "--port", "-p"),
+    # Default None, not 9222: the action layer resolves an unspecified port from the
+    # registry of launched browsers. A literal default here would hide that the caller
+    # never chose, and address a port nothing was launched on.
+    port: int | None = typer.Option(None, "--port", "-p",
+                                    help="Defaults to the launched session."),
     all_ports: bool = typer.Option(False, "--all", help="Close every NAVIG-launched debug browser."),
     json_out: bool = typer.Option(False, "--json"),
 ):
@@ -303,7 +335,8 @@ def cdp_stop(
 
 @cdp_app.command("detach")
 def cdp_detach(
-    port: int = typer.Option(9222, "--port", "-p"),
+    port: int | None = typer.Option(None, "--port", "-p",
+                                    help="Defaults to the launched session."),
     all_ports: bool = typer.Option(False, "--all"),
     json_out: bool = typer.Option(False, "--json"),
 ):
@@ -367,6 +400,48 @@ def cdp_screenshot(
 
     port = _resolve_port(None, port)
     _emit(_run(cdp_actions.screenshot(port, out=out, full_page=full_page, tab=tab, url=url)), json_out)
+
+
+@cdp_app.command("record")
+def cdp_record(
+    port: int = typer.Option(9222, "--port", "-p"),
+    out: str | None = typer.Option(None, "--out", "-o", help="Output .mp4 path."),
+    secs: float = typer.Option(5.0, "--secs", "-s", help="How long to record."),
+    size: str | None = typer.Option(None, "--size", help="Cap/reframe, e.g. 1080x1920."),
+    fps: int = typer.Option(30, "--fps", help="Output frame rate."),
+    quality: int = typer.Option(90, "--quality", help="JPEG quality of captured frames."),
+    tab: int | None = typer.Option(None, "--tab", help="Tab index from `cdp tabs`."),
+    url: str | None = typer.Option(None, "--url", help="Pick tab by URL substring."),
+    json_out: bool = typer.Option(False, "--json"),
+):
+    """Record the attached page to an mp4 (screencast → video).
+
+    The moving-picture sibling of `cdp screenshot` — for capturing an animation, a
+    transition, or a flow as real footage.
+
+        navig cdp record --secs 8 --size 1080x1920 -o shot.mp4
+    """
+    from navig.browser import cdp_actions
+
+    width = height = None
+    if size:
+        try:
+            width, height = (int(part) for part in size.lower().split("x", 1))
+        except ValueError:
+            ch.error(f"--size must look like 1080x1920, got {size!r}")
+            raise typer.Exit(2) from None
+    if secs <= 0:
+        ch.error("--secs must be greater than 0")
+        raise typer.Exit(2)
+
+    port = _resolve_port(None, port)
+    _emit(
+        _run(cdp_actions.record(
+            port, out=out, secs=secs, width=width, height=height,
+            fps=fps, quality=quality, tab=tab, url=url,
+        )),
+        json_out,
+    )
 
 
 @cdp_app.command("click")
@@ -565,7 +640,7 @@ def cdp_tabs(port: int = typer.Option(9222, "--port", "-p"),
     tabs = result.get("tabs", [])
     ch.info(f"{len(tabs)} open page(s):")
     for tab in tabs:
-        ch.info(f"  [{tab['index']}] {tab.get('title') or '—'} — {tab.get('url', '')}")
+        ch.info(f"  \\[{tab['index']}] {tab.get('title') or '—'} — {tab.get('url', '')}")
 
 
 # ────────────────────────── named profiles ──────────────────────────
@@ -729,7 +804,7 @@ def profile_export_cmd(name: str = typer.Argument(..., help="Profile whose perso
     path = Path(out or f"{name}.navigpersona")
     path.write_bytes(blob)
     enc = "encrypted" if passphrase else "plaintext (persona only)"
-    ch.success(f"Exported persona '{name}' → {path}  [{enc}]")
+    ch.success(f"Exported persona '{name}' → {path}  \\[{enc}]")
     ch.info(f"UA: {per.ua_platform} · Chrome {per.chrome_major} · {per.locale}/{per.timezone}"
             + (" · proxy set" if per.proxy else ""))
 

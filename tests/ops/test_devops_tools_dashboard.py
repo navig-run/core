@@ -10,8 +10,6 @@ from __future__ import annotations
 import subprocess
 from unittest.mock import MagicMock
 
-import pytest
-
 # ---------------------------------------------------------------------------
 # devops_tools — _cp_to_str, _MAX_OUTPUT_CHARS
 # ---------------------------------------------------------------------------

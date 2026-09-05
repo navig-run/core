@@ -8,10 +8,10 @@ Verify that navig.settings.resolver honours NAVIG_CONFIG_DIR so that
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
+from navig.platform import paths
 from navig.settings.resolver import (
     SettingsResolver,
     _global_settings_dir,
@@ -29,17 +29,26 @@ def test_global_settings_dir_respects_env(tmp_path, monkeypatch):
     assert result == custom
 
 
-def test_global_settings_dir_not_home(monkeypatch):
-    """_global_settings_dir() must never fall back to Path.home() / '.navig'."""
-    # Even without an env override the function must not return the user's home .navig
-    # (paths.config_dir() handles its own default; we just assert no raw Path.home() join).
-    result = _global_settings_dir()
-    assert result != Path.home() / ".navig" or (
-        # If the machine happens to have no NAVIG_CONFIG_DIR *and* paths.config_dir()
-        # defaults to ~/.navig, both values coincide – that is still acceptable.
-        result == Path.home() / ".navig"
-    )
+def test_global_settings_dir_delegates_and_never_joins_home(monkeypatch, tmp_path):
+    """_global_settings_dir() must delegate, never join Path.home() itself.
 
+    The previous assertion was `result != home/.navig or result == home/.navig` -- true for
+    every possible value, so the invariant in the docstring was never checked. Its own
+    comment explains why it was written that way: on a machine with no NAVIG_CONFIG_DIR,
+    paths.config_dir() legitimately RESOLVES to ~/.navig, so comparing the returned path
+    against home cannot distinguish "delegated correctly" from "hardcoded home".
+
+    Redirecting the delegate settles it: if the resolver joins home itself the redirect is
+    ignored and this fails; if it delegates, the result follows -- whatever config_dir()
+    happens to return on this machine.
+    """
+    redirected = tmp_path / "elsewhere"
+    monkeypatch.setattr(paths, "config_dir", lambda: redirected)
+
+    assert _global_settings_dir() == redirected, (
+        "_global_settings_dir() ignored paths.config_dir() - it is resolving the global "
+        "settings root itself instead of delegating."
+    )
 
 def test_layers_dir_respects_env(tmp_path, monkeypatch):
     """_layers_dir() must be nested inside _global_settings_dir()."""

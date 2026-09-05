@@ -464,3 +464,38 @@ def test_non_credential_synthesis_error_no_fallback_same_honest_shape(monkeypatc
     assert events[-1]["synthesis_error"] is True
     # The original error class is surfaced in the log, not swallowed.
     assert any("Final decision synthesis failed: 429 too many requests" in e for e in rec.errors)
+
+
+# ─────────────────────────────────────────────────────────────
+# Hung-agent fan-out: the round budget must fire gracefully (defeated-timeout regression)
+# ─────────────────────────────────────────────────────────────
+
+
+def test_hung_agent_times_out_gracefully_without_wedging_the_round(monkeypatch):
+    """A hung agent must be marked [TIMEOUT] at the round budget — not wedge the round
+    (the old `with ThreadPoolExecutor` exit joined the worker) or crash it (the
+    `as_completed` TimeoutError was uncaught). The fast agent still lands."""
+    import time as _time
+
+    # Small round budget so the test is fast: timeout(0.1) + buffer(0.1) = 0.2s.
+    monkeypatch.setattr(council_mod, "_ROUND_BUDGET_BUFFER_S", 0.1)
+    release = threading.Event()
+
+    def fake_ai(prompt, system_prompt=None, model=None):
+        if system_prompt and "Beta" in system_prompt:
+            release.wait(30)  # Beta hangs; released in the finally so its worker exits
+            return "beta (late)"
+        return "alpha response"
+
+    monkeypatch.setattr(council_mod, "_ask_ai", fake_ai)
+
+    t0 = _time.monotonic()
+    try:
+        result = run_council(_formation(), "Ship it?", rounds=1, timeout_per_agent=0.1)
+        elapsed = _time.monotonic() - t0
+        responses = {r["agent"]: r for r in result["rounds"][0]["responses"]}
+        assert responses["beta"]["response"] == "[TIMEOUT]", "hung agent must be marked [TIMEOUT]"
+        assert responses["alpha"]["response"] != "[TIMEOUT]", "the fast agent must still land"
+        assert elapsed < 5, "the round must return at the budget, not wedge on the hung agent"
+    finally:
+        release.set()

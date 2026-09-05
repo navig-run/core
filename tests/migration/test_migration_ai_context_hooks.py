@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from datetime import datetime
+from unittest.mock import patch
 
 import pytest
 import yaml

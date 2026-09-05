@@ -10,7 +10,6 @@ legacy `plugin.py` Typer dirs). Canonical verbs: `add` / `remove`
 from __future__ import annotations
 
 import re
-import shutil
 from pathlib import Path
 
 import typer
@@ -316,9 +315,17 @@ app = typer.Typer(help=description, no_args_is_help=True)
 
 
 @app.command("hello")
-def hello() -> None:
+def hello(who: str = typer.Argument("world", help="Who to greet")) -> None:
     """Example command — run: navig {name} hello"""
-    typer.echo("Hello from the {name} plugin!")
+    if not who.strip():
+        # A command that PRINTS a failure must EXIT non-zero, or the shell sees success
+        # and `navig {name} hello && next-step` runs the next step anyway. The convention
+        # across navig: typer.Exit(2) for a usage error (bad/missing argument, not found),
+        # typer.Exit(1) for an operation failure (add `from exc` when an exception drove
+        # it). Never print an error and simply return.
+        typer.secho("who must not be empty", fg="red", err=True)
+        raise typer.Exit(2)
+    typer.echo(f"Hello, {{who}}, from the {name} plugin!")
 
 
 def check_dependencies() -> tuple[bool, list[str]]:

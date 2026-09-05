@@ -3,9 +3,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
-from pathlib import Path
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # ErrorLog
@@ -83,7 +80,7 @@ class TestAIContextManagerInit:
         assert mgr.error_logs == []
 
     def test_loads_existing_error_log_file(self, tmp_path):
-        from navig.ai_context import AIContextManager, ErrorLog
+        from navig.ai_context import AIContextManager
 
         entry = {
             "timestamp": "2025-01-01T00:00:00",

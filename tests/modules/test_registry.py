@@ -7,11 +7,10 @@ plugin/launcher discovery from the plugins dir. Isolated via NAVIG_DATA_DIR.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
-from navig.modules.registry import BUILTIN_MODULES, ModuleRegistry
+from navig.modules.registry import ModuleRegistry
 
 
 def _ids(rows) -> set[str]:
@@ -101,6 +100,30 @@ def test_default_enabled_reflected(monkeypatch):
     by_id = {m["id"]: m for m in rows}
     assert by_id["finance"]["enabled"] is True     # default on
     assert by_id["devops"]["enabled"] is False      # default off
+
+
+@pytest.mark.parametrize("falsey", ["false", "False", "off", "no", "0"])
+def test_registry_string_override_disables(falsey):
+    """`navig config set modules.overrides.<id> false` stores the STRING "false", and
+    bool("false") is True — so _overrides() must coerce, or a disabled module reads as
+    ENABLED both behaviourally (is_enabled) and in every list_modules() surface."""
+    from navig.core import Config
+
+    # `finance` defaults ON; a string-false override must turn it OFF everywhere.
+    Config().set("modules.overrides", {"finance": falsey}, scope="global")
+    reg = ModuleRegistry().discover()
+    assert reg.is_enabled("finance") is False
+    by_id = {m["id"]: m for m in reg.list_modules()}
+    assert by_id["finance"]["enabled"] is False
+
+
+@pytest.mark.parametrize("truthy", ["true", "on", "yes", "1"])
+def test_registry_string_override_enables(truthy):
+    from navig.core import Config
+
+    # `devops` defaults OFF; a string-true override must turn it ON.
+    Config().set("modules.overrides", {"devops": truthy}, scope="global")
+    assert ModuleRegistry().discover().is_enabled("devops") is True
 
 
 def test_plugin_discovered_as_module(tmp_path, monkeypatch):

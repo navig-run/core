@@ -857,15 +857,20 @@ def db_dump_cmd(
     with ch.create_spinner("Creating backup..."):
         success, stdout, stderr = discovery._execute_ssh(dump_cmd)
 
-    if success and stdout:
-        # Save to local file
+    if success:
+        # A dump succeeds on the command's EXIT CODE, not on whether it produced output.
+        # A valid dump of an empty database is (near-)empty, so `success and stdout` used
+        # to misreport a legitimate empty backup as "Backup failed". Write whatever the
+        # command produced (empty string if none) and report success.
         output.parent.mkdir(parents=True, exist_ok=True)
         from navig.core.yaml_io import atomic_write_text
 
-        atomic_write_text(output, stdout)
+        atomic_write_text(output, stdout or "")
         size_kb = output.stat().st_size / 1024
         ch.success(f"✓ Backup saved: {output}")
         ch.dim(f"  Size: {size_kb:.1f} KB")
+        if not (stdout or "").strip():
+            ch.warning("The dump was empty — the database produced no output.")
     else:
         ch.error("Backup failed")
         if stderr:
@@ -1322,7 +1327,12 @@ def db_optimize_new(
     """Optimize database table."""
     from navig.commands.database_advanced import optimize_table_cmd
 
-    optimize_table_cmd(table, ctx.obj)
+    # The return value IS the failure signal — discarding it exited 0 for all three
+    # failure paths, including the SQL-identifier validation that exists to stop
+    # injection. The bool contract stays where it is (the function knows WHY it
+    # failed); the CLI boundary is what turns it into an exit code.
+    if not optimize_table_cmd(table, ctx.obj):
+        raise typer.Exit(1)
 
 
 @db_app.command("repair")
@@ -1333,7 +1343,10 @@ def db_repair_new(
     """Repair database table."""
     from navig.commands.database_advanced import repair_table_cmd
 
-    repair_table_cmd(table, ctx.obj)
+    # Same as `optimize` above: the bool is the failure signal, and dropping it made
+    # `navig db repair` report success on a rejected table name or a dead client.
+    if not repair_table_cmd(table, ctx.obj):
+        raise typer.Exit(1)
 
 
 # ── Local SQLite store maintenance (formerly top-level `navig store`) ─────────

@@ -1,7 +1,6 @@
 """
 Tests for navig.messaging.delivery — DeliveryTracker SQLite audit log.
 """
-import pytest
 
 from navig.messaging.adapter import ComplianceMode, DeliveryReceipt, DeliveryStatus
 

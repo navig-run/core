@@ -51,12 +51,18 @@ class TestCodePackRegisterTools:
         meta = mock_registry.register.call_args[0][0]
         assert "code" in meta.tags
 
-    def test_tool_has_module_path(self) -> None:
+    def test_tool_declares_no_lazy_handler(self) -> None:
+        """This pinned `module_path="navig.tools.sandbox"` alongside
+        `handler_name="execute"`, a name that module has never defined — so the
+        assertion held while `get_handler()` returned None for every call. The
+        tool now declares no lazy handler and reports UNAVAILABLE with a reason;
+        see tests/tools/test_tools_code_pack.py for the full rationale."""
         from navig.tools.domains.code_pack import register_tools
         mock_registry = MagicMock()
         register_tools(mock_registry)
         meta = mock_registry.register.call_args[0][0]
-        assert meta.module_path == "navig.tools.sandbox"
+        assert meta.module_path is None
+        assert meta.handler_name is None
 
     def test_parameters_include_code(self) -> None:
         from navig.tools.domains.code_pack import register_tools

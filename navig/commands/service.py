@@ -28,6 +28,166 @@ from navig.platform.paths import log_dir as _log_dir
 ch = lazy_import("navig.console_helper")
 
 
+def _stop_failure_message() -> str:
+    """Why the last daemon stop failed, in words the operator can act on. Reads the
+    reason NavigDaemon recorded (e.g. an elevation mismatch); falls back to a manual
+    force-kill hint when none was set."""
+    from navig.daemon.supervisor import NavigDaemon
+
+    reason = getattr(NavigDaemon, "_last_stop_error", None)
+    if reason:
+        return reason
+    pid = None
+    try:
+        pid = NavigDaemon.read_pid()
+    except Exception:  # noqa: BLE001
+        pass
+    if pid is not None:
+        hint = f"taskkill /F /PID {pid} /T" if os.name == "nt" else f"kill -9 {pid}"
+        return f"pid {pid} would not stop. Try:  {hint}"
+    return "the daemon would not stop."
+
+
+def _is_elevated() -> bool:
+    """True when this process can stop an elevated daemon — admin on Windows, root on POSIX."""
+    if os.name == "nt":
+        try:
+            import ctypes  # noqa: PLC0415
+
+            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except Exception:  # noqa: BLE001
+            return False
+    try:
+        return os.geteuid() == 0  # type: ignore[attr-defined]
+    except AttributeError:
+        return False
+
+
+def _process_is_elevated(pid: int | None) -> bool | None:
+    """True/False if process *pid* runs at High(+) integrity, or None when it can't be
+    determined (non-Windows, no such process, or the probe failed) — never guess. Used
+    only to PROACTIVELY warn; a None simply shows nothing."""
+    if os.name != "nt" or not pid:
+        return None
+    try:
+        import ctypes  # noqa: PLC0415
+        from ctypes import wintypes  # noqa: PLC0415
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        TOKEN_QUERY = 0x0008
+        TOKEN_INTEGRITY_LEVEL = 25
+        SECURITY_MANDATORY_HIGH_RID = 0x3000
+        k32 = ctypes.windll.kernel32
+        a32 = ctypes.windll.advapi32
+        h = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+        if not h:
+            return None
+        try:
+            tok = wintypes.HANDLE()
+            if not a32.OpenProcessToken(h, TOKEN_QUERY, ctypes.byref(tok)):
+                return None
+            try:
+                size = wintypes.DWORD(0)
+                a32.GetTokenInformation(tok, TOKEN_INTEGRITY_LEVEL, None, 0, ctypes.byref(size))
+                if not size.value:
+                    return None
+                buf = ctypes.create_string_buffer(size.value)
+                if not a32.GetTokenInformation(
+                    tok, TOKEN_INTEGRITY_LEVEL, buf, size.value, ctypes.byref(size)
+                ):
+                    return None
+                # TOKEN_MANDATORY_LABEL.Label.Sid — a pointer at the start of the buffer.
+                sid_ptr = ctypes.cast(buf, ctypes.POINTER(ctypes.c_void_p)).contents.value
+                if not sid_ptr:
+                    return None
+                # SID: byte 1 = SubAuthorityCount; SubAuthority[] (DWORDs) start at byte 8.
+                sub_count = ctypes.c_ubyte.from_address(sid_ptr + 1).value
+                if not sub_count:
+                    return None
+                rid = wintypes.DWORD.from_address(sid_ptr + 8 + 4 * (sub_count - 1)).value
+                return rid >= SECURITY_MANDATORY_HIGH_RID
+            finally:
+                k32.CloseHandle(tok)
+        finally:
+            k32.CloseHandle(h)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _relaunch_elevated(sub_args: list[str]) -> int | None:
+    """Relaunch ``navig <sub_args>`` with elevated privileges — a UAC prompt on
+    Windows, ``sudo`` on POSIX — and return the child's exit code. None means the
+    elevation was cancelled or couldn't be launched. Call only when NOT elevated;
+    the child, being elevated, skips its own relaunch (no loop)."""
+    if os.name != "nt":
+        # POSIX: hand off to sudo (replaces this process; prompts in-terminal).
+        try:
+            os.execvp("sudo", ["sudo", sys.executable, "-m", "navig", *sub_args])
+        except (FileNotFoundError, OSError):
+            return None
+        return None  # unreachable — execvp replaced the process
+
+    import ctypes  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    from ctypes import wintypes  # noqa: PLC0415
+
+    class _SHELLEXECUTEINFOW(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", wintypes.DWORD),
+            ("fMask", ctypes.c_ulong),
+            ("hwnd", wintypes.HWND),
+            ("lpVerb", wintypes.LPCWSTR),
+            ("lpFile", wintypes.LPCWSTR),
+            ("lpParameters", wintypes.LPCWSTR),
+            ("lpDirectory", wintypes.LPCWSTR),
+            ("nShow", ctypes.c_int),
+            ("hInstApp", wintypes.HINSTANCE),
+            ("lpIDList", ctypes.c_void_p),
+            ("lpClass", wintypes.LPCWSTR),
+            ("hkeyClass", wintypes.HKEY),
+            ("dwHotKey", wintypes.DWORD),
+            ("hIcon", wintypes.HANDLE),
+            ("hProcess", wintypes.HANDLE),
+        ]
+
+    SEE_MASK_NOCLOSEPROCESS = 0x00000040
+    SEE_MASK_NO_CONSOLE = 0x00008000
+    SW_HIDE = 0
+    sei = _SHELLEXECUTEINFOW()
+    sei.cbSize = ctypes.sizeof(sei)
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NO_CONSOLE
+    sei.lpVerb = "runas"  # the UAC verb
+    sei.lpFile = sys.executable
+    sei.lpParameters = subprocess.list2cmdline(["-m", "navig", *sub_args])
+    sei.nShow = SW_HIDE
+    try:
+        ok = ctypes.windll.shell32.ShellExecuteExW(ctypes.byref(sei))
+    except Exception:  # noqa: BLE001
+        return None
+    if not ok or not sei.hProcess:
+        return None  # UAC declined or launch failed
+    try:
+        ctypes.windll.kernel32.WaitForSingleObject(sei.hProcess, 0xFFFFFFFF)  # INFINITE
+        code = wintypes.DWORD()
+        ctypes.windll.kernel32.GetExitCodeProcess(sei.hProcess, ctypes.byref(code))
+        return int(code.value)
+    finally:
+        ctypes.windll.kernel32.CloseHandle(sei.hProcess)
+
+
+def _report_elevated_and_exit(code: int | None, past: str) -> None:
+    """Report an elevated relaunch's outcome (the child runs hidden) and raise the
+    matching Exit. *past* is the past-tense verb, e.g. "restarted"."""
+    if code is None:
+        ch.error("Elevation was cancelled or unavailable.")
+        raise typer.Exit(1)
+    if code == 0:
+        ch.success(f"Daemon {past} (elevated).")
+    else:
+        ch.error("The elevated action failed. Check:  navig service logs")
+    raise typer.Exit(code)
+
+
 def _spawn_stop_watchdog(duration: int = 30) -> None:
     """Launch a detached process that kills new daemon spawns for *duration* seconds.
 
@@ -130,6 +290,48 @@ service_app = typer.Typer(
 # =========================================================================
 # install
 # =========================================================================
+def _resolved_daemon_components(
+    cfg: dict,
+    *,
+    bot: bool | None,
+    gateway: bool | None,
+    scheduler: bool | None,
+    health_port: int | None,
+) -> dict:
+    """Apply only the components the operator actually named on the command line.
+
+    `navig service install` is not only a first-time installer: `navig service
+    status` prints it as the FIX for an unhealthy autostart task, so it is run on
+    working installs. It used to write `cfg[...] = <flag>` for every component
+    unconditionally, and the flags default to off -- so re-registering a task to
+    repair its trigger silently set `gateway: false`.
+
+    That is not cosmetic. The gateway is what holds the Lighthouse uplink, so the
+    next time the daemon started from the task it came up with the Telegram bot and
+    NO uplink: the edge answered `503 x-navig-brain: offline`, the Deck could not
+    reach the brain, and `navig service status` cheerfully reported "Daemon is
+    RUNNING". Measured on the operator's machine 2026-09-04 after exactly that
+    sequence -- and the repair advice is what triggered it.
+
+    An unspecified flag now keeps whatever is on disk; only a first install falls
+    back to the documented defaults.
+    """
+    from navig.daemon.entry import DEFAULT_DAEMON_CONFIG  # noqa: PLC0415
+
+    def _pick(key: str, given, default):
+        if given is not None:
+            return given
+        if key in cfg:
+            return cfg[key]
+        return default
+
+    cfg["telegram_bot"] = _pick("telegram_bot", bot, DEFAULT_DAEMON_CONFIG.get("telegram_bot", True))
+    cfg["gateway"] = _pick("gateway", gateway, DEFAULT_DAEMON_CONFIG.get("gateway", False))
+    cfg["scheduler"] = _pick("scheduler", scheduler, DEFAULT_DAEMON_CONFIG.get("scheduler", False))
+    cfg["health_port"] = _pick("health_port", health_port, DEFAULT_DAEMON_CONFIG.get("health_port", 0))
+    return cfg
+
+
 @service_app.command("install")
 def service_install(
     method: str | None = typer.Option(
@@ -143,13 +345,20 @@ def service_install(
         "--no-start",
         help="Install but don't start the daemon yet",
     ),
-    bot: bool = typer.Option(True, "--bot/--no-bot", help="Include Telegram bot"),
-    gateway: bool = typer.Option(False, "--gateway/--no-gateway", help="Include gateway server"),
-    scheduler: bool = typer.Option(
-        False, "--scheduler/--no-scheduler", help="Include cron scheduler"
+    # These default to None = "not specified", NOT to a value. `service install`
+    # is also the documented REPAIR for an unhealthy autostart task, so operators
+    # re-run it on a working install -- and it used to rewrite every one of these
+    # from the flag defaults, silently turning OFF whatever they had enabled.
+    # See _resolved_daemon_components().
+    bot: bool | None = typer.Option(None, "--bot/--no-bot", help="Include Telegram bot [default: on]"),
+    gateway: bool | None = typer.Option(
+        None, "--gateway/--no-gateway", help="Include gateway server [default: keep current]"
     ),
-    health_port: int = typer.Option(
-        0, "--health-port", help="TCP health-check port (0 = disabled)"
+    scheduler: bool | None = typer.Option(
+        None, "--scheduler/--no-scheduler", help="Include cron scheduler [default: keep current]"
+    ),
+    health_port: int | None = typer.Option(
+        None, "--health-port", help="TCP health-check port (0 = disabled)"
     ),
 ):
     """
@@ -180,10 +389,12 @@ def service_install(
             cfg = DEFAULT_DAEMON_CONFIG.copy()
     except (json.JSONDecodeError, OSError):
         cfg = DEFAULT_DAEMON_CONFIG.copy()
-    cfg["telegram_bot"] = bot
-    cfg["gateway"] = gateway
-    cfg["scheduler"] = scheduler
-    cfg["health_port"] = health_port
+    cfg = _resolved_daemon_components(
+        cfg, bot=bot, gateway=gateway, scheduler=scheduler, health_port=health_port
+    )
+    bot = bool(cfg["telegram_bot"])
+    gateway = bool(cfg["gateway"])
+    scheduler = bool(cfg["scheduler"])
     tmp_path = config_path.with_suffix(config_path.suffix + ".tmp")
     atomic_write_text(tmp_path, json.dumps(cfg, indent=2))
     os.replace(tmp_path, config_path)
@@ -278,6 +489,37 @@ def _tail_service_logs() -> None:
         ch.dim("Log streaming stopped.")
 
 
+def _ensure_autostart_enabled() -> None:
+    """Re-enable the autostart task when it is installed but DISABLED.
+
+    Acts ONLY on a definite "disabled". "Not installed" and "could not read the
+    task" are owned by `navig service status`, the surface whose job is health;
+    warning about them from a start path would nag on every launch of a machine
+    that deliberately never installed the task.
+    """
+    if os.name != "nt":
+        return
+    try:
+        from navig.daemon.service_manager import (  # noqa: PLC0415
+            task_scheduler_enable,
+            task_scheduler_enabled_state,
+        )
+
+        enabled, _installed, _detail = task_scheduler_enabled_state()
+        if enabled is not False:
+            return
+        ok, msg = task_scheduler_enable()
+        if ok:
+            ch.success("Autostart was DISABLED - re-enabled; it will start the daemon at logon")
+        else:
+            ch.warning(
+                f"Autostart is DISABLED and could not be re-enabled: {msg} - "
+                "re-register it with: navig service install"
+            )
+    except Exception as exc:  # noqa: BLE001 - a repair probe must never block a start
+        ch.warning(f"Could not verify the autostart task: {exc}")
+
+
 @service_app.command("start")
 def service_start(
     foreground: bool = typer.Option(
@@ -309,6 +551,16 @@ def service_start(
     if NavigDaemon.is_running():
         pid = NavigDaemon.read_pid()
         ch.info(f"Daemon already running (pid={pid})")
+        # A RUNNING daemon does not mean autostart survives a reboot. `navig
+        # service stop` DISABLES the scheduled task, and starting the daemon by
+        # any other route afterwards (`navig gateway start`, the supervisor, a
+        # manual launch) leaves it disabled. `navig service status` tells the
+        # operator to run THIS command to re-enable it -- so returning here made
+        # that printed advice a silent no-op, and the machine kept looking
+        # healthy while having no autostart at all.
+        _ensure_autostart_enabled()
+        if logs:
+            _tail_service_logs()
         return
 
     if foreground:
@@ -410,7 +662,15 @@ def service_start(
 # stop
 # =========================================================================
 @service_app.command("stop")
-def service_stop():
+def service_stop(
+    admin: bool = typer.Option(
+        False,
+        "--admin",
+        "-A",
+        help="Relaunch elevated (UAC on Windows, sudo on POSIX) — needed when the "
+        "daemon is running as Administrator.",
+    ),
+):
     """
     Stop the running NAVIG daemon.
 
@@ -420,7 +680,13 @@ def service_stop():
 
     Examples:
         navig service stop
+        navig service stop --admin   # when the daemon runs elevated
     """
+    admin = admin is True  # tolerate a direct call (OptionInfo default is truthy)
+    if admin and not _is_elevated():
+        ch.info("Requesting elevation…")
+        _report_elevated_and_exit(_relaunch_elevated(["service", "stop"]), "stopped")
+
     import time
 
     from navig.daemon.service_manager import (
@@ -457,10 +723,12 @@ def service_stop():
     # stop_running_daemon() uses taskkill which triggers the graceful exit path.
     ch.info(f"Stopping daemon (pid={pid})...")
     if not NavigDaemon.stop_running_daemon():
-        if os.name == "nt":
-            ch.error("Failed to stop daemon. Try: taskkill /F /PID " + str(pid))
-        else:
-            ch.error("Failed to stop daemon. Try: kill -9 " + str(pid))
+        reason = _stop_failure_message()
+        ch.error(f"Couldn't stop the daemon — {reason}")
+        if not _is_elevated() and ("elevated" in reason.lower() or "denied" in reason.lower()):
+            if sys.stdin.isatty() and typer.confirm("Retry as Administrator?", default=True):
+                _report_elevated_and_exit(_relaunch_elevated(["service", "stop"]), "stopped")
+            ch.info("Retry elevated:  navig service stop --admin")
         raise typer.Exit(1)
 
     # Step 3 — single cleanup sweep: trap any workers that outlived shutdown or
@@ -483,13 +751,32 @@ def service_stop():
 # restart
 # =========================================================================
 @service_app.command("restart")
-def service_restart():
+def service_restart(
+    admin: bool = typer.Option(
+        False,
+        "--admin",
+        "-A",
+        help="Relaunch elevated (UAC on Windows, sudo on POSIX) — needed when the "
+        "daemon is running as Administrator.",
+    ),
+):
     """
     Restart the NAVIG daemon.
 
     Examples:
         navig service restart
+        navig service restart --admin   # when the daemon runs elevated
     """
+    # Coerce first: this function is also called DIRECTLY (navig gateway restart →
+    # service_restart()), where an unpassed typer.Option arrives as a truthy OptionInfo
+    # object, not False. `is True` means "the CLI resolved --admin", never that default.
+    admin = admin is True
+    # If asked to elevate and we're not already, relaunch the whole command with a
+    # UAC/sudo prompt and hand off — the elevated child does the real restart.
+    if admin and not _is_elevated():
+        ch.info("Requesting elevation…")
+        _report_elevated_and_exit(_relaunch_elevated(["service", "restart"]), "restarted")
+
     import subprocess
     import time
 
@@ -510,7 +797,17 @@ def service_restart():
     if NavigDaemon.is_running():
         ch.info("Stopping daemon...")
         if not NavigDaemon.stop_running_daemon():
-            ch.error("Failed to stop existing daemon")
+            reason = _stop_failure_message()
+            ch.error(f"Couldn't stop the daemon — {reason}")
+            # If elevation is the blocker, offer a one-step elevated retry.
+            if not _is_elevated() and ("elevated" in reason.lower() or "denied" in reason.lower()):
+                if sys.stdin.isatty() and typer.confirm("Retry as Administrator?", default=True):
+                    _report_elevated_and_exit(_relaunch_elevated(["service", "restart"]), "restarted")
+                ch.info("Retry elevated:  navig service restart --admin")
+            # Re-arm before bailing out: we disabled the task above, and a restart
+            # that could not stop the daemon must not ALSO leave autostart off.
+            if os.name == "nt":
+                task_scheduler_enable()
             raise typer.Exit(1)
         time.sleep(1)
     else:
@@ -565,10 +862,20 @@ def service_restart():
         if NavigDaemon.is_running():
             _started = True
             break
+    # Re-enable UNCONDITIONALLY. This used to sit inside `if _started:`, so any restart
+    # that did not observe the daemon within the 10-second poll window left autostart
+    # DISABLED -- permanently, and silently. The daemon frequently comes up a moment
+    # later ("Gateway ready in 17.23s" is a real measurement from this machine), which
+    # produces the exact state found repeatedly on the operator's install: daemon
+    # RUNNING, scheduled task DISABLED, so nothing would restart it after a reboot or a
+    # crash. Every early `raise typer.Exit(1)` above this point had the same effect.
+    #
+    # `restart` means "end up running", so the task must be armed on EVERY exit path.
+    # A deliberate `navig service stop` is a different command and still leaves it off.
+    if os.name == "nt":
+        task_scheduler_enable()  # silent if task not installed
+
     if _started:
-        # Re-enable the Task Scheduler task so logon/failure-restart works again.
-        if os.name == "nt":
-            task_scheduler_enable()  # silent if task not installed
         ch.success(f"Daemon restarted (pid={NavigDaemon.read_pid()})")
     else:
         ch.error("Daemon failed to start. Check: navig service logs")
@@ -576,9 +883,8 @@ def service_restart():
 
 
 # =========================================================================
-# status
+# reachability helper — shared by `service status` + onboarding; NOT a command
 # =========================================================================
-@service_app.command("status")
 def reachability_summary() -> dict[str, str]:
     """How this brain is reached + where to open the deck — a single source of
     truth shared by ``navig service status`` and the onboarding final dashboard.
@@ -634,6 +940,10 @@ def reachability_summary() -> dict[str, str]:
     }
 
 
+# =========================================================================
+# status
+# =========================================================================
+@service_app.command("status")
 def service_status(
     json_output: bool = typer.Option(False, "--json", help="JSON output"),
 ):
@@ -652,11 +962,13 @@ def service_status(
     if json_output:
         running, detail = sm.status()
         state = NavigDaemon.read_state()
+        pid = NavigDaemon.read_pid()
         out = {
             "running": running,
-            "pid": NavigDaemon.read_pid(),
+            "pid": pid,
             "children": state.get("children", []) if state else [],
             "detail": detail,
+            "elevated": _process_is_elevated(pid),  # True/False/None (undeterminable)
         }
         print(json.dumps(out, indent=2))
         return
@@ -670,6 +982,16 @@ def service_status(
     ch.console.print()
     for line in detail.split("\n"):
         ch.console.print(f"  {line}")
+
+    # Proactive: a daemon running elevated can't be stopped/restarted from a normal
+    # terminal — surface the one-step remedy here instead of at a failed restart.
+    if running and _process_is_elevated(NavigDaemon.read_pid()) and not _is_elevated():
+        ch.console.print()
+        ch.console.print(
+            "  [yellow]⚠ Running elevated (Administrator)[/yellow] — stop/restart from "
+            "this terminal needs [bold]--admin[/bold]"
+        )
+        ch.console.print("    e.g.  navig service restart --admin")
 
     # Reachability + how to open the deck (P4) — answer "what's running / what next".
     s = reachability_summary()
@@ -690,6 +1012,13 @@ def service_status(
 @service_app.command("uninstall")
 def service_uninstall(
     method: str | None = typer.Option(None, "--method", "-m", help="nssm, task, or systemd"),
+    admin: bool = typer.Option(
+        False,
+        "--admin",
+        "-A",
+        help="Relaunch elevated (UAC on Windows, sudo on POSIX) — needed when the "
+        "daemon runs as Administrator or the service was installed with admin rights.",
+    ),
 ):
     """
     Remove NAVIG daemon service.
@@ -698,7 +1027,16 @@ def service_uninstall(
         navig service uninstall
         navig service uninstall --method systemd
         navig service uninstall --method task
+        navig service uninstall --admin        # when the daemon runs elevated
     """
+    admin = admin is True  # tolerate a direct call (OptionInfo default is truthy)
+    # Forward --method through the elevated relaunch so the child removes the same
+    # backend the operator asked for.
+    elevate_args = ["service", "uninstall"] + (["--method", method] if method else [])
+    if admin and not _is_elevated():
+        ch.info("Requesting elevation…")
+        _report_elevated_and_exit(_relaunch_elevated(elevate_args), "uninstalled")
+
     from navig.daemon import service_manager as sm
     from navig.daemon.supervisor import NavigDaemon
 
@@ -706,7 +1044,12 @@ def service_uninstall(
     if NavigDaemon.is_running():
         ch.info("Stopping daemon...")
         if not NavigDaemon.stop_running_daemon():
-            ch.error("Failed to stop running daemon before uninstall")
+            reason = _stop_failure_message()
+            ch.error(f"Failed to stop running daemon before uninstall — {reason}")
+            if not _is_elevated() and ("elevated" in reason.lower() or "denied" in reason.lower()):
+                if sys.stdin.isatty() and typer.confirm("Retry as Administrator?", default=True):
+                    _report_elevated_and_exit(_relaunch_elevated(elevate_args), "uninstalled")
+                ch.info("Retry elevated:  navig service uninstall --admin")
             raise typer.Exit(1)
 
     ok, msg = sm.uninstall(method=method)

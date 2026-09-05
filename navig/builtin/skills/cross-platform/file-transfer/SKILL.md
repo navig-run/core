@@ -3,8 +3,8 @@ name: file-transfer
 description: Upload, download, and edit files on remote servers via NAVIG
 user-invocable: true
 navig-commands:
-  - navig file upload {local} {remote}
-  - navig file download {remote} {local}
+  - navig file add {local} {remote}
+  - navig file get {remote} {local}
   - navig file edit {remote_path}
   - navig sync pull {remote_path} {local_path}
   - navig sync push {local_path} {remote_path}

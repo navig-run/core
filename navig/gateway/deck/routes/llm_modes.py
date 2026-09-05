@@ -88,11 +88,25 @@ async def handle_deck_llm_modes_update(request: "web.Request") -> "web.Response"
     if not mode:
         return web.json_response({"error": "mode is required"}, status=400)
 
-    from navig.llm.router import CANONICAL_MODES, LLMModeRouter
+    from navig.llm.router import CANONICAL_MODES, MODE_ALIASES, LLMModeRouter
+
+    # `resolve_mode` falls back to "big_tasks" for ANY unrecognised hint — correct when
+    # detecting a mode from a user's prose, wrong for an identifier the caller typed.
+    # So `canonical not in CANONICAL_MODES` could never fire: the guard below was dead
+    # code, and `POST {"mode": "codng"}` silently reconfigured **big_tasks** instead,
+    # reporting `{"ok": true, "mode": "big_tasks"}`. Validate the hint the caller
+    # actually sent, before the fallback erases the distinction.
+    hint = mode.lower()
+    if hint not in CANONICAL_MODES and hint not in MODE_ALIASES:
+        return web.json_response(
+            {
+                "error": f"invalid mode: {mode}",
+                "valid_modes": sorted(CANONICAL_MODES),
+            },
+            status=400,
+        )
 
     canonical = LLMModeRouter.resolve_mode(mode)
-    if canonical not in CANONICAL_MODES:
-        return web.json_response({"error": f"invalid mode: {mode}"}, status=400)
 
     provider = body.get("provider")
     model = body.get("model")
@@ -134,6 +148,13 @@ async def handle_deck_llm_modes_update(request: "web.Request") -> "web.Response"
         if cfg_obj:
             cfg_obj.fallback_model = str(fallback_model)
 
+    # `router.update_mode` is documented as in-memory ONLY, so this block is the whole
+    # of the persistence. Its failure used to be a `logger.warning` under an
+    # unconditional `{"ok": True}` — so the caller was told the mode was updated, saw
+    # the new config echoed back, and lost it at the next daemon restart with nothing
+    # to explain why.
+    persisted = False
+    persist_error: str | None = None
     try:
         from navig.config import get_config_manager
 
@@ -147,17 +168,30 @@ async def handle_deck_llm_modes_update(request: "web.Request") -> "web.Response"
         llm_router_section["llm_modes"] = llm_modes_section
         raw["llm_router"] = llm_router_section
         cm.update_global_config(raw)
+        persisted = True
         logger.info("Persisted LLM mode update: %s", canonical)
     except Exception as e:
-        logger.warning("Could not persist LLM mode to config: %s", e)
+        persist_error = str(e)
+        # error, not warning: a setting that silently reverts on restart is exactly
+        # the kind of loss that looks like "it never worked" days later.
+        logger.error(
+            "LLM mode %s applied in memory but NOT persisted: %s", canonical, e
+        )
 
-    return web.json_response(
-        {
-            "ok": True,
-            "mode": canonical,
-            "config": router.get_all_modes().get(canonical, {}),
-        }
-    )
+    # `ok` stays True because the mode really IS active — reporting failure would be
+    # its own lie. `persisted` carries the part that decides whether it survives.
+    payload: dict = {
+        "ok": True,
+        "mode": canonical,
+        "config": router.get_all_modes().get(canonical, {}),
+        "persisted": persisted,
+    }
+    if not persisted:
+        payload["warning"] = (
+            f"Mode '{canonical}' is active now but was NOT saved to config "
+            f"({persist_error}) — it reverts when the daemon restarts."
+        )
+    return web.json_response(payload)
 
 
 async def handle_deck_llm_modes_detect(request: "web.Request") -> "web.Response":

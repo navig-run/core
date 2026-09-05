@@ -527,6 +527,7 @@ def test_credential_cache_never_caches_failure(monkeypatch):
             state["n"] += 1
             return state["key"], "test"
 
+    monkeypatch.setattr("navig.providers.AuthProfileManager", _FakeAPM)
     monkeypatch.setattr("navig.providers.auth.AuthProfileManager", _FakeAPM)
 
     assert inf.resolve_provider_credential("anthropic") == (None, None)

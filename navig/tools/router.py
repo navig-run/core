@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import inspect
 import logging
 import threading
 import time
@@ -177,6 +178,28 @@ TOOL_ALIASES: dict[str, str] = {
 }
 
 
+def canonical_tool_key(raw: str) -> str:
+    """The canonical FORM of a tool name — casing, hyphens and aliases, no registry.
+
+    The single place that answers "are these two strings the same tool?", so a gate
+    and whatever populates it cannot disagree. They did: `ToolRouter` stored
+    `blocked_tools` / `require_confirmation` exactly as written in config, while
+    `execute()` tested the *canonical* name from the registry. A policy of
+
+        blocked_tools: ["web-fetch"]      # or the documented alias "fetch"
+
+    therefore matched nothing and the tool RAN — verified against the real router,
+    which got as far as a DNS lookup for a tool the operator had blocked.
+
+    Deliberately does NOT consult the registry: the policy is built before tools are
+    registered, so requiring registration would drop every entry and re-open the same
+    hole from the other side.
+    """
+    key = raw.strip().lower().replace("-", "_")
+    return TOOL_ALIASES.get(key, key)
+
+
+
 # =============================================================================
 # ToolRegistry
 # =============================================================================
@@ -249,10 +272,13 @@ class ToolRegistry:
     # -- Lookup ---------------------------------------------------------------
 
     def normalize_tool_name(self, raw: str) -> str | None:
-        """Normalize a tool name or alias to its canonical name."""
-        key = raw.strip().lower().replace("-", "_")
-        if key in TOOL_ALIASES:
-            key = TOOL_ALIASES[key]
+        """Normalize a tool name or alias to its canonical name.
+
+        ``None`` when the result names no registered tool. Callers that need the
+        canonical FORM of a name for a tool that may not be registered yet — the
+        safety policy, loaded before the registry — want :func:`canonical_tool_key`.
+        """
+        key = canonical_tool_key(raw)
         if key in self._tools:
             return key
         return None
@@ -391,6 +417,48 @@ class ToolRegistry:
 # =============================================================================
 
 
+class _AsyncHandlerNeedsEventLoop(RuntimeError):
+    """A coroutine handler was invoked from a thread that is already running a
+    loop, so the synchronous router cannot drive it to completion."""
+
+
+def _drive_awaitable_to_completion(canonical: str, awaitable: Any) -> Any:
+    """Run an async handler's awaitable to completion for a synchronous caller.
+
+    A handler that returns a coroutine has **not executed yet**. Handing that
+    object back as the tool's `output` is a phantom success: the router reports
+    SUCCESS, the coroutine is garbage-collected un-awaited, and the model is
+    told the work happened. The only honest outcomes are "ran it" or "could not
+    run it here" — never "SUCCESS" over an object.
+
+    Blocking is only possible when this thread has no event loop of its own to
+    starve. If one is already running, we close the coroutine (so it does not
+    leak as a never-awaited warning) and raise, which the caller turns into an
+    ERROR result naming `async_execute` as the fix.
+
+    Note for handler authors: the blocking path runs on a **fresh** loop that is
+    closed again on return, so a handler must not depend on loop-bound state
+    surviving between calls (a module-level aiohttp session, say). Anything that
+    does should be reached through `async_execute`, which uses the caller's loop.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_await_result(awaitable))
+
+    close = getattr(awaitable, "close", None)
+    if callable(close):
+        close()
+    raise _AsyncHandlerNeedsEventLoop(
+        f"Tool '{canonical}' has an async handler and execute() was called from a "
+        "running event loop, which it cannot block. Use async_execute() instead."
+    )
+
+
+async def _await_result(awaitable: Any) -> Any:
+    return await awaitable
+
+
 class ToolRouter:
     """
     Accepts a ToolCallAction, resolves the handler from the registry,
@@ -404,25 +472,48 @@ class ToolRouter:
     ) -> None:
         self.registry = registry or get_tool_registry()
         self._policy = safety_policy or {}
-        # Set of tool names blocked by policy
-        self._blocked: set[str] = set(self._policy.get("blocked_tools", []))
-        self._require_confirmation: set[str] = set(self._policy.get("require_confirmation", []))
+        # Tool names blocked / gated by policy, stored in CANONICAL form.
+        #
+        # These came straight from config as written, while `execute()` tests the
+        # canonical name — so `blocked_tools: ["web-fetch"]`, or the documented alias
+        # `["fetch"]`, matched nothing and the tool executed. The operator's safety
+        # policy silently did not apply. Both sides now go through
+        # `canonical_tool_key`, so a gate and its setter cannot disagree.
+        # Filter AFTER canonicalising: a whitespace-only entry is truthy going in and
+        # empty coming out, so an `if n` guard on the raw value lets "" into a set that
+        # a policy dump then shows as a real entry.
+        self._blocked: set[str] = {
+            key
+            for key in (canonical_tool_key(n) for n in self._policy.get("blocked_tools", []))
+            if key
+        }
+        self._require_confirmation: set[str] = {
+            key
+            for key in (
+                canonical_tool_key(n) for n in self._policy.get("require_confirmation", [])
+            )
+            if key
+        }
         self._max_calls_per_turn: int = self._policy.get("max_calls_per_turn", 10)
         # Safety mode: permissive | standard | strict
         self._safety_mode: str = self._policy.get("safety_mode", "standard")
 
-    def execute(self, action: ToolCallAction) -> ToolResult:
+    def _prepare(self, action: ToolCallAction) -> ToolResult | tuple[str, ToolHandler]:
         """
-        Execute a single tool call.
+        Steps 1–5 of the pipeline, shared by `execute` and `async_execute`.
 
-        Pipeline:
-          1. Normalize tool name
-          2. Check availability + policy
-          3. Safety classification
-          4. Invoke handler
-          5. Wrap result
+        Returns the canonical name + handler when the call may proceed, or the
+        ToolResult that ends it (unknown tool, unavailable, blocked, needs
+        confirmation, denied by safety mode, handler failed to load).
+
+        The two entry points MUST share this: they used to be one function, and
+        the async path was a thin wrapper that awaited the sync path's output
+        *after* its try/except had already returned — so an exception raised
+        inside an async handler escaped `async_execute` raw instead of becoming
+        `ToolResult(status=ERROR)`, and the sync path reported SUCCESS for a
+        coroutine that had never run. Splitting the guards out lets each path
+        own its own invoke + error handling without duplicating a policy check.
         """
-        t0 = time.monotonic()
         tool_name = action.tool
 
         # 1. Normalize
@@ -537,46 +628,101 @@ class ToolRouter:
                 error=f"No handler loaded for tool: {canonical}",
             )
 
-        # 6. Execute
+        return canonical, handler
+
+    # -- Result wrapping (shared by both entry points) -------------------------
+
+    @staticmethod
+    def _success(canonical: str, output: Any, t0: float) -> ToolResult:
         from navig.tools.hooks import ToolEvent, get_hook_registry
 
-        _hooks = get_hook_registry()
-        _hooks.fire(ToolEvent.BEFORE_EXECUTE, tool=canonical)
+        get_hook_registry().fire(ToolEvent.AFTER_EXECUTE, tool=canonical, status="success")
+        return ToolResult(
+            tool=canonical,
+            status=ToolResultStatus.SUCCESS,
+            output=output,
+            latency_ms=int((time.monotonic() - t0) * 1000),
+        )
+
+    @staticmethod
+    def _failure(canonical: str, error: str, t0: float) -> ToolResult:
+        return ToolResult(
+            tool=canonical,
+            status=ToolResultStatus.ERROR,
+            error=error,
+            latency_ms=int((time.monotonic() - t0) * 1000),
+        )
+
+    def execute(self, action: ToolCallAction) -> ToolResult:
+        """
+        Execute a single tool call synchronously.
+
+        Pipeline:
+          1. Normalize tool name
+          2. Check availability + policy
+          3. Safety classification
+          4. Invoke handler
+          5. Wrap result
+
+        An **async** handler is driven to completion here rather than handed
+        back un-awaited: a coroutine object is work that has not happened yet,
+        and returning one as `output` reported SUCCESS for a tool that never
+        ran (`bash_exec`, the shell tool, is async — so the model was told its
+        command succeeded while nothing executed). When this is called from a
+        thread that already has a running event loop it cannot block, and says
+        so instead: use `async_execute` there.
+        """
+        t0 = time.monotonic()
+        prepared = self._prepare(action)
+        if isinstance(prepared, ToolResult):
+            return prepared
+        canonical, handler = prepared
+
+        from navig.tools.hooks import ToolEvent, get_hook_registry
+
+        get_hook_registry().fire(ToolEvent.BEFORE_EXECUTE, tool=canonical)
         try:
             output = handler(**action.parameters)
-            latency = int((time.monotonic() - t0) * 1000)
-            _hooks.fire(ToolEvent.AFTER_EXECUTE, tool=canonical, status="success")
-            return ToolResult(
-                tool=canonical,
-                status=ToolResultStatus.SUCCESS,
-                output=output,
-                latency_ms=latency,
-            )
+            if inspect.isawaitable(output):
+                output = _drive_awaitable_to_completion(canonical, output)
+            return self._success(canonical, output, t0)
+        except _AsyncHandlerNeedsEventLoop as e:
+            return self._failure(canonical, str(e), t0)
         except TypeError as e:
-            latency = int((time.monotonic() - t0) * 1000)
-            return ToolResult(
-                tool=canonical,
-                status=ToolResultStatus.ERROR,
-                error=f"Invalid parameters: {e}",
-                latency_ms=latency,
-            )
+            return self._failure(canonical, f"Invalid parameters: {e}", t0)
         except Exception as e:
-            latency = int((time.monotonic() - t0) * 1000)
             logger.exception("Tool %s execution failed: %s", canonical, e)
-            return ToolResult(
-                tool=canonical,
-                status=ToolResultStatus.ERROR,
-                error=f"{type(e).__name__}: {e}",
-                latency_ms=latency,
-            )
+            return self._failure(canonical, f"{type(e).__name__}: {e}", t0)
 
     async def async_execute(self, action: ToolCallAction) -> ToolResult:
-        """Async wrapper around execute() — fires the same hooks and awaits async handlers."""
-        result = self.execute(action)
-        # Some handlers are coroutines (async def) — await the output if needed
-        if asyncio.iscoroutine(result.output):
-            result.output = await result.output
-        return result
+        """
+        Execute a single tool call, awaiting async handlers.
+
+        This is not a wrapper around `execute()`. It runs the same guards and
+        then awaits **inside** its own try/except — an exception raised while
+        the handler is running is the ordinary way a tool fails, and it has to
+        come back as `ToolResult(status=ERROR)` like every other failure rather
+        than propagating out of the router into the agent loop.
+        """
+        t0 = time.monotonic()
+        prepared = self._prepare(action)
+        if isinstance(prepared, ToolResult):
+            return prepared
+        canonical, handler = prepared
+
+        from navig.tools.hooks import ToolEvent, get_hook_registry
+
+        get_hook_registry().fire(ToolEvent.BEFORE_EXECUTE, tool=canonical)
+        try:
+            output = handler(**action.parameters)
+            if inspect.isawaitable(output):
+                output = await output
+            return self._success(canonical, output, t0)
+        except TypeError as e:
+            return self._failure(canonical, f"Invalid parameters: {e}", t0)
+        except Exception as e:
+            logger.exception("Tool %s execution failed: %s", canonical, e)
+            return self._failure(canonical, f"{type(e).__name__}: {e}", t0)
 
     def execute_multi(self, actions: list[ToolCallAction]) -> list[ToolResult]:
         """Execute multiple tool calls sequentially, respecting max_calls_per_turn."""
@@ -617,13 +763,68 @@ def get_tool_registry() -> ToolRegistry:
     return _registry
 
 
+def load_safety_policy() -> dict[str, Any]:
+    """The operator's `tools:` safety policy, read from config.
+
+    The single place that answers "what did the operator configure?", for the same reason
+    `canonical_tool_key` is the single place that answers "are these the same tool?" — the
+    policy previously had two readers and one of them was on a dormant path.
+
+    Degrades to `{}` on any failure. The router sits on the dispatch path, so a config read
+    that raises must not turn every tool call into a crash; an empty policy is what the
+    router already did before this was wired, so the failure mode is unchanged rather than
+    newly permissive.
+
+    ⚠ Reads through `ConfigManager`, NOT `navig.core.config_loader.load_config`. That
+    function takes a required `path` — it loads *a file*, it is not "the global config" —
+    so the previous reader's `load_config()` raised `TypeError` on every single call and
+    its bare `except` turned that into `{}`. The operator's policy therefore had no working
+    reader anywhere in the tree, which is why the missing wiring above went unnoticed: even
+    the one caller that asked for the policy received an empty one.
+    """
+    try:
+        from navig.config import get_config_manager
+
+        cm = get_config_manager()
+        return {
+            "blocked_tools": list(cm.get("tools.blocked_tools", []) or []),
+            "require_confirmation": list(cm.get("tools.require_confirmation", []) or []),
+            "max_calls_per_turn": cm.get("tools.max_calls_per_turn", 10),
+            "safety_mode": cm.get("tools.safety_mode", "standard"),
+        }
+    except Exception as exc:  # noqa: BLE001 — a config read must not break dispatch
+        logger.debug("Could not load tools safety policy: %s", exc)
+        return {}
+
+
 def get_tool_router(safety_policy: dict[str, Any] | None = None) -> ToolRouter:
-    """Get the global ToolRouter singleton."""
+    """Get the global ToolRouter singleton.
+
+    With no *safety_policy*, the operator's configured one is loaded — it is not left empty.
+    It used to be: this is a first-caller-wins singleton, and the live caller
+    (`agent/conv/executor.py`) passes nothing, so `blocked_tools` / `require_confirmation`
+    were applied on **no** path a user could reach. `llm/generate.py` was the only caller
+    that built a policy, and it is dormant.
+
+    Passing *safety_policy* explicitly still wins, but only when this call is the one that
+    constructs the singleton — that is inherent to a process-wide singleton. What is not
+    inherent is doing it silently, which is how the original bug stayed invisible: a caller
+    handed over a real policy and had every reason to believe it applied.
+    """
     global _router
     if _router is None:
         with _router_lock:
             if _router is None:
-                _router = ToolRouter(safety_policy=safety_policy)
+                policy = load_safety_policy() if safety_policy is None else safety_policy
+                _router = ToolRouter(safety_policy=policy)
+                return _router
+    if safety_policy is not None and safety_policy != _router._policy:
+        logger.warning(
+            "get_tool_router() was given a safety policy but the router already exists — "
+            "the policy was NOT applied. The live policy is whatever built the singleton "
+            "first (normally the operator's config). Call reset_globals() first if you "
+            "meant to replace it."
+        )
     return _router
 
 

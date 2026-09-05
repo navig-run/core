@@ -1,9 +1,7 @@
 """Batch 61 — tools/data_pack, tools/code_pack, adapters/automation/types."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 # ---------------------------------------------------------------------------
 # navig.tools.domains.data_pack — _json_parse, register_tools

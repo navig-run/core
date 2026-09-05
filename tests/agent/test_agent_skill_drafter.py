@@ -2,9 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-
-import pytest
 
 from navig.agent.skill_drafter import SkillDraft, SkillDrafter
 

@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from navig.core.aio_subprocess import communicate_or_kill
+
 logger = logging.getLogger(__name__)
 
 # ── Caps ─────────────────────────────────────────────────────
@@ -38,12 +40,29 @@ MAX_OUTPUT_CHARS = 30_000
 # Reserve headroom for the navig prefix + shell wrapper overhead; anything
 # larger than this threshold is routed through a temp file instead.
 _WIN_CMDLINE_B64_LIMIT = 8_000
-try:
-    COMMAND_TIMEOUT = int(os.environ.get("NAVIG_REMOTE_TIMEOUT", "120"))
-    if COMMAND_TIMEOUT <= 0:
-        COMMAND_TIMEOUT = 120
-except (ValueError, TypeError):
-    COMMAND_TIMEOUT = 120
+DEFAULT_COMMAND_TIMEOUT = 120
+
+
+def resolve_command_timeout(raw: str | None) -> int:
+    """Parse ``NAVIG_REMOTE_TIMEOUT``; anything invalid or non-positive → default.
+
+    Extracted so it can be tested with a value rather than by reloading this
+    module. `importlib.reload` rebinds the module's globals **in place**, which
+    replaces `CommandState` and `RemoteResult` with fresh classes while every
+    already-imported name elsewhere still holds the originals — enum members
+    then compare unequal to their identical-looking twins
+    (``assert <CommandState.FAILED: 'failed'> == <CommandState.FAILED: 'failed'>``).
+    That turned 9 sibling tests red whenever the reloading file happened to run
+    first, which the relevance-ranked gate selection can do at any time.
+    """
+    try:
+        value = int(raw if raw is not None else DEFAULT_COMMAND_TIMEOUT)
+    except (ValueError, TypeError):
+        return DEFAULT_COMMAND_TIMEOUT
+    return value if value > 0 else DEFAULT_COMMAND_TIMEOUT
+
+
+COMMAND_TIMEOUT = resolve_command_timeout(os.environ.get("NAVIG_REMOTE_TIMEOUT"))
 
 
 # ── Data structures ──────────────────────────────────────────
@@ -245,10 +264,7 @@ class RemoteAgentExecutor:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=effective_timeout,
-            )
+            stdout_bytes, stderr_bytes = await communicate_or_kill(proc, effective_timeout)
             elapsed = time.monotonic() - t0
 
             stdout_str = _truncate(stdout_bytes.decode("utf-8", errors="replace"))
@@ -372,10 +388,7 @@ class RemoteAgentExecutor:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=30,
-            )
+            stdout_bytes, stderr_bytes = await communicate_or_kill(proc, 30)
         except asyncio.TimeoutError:
             return RemoteResult(
                 host=host,
@@ -400,10 +413,7 @@ class RemoteAgentExecutor:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=15,
-            )
+            stdout_bytes, stderr_bytes = await communicate_or_kill(proc, 15)
         except asyncio.TimeoutError:
             return RemoteResult(
                 host=host,

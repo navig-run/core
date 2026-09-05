@@ -228,7 +228,9 @@ def deploy_run(
 
     # Merge global defaults
     try:
-        global_raw = cm._load_global_config()
+        # `get_global_config()`: the validated view does not declare `deploy`,
+        # so the global deploy defaults merged here were always empty.
+        global_raw = cm.get_global_config() or {}
         deploy_cfg.merge_global_defaults(global_raw)
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical

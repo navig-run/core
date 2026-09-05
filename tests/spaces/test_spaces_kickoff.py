@@ -1,8 +1,6 @@
 """Tests for navig.spaces.kickoff — SpaceKickoff, _vision_goal, _extract_pending_actions."""
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from navig.spaces.kickoff import (

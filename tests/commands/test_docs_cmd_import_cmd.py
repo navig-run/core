@@ -1,10 +1,8 @@
 """Batch 117: tests for navig/commands/docs_cmd.py and navig/commands/import_cmd.py."""
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock, call, patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 import typer
@@ -298,7 +296,7 @@ class TestPersistBookmarks:
         with patch("navig.commands.import_cmd.links_db_mod") as mock_mod:
             mock_mod.get_links_db.return_value = mock_db
             with patch("navig.commands.import_cmd._flatten", return_value=self._make_items()):
-                added, skipped = _persist_bookmarks({})
+                added, skipped, repaired = _persist_bookmarks({})
 
         assert added == 2
         assert skipped == 0
@@ -307,12 +305,15 @@ class TestPersistBookmarks:
         from navig.commands.import_cmd import _persist_bookmarks
 
         mock_db = MagicMock()
-        mock_db.get_by_url.return_value = {"url": "exists"}
+        # the real get_by_url returns a LinkRecord — a dict here made the fake lie
+        mock_db.get_by_url.return_value = SimpleNamespace(
+            id="x1", url="exists", title="Existing Title"
+        )
 
         with patch("navig.commands.import_cmd.links_db_mod") as mock_mod:
             mock_mod.get_links_db.return_value = mock_db
             with patch("navig.commands.import_cmd._flatten", return_value=self._make_items()):
-                added, skipped = _persist_bookmarks({})
+                added, skipped, repaired = _persist_bookmarks({})
 
         assert added == 0
         assert skipped == 2
@@ -328,7 +329,7 @@ class TestPersistBookmarks:
         with patch("navig.commands.import_cmd.links_db_mod") as mock_mod:
             mock_mod.get_links_db.return_value = mock_db
             with patch("navig.commands.import_cmd._flatten", return_value=items):
-                added, _ = _persist_bookmarks({})
+                added, _, _ = _persist_bookmarks({})
 
         assert added == 1
         call_args = mock_db.add.call_args
@@ -346,7 +347,7 @@ class TestPersistBookmarks:
         with patch("navig.commands.import_cmd.links_db_mod") as mock_mod:
             mock_mod.get_links_db.return_value = mock_db
             with patch("navig.commands.import_cmd._flatten", return_value=items):
-                added, _ = _persist_bookmarks({})
+                added, _, _ = _persist_bookmarks({})
 
         assert added == 1
 
@@ -361,7 +362,7 @@ class TestPersistBookmarks:
             with patch("navig.commands.import_cmd._flatten", return_value=[]):
                 result = _persist_bookmarks({})
 
-        assert result == (0, 0)
+        assert result == (0, 0, 0)
 
 
 # ===========================================================================
@@ -396,12 +397,16 @@ class TestListSources:
 # ===========================================================================
 
 class TestRunImport:
-    def _engine(self, sources=None):
+    def _engine(self, sources=None, errors=None):
         e = MagicMock()
         e.list_sources.return_value = list(sources or ["chrome", "firefox"])
         e.run_one.return_value = []
         e.run_all.return_value = {}
         e.export_json.return_value = "[]"
+        # A bare MagicMock invents `errors` as a truthy Mock, so the command would read
+        # every stubbed run as "the source could not be read". Mirror the real
+        # UniversalImporter: `errors` is a plain dict, empty when nothing failed.
+        e.errors = dict(errors or {})
         return e
 
     def test_unknown_source_exits(self):

@@ -92,6 +92,53 @@ def test_step_doctor_is_best_effort_on_failure(monkeypatch):
     assert result.note == "no issues"
 
 
+def test_step_doctor_skips_named_sections(monkeypatch):
+    """A section named in skip_sections is dropped from the warnings — the update flow uses
+    this to suppress the transiently-misleading "Daemon" freshness row right before it
+    restarts the daemon (a "STALE — Restart to load: navig update" warning DURING a navig
+    update is self-contradictory)."""
+
+    def fake_collect_report(*args, **kwargs):
+        return _report(
+            [
+                (
+                    "Daemon",
+                    [{"label": "Daemon freshness", "ok": False, "warn": True,
+                      "detail": "STALE — restart to load"}],
+                ),
+                (
+                    "Config",
+                    [{"label": "config.yaml", "ok": False, "warn": True, "detail": "broken"}],
+                ),
+            ]
+        )
+
+    monkeypatch.setattr(doctor, "collect_report", fake_collect_report)
+
+    # Default: both surfaced.
+    assert _step_doctor().warnings == [
+        "Daemon freshness: STALE — restart to load",
+        "config.yaml: broken",
+    ]
+    # skip "Daemon": only the Config warning remains; freshness is suppressed.
+    skipped = _step_doctor(skip_sections={"Daemon"})
+    assert skipped.warnings == ["config.yaml: broken"]
+    assert not any("Daemon" in w for w in skipped.warnings)
+
+
+def test_daemon_section_name_matches_the_update_skip():
+    """update.py suppresses the freshness row mid-reload by skipping the section named
+    'Daemon'. Pin that name so renaming the doctor section can't silently un-skip it (which
+    would make `navig update` cry 'STALE — run navig update' again)."""
+    import inspect
+
+    src = inspect.getsource(doctor._collect_sections)
+    assert '"Daemon"' in src, (
+        "doctor's freshness section must be named 'Daemon' — update.py's _step_doctor "
+        "skip_sections={'Daemon'} depends on it"
+    )
+
+
 def test_the_real_seam_exists_not_the_phantom():
     """Pin the fix to the real API: collect_report is the seam; the old
     run_doctor_checks name was never real and must not creep back."""

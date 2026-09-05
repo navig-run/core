@@ -164,25 +164,66 @@ class GoalPlanner:
         self._load_goals()
 
     def _load_goals(self) -> None:
-        """Load goals from storage."""
+        """Load goals from storage.
+
+        A failed READ must never become a destructive WRITE. This used to swallow any
+        failure into a debug-log line and leave `_goals` EMPTY (or, if a single entry
+        failed to parse, PARTIAL) — and every mutating method is mutate ->
+        `_save_goals()`, whose atomic write then replaced the file with that
+        incomplete set. One transient lock (an antivirus, or a read landing
+        mid-`os.replace`) was enough to lose every goal, silently: the only trace was
+        a debug log nobody reads.
+
+        `load_json_for_update` rides out transient locks and then distinguishes
+        "absent or genuinely empty" (safe to overwrite) from "has content but could
+        not be read" (never overwrite). The failure is REMEMBERED so `_save_goals`
+        can refuse while it stands.
+        """
+        from navig.core.json_io import JsonReadError, load_json_for_update
+
+        self._load_failed = False
         if not self.goals_file.exists():
             return
 
         try:
-            with open(self.goals_file, encoding="utf-8") as f:
-                data = json.load(f)
-
-            for goal_data in data.get("goals", []):
-                goal = Goal.from_dict(goal_data)
-                self._goals[goal.id] = goal
-
-            self.logger.log_operation("goals", {"action": "load", "count": len(self._goals)})
-
-        except Exception as e:
+            data = load_json_for_update(self.goals_file, default={})
+        except JsonReadError as e:
+            self._load_failed = True
             self.logger.log_operation("goals", {"action": "load", "error": str(e)})
+            return
+
+        for goal_data in data.get("goals", []):
+            try:
+                goal = Goal.from_dict(goal_data)
+            except Exception as e:  # noqa: BLE001 — one bad row must not drop the rest
+                self._load_failed = True
+                self.logger.log_operation("goals", {"action": "load", "error": str(e)})
+                return
+            self._goals[goal.id] = goal
+
+        self.logger.log_operation("goals", {"action": "load", "count": len(self._goals)})
 
     def _save_goals(self) -> None:
-        """Save goals to storage."""
+        """Save goals to storage. Refuses while the last load is known to have failed.
+
+        Silently refusing would rebuild the trap the incident log exists for — a
+        daemon that heals itself and tells nobody. So the refusal is recorded, which
+        surfaces it in `navig doctor` -> Config Health and pushes it through the
+        notify path. This runs inside the autonomy loop, so it must not raise.
+        """
+        if getattr(self, "_load_failed", False):
+            from navig.core import incidents
+
+            incidents.record(
+                incidents.STORE_WRITE_REFUSED,
+                store="goals",
+                path=str(self.goals_file),
+            )
+            self.logger.log_operation(
+                "goals", {"action": "save", "refused": "goals.json could not be read"}
+            )
+            return
+
         try:
             data = {
                 "goals": [goal.to_dict() for goal in self._goals.values()],

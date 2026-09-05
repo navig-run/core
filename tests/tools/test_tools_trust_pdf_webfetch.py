@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -163,7 +163,6 @@ class TestWebFetchTool:
         assert result.success is False
 
     def test_url_without_scheme_gets_https(self):
-        from navig.tools.web import web_fetch as _wf
         tool = self._make_tool()
         captured = []
 

@@ -460,7 +460,7 @@ The daemon only binds a Telegram `user_id` to the broker if that user appears in
 
 ## Migration notes
 
-If you previously used `scripts/navig-tunnel.sh` / `scripts/navig-tunnel.service`, they're deprecated. The in-daemon `CloudManager` does the same thing and integrates with the broker. To migrate:
+If you previously used `scripts/navig-tunnel.sh` / `scripts/navig-tunnel.service`, they have been removed. The in-daemon `CloudManager` does the same thing and integrates with the broker. To migrate:
 
 ```bash
 # Stop the legacy systemd unit

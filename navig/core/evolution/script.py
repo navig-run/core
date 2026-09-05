@@ -4,7 +4,7 @@ from typing import Any
 
 from navig.ai import ask_ai_with_context
 from navig.console_helper import error, success
-from navig.core.evolution.base import BaseEvolver
+from navig.core.evolution.base import BaseEvolver, extract_code_block, safe_artifact_name
 
 
 class ScriptEvolver(BaseEvolver):
@@ -90,11 +90,7 @@ if __name__ == "__main__":
     def _validate(self, artifact: str, context: Any) -> str | None:
         """Validate Python syntax."""
         try:
-            # Extract code
-            import re
-
-            match = re.search(r"```python\n(.*?)\n```", artifact, re.DOTALL)
-            code = match.group(1).strip() if match else artifact
+            code = extract_code_block(artifact)
 
             compile(code, "<string>", "exec")
             return None
@@ -103,14 +99,12 @@ if __name__ == "__main__":
         except Exception as e:
             return f"Validation Error: {e}"
 
-    def _save(self, goal: str, artifact: str):
-        """Save to scripts/[name].py."""
+    def _save(self, goal: str, artifact: str) -> bool:
+        """Save to scripts/[name].py. Returns True only if written."""
         try:
             import re
 
-            # Extract code
-            match = re.search(r"```python\n(.*?)\n```", artifact, re.DOTALL)
-            code = match.group(1).strip() if match else artifact
+            code = extract_code_block(artifact)
 
             # Determine filename
             filename = "script.py"
@@ -125,6 +119,10 @@ if __name__ == "__main__":
                 slug = "".join([c if c.isalnum() else "_" for c in goal])
                 slug = re.sub(r"_+", "_", slug).strip("_").lower()
                 filename = f"{slug[:30]}.py"
+
+            # The filename comes from the model's output — keep it inside
+            # scripts_dir (see safe_artifact_name).
+            filename = safe_artifact_name(filename, "script.py")
 
             # Ensure extension
             if not filename.endswith(".py"):
@@ -146,5 +144,8 @@ if __name__ == "__main__":
                 f.write(code)
 
             success(f"Script saved to {path}")
+            return True
         except Exception as e:
+            self._save_error = f"Failed to save script: {e}"
             error(f"Failed to save script: {e}")
+            return False

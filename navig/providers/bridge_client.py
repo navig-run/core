@@ -19,6 +19,7 @@ import json
 import logging
 from typing import Any
 
+from navig.core.background import spawn
 from navig.mcp.transport import StdioTransport
 from navig.providers.connection_types import (
     Capability,
@@ -120,11 +121,10 @@ class PiDriver(ProviderDriver):
                           error_code=r.get("error_code"), error_message=r.get("error_message"))
 
     def cancel_auth(self, handle: str) -> None:
-        # Fire-and-forget; the bridge tolerates an unknown handle.
-        import asyncio
-
+        # Fire-and-forget; the bridge tolerates an unknown handle. spawn() holds a
+        # strong ref so the cancel can't be GC-dropped before it's sent.
         try:
-            asyncio.get_event_loop().create_task(self._client.call("cancelAuth", {"handle": handle}))
+            spawn(self._client.call("cancelAuth", {"handle": handle}))
         except Exception:  # noqa: BLE001
             pass
 

@@ -1,10 +1,6 @@
 """Tests for navig.gateway.cooldown — CooldownTracker."""
 from __future__ import annotations
 
-import time
-
-import pytest
-
 from navig.gateway.cooldown import CooldownEntry, CooldownTracker
 
 

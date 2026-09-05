@@ -191,7 +191,15 @@ def extract(
             logger.warning("extract(%s) stage failed: %s", p.name, exc)
             res.errors.append(f"{kind} extraction failed: {exc}")
 
-    if cache is not None and res.content_hash:
+    # Cache the result — but NOT a failed extraction STAGE. A missing/broken extractor
+    # (python-docx, pypdf, ffmpeg, an STT timeout, a transient crash) leaves empty text +
+    # an errors[] entry; caching that would replay the empty text for the whole 24h TTL and
+    # never retry the extractor even after the tool is installed — installing it does NOT
+    # bump EXTRACT_VERSION, so the cache can't self-invalidate. An UNSUPPORTED file type
+    # (no dispatch stage ran) is a PERMANENT, version-gated result and is still cached; so is
+    # a legitimately empty-but-error-free extraction (e.g. an image with no OCR text).
+    stage_failed = dispatch is not None and bool(res.errors) and not res.text.strip()
+    if cache is not None and res.content_hash and not stage_failed:
         try:
             cache.put(res.content_hash, res.cacheable())
         except Exception:  # noqa: BLE001

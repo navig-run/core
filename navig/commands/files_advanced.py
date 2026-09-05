@@ -24,7 +24,13 @@ def delete_file_cmd(remote: str, options: dict[str, Any]):
     remote_ops = RemoteOperations(config_manager)
 
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
+
     server_name = require_active_server(options, config_manager)
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, f"navig file remove: {remote}")
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -78,9 +84,13 @@ def delete_file_cmd(remote: str, options: dict[str, Any]):
                 ch.warning(msg)
                 return False
         else:
-            # JSON mode: always require --force
+            # JSON mode: always require --force. This is a usage FAILURE (the delete cannot
+            # proceed), so exit non-zero like every other JSON-mode error in this module — a
+            # `{"success": false}` body with an exit-0 status is contradictory and a script
+            # checking $? would think the delete happened. (A declined interactive confirm
+            # above is a user choice, not a failure, so it stays exit-0 per the CLI convention.)
             ch.raw_print(json.dumps({"success": False, "error": "Use --force in JSON mode"}))
-            return False
+            raise typer.Exit(1)
 
     # Execute delete
     result = remote_ops.execute_command(delete_cmd, server_config)
@@ -115,7 +125,13 @@ def mkdir_cmd(remote: str, options: dict[str, Any]):
     remote_ops = RemoteOperations(config_manager)
 
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
+
     server_name = require_active_server(options, config_manager)
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, f"navig file mkdir: {remote}")
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -179,7 +195,13 @@ def chmod_cmd(remote: str, mode: str, options: dict[str, Any]):
     remote_ops = RemoteOperations(config_manager)
 
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
+
     server_name = require_active_server(options, config_manager)
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, f"navig file edit --mode: {remote}")
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -246,7 +268,13 @@ def chown_cmd(remote: str, owner: str, options: dict[str, Any]):
     remote_ops = RemoteOperations(config_manager)
 
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
+
     server_name = require_active_server(options, config_manager)
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, server_name, f"navig file edit --owner: {remote}")
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -315,6 +343,7 @@ def cat_file_cmd(
     remote_ops = RemoteOperations(config_manager)
 
     from navig.cli.recovery import require_active_host  # noqa: PLC0415
+
     host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
@@ -463,7 +492,13 @@ def write_file_cmd(
     remote_ops = RemoteOperations(config_manager)
 
     from navig.cli.recovery import require_active_host  # noqa: PLC0415
+
     host_name = require_active_host(options, config_manager)
+
+    # Multi-agent safety: claim the host before mutating it (navig.core.host_lock).
+    from navig.core import host_lock  # noqa: PLC0415
+
+    host_lock.guard_remote(config_manager, host_name, f"navig file edit: {remote}")
 
     host_config = config_manager.load_host_config(host_name)
 
@@ -596,6 +631,7 @@ def list_dir_cmd(
     remote_ops = RemoteOperations(config_manager)
 
     from navig.cli.recovery import require_active_host  # noqa: PLC0415
+
     host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
@@ -701,6 +737,7 @@ def tree_cmd(remote: str, options: dict[str, Any], depth: int = 2, dirs_only: bo
     remote_ops = RemoteOperations(config_manager)
 
     from navig.cli.recovery import require_active_host  # noqa: PLC0415
+
     host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)

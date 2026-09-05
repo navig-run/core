@@ -5,7 +5,9 @@ Results (dicts) are stored as JSON files under::
 
     ~/.navig/cache/media/<sha256>.json
 
-Expiry is checked on every read via mtime.
+Expiry is checked on every read via mtime, and a full sweep of expired
+entries runs at most hourly from ``put()`` — a read only ever expires the key
+it was asked for, which reclaims nothing for a file that is never sent twice.
 
 Usage::
 
@@ -34,6 +36,8 @@ from navig.platform.paths import cache_dir
 logger = logging.getLogger(__name__)
 
 _TTL_SECONDS = 86_400  # 24 hours
+_SWEEP_INTERVAL_SECONDS = 3_600  # at most one full sweep per hour, per directory
+_SWEEP_MARKER = ".last-sweep"  # not *.json, so a sweep never eats its own marker
 
 
 class MediaCache:
@@ -80,6 +84,7 @@ class MediaCache:
 
     def put(self, key: str, value: dict[str, Any]) -> None:
         """Write *value* to cache under *key*.  Silently ignores write errors."""
+        self._maybe_evict()
         path = self._dir / f"{key}.json"
         tmp = path.with_suffix(".tmp")
         try:
@@ -98,6 +103,34 @@ class MediaCache:
             (self._dir / f"{key}.json").unlink(missing_ok=True)
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
+
+    def _maybe_evict(self) -> None:
+        """Run a full sweep at most once per ``_SWEEP_INTERVAL_SECONDS``.
+
+        ``get()`` only ever expires the ONE key it was asked for, and this cache
+        is content-addressed: an entry for a media file that is never sent again
+        is never read again, so lazy expiry alone never reclaims it. Every
+        analysis of a never-repeated file left a JSON on disk permanently —
+        `evict_expired()` existed to fix exactly that and had no caller outside
+        its own tests.
+
+        The interval is persisted as a marker file rather than an instance
+        attribute so that short-lived CLI processes participate too, and so the
+        daemon does not sweep once per cache object. Claimed *before* sweeping,
+        so a failing sweep cannot retry on every write. Entirely best-effort:
+        reclaiming disk must never break a cache write.
+        """
+        marker = self._dir / _SWEEP_MARKER
+        try:
+            if (
+                marker.exists()
+                and (time.time() - marker.stat().st_mtime) < _SWEEP_INTERVAL_SECONDS
+            ):
+                return
+            marker.touch()
+        except OSError:
+            return
+        self.evict_expired()
 
     def evict_expired(self) -> int:
         """Remove all expired entries.  Returns count removed."""

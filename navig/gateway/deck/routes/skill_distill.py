@@ -60,7 +60,7 @@ def _err(msg: str, status: int = 500, *, hint: str = "") -> "web.Response":
     return web.json_response(payload, status=status)
 
 
-def _op_to_dict(op: Any) -> dict[str, Any]:
+def _op_to_dict(op: Any, *, undone: dict[str, str] | None = None) -> dict[str, Any]:
     """The fields a ledger/history view needs — the operator's own local data.
 
     ``command`` is re-redacted at display time. The recorder already redacts
@@ -68,10 +68,23 @@ def _op_to_dict(op: Any) -> dict[str, Any]:
     over a Lighthouse-fronted Deck, so an old ledger line written before that
     redaction (or a token the record-time sweep missed) must not surface raw —
     defense-in-depth, the same ``redact_sensitive_text`` the distill engine uses.
+
+    ``undoable`` / ``undo_blocked`` answer "should this row offer an Undo button?"
+    using the SAME ``ensure_undoable`` gate the undo route enforces — so a UI never
+    has to re-implement (and drift from) the eight refusal rules. A green
+    reversibility label is NOT sufficient on its own: an interrupted op, an
+    already-undone op, and an undo op are all green-labeled yet un-undoable, and
+    offering a button for them yields a guaranteed 409.
+
+    Only the static, in-memory checks run here (no per-row disk/config I/O):
+    ``check_drift`` still runs at preview/perform time, so a drifted op can pass
+    ``undoable`` and still be honestly refused when acted on. ``undo_blocked`` is
+    the coarse ``UndoRefused.code``, never the message — the message can name a
+    config key or a vault ref, which must not ride along in a bulk listing.
     """
     from navig.core.security import redact_sensitive_text
 
-    return {
+    data = {
         "id": op.id,
         "timestamp": op.timestamp,
         "command": redact_sensitive_text(op.command or ""),
@@ -81,6 +94,20 @@ def _op_to_dict(op: Any) -> dict[str, Any]:
         "host": op.host,
         "reversibility": op.reversibility or "",
     }
+    if undone is not None:
+        from navig.undo import UndoRefused, ensure_undoable
+
+        try:
+            ensure_undoable(op, undone)
+            data["undoable"] = True
+            data["undo_blocked"] = None
+        except UndoRefused as exc:
+            data["undoable"] = False
+            data["undo_blocked"] = getattr(exc, "code", "refused")
+        except Exception:  # noqa: BLE001 — a gate hiccup must never break the listing
+            data["undoable"] = False
+            data["undo_blocked"] = "refused"
+    return data
 
 
 async def handle_deck_ledger_recent(request: "web.Request") -> "web.Response":
@@ -88,6 +115,10 @@ async def handle_deck_ledger_recent(request: "web.Request") -> "web.Response":
 
     Query: ``?last=2h`` (a slice window) and/or ``?limit=100`` (cap; ≤ 500).
     Without ``last`` it returns the last ``limit`` operations.
+
+    Each row also carries ``undoable`` (bool) + ``undo_blocked`` (a coarse
+    ``UndoRefused.code``, or null) so a history UI can offer Undo on exactly the
+    rows the undo route would accept — see ``_op_to_dict``.
     """
     q = request.rel_url.query
     last = (q.get("last") or "").strip()
@@ -109,13 +140,18 @@ async def handle_deck_ledger_recent(request: "web.Request") -> "web.Response":
 
     def _read() -> list[dict[str, Any]]:
         from navig.operation_recorder import get_operation_recorder
+        from navig.undo import collect_undone
 
         recorder = get_operation_recorder()
         since = None
         if window is not None:
             since = (datetime.now(timezone.utc) - window).isoformat()
-        ops = recorder.iter_operations(limit=limit, since=since, reverse=True)
-        return [_op_to_dict(o) for o in ops]
+        ops = list(recorder.iter_operations(limit=limit, since=since, reverse=True))
+        # An undo is always recorded AFTER its target, and this slice is the newest
+        # N (reverse=True) — so any undo marker for an op IN the slice is also in the
+        # slice. Computing the map here therefore needs no second, wider read.
+        undone = collect_undone(ops)
+        return [_op_to_dict(o, undone=undone) for o in ops]
 
     try:
         operations = await asyncio.to_thread(_read)

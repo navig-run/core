@@ -24,6 +24,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from navig.core.coerce import coerce_bool
 from navig.workspace_ownership import user_workspace_dir
 
 logger = logging.getLogger("navig.memory.context_builder")
@@ -50,6 +51,18 @@ _DEFAULTS: dict[str, Any] = {
     "api_snapshot_max_entries": 5,
     "max_context_chars": 32_000,
 }
+
+# The config keys that gate behaviour with a boolean. `navig config set` stores its
+# argument as a raw string ("false" is truthy), so these are coerced once at
+# construction — otherwise a config-disabled section stays ON.
+_BOOL_FLAGS: tuple[str, ...] = (
+    "enabled",
+    "include_key_facts",
+    "include_workspace_notes",
+    "include_memory_logs",
+    "include_api_snapshots",
+    "include_project_index",
+)
 
 
 class _EmptyContextDict(dict):
@@ -469,6 +482,11 @@ class ContextBuilder:
             config = self._load_from_config_yaml()
 
         self._cfg: dict[str, Any] = {**_DEFAULTS, **(config or {})}
+        # Coerce the boolean gates once here so every reader below sees a real bool:
+        # `navig config set context_builder.<flag> false` stores the string "false"
+        # (bool("false") is True), which would otherwise leave the section enabled.
+        for _flag in _BOOL_FLAGS:
+            self._cfg[_flag] = coerce_bool(self._cfg.get(_flag), default=_DEFAULTS[_flag])
         self.project_root: Path = project_root or Path.cwd()
 
     # -- public API ---------------------------------------------------------
@@ -493,7 +511,7 @@ class ContextBuilder:
             JSON-serializable dict with keys:
                 conversation_history, workspace_notes, kb_snippets, metadata
         """
-        if not self._cfg.get("enabled", True):
+        if not coerce_bool(self._cfg.get("enabled", True), default=True):
             return dict(EMPTY_CONTEXT)
 
         caller_info = caller_info or {}

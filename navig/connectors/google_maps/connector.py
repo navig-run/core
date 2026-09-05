@@ -55,6 +55,25 @@ def _get(url: str, params: dict[str, str], timeout: int = 12) -> dict:
     return json.loads(resp.read())
 
 
+def _payload_result(label: str, payload: dict, *, success: bool = True) -> ActionResult:
+    """Wrap an API payload in a VALID ``ActionResult``.
+
+    ``ActionResult`` has no ``data`` field — the previous code passed ``data=`` and raised
+    ``TypeError`` on every ``act()`` call. The payload now rides in ``resource.metadata``.
+    """
+    return ActionResult(
+        success=success,
+        resource=Resource(
+            id=label,
+            source="google_maps",
+            title=label,
+            preview=str(payload)[:400],
+            resource_type=ResourceType.DOCUMENT,
+            metadata=payload,
+        ),
+    )
+
+
 class GoogleMapsConnector(BaseConnector):
     """Connector for Google Maps Platform — Geocoding and Places API.
 
@@ -109,6 +128,19 @@ class GoogleMapsConnector(BaseConnector):
         self._api_key = None
         self._status = ConnectorStatus.DISCONNECTED
 
+    def _require_connected(self) -> None:
+        """Guard called at the top of every request path.
+
+        It was referenced but never defined, so every call raised ``AttributeError`` before doing
+        anything. Now it fails with a clear, catchable error when ``connect()`` was never called
+        (no API key) instead of sending ``key=None`` to Google.
+        """
+        if not self._api_key:
+            raise ConnectorAuthError(
+                self.manifest.id,
+                "Not connected — call connect() first (needs GOOGLE_MAPS_API_KEY).",
+            )
+
     # ── Search: text search via Places Text Search or Geocode ───────────────
 
     async def search(
@@ -153,8 +185,9 @@ class GoogleMapsConnector(BaseConnector):
             results.append(
                 Resource(
                     id=place.get("place_id", ""),
+                    source="google_maps",
                     title=place.get("name", ""),
-                    body=(
+                    preview=(
                         f"{place.get('formatted_address', '')}\n"
                         f"Rating: {place.get('rating', 'N/A')} "
                         f"({place.get('user_ratings_total', 0)} reviews)\n"
@@ -189,8 +222,9 @@ class GoogleMapsConnector(BaseConnector):
             results.append(
                 Resource(
                     id=item.get("place_id", ""),
+                    source="google_maps",
                     title=item.get("formatted_address", ""),
-                    body=(
+                    preview=(
                         f"Lat: {loc.get('lat')}, Lng: {loc.get('lng')}\n"
                         f"Types: {', '.join(item.get('types', []))}"
                     ),
@@ -212,12 +246,16 @@ class GoogleMapsConnector(BaseConnector):
 
     # ── Fetch: Place Details by place_id ────────────────────────────────────
 
-    async def fetch(self, place_id: str, **kwargs: Any) -> Resource | None:
+    async def fetch(self, resource_id: str, **kwargs: Any) -> Resource | None:
         """Fetch detailed information for a Google Maps place_id.
 
         Args:
-            place_id: Google Maps place_id string (e.g. "ChIJd8BlQ2BZwokRAFUEcm_qrcA").
+            resource_id: Google Maps place_id string (e.g. "ChIJd8BlQ2BZwokRAFUEcm_qrcA").
         """
+        # `resource_id` is the base-class parameter name (BaseConnector.fetch);
+        # 9 of 12 connectors already use it. Bound to the domain name here so the
+        # body, its log lines and its `metadata` keys stay unchanged.
+        place_id = resource_id
         self._require_connected()
         fields = kwargs.get(
             "fields",
@@ -239,8 +277,9 @@ class GoogleMapsConnector(BaseConnector):
         loc = result.get("geometry", {}).get("location", {})
         return Resource(
             id=place_id,
+            source="google_maps",
             title=result.get("name", ""),
-            body=(
+            preview=(
                 f"{result.get('formatted_address', '')}\n"
                 f"Phone: {result.get('formatted_phone_number', 'N/A')}\n"
                 f"Website: {result.get('website', 'N/A')}\n"
@@ -267,10 +306,16 @@ class GoogleMapsConnector(BaseConnector):
     async def act(self, action: Action) -> ActionResult:
         """Supported actions:
 
-        reverse_geocode: {"lat": float, "lng": float} → address string
+        The op comes from ``action.params['op']`` — these ops don't map onto the generic
+        ``ActionType`` enum, and ``Action`` has no ``name`` field (the previous code read
+        ``action.name`` and raised ``AttributeError`` on every call).
+
+        reverse_geocode: {"op": "reverse_geocode", "lat": float, "lng": float} → address string
+        nearby_search:   {"op": "nearby_search", "lat": float, "lng": float, "radius": int}
         """
         self._require_connected()
-        if action.name == "reverse_geocode":
+        op = action.params.get("op", "")
+        if op == "reverse_geocode":
             lat = action.params.get("lat")
             lng = action.params.get("lng")
             if lat is None or lng is None:
@@ -278,8 +323,10 @@ class GoogleMapsConnector(BaseConnector):
             data = _get(_GEOCODE_BASE, {"latlng": f"{lat},{lng}", "key": self._api_key})
             results = data.get("results", [])
             address = results[0].get("formatted_address", "") if results else ""
-            return ActionResult(success=bool(address), data={"address": address})
-        if action.name == "nearby_search":
+            return _payload_result(
+                "reverse_geocode", {"address": address}, success=bool(address)
+            )
+        if op == "nearby_search":
             params_data = action.params
             params: dict[str, str] = {
                 "location": f"{params_data['lat']},{params_data['lng']}",
@@ -289,18 +336,18 @@ class GoogleMapsConnector(BaseConnector):
             if "type" in params_data:
                 params["type"] = str(params_data["type"])
             data = _get(_PLACES_NEARBY_BASE, params)
-            return ActionResult(
-                success=True,
-                data={"results": data.get("results", [])[: params_data.get("limit", 10)]},
+            return _payload_result(
+                "nearby_search",
+                {"results": data.get("results", [])[: params_data.get("limit", 10)]},
             )
-        return ActionResult(success=False, error=f"Unknown action: {action.name}")
+        return ActionResult(success=False, error=f"Unknown action: {op}")
 
     # ── Health ───────────────────────────────────────────────────────────────
 
     async def health_check(self) -> HealthStatus:
         """Ping geocoding API with a minimal request."""
         if not self._api_key:
-            return HealthStatus(healthy=False, message="Not connected", latency_ms=0)
+            return HealthStatus(ok=False, message="Not connected", latency_ms=0)
         t0 = time.monotonic()
         try:
             data = _get(
@@ -312,17 +359,17 @@ class GoogleMapsConnector(BaseConnector):
             status = data.get("status", "")
             if status in ("OK", "ZERO_RESULTS"):
                 return HealthStatus(
-                    healthy=True, message=f"Maps API OK ({status})", latency_ms=latency_ms
+                    ok=True, message=f"Maps API OK ({status})", latency_ms=latency_ms
                 )
             if status == "REQUEST_DENIED":
                 return HealthStatus(
-                    healthy=False,
+                    ok=False,
                     message=f"REQUEST_DENIED: {data.get('error_message', '')}",
                     latency_ms=latency_ms,
                 )
             return HealthStatus(
-                healthy=False, message=f"Unexpected status: {status}", latency_ms=latency_ms
+                ok=False, message=f"Unexpected status: {status}", latency_ms=latency_ms
             )
         except Exception as exc:  # noqa: BLE001
             latency_ms = int((time.monotonic() - t0) * 1000)
-            return HealthStatus(healthy=False, message=str(exc), latency_ms=latency_ms)
+            return HealthStatus(ok=False, message=str(exc), latency_ms=latency_ms)

@@ -13,6 +13,8 @@ import time
 from typing import Any
 from urllib.parse import parse_qs, unquote
 
+from navig.core.coerce import coerce_bool, coerce_id_rejects, coerce_id_set
+
 try:
     from aiohttp import web
 except ImportError:
@@ -46,9 +48,39 @@ def _log_local_bypass(origin: str) -> None:
         state["last_flush"] = now
 
 
+def _coerce_user_ids(raw: Any) -> tuple[set[int], bool]:
+    """Parse an allowed-users config value into ``(ids, was_configured)``.
+
+    Delegates the parsing to :func:`navig.core.coerce.coerce_id_set` — the same
+    helper the Telegram channel uses — so the deck and the bot can never disagree
+    about which ids an operator listed. Rejected entries are reported here, because
+    a dropped id is a person who cannot reach the deck.
+
+    ``was_configured`` is the half that matters. The middleware treats an EMPTY
+    allowlist as "no restriction", so a value that is present but yields no usable id
+    (``allowed_users: "nobody"``) must not collapse into the same state as *unset* —
+    that would turn a typo into an OPEN deck.
+    """
+    ids, configured = coerce_id_set(raw)
+    rejected = coerce_id_rejects(raw)
+    if rejected:
+        logger.error(
+            "Deck allowed_users: ignoring %d unparseable entr%s (%s) — those users "
+            "will be DENIED. Telegram user ids are integers.",
+            len(rejected),
+            "y" if len(rejected) == 1 else "ies",
+            ", ".join(rejected),
+        )
+    return ids, configured
+
+
 _deck_config: dict[str, Any] = {
     "bot_token": "",
     "allowed_users": set(),
+    # Whether an allowlist was CONFIGURED at all — distinct from it being empty.
+    # An empty allowlist means "no restriction"; a configured-but-unusable one must
+    # not silently mean the same thing.
+    "allowed_users_configured": False,
     "require_auth": True,
     "dev_mode": False,
     "auth_max_age": 86400,
@@ -71,12 +103,20 @@ def configure_deck_auth(
 ) -> None:
     """Set the module-level auth config for Deck API."""
     _deck_config["bot_token"] = bot_token
-    _deck_config["allowed_users"] = set(allowed_users) if allowed_users else set()
+    ids, configured = _coerce_user_ids(allowed_users)
+    _deck_config["allowed_users"] = ids
+    _deck_config["allowed_users_configured"] = configured
     _deck_config["require_auth"] = require_auth
-    _deck_config["dev_mode"] = dev_mode
+    # coerce_bool: these arrive from config, where `navig config set` stores raw
+    # STRINGS — and bool("false") is True, so a deck.dev_mode / deck.telegram_only
+    # the operator disabled would silently stay ON. Both are security-relevant:
+    # dev_mode gates a local auth bypass, telegram_only is the remote lockdown.
+    # (require_auth is intentionally left raw — it's read in several other
+    # subsystems too, so coercing it only here would make auth inconsistent.)
+    _deck_config["dev_mode"] = coerce_bool(dev_mode, default=False)
     _deck_config["auth_max_age"] = auth_max_age
     _deck_config["api_key"] = api_key or ""
-    _deck_config["telegram_only"] = bool(telegram_only)
+    _deck_config["telegram_only"] = coerce_bool(telegram_only, default=False)
     logger.info(
         "Deck auth configured: require_auth=%s, allowed_users=%d, dev_mode=%s, api_key=%s, telegram_only=%s",
         require_auth,
@@ -307,7 +347,11 @@ if web:
 
         _CORS_HEADERS = {
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            # Mirrors the preflight list. On THIS response (an error, never a
+            # preflight) Allow-Methods is advisory, but a divergent copy of a
+            # hand-maintained allow-list is exactly how the Mini App broke:
+            # tests/gateway/test_cors_parity.py keeps every copy identical.
+            "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Telegram-Init-Data, X-Telegram-User",
         }
 
@@ -330,7 +374,16 @@ if web:
         allowed = _deck_config["allowed_users"]
         require_auth = _deck_config["require_auth"]
         # Bypass: dev/localhost sentinel — skip the allowlist check entirely
-        if user_id != _DEV_BYPASS_SENTINEL and require_auth and allowed and user_id not in allowed:
+        # `allowed_users_configured`, not `allowed`: an allowlist the operator set
+        # but which parsed to nothing must DENY, not fall through to "no
+        # restriction". See _coerce_user_ids.
+        configured = _deck_config.get("allowed_users_configured", bool(allowed))
+        if (
+            user_id != _DEV_BYPASS_SENTINEL
+            and require_auth
+            and configured
+            and user_id not in allowed
+        ):
             logger.warning("Deck API forbidden: user %d not in allowed_users", user_id)
             return web.json_response(
                 {"error": "forbidden", "detail": "User not authorized for Deck"},

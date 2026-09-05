@@ -1,7 +1,6 @@
 """Batch 67 — gateway/auth_guard, installer/state, blackbox/seal, personas/store."""
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -111,7 +110,6 @@ class TestInstallerState:
         assert load_last(tmp_path) == []
 
     def test_load_last_returns_most_recent_manifest(self, tmp_path):
-        import json
 
         from navig.installer.state import load_last, save
         ctx = self._make_ctx(tmp_path, profile="node")
@@ -121,7 +119,6 @@ class TestInstallerState:
         assert records[0]["profile"] == "node"
 
     def test_load_last_profile_filter(self, tmp_path):
-        import json
 
         from navig.installer.state import load_last, save
         ctx_node = self._make_ctx(tmp_path, profile="node")

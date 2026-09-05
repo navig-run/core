@@ -13,6 +13,8 @@ import json
 import subprocess
 from dataclasses import dataclass, field
 
+from navig.core.proc_text import decode_console_result
+
 
 @dataclass
 class TailscalePeer:
@@ -73,12 +75,11 @@ class Tailscale:
     def _run(self, *args: str, timeout: int = 10) -> tuple[int, str, str]:
         """Run tailscale <args> and return (returncode, stdout, stderr)."""
         try:
-            result = subprocess.run(
+            result = decode_console_result(subprocess.run(
                 [self._BIN, *args],
                 capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
+                                timeout=timeout,
+            ))
             return result.returncode, result.stdout, result.stderr
         except FileNotFoundError:
             return -1, "", "tailscale binary not found on PATH"

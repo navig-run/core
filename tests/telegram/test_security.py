@@ -225,3 +225,43 @@ async def test_business_ping_is_owner_gated(cfg):
     business.set_ping_policy("owner")
     not_ping = {"chat": {"id": 5}, "text": "shipping the crate", "date": 0}
     assert await business.handle_ping(ch, not_ping, is_owner=True) is False
+
+
+# ── `navig config set` writes STRINGS, and these two fail OPEN ────────────────
+#
+# `navig config set telegram.business.enabled false` stores the string "false",
+# and `bool("false")` is True — so a raw read left the whole business layer
+# running for an operator who had turned it off, and the refuse-to-arm guard
+# reported "auth is enforced" for one who had turned require_auth off. Both keys
+# are documented as ones to set. Coercing only ever TIGHTENS these two.
+
+
+def test_master_switch_off_as_a_string_actually_turns_it_off(cfg):
+    from navig.telegram import permissions as perm
+    cfg.d["telegram.business.enabled"] = "false"
+    assert perm.business_enabled() is False, (
+        "bool('false') is True — the layer kept running after the operator said stop"
+    )
+
+
+def test_master_switch_on_as_a_string_still_turns_it_on(cfg):
+    from navig.telegram import permissions as perm
+    for truthy in ("true", "1", "yes", "on"):
+        cfg.d["telegram.business.enabled"] = truthy
+        assert perm.business_enabled() is True, truthy
+
+
+def test_an_unreadable_master_switch_stays_OFF(cfg):
+    """The default has to be the safe one: no config, no business layer."""
+    from navig.telegram import permissions as perm
+    cfg.d.pop("telegram.business.enabled", None)
+    assert perm.business_enabled() is False
+
+
+def test_require_auth_off_as_a_string_still_blocks_arming(cfg):
+    from navig.telegram import permissions as perm
+    cfg.d["telegram"] = {"require_auth": "false", "allowed_users": [123]}
+    reason = perm.arming_blocked_reason()
+    assert reason is not None and "require_auth" in reason, (
+        "arming an unauthenticated bot is exactly what this guard exists to stop"
+    )

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import math
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -249,6 +248,47 @@ class TestCachedEmbeddingProvider:
         base.embed_batch.return_value = []
         result = c.embed_batch([])
         assert result == []
+
+    def test_cache_is_lru_bounded(self, tmp_path, monkeypatch):
+        """The cache must not grow one vector per unique text forever — it's a bounded LRU."""
+        import hashlib
+
+        def _key(t: str) -> str:
+            return hashlib.md5(t.encode()).hexdigest()
+
+        base = self._mock_base()
+        c = CachedEmbeddingProvider(base, cache_dir=tmp_path)
+        monkeypatch.setattr(c, "_MAX_ENTRIES", 3)  # shrink the cap for the test
+
+        for i in range(6):
+            base.embed_text.return_value = [float(i), 0.0, 0.0]
+            c.embed_text(f"text{i}")
+
+        assert len(c._cache) == 3  # capped — never grows to 6
+        assert _key("text0") not in c._cache  # oldest evicted
+        assert _key("text5") in c._cache  # newest retained
+
+    def test_cache_read_refreshes_lru_recency(self, tmp_path, monkeypatch):
+        """A cache HIT marks the entry recently-used so it survives the next eviction."""
+        import hashlib
+
+        def _key(t: str) -> str:
+            return hashlib.md5(t.encode()).hexdigest()
+
+        base = self._mock_base()
+        c = CachedEmbeddingProvider(base, cache_dir=tmp_path)
+        monkeypatch.setattr(c, "_MAX_ENTRIES", 3)
+
+        for i in range(3):
+            base.embed_text.return_value = [float(i), 0.0, 0.0]
+            c.embed_text(f"text{i}")
+        c.embed_text("text0")  # cache HIT → text0 becomes most-recent
+        base.embed_text.return_value = [9.0, 0.0, 0.0]
+        c.embed_text("text3")  # overflow by one → evicts the true oldest (text1)
+
+        assert len(c._cache) == 3
+        assert _key("text0") in c._cache  # survived — it was refreshed by the read
+        assert _key("text1") not in c._cache  # now the oldest → evicted
 
 
 # ──────────────────────────────────────────────────────────────────────

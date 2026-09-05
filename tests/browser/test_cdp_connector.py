@@ -7,6 +7,7 @@ are all mocked. Real browser/Electron paths are exercised manually (see docs).
 from __future__ import annotations
 
 import asyncio
+import socket
 
 import pytest
 
@@ -227,6 +228,16 @@ def test_stop_launched_terminates_tracked_pid(monkeypatch, tmp_path):
         return True
 
     monkeypatch.setattr(t, "_terminate_pid", fake_terminate)
+    # Hermetic: stop_launched sweeps the machine for processes on the port and then PROBES the
+    # port to prove it closed. Unmocked, this test read real process/network state — on a machine
+    # with anything serving 9223 it failed, and the sweep enumerated the operator's own browsers.
+    monkeypatch.setattr(t, "_debug_browser_pids", lambda *a, **k: [])
+    monkeypatch.setattr(t, "probe_port", lambda *a, **k: None)
+    # This test is about the WIRING (registry -> terminate -> probe -> entry removed), not about
+    # PID identity. Left unmocked, the identity guard would resolve pid 555 against the REAL
+    # process table — flaky, and exactly the "arbitrary pid in a test" hazard the guard exists to
+    # stop. Its own behaviour is covered in tests/browser/test_cdp_stop_attribution.py.
+    monkeypatch.setattr(t, "_pid_is_still_the_recorded_process", lambda *a, **k: True)
     t.record_launched(9223, 555, "chrome", None)
     res = t.stop_launched(9223)
     assert res["ok"] is True and killed["pid"] == 555
@@ -241,12 +252,55 @@ def test_stop_launched_unknown_port(monkeypatch, tmp_path):
 
 def test_find_free_port_skips_live_and_bound(monkeypatch):
     # 9222 has a live CDP target; 9223 is free.
+    # ⚠ This one still performs a REAL bind for 9223..9226, so WHICH path satisfies it
+    # depends on the host: on a machine where those ports are usable it returns one of
+    # them, and on a machine that reserves the range it comes back through the
+    # os-assigned fallback. Both are correct; the two tests below pin each path
+    # deterministically, because this one alone cannot tell you which ran.
     monkeypatch.setattr(
         t, "probe_port",
         lambda port, timeout=0.4: t.CDPTarget(port=port, browser="C", endpoint="e") if port == 9222 else None,
     )
     port = t.find_free_port(start=9222, count=5)
     assert port is not None and port != 9222
+
+
+def test_an_exhausted_window_falls_back_to_an_os_assigned_port(monkeypatch):
+    """The window is a preference, not the search space.
+
+    Windows reserves port ranges (Hyper-V / WSL / Docker) and `bind()` inside one raises
+    PermissionError(13) even with nothing listening. Measured on the operator's machine:
+    9181-9280 is reserved, which swallows the entire default 9222..9271 window, so
+    `find_free_port()` returned None and `navig cdp new` reported "no free debug port
+    available" on a host with tens of thousands of free ports.
+
+    Simulated here by making every port in the window look occupied, which drives the
+    loop to exhaustion without depending on the host's own reservations.
+    """
+    monkeypatch.setattr(
+        t, "probe_port",
+        lambda port, timeout=0.4: t.CDPTarget(port=port, browser="C", endpoint="e"),
+    )
+    port = t.find_free_port(start=9222, count=5)
+
+    assert port is not None, "a machine with free ports must never report none available"
+    assert not (9222 <= port < 9227), f"{port} came from the window that was exhausted"
+
+
+def test_the_port_it_returns_can_actually_be_bound(monkeypatch):
+    """Anti-vacuity: returning *a number* is worthless if the browser cannot bind it.
+
+    This is the property the caller depends on — `cdp new` hands the value straight to
+    Chrome as `--remote-debugging-port`.
+    """
+    monkeypatch.setattr(
+        t, "probe_port",
+        lambda port, timeout=0.4: t.CDPTarget(port=port, browser="C", endpoint="e"),
+    )
+    port = t.find_free_port(start=9222, count=5)
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", port))  # raises if the port is unusable
 
 
 def test_new_allocates_port_and_profile(monkeypatch):
@@ -389,3 +443,66 @@ def test_cdpbridge_switch_to_by_url_and_index():
         assert miss["ok"] is False
 
     cdp_runtime.run(_run_switch())
+
+
+# ---------------------------------------------------------------------------
+# `cdp stop` / `cdp detach` with no --port: which browser is meant?
+# ---------------------------------------------------------------------------
+
+class TestDefaultSessionPort:
+    """A literal 9222 default stopped addressing the real session.
+
+    `find_free_port()` used to hand out 9222 almost always, so "no --port" meaning 9222
+    was right by accident. Once the 9222+ window can be RESERVED by Windows, the session
+    lives on an OS-assigned port and the old default named a browser that was never
+    launched — `stop` answered "unknown port" for the only browser running.
+    """
+
+    def test_one_launched_browser_is_unambiguous(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(t, "_launched_registry_path", lambda: tmp_path / "launched.json")
+        t.record_launched(7245, 111, "chrome", None)
+
+        from navig.browser import cdp_actions
+        assert cdp_actions._default_session_port() == 7245
+
+    def test_no_launched_browsers_keeps_the_old_default(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(t, "_launched_registry_path", lambda: tmp_path / "launched.json")
+
+        from navig.browser import cdp_actions
+        assert cdp_actions._default_session_port() == 9222
+
+    def test_several_including_9222_keeps_the_old_default(self, monkeypatch, tmp_path):
+        # Backward compatibility: this case behaved sensibly before and still does.
+        monkeypatch.setattr(t, "_launched_registry_path", lambda: tmp_path / "launched.json")
+        t.record_launched(9222, 111, "chrome", None)
+        t.record_launched(7245, 222, "chrome", None)
+
+        from navig.browser import cdp_actions
+        assert cdp_actions._default_session_port() == 9222
+
+    def test_several_without_9222_refuses_to_guess(self, monkeypatch, tmp_path):
+        """Closing the wrong browser is not recoverable — list them instead."""
+        monkeypatch.setattr(t, "_launched_registry_path", lambda: tmp_path / "launched.json")
+        t.record_launched(7245, 111, "chrome", None)
+        t.record_launched(8310, 222, "chrome", None)
+
+        from navig.browser import cdp_actions
+        assert cdp_actions._default_session_port() is None
+
+        res = cdp_actions.stop()
+        assert res["ok"] is False
+        assert res["ports"] == [7245, 8310]
+        assert "--port" in res["error"] and "--all" in res["error"]
+
+    def test_detach_with_no_port_targets_the_launched_session(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(t, "_launched_registry_path", lambda: tmp_path / "launched.json")
+        t.record_launched(7245, 111, "chrome", None)
+
+        from navig.browser import cdp_actions
+        released = []
+        monkeypatch.setattr(cdp_actions, "_rt", lambda coro: released.append(coro) or None,
+                            raising=False)
+
+        res = cdp_actions.detach()
+        assert res["ok"] is True
+        assert res["detached"] == 7245, "detach must follow the same resolution as stop"

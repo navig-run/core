@@ -651,7 +651,14 @@ def _run_card_sync(card: dict[str, Any], mode: str, actor: str = "user") -> dict
     context = _card_context(card)
     research_text, sources = _research(card["title"])
 
+    # The floor rides along in its one-line form: this prompt's contract is a
+    # strict JSON object, so a full prose block ahead of it invites prose back
+    # out — but an *autonomous* operator that completes tasks unattended is the
+    # last surface that should be running without boundaries.
+    from navig.agent.conv.guardrails import guardrail_floor_minimal
+
     sys = (
+        f"{guardrail_floor_minimal()}\n\n"
         "You are NAVIG, an autonomous operator. You COMPLETE the task and report "
         "the finished deliverable — never a description of the steps you would take. "
         "Use the research provided to give concrete specifics: real names, numbers, "

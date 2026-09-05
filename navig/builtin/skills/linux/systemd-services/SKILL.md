@@ -172,5 +172,5 @@ navig run "systemctl list-unit-files | grep {service}"
 ## Error Handling
 
 - **Service not found**: "Service '{service}' not found. Did you mean '{suggestion}'?"
-- **Permission denied**: "Need sudo. Try: `navig run --sudo 'systemctl restart {service}'`"
+- **Permission denied**: "Need sudo. Try: `navig run 'sudo systemctl restart {service}'`"
 - **Already running**: "{service} is already running. Nothing to do."

@@ -14,8 +14,6 @@ Covers:
 
 from __future__ import annotations
 
-import pytest
-
 from navig.providers.types import (
     AuthMode,
     ModelApi,

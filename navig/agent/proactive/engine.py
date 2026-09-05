@@ -17,7 +17,7 @@ from navig.agent.proactive.providers import (
     MockCalendar,
     MockEmail,
 )
-from navig.core.hooks import HookEvent, register_hook, trigger_hook
+from navig.core.hooks import HookEvent, register_hook, trigger_hook, unregister_hook
 
 
 class ProactiveEngine:
@@ -65,6 +65,12 @@ class ProactiveEngine:
 
     async def start(self):
         """Start the proactive loop."""
+        # Idempotent: a second start() (two near-simultaneous POST /proactive/start, or
+        # deck + OS both starting it) must NOT spawn a second polling loop or re-register
+        # the hook. `running` is set synchronously here (no await before it), so a racing
+        # create_task(start()) sees it True and early-returns before its own loop begins.
+        if self.running:
+            return
         self.running = True
         ch.info("[Proactive] Engine started. Polling every 60s...")
 
@@ -78,6 +84,11 @@ class ProactiveEngine:
     async def stop(self):
         """Stop the proactive loop."""
         self.running = False
+        # Pair the register in start(): the hook registry appends without de-duping, so a
+        # start → stop → start cycle that did not unregister would leave TWO run_checks
+        # handlers on "proactive:check" — every trigger would then run the full calendar/
+        # email scan twice (the is_checking guard resets between sequential handlers).
+        unregister_hook("proactive:check", self.run_checks)
         ch.info("[Proactive] Engine stopped.")
 
     async def run_checks(self, event: HookEvent | None):
@@ -263,7 +274,6 @@ class ProactiveEngine:
         """Initialize providers from configuration."""
         import os
 
-        from navig.agent.proactive.google_calendar import GoogleCalendar
         from navig.agent.proactive.imap_email import get_email_provider
         from navig.config import get_config_manager
 
@@ -274,6 +284,21 @@ class ProactiveEngine:
         provider_name = cal_conf.get("provider")
         if provider_name == "google":
             try:
+                # Imported HERE, not at the top of this method. `google_calendar` imports
+                # google.auth / google_auth_oauthlib / googleapiclient at module scope, and
+                # none of them is a navig dependency -- not in `pyproject.toml` at all, as a
+                # requirement or an extra. A top-level import therefore raised
+                # ModuleNotFoundError on every default install, so `get_proactive_engine()`
+                # (its only caller) was unusable for anyone who had not separately installed
+                # Google's client libraries -- whether or not they use Google Calendar.
+                #
+                # The degradation was already designed: this try/except exists to turn a
+                # provider failure into a warning, and `proactive/__init__.py` guards the
+                # same import with `except ImportError: GoogleCalendar = None`. Only this
+                # call site bypassed it. Inside the branch, a missing library is caught here
+                # and reported like any other provider failure.
+                from navig.agent.proactive.google_calendar import GoogleCalendar
+
                 self.calendar = GoogleCalendar()
             except Exception as e:
                 ch.warning(f"Failed to init Google Calendar: {e}")
@@ -364,13 +389,24 @@ class ProactiveEngine:
             pass  # Agent config not available
 
 
-# Singleton instance
-_engine = ProactiveEngine()
+# Singleton instance, built on FIRST USE rather than at import.
+#
+# `_engine = ProactiveEngine()` at module scope made importing this module do disk I/O:
+# `__init__` constructs a `TriggerManager`, which mkdirs `<config_dir>/triggers`, and
+# reaching `config_dir()` builds the ConfigManager, which mkdirs the config root and its
+# subdirs. At import that happens before any test isolation can apply, so it landed in the
+# operator's REAL ~/.navig -- measured at 33 of the 37 remaining mkdirs there during a full
+# suite run. It is also work every consumer of this module paid whether or not it ever
+# asked for the engine.
+_engine: ProactiveEngine | None = None
 _initialized = False
 
 
 def get_proactive_engine() -> ProactiveEngine:
-    global _initialized
+    """The process-wide proactive engine, constructed on first request."""
+    global _engine, _initialized
+    if _engine is None:
+        _engine = ProactiveEngine()
     if not _initialized:
         _engine.init_providers()
         _initialized = True

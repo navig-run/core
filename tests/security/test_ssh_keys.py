@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from navig.ssh_keys import (
     _DEFAULT_KEY_NAMES,
     _looks_like_private_key,

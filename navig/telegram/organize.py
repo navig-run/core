@@ -21,7 +21,14 @@ def _ids(message_ids) -> list[int]:
 
 
 async def forward(from_chat, message_ids, to_chat, *, drop_author: bool = False) -> dict:
-    """Forward (or copy, with ``drop_author``) messages to another chat/channel."""
+    """Forward (or copy, with ``drop_author``) messages to another chat/channel.
+
+    telethon returns the forwarded messages **aligned to the input ids** — a single
+    ``Message`` for a single input, else a list with ``None`` in the slot of any id it
+    couldn't forward (deleted / uncopyable); if *all* are invalid it raises
+    ``MessageIdInvalidError``. ``forwarded_ids`` is therefore the subset of *message_ids*
+    that actually crossed — the only ids ``move`` is allowed to delete.
+    """
     ids = _ids(message_ids)
     async with UserClient() as c:
         frm = await c.get_entity(from_chat)
@@ -30,23 +37,52 @@ async def forward(from_chat, message_ids, to_chat, *, drop_author: bool = False)
             sent = await c.forward_messages(to, ids, frm, drop_author=drop_author)
         except TypeError:  # older telethon without drop_author
             sent = await c.forward_messages(to, ids, frm)
-        n = len(sent) if isinstance(sent, list) else (1 if sent else 0)
-        return {"forwarded": n, "from": frm.id, "to": to.id, "drop_author": drop_author}
+        sent_list = sent if isinstance(sent, list) else [sent]
+        forwarded_ids = [
+            ids[i] for i in range(min(len(ids), len(sent_list))) if sent_list[i] is not None
+        ]
+        return {
+            "forwarded": len(forwarded_ids),
+            "forwarded_ids": forwarded_ids,
+            "requested": len(ids),
+            "from": frm.id,
+            "to": to.id,
+            "drop_author": drop_author,
+        }
 
 
 async def move(from_chat, message_ids, to_chat, *, drop_author: bool = True,
                confirm: bool = False) -> dict:
     """Move = forward to ``to_chat`` then delete the originals. **Destructive** — does
-    nothing unless ``confirm=True`` (returns a dry-run preview otherwise)."""
+    nothing unless ``confirm=True`` (returns a dry-run preview otherwise).
+
+    Only the originals that were *actually forwarded* are deleted. If telethon couldn't
+    forward some ids (deleted/uncopyable → ``None`` in its result), those originals are
+    **kept** and reported under ``skipped`` — deleting an un-copied message would lose it
+    permanently, which "move" must never do.
+    """
     ids = _ids(message_ids)
     if not confirm:
         return {"dry_run": True, "would_move": len(ids), "from": str(from_chat),
                 "to": str(to_chat), "note": "pass confirm=True to actually move (copy then delete)"}
     fwd = await forward(from_chat, ids, to_chat, drop_author=drop_author)
-    async with UserClient() as c:
-        frm = await c.get_entity(from_chat)
-        await c.delete_messages(frm, ids, revoke=True)
-    return {"moved": fwd["forwarded"], "deleted": len(ids), "from": fwd["from"], "to": fwd["to"]}
+    forwarded_ids = fwd["forwarded_ids"]
+    deleted = 0
+    if forwarded_ids:
+        async with UserClient() as c:
+            frm = await c.get_entity(from_chat)
+            await c.delete_messages(frm, forwarded_ids, revoke=True)
+            deleted = len(forwarded_ids)
+    result = {"moved": fwd["forwarded"], "deleted": deleted, "requested": len(ids),
+              "from": fwd["from"], "to": fwd["to"]}
+    skipped = len(ids) - deleted
+    if skipped:
+        result["skipped"] = skipped
+        result["note"] = (
+            f"{skipped} message(s) could not be forwarded and were left in place "
+            f"(not deleted); {deleted} moved"
+        )
+    return result
 
 
 async def delete_messages(chat, message_ids, *, confirm: bool = False) -> dict:
@@ -58,6 +94,39 @@ async def delete_messages(chat, message_ids, *, confirm: bool = False) -> dict:
         ent = await c.get_entity(chat)
         await c.delete_messages(ent, ids, revoke=True)
     return {"deleted": len(ids), "chat": str(chat)}
+
+
+async def delete_chat(chat, *, confirm: bool = False, expect_title: str | None = None) -> dict:
+    """Delete a whole channel/supergroup/basic group. Confirm-gated; dry-run otherwise.
+
+    ``delete_messages`` empties a chat; this removes the chat itself — for every member,
+    with no undo on Telegram's side. Two guards make that survivable:
+
+    - the dry run resolves the entity first and reports the **title and member count**,
+      so you confirm against a name rather than an id you may have mistyped;
+    - ``expect_title`` is a fuse for scripts: if the resolved title doesn't match, it
+      raises instead of deleting. An id that silently resolves to the wrong chat is the
+      one mistake nobody can walk back.
+    """
+    from .media import resolve_entity  # local import: avoids a cycle at module load
+    async with UserClient() as c:
+        ent = await resolve_entity(c, chat)
+        title = getattr(ent, "title", None) or getattr(ent, "first_name", "") or str(chat)
+        info = {"chat": str(chat), "id": getattr(ent, "id", None), "title": title,
+                "members": getattr(ent, "participants_count", None)}
+        if expect_title is not None and title != expect_title:
+            raise ValueError(f"refusing to delete: resolved title {title!r} "
+                             f"does not match expected {expect_title!r}")
+        if not confirm:
+            return {**info, "dry_run": True,
+                    "note": "pass confirm=True to delete this chat for everyone"}
+        from telethon.tl.functions.channels import DeleteChannelRequest
+        from telethon.tl.functions.messages import DeleteChatRequest
+        try:
+            await c(DeleteChannelRequest(channel=ent))
+        except (TypeError, AttributeError):  # basic group, not a channel/supergroup
+            await c(DeleteChatRequest(chat_id=ent.id))
+    return {**info, "deleted": True}
 
 
 async def rename(chat, title: str, *, confirm: bool = False) -> dict:

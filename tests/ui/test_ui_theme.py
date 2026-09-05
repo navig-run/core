@@ -1,9 +1,6 @@
 """Tests for navig.ui.theme — safe mode, nerd font detection, style constants."""
 from __future__ import annotations
 
-import importlib
-import sys
-
 
 class TestDetectSafeMode:
     def test_safe_mode_enabled_by_env(self, monkeypatch):

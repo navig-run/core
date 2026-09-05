@@ -24,7 +24,14 @@ from typing import Any, Callable
 
 from loguru import logger
 
-from navig.blocks.loader import Block, BlockInput, BlockStep, find_block
+from navig.blocks.loader import (
+    VERIFY_LEVELS,
+    Block,
+    BlockInput,
+    BlockStep,
+    find_block,
+    validate_block,
+)
 from navig.blocks.policy import (
     PolicyError,
     Redactor,
@@ -36,6 +43,7 @@ from navig.blocks.policy import (
     unmet_requirements,
     verify_locked_digest,
 )
+from navig.core.proc_text import decode_console_result
 
 MAX_BLOCK_DEPTH = 3
 
@@ -398,15 +406,14 @@ def _step_command(step, ctx, workdir, secret_env_values, block, redactor, risk) 
             env[env_var] = secret_env_values[key]
 
     try:
-        proc = subprocess.run(  # noqa: S603 — argv list, shell=False
+        proc = decode_console_result(subprocess.run(  # noqa: S603 — argv list, shell=False
             argv,
             cwd=str(cwd),
             env=env,
             capture_output=True,
-            text=True,
-            timeout=step.timeout_seconds,
+                        timeout=step.timeout_seconds,
             shell=False,
-        )
+        ))
     except FileNotFoundError:
         return StepResult(step.id, step.kind, "failed", risk=risk,
                           detail=f"executable not found: {argv[0]}")
@@ -454,6 +461,14 @@ def _step_block(step, ctx, project_root, workdir, depth, ancestry, approvals, ye
         return StepResult(step.id, step.kind, "failed", risk=risk,
                           detail=f"child block '{step.use}' not installed "
                                  f"(navig install add block:navig-run/community/blocks/{step.use})")
+    # The parent was validated by its caller; the child never was. Without this a
+    # valid parent could pull in an invalid child and inherit its outcome — the
+    # child's failure to verify anything becomes the parent's "succeeded".
+    problems = validate_block(child)
+    if problems:
+        return StepResult(step.id, step.kind, "failed", risk=risk,
+                          detail=f"child block '{step.use}' is invalid: "
+                                 + "; ".join(problems[:3]))
     # Capability containment: child caps ⊆ parent declared caps.
     parent_caps = set(step.capabilities)
     child_caps = {c for s in child.steps for c in s.capabilities}
@@ -472,7 +487,33 @@ def _step_block(step, ctx, project_root, workdir, depth, ancestry, approvals, ye
     status = "ok" if sub.outcome == S_SUCCEEDED else "failed"
     return StepResult(step.id, step.kind, status, risk=risk,
                       detail=f"child block '{step.use}' -> {sub.outcome}",
-                      child_receipt=sub.run_id)
+                      child_receipt=_persist_child_receipt(
+                          child, sub, child_inputs, trust=trust, redactor=redactor))
+
+
+def _persist_child_receipt(child, sub, inputs, *, trust, redactor) -> str | None:
+    """Write the child run's own receipt; return its id, or None if it wasn't written.
+
+    A nested run is a real execution that changed the system, so it earns a receipt
+    of its own — and the parent's ``chain`` is only evidence if the ids in it lead
+    somewhere. They used to be ``run_id``s while receipts are filed under a UUID
+    ``receipt_id``, so every chain entry resolved to nothing: a parent could claim
+    "verified by the child's receipt" with no such receipt in existence.
+
+    None on failure, deliberately. An id the parent cannot back with a file is the
+    exact dangling claim this fixes — better to admit there is no child receipt
+    than to name one that isn't there.
+    """
+    try:
+        # Lazy: receipts.py imports BlockRunResult from this module.
+        from navig.blocks.receipts import build_receipt, persist_receipt
+
+        receipt = build_receipt(child, sub, inputs, trust=trust, redactor=redactor)
+        persist_receipt(receipt)
+        return receipt.receipt_id
+    except Exception as exc:  # noqa: BLE001 — a missing child receipt must not kill the parent run
+        logger.warning("blocks.runner: child receipt for '{}' not written: {}", child.id, exc)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -494,23 +535,66 @@ def _check_expect(expect: dict, returncode: int, stdout: str, ctx: dict) -> bool
 
 
 def _run_verify(block: Block, ctx: dict, workdir: Path, redactor: Redactor) -> tuple[bool | None, dict]:
+    """Run the block's machine verification.
+
+    Returns ``(None, …)`` ONLY for ``kind: none`` — the block honestly declaring
+    that it has no machine check. Every other outcome is a real ``True``/``False``:
+    a verification that could not be performed returns **False**, never None and
+    never True. A receipt is the entire product claim, so "I could not check" must
+    read as unproven, exactly as ``navig doctor`` learned that ✓ may never stand for
+    "I could not look".
+    """
     v = block.verify
     if v.kind == "none":
         return None, {"kind": "none"}
 
     if v.kind == "file_exists":
-        path = Path(_resolve(v.path or "", ctx))
+        try:
+            raw = _resolve(v.path or "", ctx)
+        except PolicyError as exc:
+            # A token that never got set. The steps already ran and changed the
+            # system; letting this escape kills the receipt for a run that really
+            # happened, so it is a failed verification, not a failed process.
+            return False, {"kind": "file_exists", "path": v.path, "error": str(exc)}
+        # `Path("")` is `Path(".")` and the cwd ALWAYS exists, so an empty path
+        # was a guaranteed pass that proved nothing — the strongest claim the
+        # product makes, asserting only that a directory exists. Reachable with a
+        # perfectly valid manifest: a capture regex whose group matches empty
+        # (a tool that printed no path) sets the output to "".
+        if not raw.strip():
+            return False, {
+                "kind": "file_exists",
+                "path": v.path,
+                "ok": False,
+                "error": "path resolved to an empty value — nothing to check",
+            }
+        path = Path(raw)
         ok = path.exists()
         return ok, {"kind": "file_exists", "path": str(path), "ok": ok}
 
     if v.kind == "command":
-        argv = [_resolve(a, ctx) for a in v.argv]
         try:
-            proc = subprocess.run(  # noqa: S603
-                argv, cwd=str(workdir), capture_output=True, text=True,
-                timeout=v.timeout_seconds, shell=False,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            argv = [_resolve(a, ctx) for a in v.argv]
+        except PolicyError as exc:
+            return False, {"kind": "command", "argv": list(v.argv), "error": str(exc)}
+        if not argv:
+            # `subprocess.run([])` raises a bare OSError (WinError 87) that the
+            # handler below does not catch, so this used to abort the whole apply
+            # after the steps had run — no receipt at all for a run that changed
+            # the system. The author-time lint does not require argv either.
+            return False, {
+                "kind": "command",
+                "argv": [],
+                "ok": False,
+                "error": "verify command has no argv — nothing to run",
+            }
+        try:
+            proc = decode_console_result(subprocess.run(  # noqa: S603
+                argv, cwd=str(workdir), capture_output=True,                 timeout=v.timeout_seconds, shell=False,
+            ))
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            # OSError, not FileNotFoundError: a bad argv/exe raises plain OSError
+            # on Windows, and an unverifiable run must still yield a receipt.
             return False, {"kind": "command", "argv": argv, "error": str(exc)}
         ok = _check_expect({"expect": v.expect}, proc.returncode, proc.stdout or "", ctx) \
             if v.expect else (proc.returncode == 0)
@@ -521,7 +605,10 @@ def _run_verify(block: Block, ctx: dict, workdir: Path, redactor: Redactor) -> t
             "stdout_tail": redactor.scrub((proc.stdout or "")[-300:]),
             "ok": ok,
         }
-    return None, {"kind": v.kind}
+    # Unreachable through the loader (it rejects unknown kinds) — but if one ever
+    # gets through, the block asked for a check this runner cannot perform. False,
+    # not None: None is reserved for "no verification was declared".
+    return False, {"kind": v.kind, "ok": False, "error": f"unsupported verify kind '{v.kind}'"}
 
 
 def _verification_level(block: Block, *, verify_passed, has_manual, any_machine) -> str:
@@ -531,7 +618,15 @@ def _verification_level(block: Block, *, verify_passed, has_manual, any_machine)
     if block.verify.kind == "none":
         return V_HUMAN if has_manual else V_NONE
     if verify_passed:
-        return block.verify.level or V_SELF
+        # CLAMPED, not trusted: `level` is a string the block author writes, and it
+        # is rendered as `verification: <level>` in the terminal, stored in the
+        # receipt, and returned to an agent by the MCP tool. Unconstrained, a block
+        # could label itself `navig-certified`. Validation rejects an unknown level
+        # on every path that runs a block; this is the second line, so a value that
+        # slips through still degrades to the weakest TRUE claim rather than
+        # printing whatever the author chose.
+        level = block.verify.level
+        return level if level in VERIFY_LEVELS else V_SELF
     return V_NONE  # verify ran but failed
 
 

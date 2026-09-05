@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 from navig.adapters.automation.types import ExecutionResult, WindowInfo
+from navig.core.proc_text import decode_console_result
 
 
 class LinuxAdapter:
@@ -43,7 +44,7 @@ class LinuxAdapter:
 
     def _run_command(self, cmd: list, capture_output=True) -> ExecutionResult:
         try:
-            result = subprocess.run(cmd, capture_output=capture_output, text=True, timeout=10)
+            result = decode_console_result(subprocess.run(cmd, capture_output=capture_output, timeout=10))
             return ExecutionResult(
                 success=result.returncode == 0,
                 stdout=result.stdout,
@@ -117,7 +118,12 @@ class LinuxAdapter:
         pid_result = self._run_command(["xdotool", "getwindowpid", win_id])
         pid = int(pid_result.stdout.strip()) if pid_result.success else 0
 
-        return WindowInfo(id=win_id, title=title, x=x, y=y, width=w, height=h, pid=pid)
+        # class_name="" — xdotool isn't queried for WM_CLASS here, and "" is the established
+        # unknown-value convention (see ahk.py's `class_name=item.get("class_name", "")`).
+        # It is REQUIRED on WindowInfo, so omitting it raised TypeError on every call.
+        return WindowInfo(
+            id=win_id, title=title, x=x, y=y, width=w, height=h, pid=pid, class_name=""
+        )
 
     def activate_window(self, selector: str) -> ExecutionResult:
         """Activate window by title."""
@@ -221,7 +227,9 @@ class LinuxAdapter:
                 title = parts[7] if len(parts) > 7 else ""
 
                 windows.append(
-                    WindowInfo(id=win_id, title=title, x=x, y=y, width=w, height=h, pid=0)
+                    WindowInfo(
+                        id=win_id, title=title, x=x, y=y, width=w, height=h, pid=0, class_name=""
+                    )
                 )
 
         return windows

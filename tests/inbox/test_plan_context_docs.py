@@ -13,7 +13,21 @@ def test_extract_md_section() -> None:
     assert _extract_md_section(text, "## Missing") == ""
 
 
-def test_gather_includes_project_docs(tmp_path: Path) -> None:
+def test_gather_includes_project_docs(tmp_path: Path, monkeypatch) -> None:
+    # Isolate the SPACE root. `space_root` defaults to paths.spaces_dir(), and
+    # `_read_project_docs` checks `space_path / VISION.md` FIRST, before cwd — so a
+    # "default" space anywhere in the ambient spaces dir shadowed the file this test
+    # writes, returning the scaffold stub ("> What are you working toward?"). That made
+    # the test order-dependent: it passes alone and failed in the full suite.
+    #
+    # The empty `default/` dir is load-bearing. `_resolve_space_path` only
+    # short-circuits when `space_root / name` IS a directory; otherwise it falls back
+    # to `resolve_space()`, which reaches back out to the real config dir and defeats
+    # the isolation. Verified both ways.
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "cfg"))
+    space_root = tmp_path / "spaces"
+    (space_root / "default").mkdir(parents=True)
+
     (tmp_path / ".navig" / "plans").mkdir(parents=True)
     (tmp_path / "VISION.md").write_text("# Vision\nUnify the inbox.", encoding="utf-8")
     (tmp_path / "ROADMAP.md").write_text("# Roadmap\n\n## Roadmap\n- [ ] ship it\n", encoding="utf-8")
@@ -21,7 +35,7 @@ def test_gather_includes_project_docs(tmp_path: Path) -> None:
         "# Dev\n\n## After MVP\n- [ ] echo UI\n\n## Deferred / Later\n- [ ] mini\n", encoding="utf-8"
     )
 
-    pc = PlanContext(cwd=tmp_path)
+    pc = PlanContext(cwd=tmp_path, space_root=str(space_root))
     snap = pc.gather(space="default")
     pdocs = snap.get("project_docs") or {}
     assert "Unify the inbox" in (pdocs.get("vision") or "")

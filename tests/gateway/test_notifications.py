@@ -4,8 +4,6 @@ Tests for navig.gateway.notifications — NotificationPriority, Notification dat
 
 from __future__ import annotations
 
-import pytest
-
 from navig.gateway.notifications import Notification, NotificationPriority
 
 # ─── NotificationPriority ─────────────────────────────────────────────────────

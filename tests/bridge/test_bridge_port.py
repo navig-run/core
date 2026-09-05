@@ -55,9 +55,8 @@ _CONSUMER_FILES = [
     REPO_ROOT / "navig/agent/ai_client.py",
     REPO_ROOT / "navig/agent/llm_providers.py",
     REPO_ROOT / "navig/daemon/telegram_worker.py",
-    REPO_ROOT / "navig/commands/copilot.py",
     REPO_ROOT / "navig/providers/registry.py",
-    REPO_ROOT / "navig/llm_router.py",
+    REPO_ROOT / "navig/llm/router.py",
 ]
 
 
@@ -78,8 +77,17 @@ def _source_imports_bridge_reader(path: Path) -> bool:
 @pytest.mark.parametrize("consumer", _CONSUMER_FILES, ids=[p.name for p in _CONSUMER_FILES])
 def test_consumer_imports_from_bridge_grid_reader(consumer):
     """Each consumer file must import BRIDGE_DEFAULT_PORT (or get_llm_port) from bridge_grid_reader."""
-    if not consumer.exists():
-        pytest.skip(f"{consumer} not found")
+    # NOT a skip. This list is an intent list -- "these files use the bridge port, so
+    # they must not hardcode it" -- and a skip on a path that stopped existing is how it
+    # rots silently. Measured 2026-09-01: `navig/llm_router.py` had moved to
+    # `navig/llm/router.py` and `navig/commands/copilot.py` had been deleted outright, so
+    # two entries had been quietly skipping instead of guarding. Failing here says the
+    # LIST is stale, which is a two-line fix, rather than letting coverage evaporate.
+    assert consumer.exists(), (
+        f"{consumer} is listed as a bridge-port consumer but does not exist. It moved or "
+        "was deleted — update _CONSUMER_FILES. Do not turn this back into a skip: that is "
+        "exactly how these two entries stopped guarding anything."
+    )
     assert _source_imports_bridge_reader(consumer), (
         f"{consumer.name} does not import from {_IMPORT_SOURCE}. "
         "Use BRIDGE_DEFAULT_PORT instead of bare literal 42070."

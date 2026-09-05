@@ -249,6 +249,25 @@ class OperationRecorder:
 
         self._index_loaded = True
 
+    def _redirect_to_global(self) -> None:
+        """Point recording at the GLOBAL history (``~/.navig/history``) after the
+        resolved project-local dir has vanished mid-run.
+
+        ``navig repo remove`` deletes a worktree whose ``.navig`` this recorder may
+        have resolved to at startup; by the time the atexit completion writes, that
+        dir is gone. Recreating it in place would resurrect the removed worktree as
+        an orphan, so we degrade to the global ledger instead — the record survives
+        and the hash chain simply continues in the global file (its own chain).
+        Idempotent and safe when the global dir is already the target.
+        """
+        from navig.config import get_config_manager
+
+        global_hist = get_config_manager().global_config_dir / "history"
+        global_hist.mkdir(parents=True, exist_ok=True)
+        self.history_dir = global_hist
+        self.history_file = global_hist / "operations.jsonl"
+        self._index_loaded = False
+
     def record(self, record: OperationRecord) -> str:
         """
         Record an operation.
@@ -264,6 +283,12 @@ class OperationRecorder:
         Returns:
             The operation ID
         """
+        # Reset per call. The completion path below reads this to decide whether the
+        # in-flight marker may be cleared: clearing it for a line that was never
+        # written removes the LAST trace of the operation — the marker is exactly what
+        # `navig ledger reap` turns into an honest `interrupted` entry.
+        self._last_record_failed = False
+
         # Generate ID if not set
         if not record.id:
             record.id = self._generate_id()
@@ -289,6 +314,18 @@ class OperationRecorder:
             from navig.ledger_chain import compute_entry_hash, read_tail_hash
 
             with self._write_lock:
+                # The resolved history dir is project-local (``<app_root>/.navig/
+                # history``) and can be deleted mid-run — most often when ``navig
+                # repo remove`` deletes the very worktree whose ``.navig`` this
+                # recorder resolved to at startup (find_app_root walks up to the
+                # first ``.navig/``, and a worktree of a repo that tracks one has
+                # its own). Recreating it here would resurrect the just-removed
+                # worktree as an orphan dir, so instead fall back to the GLOBAL
+                # ledger and record there — the operation is never lost and no
+                # orphan is reborn. No-op when the dir is present (the common case).
+                if not self.history_dir.exists():
+                    self._redirect_to_global()
+
                 entry = record.to_dict()
                 prev = read_tail_hash(self.history_file)
                 entry["prev"] = prev
@@ -309,7 +346,28 @@ class OperationRecorder:
         except OSError as e:
             from navig import console_helper as ch
 
-            ch.dim(f"Could not record operation: {e}")
+            # `ch.dim` before — the quietest sink available for the loss of an audit
+            # line. The operation ITSELF already happened; what is missing is the only
+            # record of it, so `navig undo` cannot find the id this call still returns
+            # and `navig insights` under-reports without any gap to notice.
+            self._last_record_failed = True
+            ch.warning(
+                f"Operation NOT recorded in the history ledger: {e}\n"
+                f"  The command itself ran. `navig undo` cannot revert it and "
+                f"`navig insights` will not count it.\n"
+                f"  Ledger: {self.history_file}"
+            )
+            try:
+                from navig.core import incidents
+
+                incidents.record(
+                    incidents.STORE_WRITE_FAILED,
+                    store="operations",
+                    path=str(self.history_file),
+                    error=str(e)[:200],
+                )
+            except Exception:  # noqa: BLE001 - a health note must never break recording
+                pass
 
         return record.id
 
@@ -390,7 +448,32 @@ class OperationRecorder:
         if undo_data:
             record.undo_data = undo_data
 
-        # Dual-write: also log to audit.db (best-effort)
+        # ── The AUTHORITATIVE write goes FIRST. Order is load-bearing here. ──
+        # This runs inside a one-second budget: navig.cli.middleware's atexit
+        # completer joins its writer thread with timeout=1.0. A non-daemon thread
+        # started INSIDE an atexit handler is never waited for — threading's own
+        # shutdown join has already run by then — so anything unfinished when that
+        # join times out is abandoned outright, not merely delayed. Measured on a
+        # cold config dir: constructing the audit store below costs 50–407 ms
+        # (disk + schema + lock contention) against 3 ms for this append. Charging
+        # the best-effort side-channel first spent up to 40% of the budget before
+        # the ledger — the only authoritative record of the command — was touched
+        # at all, and under load the operation vanished from `navig ledger show`
+        # entirely. Keep every best-effort write after this point.
+        recorded_id = self.record(record)
+        # The op reached a terminal status → drop its in-flight marker (if any).
+        # A marker outliving its process is what the reaper turns into an honest
+        # `interrupted` line; clearing it here is the normal, non-interrupted path.
+        #
+        # UNLESS the append failed. Then there is no terminal line, and the marker is
+        # the only remaining evidence the operation ever ran — clearing it would erase
+        # the last trace of a command that really executed. Keeping it lets
+        # `navig ledger reap` record it honestly instead.
+        if not getattr(self, "_last_record_failed", False):
+            self.clear_inflight(record.id)
+
+        # Dual-write: also log to audit.db. Best-effort, and therefore LAST —
+        # it may only ever spend budget the authoritative append no longer needs.
         try:
             from navig.store.audit import get_audit_store
 
@@ -411,11 +494,6 @@ class OperationRecorder:
         except Exception as _exc:
             logger.debug("audit log skipped: %s", _exc)  # Never let audit failure block recording
 
-        recorded_id = self.record(record)
-        # The op reached a terminal status → drop its in-flight marker (if any).
-        # A marker outliving its process is what the reaper turns into an honest
-        # `interrupted` line; clearing it here is the normal, non-interrupted path.
-        self.clear_inflight(record.id)
         return recorded_id
 
     # ------------------------------------------------------------------
@@ -588,6 +666,10 @@ class OperationRecorder:
         of plan-evidence-ledger.md). Called with ``_write_lock`` held (from
         ``record()``); must not re-acquire it.
         """
+        # Bound BEFORE the try: the handler below has to be able to put this back, and a
+        # failure at the very first `open()` would otherwise leave the name unbound and
+        # turn the rollback into a NameError inside an exception handler.
+        backup_file = self.history_file.with_suffix(".jsonl.bak")
         try:
             # Read all raw lines (blank lines dropped, content untouched)
             with open(self.history_file, encoding="utf-8") as fh:
@@ -598,7 +680,6 @@ class OperationRecorder:
             recent_lines = lines[-keep_count:]
 
             # Write back
-            backup_file = self.history_file.with_suffix(".jsonl.bak")
             self.history_file.rename(backup_file)
 
             _tmp_path: Path | None = None
@@ -624,7 +705,39 @@ class OperationRecorder:
         except OSError as e:
             from navig import console_helper as ch
 
-            ch.warning(f"Could not rotate history: {e}")
+            # The rename above moves the ledger ASIDE before the replacement is written, so a
+            # failure between the two (disk full, an AV/indexer lock, permissions) left NO
+            # operations.jsonl at all — every historical entry stranded in the .bak, the next
+            # record() starting a FRESH hash chain, and `navig undo` / `ledger verify` seeing
+            # an empty history. All of that behind a soft "Could not rotate history".
+            #
+            # Rotation is a housekeeping step; losing the ledger to it is not acceptable, so
+            # put the original back and keep the un-rotated file. The only cost is that the
+            # file stays oversized until the next successful rotation.
+            recovered = False
+            if not self.history_file.exists() and backup_file.exists():
+                try:
+                    backup_file.rename(self.history_file)
+                    recovered = True
+                except OSError:
+                    pass          # reported below as the un-recovered case
+            # The index was invalidated mid-rotation; rebuild it from whatever is on disk now.
+            self._index_loaded = False
+
+            if recovered:
+                ch.warning(
+                    f"Could not rotate the history ledger: {e}\n"
+                    f"  The original was restored, so nothing was lost — it stays oversized "
+                    f"until the next rotation succeeds."
+                )
+            elif not self.history_file.exists() and backup_file.exists():
+                ch.error(
+                    f"History ledger rotation FAILED and the original could not be restored: {e}\n"
+                    f"  Your operation history is intact but under the wrong name.\n"
+                    f"  Recover it with:  mv {backup_file} {self.history_file}"
+                )
+            else:
+                ch.warning(f"Could not rotate history: {e}")
 
     def get_operation(self, op_id: str) -> OperationRecord | None:
         """Get a specific operation by ID."""
@@ -672,6 +785,13 @@ class OperationRecorder:
         Yields:
             OperationRecord objects matching filters
         """
+        if limit <= 0:
+            # `count >= limit` is checked AFTER the yield, so limit=0 used to emit one
+            # record — "maximum number of results: 0" returning a result. Harmless for
+            # a listing, but `navig history undo 0` computed limit=0 and then indexed
+            # [-1] into that single record, so it undid the most recent operation.
+            return
+
         if not self.history_file.exists():
             return
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -361,15 +360,18 @@ class TestGetEnvBackend:
 
 
 class TestScreenshotBackendInterface:
-    def test_base_is_available_raises(self):
-        b = _ScreenshotBackend()
-        with pytest.raises(NotImplementedError):
-            b.is_available()
+    def test_base_cannot_be_instantiated(self):
+        """The base is a real abc.ABC (see its docstring): a subclass that forgets a method
+        fails loudly at CONSTRUCTION with TypeError, rather than late with
+        NotImplementedError on call — and the base can never be used as a broken backend.
+        These two tests still asserted the old call-time contract and were red on main."""
+        with pytest.raises(TypeError):
+            _ScreenshotBackend()
 
-    def test_base_capture_region_raises(self):
-        b = _ScreenshotBackend()
-        with pytest.raises(NotImplementedError):
-            b.capture_region(0, 0, 100, 100)
+    def test_both_methods_are_abstract(self):
+        assert _ScreenshotBackend.__abstractmethods__ == frozenset(
+            {"capture_region", "is_available"}
+        )
 
     def test_dxcam_not_available_on_non_windows(self):
         with patch("sys.platform", "linux"):

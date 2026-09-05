@@ -21,14 +21,28 @@ logger = logging.getLogger("navig.notify")
 def resolve_public_base(gateway) -> str | None:
     """The daemon's current public base URL (no trailing slash), or None."""
     # 1) Stable user domain (direct mode) wins.
+    #
+    # Read through an explicitly REFRESHED ConfigManager, not ``Config()``. Both the
+    # ConfigSingleton and the cached ConfigManager serve the snapshot they loaded at
+    # process start — freshness is a deliberate opt-in (``refresh_global_config``),
+    # not automatic. In the long-lived daemon that meant `navig config set
+    # cloud.public_url <domain>` had no effect until a restart: this returned the
+    # boot-time empty value, fell through to the rotating quick-tunnel URL, and kept
+    # re-pointing Twilio at `*.trycloudflare.com` — the exact churn this module's
+    # docstring tells the operator to avoid by setting that very key.
+    #
+    # Cost is ~1.5 ms and this runs once per 45 s scheduler tick; the underlying
+    # snapshot cache is mtime-keyed, so an unchanged file is not re-parsed.
     try:
-        from navig.core import Config
+        from navig.config import get_config_manager
 
-        pub = (Config().get("cloud.public_url") or "").strip().rstrip("/")
+        cm = get_config_manager()
+        cm.refresh_global_config()
+        pub = (cm.get("cloud.public_url") or "").strip().rstrip("/")
         if pub:
             return pub
     except Exception:
-        pass
+        logger.debug("resolve_public_base: cloud.public_url read failed", exc_info=True)
     # 2) Live cloudflared tunnel URL.
     cm = getattr(gateway, "cloud_manager", None) if gateway is not None else None
     if cm is not None:

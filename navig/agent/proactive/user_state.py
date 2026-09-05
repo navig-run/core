@@ -126,6 +126,9 @@ class UserStateTracker:
         self._max_interactions = 500
         self.stats = UsageStats()
         self.preferences = UserPreferences()
+        # Set when the state file exists but could not be read/parsed; `_save_state`
+        # refuses while it stands, so defaults never replace real preferences.
+        self._load_failed = False
 
         # Active hours configuration (24h format)
         self.active_hours_start = 8  # 8 AM
@@ -390,7 +393,17 @@ class UserStateTracker:
         return False
 
     def _flush_last_seen(self) -> None:
-        """Write only last_seen to a lightweight sidecar for restart resilience (BUG-5)."""
+        """Write only last_seen to a lightweight sidecar for restart resilience (BUG-5).
+
+        The SECOND writer of `self.stats`, and it needs the same refusal as
+        `_save_state` — harden one path into a destructive write and you must
+        enumerate every path into it. After a failed load `stats.last_seen` is the
+        `None` default, so this wrote `{"last_seen": null}` over the sidecar. That
+        file exists precisely as the recovery mirror for a restart, so wiping it
+        removes the fallback at the moment it is most likely to be needed.
+        """
+        if getattr(self, "_load_failed", False):
+            return
         sidecar = self.state_dir / "last_seen.json"
         try:
             _tmp_path: Path | None = None
@@ -408,12 +421,30 @@ class UserStateTracker:
             logger.debug("Failed to flush last_seen sidecar: %s", e)
 
     def _load_state(self):
-        """Load persisted state from disk."""
+        """Load persisted state from disk.
+
+        A failed READ must never become a destructive WRITE. `stats` and
+        `preferences` are already defaults from ``__init__``, so any failure here
+        left this tracker holding a factory-fresh copy — and all four `_save_state()`
+        callers then wrote that over the operator's real file. What is lost is not
+        just history: `preferences` carries `autonomy_level`, `quiet_hours_*` and
+        `notifications_enabled`, so one transient lock silently CHANGED HOW THE AGENT
+        BEHAVES — back to acting at "balanced" autonomy and messaging outside the
+        quiet hours the operator had set.
+
+        `load_json_for_update` rides out transient locks and distinguishes "absent or
+        genuinely empty" (safe to overwrite) from "has content but could not be read"
+        (never overwrite). Note it deliberately QUARANTINES invalid JSON to
+        ``*.corrupt`` and returns the default rather than raising: those bytes are
+        already preserved on disk, and refusing forever would wedge the store.
+        """
+        from navig.core.json_io import JsonReadError, load_json_for_update
+
         state_file = self.state_dir / "user_state.json"
         sidecar = self.state_dir / "last_seen.json"
         if state_file.exists():
             try:
-                data = json.loads(state_file.read_text(encoding="utf-8"))
+                data = load_json_for_update(state_file, default={})
                 stats = data.get("stats", {})
                 self.stats = UsageStats(
                     total_messages=stats.get("total_messages", 0),
@@ -461,7 +492,15 @@ class UserStateTracker:
                         autonomy_level=prefs.get("autonomy_level", "balanced"),
                         notifications_enabled=prefs.get("notifications_enabled", True),
                     )
+            except JsonReadError as e:
+                # Has content but unreadable — the one case that must never be
+                # replaced by the in-memory defaults.
+                self._load_failed = True
+                logger.warning("user_state.json could not be read: %s", e)
             except Exception as e:
+                # A partial load counts too: `stats` is assigned before `preferences`,
+                # so a failure between them leaves half the file's values as defaults.
+                self._load_failed = True
                 logger.warning("Failed to load user state: %s", e)
         elif sidecar.exists():
             # No main state yet — at least restore last_seen from sidecar (BUG-5)
@@ -474,7 +513,27 @@ class UserStateTracker:
                 pass  # best-effort: sidecar state unreadable; use defaults
 
     def _save_state(self):
-        """Persist state to disk."""
+        """Persist state to disk. Refuses while the last load is known to have failed.
+
+        Recorded rather than silent: a daemon that declines to write and tells nobody
+        is the trap the incident log exists for. Runs in the proactive loop, so it
+        must not raise.
+        """
+        if getattr(self, "_load_failed", False):
+            from navig.core import incidents
+
+            incidents.record(
+                incidents.STORE_WRITE_REFUSED,
+                store="user_state",
+                path=str(self.state_dir / "user_state.json"),
+            )
+            logger.warning(
+                "Refusing to save user state: %s could not be read, so writing now "
+                "would replace the operator's preferences with defaults.",
+                self.state_dir / "user_state.json",
+            )
+            return
+
         state_file = self.state_dir / "user_state.json"
         try:
             data = {

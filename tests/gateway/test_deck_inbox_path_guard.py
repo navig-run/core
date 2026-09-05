@@ -8,8 +8,6 @@ Without the guard, `route` would read (and with mode=move relocate) an arbitrary
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 pytestmark = pytest.mark.integration

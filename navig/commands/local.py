@@ -107,7 +107,7 @@ def resource_usage(options: dict):
 
     if result.exit_code != 0:
         ch.error(f"Failed to get resource usage: {result.stderr}")
-        return
+        raise typer.Exit(1)
 
     console.print(result.stdout)
 
@@ -152,7 +152,7 @@ def hosts_view(options: dict):
 
     if content.startswith("Permission denied") or content.startswith("Hosts file not found"):
         ch.error(content)
-        return
+        raise typer.Exit(1)
 
     # Use Syntax for highlighting
     syntax = Syntax(content, "ini", theme="monokai", line_numbers=True)
@@ -199,6 +199,7 @@ def hosts_edit(options: dict):
 
     if result.exit_code != 0 and result.stderr:
         ch.error(f"Failed to open editor: {result.stderr}")
+        raise typer.Exit(1)
 
 
 def hosts_add(ip: str, hostname: str, options: dict):
@@ -214,14 +215,14 @@ def hosts_add(ip: str, hostname: str, options: dict):
 
     if not local_ops.can_edit_hosts_file():
         ch.error("Admin privileges required to modify hosts file")
-        return
+        raise typer.Exit(1)
 
     hosts_path = local_ops.get_hosts_file_path()
     content = local_ops.read_hosts_file()
 
     if content.startswith("Permission denied"):
         ch.error(content)
-        return
+        raise typer.Exit(1)
 
     # Check if entry already exists
     for line in content.split("\n"):
@@ -240,10 +241,12 @@ def hosts_add(ip: str, hostname: str, options: dict):
         with open(hosts_path, "a", encoding="utf-8") as f:
             f.write(f"\n{new_entry}")
         ch.success(f"Added hosts entry: {new_entry}")
-    except PermissionError:
+    except PermissionError as e:
         ch.error("Permission denied. Run as Administrator/root.")
+        raise typer.Exit(1) from e
     except Exception as e:
         ch.error(f"Failed to add entry: {e}")
+        raise typer.Exit(1) from e
 
 
 # ==================== Software Management ====================
@@ -466,7 +469,11 @@ Be concise and actionable."""
     except ImportError:
         ch.warning("AI module not available for security analysis")
     except Exception as e:
-        ch.error(f"AI analysis failed: {e}")
+        # Optional enrichment, run only under `--ai` and only AFTER the audit has
+        # printed its real findings. Its two sibling paths above already treat an
+        # unavailable AI as a warning; using ch.error here made the glyph disagree
+        # with the (correct) exit 0. Warn so both agree — the audit did succeed.
+        ch.warning(f"AI analysis failed: {e}")
 
 
 def security_ports(options: dict):
@@ -485,7 +492,7 @@ def security_ports(options: dict):
 
     if result.exit_code != 0:
         ch.error(f"Failed to list ports: {result.stderr}")
-        return
+        raise typer.Exit(1)
 
     if options.get("plain"):
         print(result.stdout)
@@ -537,7 +544,7 @@ def network_interfaces(options: dict):
 
     if result.exit_code != 0:
         ch.error(f"Failed to list interfaces: {result.stderr}")
-        return
+        raise typer.Exit(1)
 
     console.print(result.stdout)
 
@@ -602,6 +609,12 @@ local_app = typer.Typer(
 @local_app.callback()
 def local_callback(ctx: typer.Context):
     """Local system management - run without subcommand for help."""
+    # Nine sibling modules already do this. The root `navig` callback ensures the dict,
+    # so through the real CLI this is a no-op; it matters when the sub-app is reached
+    # directly (a test, a programmatic invoke), where `ctx.obj[...]` would otherwise
+    # die with "'NoneType' object does not support item assignment" — a crash that is
+    # also non-zero, so an exit-code assertion can pass for entirely the wrong reason.
+    ctx.ensure_object(dict)
     if ctx.invoked_subcommand is None:
         show_subcommand_help("local", ctx)
         raise typer.Exit()

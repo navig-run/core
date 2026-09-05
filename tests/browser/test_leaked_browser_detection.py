@@ -131,3 +131,70 @@ def test_doctor_warns_about_leaks_and_only_notes_foreign_ones(monkeypatch):
     foreign = [r for r in rows if "Foreign" in r[2]]
     assert foreign and foreign[0][1] is True, "someone else's browser is not our failure"
     assert "left untouched" in text
+
+
+# ── `cdp status` must not go silent about a browser that is running ────────────────
+#
+# `discover_targets` probes for ATTACHABLE endpoints, so it cannot see a headless browser
+# or one on the ephemeral port `--remote-debugging-port=0` takes. The leak list only ever
+# showed kind != "tracked". A browser that is tracked AND live AND undiscoverable — the
+# exact thing `navig cdp new --headless` produces, and what os-harness-shot drives — was
+# therefore in NEITHER list, and `status` printed "No live CDP targets" while it ran.
+#
+# That is the reassuring-silence failure: CLAUDE.md tells agents to check `cdp status`
+# before touching browsers precisely so they don't disturb another session's, and the
+# command answered "nothing here".
+
+
+def _status_output(monkeypatch, capsys, *, targets, browsers):
+    from navig.commands.cdp import cdp_status
+
+    monkeypatch.setattr(t, "discover_targets", lambda: targets)
+    monkeypatch.setattr(t, "list_debug_browsers", lambda: browsers)
+    monkeypatch.setattr(t, "platform_name", lambda: "TestOS")
+    monkeypatch.setattr(t, "known_app_ids", lambda: ["chrome"])
+    cdp_status(json_out=False)
+    return capsys.readouterr().out
+
+
+TRACKED_LIVE = {"pid": 10, "port": 30187, "kind": "tracked", "profile": "p", "headless": True}
+
+
+def test_status_reports_a_tracked_live_browser_it_cannot_discover(monkeypatch, capsys):
+    out = _status_output(monkeypatch, capsys, targets=[], browsers=[TRACKED_LIVE])
+
+    assert "30187" in out, "a browser that is RUNNING must appear somewhere in status"
+    assert "No live CDP targets" not in out, (
+        "saying 'no targets' while one is alive is the silence that gets another "
+        "session's browser killed"
+    )
+
+
+def test_status_still_says_nothing_is_running_when_nothing_is(monkeypatch, capsys):
+    """Anti-vacuity partner: the assertion above must be able to fail."""
+    out = _status_output(monkeypatch, capsys, targets=[], browsers=[])
+
+    assert "No live CDP targets" in out
+    assert "30187" not in out
+
+
+def test_a_discoverable_tracked_browser_is_not_listed_twice(monkeypatch, capsys):
+    """It already has a row in the targets table; repeating it below reads as a second
+    browser, which is how a count becomes untrustworthy."""
+    target = type("T", (), {
+        "port": 30187, "tabs": [], "attachable": True, "kind": "browser", "browser": "chrome",
+    })()
+    out = _status_output(monkeypatch, capsys, targets=[target], browsers=[TRACKED_LIVE])
+
+    assert out.count("30187") == 1
+    assert "NAVIG-launched browser(s) running" not in out
+
+
+def test_status_still_flags_a_leak_when_a_tracked_browser_is_also_running(monkeypatch, capsys):
+    """The tracked row must not dilute the warning — a leak is still a leak."""
+    orphan = {"pid": 77, "port": 9222, "kind": "orphan", "profile": "q", "headless": False}
+    out = _status_output(monkeypatch, capsys, targets=[], browsers=[TRACKED_LIVE, orphan])
+
+    assert "never closed" in out, "a leaked browser must still be warned about"
+    assert "navig cdp stop --all" in out
+    assert "30187" in out and "9222" in out

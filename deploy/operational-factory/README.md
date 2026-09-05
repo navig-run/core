@@ -47,6 +47,6 @@ Safe-by-default multi-agent operations stack with approval gating and full audit
 
 ## Cross-platform NAVIG installers
 
-- Windows: `navig-core/scripts/install_navig_windows.ps1`
-- Linux: `navig-core/scripts/install_navig_linux.sh`
-- macOS: `navig-core/scripts/install_navig_macos.sh`
+- Windows: `core/installers/install_navig_windows.ps1`
+- Linux: `core/installers/install_navig_linux.sh`
+- macOS: `core/installers/install_navig_macos.sh`

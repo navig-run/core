@@ -55,11 +55,23 @@ class ContinuationPolicy:
 
 
 def _to_bool(value: Any, default: bool = False) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return default
+    """Coerce a continuation-policy flag — delegates to the canonical
+    :func:`navig.core.coerce.coerce_bool` so every subsystem shares ONE truth table.
+
+    Hardening, not a live bug: every current caller passes real Python bools, and
+    ``policy_to_context`` persists bools, so the round-trip was never broken. But this
+    returned *default* for anything that was not a ``bool`` or ``str`` — so a numeric
+    ``0`` from a JSON payload would have been discarded, and ``merge_policy(**updates)``
+    defaults each field to its CURRENT value, meaning the update would have been
+    silently dropped rather than merely mis-read.
+
+    The widened string forms all resolve in the safe direction here: ``dry_run="y"``
+    used to mean False — a REAL execution when the caller asked for a dry run — and
+    ``paused="y"`` used to leave the agent running.
+    """
+    from navig.core.coerce import coerce_bool
+
+    return coerce_bool(value, default)
 
 
 def _to_int(value: Any, default: int) -> int:

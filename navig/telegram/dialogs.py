@@ -71,24 +71,74 @@ async def list_dialogs(*, kinds: list[str] | None = None, limit: int | None = No
     return out
 
 
-async def list_topics(chat: str | int) -> list[dict]:
-    """Return forum topics for a forum supergroup → ``[{topic_id, title, icon}]``."""
-    from telethon.tl.functions.channels import GetForumTopicsRequest
+def _get_forum_topics_request():
+    """``GetForumTopicsRequest``, wherever this telethon keeps it.
 
+    Telegram moved the forum-topic methods from the ``channels`` namespace to
+    ``messages``; telethon followed in 1.44, and the old import raises ImportError at
+    call time — so ``navig telegram topics`` was dead on any current install. Try the
+    new home first, fall back to the old one so older telethons keep working.
+    """
+    try:
+        from telethon.tl.functions.messages import GetForumTopicsRequest
+    except ImportError:  # telethon < 1.44 — still under channels
+        from telethon.tl.functions.channels import GetForumTopicsRequest
+    return GetForumTopicsRequest
+
+
+async def list_topics(chat: str | int, *, limit: int | None = None,
+                      page: int = 100) -> list[dict]:
+    """Return forum topics for a forum supergroup → ``[{topic_id, title, icon}]``.
+
+    Pages through the whole forum. The previous single request with ``limit=100``
+    silently truncated any forum with more topics than that — the failure mode where
+    you archive a group and quietly miss a third of it.
+    """
+    from .media import resolve_entity  # coerces a numeric chat id passed as a string
+
+    req = _get_forum_topics_request()
     out: list[dict] = []
+    seen: set = set()
     async with UserClient() as c:
-        entity = await c.get_entity(chat)
-        res = await c(GetForumTopicsRequest(
-            channel=entity, offset_date=0, offset_id=0, offset_topic=0, limit=100,
-        ))
-        for t in getattr(res, "topics", []):
-            out.append({
-                "topic_id": getattr(t, "id", None),
-                "title": getattr(t, "title", ""),
-                "icon_color": getattr(t, "icon_color", None),
-                "closed": getattr(t, "closed", False),
-                "pinned": getattr(t, "pinned", False),
-            })
+        entity = await resolve_entity(c, chat)
+        offset_date, offset_id, offset_topic = None, 0, 0
+        while True:
+            take = page if limit is None else max(1, min(page, limit - len(out)))
+            res = await c(req(
+                peer=entity, offset_date=offset_date, offset_id=offset_id,
+                offset_topic=offset_topic, limit=take,
+            ))
+            topics = list(getattr(res, "topics", []) or [])
+            if not topics:
+                break
+            # top_message dates live in the response's `messages`, not on the topic
+            dates = {getattr(m, "id", None): getattr(m, "date", None)
+                     for m in getattr(res, "messages", []) or []}
+            for t in topics:
+                # pages can overlap; a topic must appear once however often it is served
+                tid = getattr(t, "id", None)
+                if tid in seen:
+                    continue
+                seen.add(tid)
+                out.append({
+                    "topic_id": getattr(t, "id", None),
+                    "title": getattr(t, "title", ""),
+                    "icon_color": getattr(t, "icon_color", None),
+                    "closed": bool(getattr(t, "closed", False)),
+                    "pinned": bool(getattr(t, "pinned", False)),
+                    "top_message": getattr(t, "top_message", None),
+                })
+            if limit is not None and len(out) >= limit:
+                return out[:limit]
+            last = topics[-1]
+            nxt_topic = getattr(last, "id", None)
+            if nxt_topic in (None, offset_topic):
+                break                      # no forward progress — stop rather than spin
+            offset_topic = nxt_topic
+            offset_id = getattr(last, "top_message", 0) or 0
+            offset_date = dates.get(offset_id)
+            if len(topics) < take:
+                break                      # last page
     return out
 
 

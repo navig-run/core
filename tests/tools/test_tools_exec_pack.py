@@ -4,8 +4,6 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from navig.tools.domains.exec_pack import (
     _OUTPUT_CAP,
     _run_shell,

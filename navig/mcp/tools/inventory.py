@@ -1,5 +1,26 @@
 from typing import Any
 
+# Config fields whose NAME marks them as a credential. These are dropped before a
+# host/app config is returned by the inventory tools — that output flows into the
+# agent/LLM context and logs, so a secret must never ride along. Substring match,
+# recursive into nested dicts (a nested ``{db: {password: …}}`` is redacted too).
+_SECRET_KEY_MARKERS = (
+    "password", "passwd", "secret", "token", "api_key", "apikey",
+    "access_key", "secret_key", "private_key", "credential",
+)
+
+
+def _redact_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of *cfg* with credential-ish fields removed (by key name),
+    recursing into nested dicts. Non-secret values are preserved verbatim so the
+    returned info stays useful."""
+    out: dict[str, Any] = {}
+    for key, value in cfg.items():
+        if isinstance(key, str) and any(m in key.lower() for m in _SECRET_KEY_MARKERS):
+            continue
+        out[key] = _redact_config(value) if isinstance(value, dict) else value
+    return out
+
 
 def register(server: Any) -> None:
     """Register inventory tools (hosts and apps)."""
@@ -72,6 +93,20 @@ def register(server: Any) -> None:
             "navig_app_info": _tool_app_info,
         }
     )
+
+    # See navig.mcp_server._gate_tool — all four are read-only lookups, recorded
+    # explicitly so the coverage guard can tell "considered" from "forgotten".
+    # A module's register() must be self-sufficient: register_all_tools creates this
+    # dict, but a direct `module.register(server)` call (tests, a plugin host) does not,
+    # and assuming it exists raised AttributeError. cdp.py already guarded; these did not.
+    if not hasattr(server, "_tool_safety"):
+        server._tool_safety = {}
+    server._tool_safety.update({
+        "navig_list_hosts": "safe",
+        "navig_list_apps": "safe",
+        "navig_host_info": "safe",
+        "navig_app_info": "safe",
+    })
 
 
 def _tool_list_hosts(server: Any, args: dict[str, Any]) -> list[dict[str, Any]]:
@@ -161,9 +196,9 @@ def _tool_host_info(server: Any, args: dict[str, Any]) -> dict[str, Any]:
         return {"error": f"Host not found: {name!r}", "available": available}
     try:
         config = server._config.load_host_config(name)
-        # Strip credentials from response
-        safe = {k: v for k, v in config.items() if k not in ("ssh_password", "root_password")}
-        return {"name": name, **safe}
+        # Strip credentials (ssh_password/root_password AND any api_key/token/etc,
+        # incl. nested) before returning — this flows into the agent/LLM context.
+        return {"name": name, **_redact_config(config)}
     except Exception as exc:
         return {"error": str(exc)}
 
@@ -177,8 +212,7 @@ def _tool_app_info(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     # Try individual app file first
     config = server._config.load_app_from_file(name)
     if config is not None:
-        safe = {k: v for k, v in config.items() if "password" not in k.lower()}
-        return {"name": name, **safe}
+        return {"name": name, **_redact_config(config)}
 
     # Search in host-embedded apps
     for host_name in server._config.list_hosts():
@@ -188,6 +222,8 @@ def _tool_app_info(server: Any, args: dict[str, Any]) -> dict[str, Any]:
             continue
         if name in host_cfg.get("apps", {}):
             app_cfg = host_cfg["apps"][name]
-            return {"name": name, "host": host_name, **app_cfg}
+            # Same redaction as the file-based branch above — a host-embedded app
+            # config previously returned raw, leaking any password/token it held.
+            return {"name": name, "host": host_name, **_redact_config(app_cfg)}
 
     return {"error": f"App not found: {name!r}"}

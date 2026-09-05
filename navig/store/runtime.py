@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from navig.platform.paths import config_dir
-from navig.store.base import BaseStore, _utcnow
+from navig.store.base import BaseStore, _to_utc_iso, _utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -475,13 +475,20 @@ class RuntimeStore(BaseStore):
         message: str,
         remind_at: datetime,
     ) -> int:
-        """Create a reminder. Returns the row id."""
+        """Create a reminder. Returns the row id.
+
+        ``remind_at`` is normalized to the canonical UTC ``…Z`` string via :func:`_to_utc_iso`
+        so it sorts correctly against ``_utcnow()`` (the readers use a plain string compare). A
+        NAIVE datetime is treated as server-local and converted to UTC — passing a naive local
+        wall-clock time (e.g. ``datetime.now()``) used to be stored as-if-UTC and fired off by
+        the server's UTC offset.
+        """
         cursor = self._write(
             """
             INSERT INTO reminders (user_id, chat_id, message, remind_at, created_at)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (user_id, chat_id, message, remind_at.isoformat(), _utcnow()),
+            (user_id, chat_id, message, _to_utc_iso(remind_at), _utcnow()),
         )
         return cursor.lastrowid  # type: ignore[return-value]
 
@@ -514,7 +521,7 @@ class RuntimeStore(BaseStore):
         """Increment retry_count and push remind_at forward by *reschedule_seconds*.
 
         ``remind_at`` MUST be written in the same ISO-8601 'T'/'Z' shape the rest of the
-        lifecycle uses (``create_reminder`` → ``isoformat()``; the readers compare against
+        lifecycle uses (``create_reminder`` → ``_to_utc_iso()``; the readers compare against
         ``_utcnow()``). SQLite's ``datetime('now', …)`` returns a *space-separated*,
         Z-less string ("2026-07-19 15:31:00"); since ``remind_at`` comparisons are plain
         string compares, at column 10 that space (0x20) sorts *before* the readers' 'T'
@@ -650,7 +657,10 @@ class RuntimeStore(BaseStore):
         return value
 
     def cache_set(self, key: str, value: Any, ttl_seconds: int = 60) -> None:
-        expires_at = (_utc_now_dt() + timedelta(seconds=ttl_seconds)).isoformat()
+        # Canonical '…Z' (via _to_utc_iso) so it string-compares homogeneously against the
+        # _utcnow() the reads use — `.isoformat()` writes '+00:00', which sorts differently
+        # from '…Z' at the sub-second boundary (short-TTL cache rows self-heal to the new shape).
+        expires_at = _to_utc_iso(_utc_now_dt() + timedelta(seconds=ttl_seconds))
         value_json = json.dumps(value)
         self._mem_cache[key] = {"value": value, "expires_at": expires_at}
         self._write(

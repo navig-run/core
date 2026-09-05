@@ -222,6 +222,7 @@ def snapshot_create(
         "Config snapshots are not yet implemented. "
         "To snapshot a specific file, use: [bold]navig snapshot versions <filepath>[/bold]"
     )
+    raise typer.Exit(1)
 
 
 # ──────────────────────────────────────────────────────────────────────

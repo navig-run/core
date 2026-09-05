@@ -217,7 +217,7 @@ def _apply_system_and_3(
 
 
 def get_prompt_cache_config() -> tuple[bool, str | None]:
-    """Read ``config.agent.prompt_cache`` and ``config.agent.prompt_cache_ttl``.
+    """Read ``agent.prompt_cache`` and ``agent.prompt_cache_ttl``.
 
     Returns
     -------
@@ -226,16 +226,13 @@ def get_prompt_cache_config() -> tuple[bool, str | None]:
         applied and *ttl* is the optional TTL string (``"1h"`` or ``None``).
     """
     try:
-        from navig.core.config_loader import load_config
+        from navig.config import get_config_manager
+        from navig.core.coerce import coerce_bool
 
-        config = load_config()
-        agent_cfg = getattr(config, "agent", None)
-        if agent_cfg is None:
-            return True, None  # default: enabled, no TTL extension
-
-        enabled = getattr(agent_cfg, "prompt_cache", True)
-        ttl = getattr(agent_cfg, "prompt_cache_ttl", None)
-        return bool(enabled), ttl or None
+        cm = get_config_manager()
+        enabled = coerce_bool(cm.get("agent.prompt_cache", True), default=True)
+        ttl = cm.get("agent.prompt_cache_ttl", None)
+        return enabled, str(ttl) if ttl else None
     except Exception:
         return True, None  # safe default
 
@@ -268,6 +265,13 @@ class ExtendedCacheConfig:
         Place a breakpoint on messages that look like tool definitions.
     cache_skills_context:
         Place a breakpoint on messages that look like skills/context.
+
+        NB: on the conversational path this never fires, because matched skills
+        ride the *user* turn (they are query-specific — see
+        ``skills_context.format_for_system_prompt``) and the ``system_and_3``
+        strategy already tags the first user messages. It stays for the
+        ``strategic`` layout and for callers that do place a skills block of
+        their own.
     cache_conversation_prefix:
         Place a breakpoint on the stable (first 80 %) conversation prefix
         for very long sessions.

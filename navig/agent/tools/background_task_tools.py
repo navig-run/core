@@ -96,6 +96,33 @@ class BackgroundTaskStartTool(BaseTool):
                 error=str(exc),
             )
 
+        # manager.start() gave the process a brief liveness grace. If it already
+        # exited, don't report a phantom "started (pid …)" for a process that never
+        # came up — tell the agent what actually happened so it can react now
+        # instead of polling a dead task later.
+        if not task.is_running:
+            tail = manager.get_output(task.task_id, tail=20)
+            detail = f"\n{tail}" if tail and not tail.startswith("(") else ""
+            if task.exit_code == 0:
+                return ToolResult(
+                    name=self.name,
+                    success=True,
+                    output=(
+                        f"Started background task #{task.task_id}: {task.label} "
+                        f"(pid {task.pid}) — completed immediately (exit 0)."
+                        f"{detail}"
+                    ),
+                )
+            return ToolResult(
+                name=self.name,
+                success=False,
+                error=(
+                    f"Command exited immediately with code {task.exit_code} — it did "
+                    f"not start as a background task (task #{task.task_id}). Check the "
+                    f"command.{detail}"
+                ),
+            )
+
         return ToolResult(
             name=self.name,
             success=True,

@@ -4,8 +4,6 @@ Tests for navig.agent.context_compressor — pure helper functions.
 
 from __future__ import annotations
 
-import pytest
-
 from navig.agent.context_compressor import (
     _BASH_HEAD,
     _BASH_TAIL,

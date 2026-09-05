@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from typing import Any
 
 import pytest
@@ -41,18 +40,37 @@ async def test_same_key_is_serialized():
 
 @pytest.mark.asyncio
 async def test_different_keys_run_concurrently():
-    """Tasks for different keys run in parallel, not serially."""
-    results = []
+    """Tasks for different keys run in parallel, not serially.
+
+    Proven structurally rather than by wall-clock. This used to run two 40 ms sleeps
+    and assert `elapsed < 0.07` — a 30 ms margin, which is nothing on a box running 16
+    xdist workers (Windows' default timer granularity alone is ~15 ms). It passed solo
+    and failed in the full suite: a scheduling-jitter measurement, not a concurrency
+    check.
+
+    Each task now announces itself and then waits for the other. Overlap is the only
+    way both can finish: if the queue serialized them, the first would block forever on
+    a task that cannot start, and `wait_for` fails the test with a real diagnosis. The
+    timeout is generous on purpose — it is only ever reached when the behaviour is
+    genuinely broken, so load can never make it lie.
+    """
     q = KeyedQueue()
+    a_started, b_started = asyncio.Event(), asyncio.Event()
+    results: list[tuple[str, str]] = []
 
-    t0 = time.monotonic()
-    t1 = q.enqueue("a", _append_after(results, "a", "a", delay=0.04))
-    t2 = q.enqueue("b", _append_after(results, "b", "b", delay=0.04))
-    await asyncio.gather(t1, t2)
-    elapsed = time.monotonic() - t0
+    async def _a() -> str:
+        a_started.set()
+        await asyncio.wait_for(b_started.wait(), timeout=10)
+        results.append(("a", "a"))
+        return "a"
 
-    # Both took 40 ms each; if run serially that's ≥ 80 ms; concurrent ≈ 40 ms
-    assert elapsed < 0.07, f"keys should run concurrently, but took {elapsed:.3f}s"
+    async def _b() -> str:
+        b_started.set()
+        await asyncio.wait_for(a_started.wait(), timeout=10)
+        results.append(("b", "b"))
+        return "b"
+
+    await asyncio.gather(q.enqueue("a", _a()), q.enqueue("b", _b()))
     assert {v for _, v in results} == {"a", "b"}
 
 

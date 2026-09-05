@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import pytest
+import typer
 
 from navig import console_helper as ch
 from navig.commands.init import init_app
@@ -67,7 +68,13 @@ def test_init():
         # Test 2: Try to initialize again (should fail)
         print("\nTEST 2: Try to re-initialize (should fail)")
         print("-" * 70)
-        init_app({"copy_global": False, "quiet": False, "yes": True})
+        # "Should fail" is what this step always claimed; until it exited 2, re-init
+        # printed "App already initialized" and returned 0, so `navig init && …` ran
+        # the rest of the chain against an app this call never touched.
+        with pytest.raises(typer.Exit) as excinfo:
+            init_app({"copy_global": False, "quiet": False, "yes": True})
+        assert excinfo.value.exit_code == 2
+        ch.success("✓ re-initialize refused with exit 2")
         print("\n" + "=" * 70)
 
         # Test 3: App root detection from subdirectory

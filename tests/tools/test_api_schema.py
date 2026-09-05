@@ -9,7 +9,6 @@ Covers:
 - ApiToolResult.from_dict roundtrip
 """
 
-import pytest
 
 from navig.tools.api_schema import ApiSource, ApiToolResult, redact_sensitive
 

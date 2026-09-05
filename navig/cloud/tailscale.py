@@ -35,9 +35,9 @@ import logging
 import shutil
 import sys
 from dataclasses import dataclass
-from typing import Any
 
 from navig._daemon_defaults import _GATEWAY_PORT
+from navig.core.aio_subprocess import communicate_or_kill
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ async def _run(*args: str, timeout: float = 10.0) -> tuple[int, str, str]:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        stdout_b, stderr_b = await communicate_or_kill(proc, timeout)
         rc = proc.returncode if proc.returncode is not None else -1
         return rc, stdout_b.decode("utf-8", errors="replace"), stderr_b.decode("utf-8", errors="replace")
     except asyncio.TimeoutError:

@@ -29,9 +29,30 @@ def temp_home(monkeypatch, tmp_path):
 
 
 @pytest.fixture
-def cm(temp_home):
-    """Fresh ConfigManager isolated to a temp config dir (no project .navig)."""
-    return ConfigManager(config_dir=temp_home / ".navig")
+def cm(temp_home, monkeypatch):
+    """Fresh ConfigManager isolated to a temp config dir (no project .navig).
+
+    ``NAVIG_CONFIG_DIR`` has to be pinned, not just ``config_dir=``. The argument
+    deliberately controls ``base_dir``/``apps_dir``/``hosts_dir`` only — see
+    ``ConfigManager.__init__``, where ``global_config_dir`` is a LIVE property
+    reading ``paths.config_dir()`` precisely so isolation applied AFTER construction
+    still takes effect (the #179 class). So the session-wide isolation dir that
+    conftest exports wins, and every test in this file was sharing ONE global config.
+
+    That is not theoretical: `test_set_then_get_roundtrip` wrote
+    ``telemetry.enabled = True`` and `test_get_default_when_missing_kwarg`, which
+    asserts the key is ABSENT, read it back. The file passed only because a test
+    between them happened to write ``False`` — reorder or split them across xdist
+    workers and it fails, which is exactly what the pre-push gate does under
+    ``--dist loadgroup``. Reproduces in 0.8s with just those two node ids.
+
+    conftest's own note applies to what this fixture used to be: "a fixture that
+    appears to isolate is worse than one that obviously does not". The idiom below
+    is the one `TestTelemetryCommandNowWorks` already uses at the bottom of this file.
+    """
+    cfg_dir = temp_home / ".navig"
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(cfg_dir))
+    return ConfigManager(config_dir=cfg_dir)
 
 
 class TestConfigManagerGetSet:

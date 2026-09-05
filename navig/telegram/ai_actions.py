@@ -187,11 +187,22 @@ async def run_text_action(tool: str, content: str, *, is_owner: bool, arg: str =
     if not system:
         return {"ok": False, "reason": "not_llm_tool", "tool": tool}
     arg = (arg or "").strip()
-    if tool == "translate" and arg:
-        system = (
-            f"You are a translator. Translate the message below into {arg}. "
-            "Output ONLY the translation — no preamble, no notes, no quotes."
-        )
+    if tool == "translate":
+        # Target: the explicit argument, else the operator's configured language.
+        # The default prompt hardcodes English, which is the wrong answer for an
+        # operator who told navig they read Russian — 🌍 on a Russian message
+        # would translate it *away* from the language they asked for. With
+        # nothing configured (auto) the original English-or-source behaviour
+        # stands, so an unconfigured install is unchanged.
+        from navig.core.language import resolve_language
+
+        target = arg or (resolve_language() or "")
+        if target:
+            system = (
+                f"You are a translator. Translate the message below into {target}. "
+                "If it is already in that language, translate it into English instead. "
+                "Output ONLY the translation — no preamble, no notes, no quotes."
+            )
     content = (content or "").strip()
     if not content:
         return {"ok": False, "reason": "empty", "tool": tool}

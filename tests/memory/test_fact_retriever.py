@@ -4,8 +4,6 @@ Tests for navig.memory.fact_retriever — RetrievalConfig, RankedFact, FactRetri
 
 from __future__ import annotations
 
-import pytest
-
 from navig.memory.fact_retriever import (
     DEFAULT_CONFIG,
     FactRetrievalResult,

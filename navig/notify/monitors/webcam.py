@@ -22,7 +22,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
+from navig.notify.delivery import all_channels_failed
 
 logger = logging.getLogger("navig.notify")
 
@@ -133,8 +135,14 @@ class WebcamMonitor:
     def __init__(self) -> None:
         self._sessions: dict[str, _Session] = {}
 
-    def step(self, current: dict[str, str], now: float) -> list[tuple[str, str]]:
-        events: list[tuple[str, str]] = []
+    def step(self, current: dict[str, str], now: float) -> list[tuple[str, str, str]]:
+        """Return ``(event_type, session_key, app_name)`` transitions to dispatch.
+
+        The session *key* is surfaced (not just the name) so the loop can roll a
+        ``webcam_on`` back to un-announced via :meth:`reset_announced` when the
+        dispatch didn't deliver — two apps can share a friendly name.
+        """
+        events: list[tuple[str, str, str]] = []
 
         for key, name in current.items():
             s = self._sessions.get(key)
@@ -150,7 +158,7 @@ class WebcamMonitor:
                 and (now - s.first_seen) >= MIN_ON_SECONDS
             ):
                 s.announced = True
-                events.append(("webcam_on", s.name))
+                events.append(("webcam_on", key, s.name))
 
         for key in list(self._sessions):
             if key in current:
@@ -159,10 +167,17 @@ class WebcamMonitor:
             s.missing += 1
             if s.missing >= OFF_POLLS:
                 if s.announced:
-                    events.append(("webcam_off", s.name))
+                    events.append(("webcam_off", key, s.name))
                 del self._sessions[key]
 
         return events
+
+    def reset_announced(self, key: str) -> None:
+        """Un-latch a session's ``announced`` flag so the next poll re-fires
+        ``webcam_on`` — the loop calls this when the dispatch didn't deliver."""
+        s = self._sessions.get(key)
+        if s is not None:
+            s.announced = False
 
     @property
     def has_live_sessions(self) -> bool:
@@ -191,25 +206,48 @@ async def run_webcam_monitor() -> None:
                 logger.debug("webcam scan failed", exc_info=True)
                 current = {}
 
-            for event_type, app in monitor.step(current, loop.time()):
-                if event_type == "webcam_on":
-                    await notify_dispatch(
-                        "webcam_on",
-                        "Webcam in use",
-                        f"{app} started using your camera",
-                        priority="high",
-                        data={"app": app},
-                    )
-                else:
-                    await notify_dispatch(
-                        "webcam_off",
-                        "Webcam released",
-                        f"{app} stopped using your camera",
-                        priority="normal",
-                        data={"app": app},
-                    )
+            # A bad poll (dispatch bug, transient error) must NOT kill the monitor —
+            # else it dies silently while the deck still shows it enabled.
+            try:
+                await _handle_events(monitor, monitor.step(current, loop.time()), notify_dispatch)
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001 — one bad poll must not kill the monitor
+                logger.warning("webcam monitor: poll failed, continuing", exc_info=True)
 
             await asyncio.sleep(POLL_ACTIVE_S if current else POLL_IDLE_S)
     except asyncio.CancelledError:
         logger.info("webcam monitor stopped")
         raise
+
+
+async def _handle_events(
+    monitor: WebcamMonitor, events: list[tuple[str, str, str]], dispatch_fn
+) -> None:
+    """Dispatch each webcam transition, settling on VERIFIED delivery.
+
+    A ``webcam_on`` whose alert reached ZERO channels because every one FAILED
+    (``all_channels_failed`` — an empty list is an intentional mute) is rolled back
+    to un-announced so the next poll re-fires it, instead of silently losing the
+    privacy alert until the app releases and re-acquires the camera. A failed
+    ``webcam_off`` (informational) isn't retried — its session is already gone.
+    """
+    for event_type, key, app in events:
+        if event_type == "webcam_on":
+            outcome = await dispatch_fn(
+                "webcam_on",
+                "Webcam in use",
+                f"{app} started using your camera",
+                priority="high",
+                data={"app": app},
+            )
+            if all_channels_failed(outcome):
+                monitor.reset_announced(key)
+        else:
+            await dispatch_fn(
+                "webcam_off",
+                "Webcam released",
+                f"{app} stopped using your camera",
+                priority="normal",
+                data={"app": app},
+            )

@@ -23,6 +23,7 @@ cred    = v.get("openai")           # → Credential | None
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -45,6 +46,8 @@ from .types import (
     VaultItemKind,
 )
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     pass
 
@@ -63,6 +66,43 @@ def _cred_label(provider: str, profile_id: str | None) -> str:
     if profile == "default":
         return provider.lower().strip()
     return f"{provider.lower().strip()}/{profile}"
+
+
+def _decode_payload(payload: bytes) -> dict:
+    """Decode a DECRYPTED vault payload into a credential's data dict.
+
+    Payloads are JSON objects today, but the vault predates that convention: the
+    oldest items store the secret as a bare UTF-8 string (an API key, a session
+    blob, a hash). Those decrypt perfectly — only ``json.loads`` refuses them.
+
+    Treating that refusal as "empty" is the SAME phantom-empty-credential bug the
+    unreadable branch guards against, arriving through the other door: the secret
+    is right there, readable, and would be thrown away, so ``get_api_key`` reports
+    the provider as unconfigured while ``list`` still shows it connected. Worse,
+    a read-then-write caller would persist the ``{}`` over a live secret.
+
+    So a non-JSON payload is wrapped as ``{"value": <text>}`` — ``value`` is a
+    field both ``get_api_key`` and ``get_secret`` already resolve. An empty payload
+    is genuinely empty and decodes to ``{}``.
+
+    Bytes that are not valid UTF-8 at all are NOT swallowed: ``json.loads`` raises
+    ``UnicodeDecodeError`` and it propagates, so the caller reports the credential
+    UNREADABLE rather than inventing an empty one. Binary belongs to FILE/CERT
+    items, which never come through here.
+    """
+    if not payload:
+        return {}
+    try:
+        decoded = json.loads(payload)  # UnicodeDecodeError on binary → propagates
+    except json.JSONDecodeError:
+        # Valid UTF-8 (json.loads got far enough to reject it as JSON), just not
+        # JSON — i.e. the pre-JSON bare-secret shape.
+        text = payload.decode("utf-8").strip()
+        return {"value": text} if text else {}
+    # A JSON scalar ("abc", 42) is legacy too — same wrapping, not a dict cast.
+    if isinstance(decoded, dict):
+        return decoded
+    return {"value": decoded} if decoded not in (None, "") else {}
 
 
 def _item_to_credential(item: VaultItem, data: dict | None = None) -> Credential:
@@ -262,6 +302,19 @@ class Vault:
         self._store.audit(item.id, "accessed")
         return payload
 
+    def _payload_readable(self, label: str) -> bool:
+        """True when *label*'s secret actually decrypts.
+
+        Used only to break ties between several credentials for one provider — a
+        corrupt one must not shadow a working one. Deliberately swallows every
+        error: this is a probe, not an accessor.
+        """
+        try:
+            self.get_bytes(label)
+            return True
+        except Exception:  # noqa: BLE001 — probe: unreadable is the answer, not a crash
+            return False
+
     def get_secret(self, label: str) -> "SecretStr":
         """Decrypt and return the primary secret string for *label* wrapped in SecretStr.
 
@@ -280,7 +333,13 @@ class Vault:
         payload = self.get_bytes(label)
 
         if item.kind in (VaultItemKind.SECRET, VaultItemKind.PROVIDER, VaultItemKind.CREDENTIAL):
-            data = json.loads(payload)
+            # _decode_payload, not a bare json.loads: the oldest items store the
+            # secret as a plain string, which json.loads REFUSES. That threw out of
+            # here and — because get_api_key wraps this call in a blanket
+            # `except Exception: pass` — took the working cred fallback down with
+            # it, so a perfectly readable legacy key resolved to None. The NOTE
+            # branch below has always tolerated raw text; this one now does too.
+            data = _decode_payload(payload)
             if "value" in data:
                 return SecretStr(data["value"])
             if item.provider:
@@ -612,25 +671,43 @@ class Vault:
                 ]
             if not profile_matches:
                 return None
-            # Priority: active=True → most-recently-used → created_at desc
+            # Priority: active=True → most-recently-used → created_at desc.
             active_m = [m for m in profile_matches if m.metadata.get("active", False)]
-            item = (
-                active_m[0]
-                if active_m
-                else sorted(
-                    profile_matches,
-                    key=lambda m: m.last_used_at or m.created_at,
-                    reverse=True,
-                )[0]
+            ranked = active_m or sorted(
+                profile_matches,
+                key=lambda m: m.last_used_at or m.created_at,
+                reverse=True,
+            )
+            # …but a candidate whose secret cannot be DECRYPTED must never shadow a
+            # readable sibling for the same provider. This used to take ranked[0]
+            # unconditionally, which made a corrupt credential permanently sticky:
+            # get_bytes() audits the access BEFORE decryption fails, so every failed
+            # read bumps that item's last_used_at, re-electing it as "most recent"
+            # next time. One dead credential therefore hid a perfectly good key for
+            # the same provider forever, and the failure looked intermittent
+            # (label-direct hits worked, provider lookups did not).
+            item = next(
+                (m for m in ranked if self._payload_readable(m.label)),
+                ranked[0],  # nothing readable → keep the old behaviour and report it
             )
         # Return None for disabled credentials
         if not item.metadata.get("enabled", True):
             return None
         try:
             payload = self.get_bytes(item.label)
-            decoded_data = json.loads(payload)
-        except (KeyError, json.JSONDecodeError, Exception):
-            decoded_data = {}
+            decoded_data = _decode_payload(payload)
+        except KeyError:
+            decoded_data = {}  # genuinely missing payload — empty is honest
+        except Exception:  # noqa: BLE001 — CryptoError / OSError / sqlite lock → UNREADABLE, not empty
+            # Do NOT return a phantom empty-but-ENABLED credential: that reports a live
+            # secret as absent (get_api_key falls through to env var / None) while
+            # list_creds still shows the provider connected, and any read-then-write caller
+            # would persist the {} over the real secret. Mirror update()'s #489 split —
+            # unreadable ≠ empty.
+            logger.warning(
+                "vault.get(%s): secret is unreadable; returning None instead of a "
+                "phantom empty credential", item.label)
+            return None
         return _item_to_credential(item, decoded_data)
 
     def get_api_key(
@@ -685,9 +762,14 @@ class Vault:
             return None
         try:
             payload = self.get_bytes(item.label)
-            decoded_data = json.loads(payload)
-        except (KeyError, json.JSONDecodeError, Exception):
+            decoded_data = _decode_payload(payload)
+        except KeyError:
             decoded_data = {}
+        except Exception:  # noqa: BLE001 — unreadable (CryptoError/OSError/lock) ≠ empty (see get())
+            logger.warning(
+                "vault.get_by_id(%s): secret is unreadable; returning None instead of a "
+                "phantom empty credential", item.label)
+            return None
         return _item_to_credential(item, decoded_data)
 
     def update(
@@ -715,6 +797,22 @@ class Vault:
             # silently wiping the credential's secret.
             decrypt_failed = True
             existing_data = {}
+
+        if decrypt_failed and data is not None:
+            # A data update was requested, but the existing secret could NOT be read
+            # (the store is SQLite/WAL — a transient sharing-violation lock raises here,
+            # as does a genuine crypto failure). `existing_data` is an empty {}, so
+            # merging `data` into it and writing back would silently DROP every OTHER
+            # field of the credential's secret. Refuse rather than partial-wipe a
+            # possibly-live secret — the caller can retry once the store reads cleanly,
+            # or delete+recreate if it is truly corrupt. (Mirrors sigil_store / the whole
+            # "never overwrite what you couldn't read" class.)
+            logger.warning(
+                "vault.update(%s): existing secret is unreadable; refusing a partial "
+                "write that would drop the credential's other fields",
+                credential_id,
+            )
+            return False
 
         if decrypt_failed and data is None:
             # Metadata / label-only update — patch the item metadata in-place
@@ -1007,6 +1105,22 @@ _vault: Vault | None = None
 # deadlocks (proven by a faulthandler dump: core.py get_vault →
 # _auto_migrate → migrate.py migrate_from_legacy → get_vault, blocked).
 _vault_lock = threading.RLock()
+
+
+def vault_exists(vault_dir_override: "Path | None" = None) -> bool:
+    """Is there a vault on disk? A pure LOOK — it never creates one.
+
+    :func:`get_vault` opens the store, and opening it CREATES the SQLite database (plus
+    its -wal/-shm siblings) and the directory holding it. That is right for a caller
+    about to store a secret and wrong for a caller merely ASKING whether a secret
+    exists: read-only status probes (`navig init`'s summary, the provider source scan)
+    were each leaving an empty encrypted store behind on machines that had never used
+    the vault. Probe with this first.
+    """
+    from navig.platform.paths import vault_dir as _default_vault_dir  # noqa: PLC0415
+
+    base = Path(vault_dir_override) if vault_dir_override is not None else _default_vault_dir()
+    return (base / VaultStore.DB_FILE).is_file()
 
 
 def get_vault(vault_dir: Path | None = None) -> Vault:

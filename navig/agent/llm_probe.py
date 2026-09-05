@@ -297,21 +297,40 @@ async def probe_llm(prefer_local: bool = True) -> ProbeResult:
     )
 
 
+#: Hard cap on a synchronous probe. Enforced by cancelling the probe coroutine, so a
+#: slow/unreachable LLM endpoint can't wedge a `navig doctor`/status caller.
+_PROBE_TIMEOUT_S = 5.0
+
+
 def probe_llm_sync(prefer_local: bool = True) -> ProbeResult:
-    """Synchronous wrapper around :func:`probe_llm` for non-async callers."""
+    """Synchronous wrapper around :func:`probe_llm` for non-async callers.
+
+    The probe is bounded by ``_PROBE_TIMEOUT_S`` with ``asyncio.wait_for`` INSIDE the
+    coroutine, so a slow/unreachable endpoint is *cancelled* rather than left hanging. The
+    previous ``with ThreadPoolExecutor() as ex: future.result(timeout=5)`` DEFEATED the cap:
+    the with-exit's ``shutdown(wait=True)`` joins the worker, so a hung probe wedged the
+    caller past 5s — and the no-loop path had no cap at all. Because ``_run`` now always
+    returns within the cap, the worker-thread's ``shutdown`` can no longer hang.
+    """
+
+    async def _run() -> ProbeResult:
+        try:
+            return await asyncio.wait_for(probe_llm(prefer_local), timeout=_PROBE_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            logger.debug("llm_probe: sync probe timed out after {}s", _PROBE_TIMEOUT_S)
+            return ProbeResult(reachable=False, tier="none", model="", note=TIER_GUIDE)
+
     try:
         try:
             asyncio.get_running_loop()
-            # Already inside a running event loop — offload to a new thread to
-            # avoid "cannot run nested event loop" errors.
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                future = ex.submit(lambda: asyncio.run(probe_llm(prefer_local)))
-                return future.result(timeout=5)
         except RuntimeError:
-            # No running event loop — safe to use asyncio.run() directly.
-            return asyncio.run(probe_llm(prefer_local))
+            return asyncio.run(_run())  # no running loop — run it directly
+        # Inside a running loop — cannot asyncio.run here, so run the (self-bounding)
+        # coroutine on a worker thread.
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            return ex.submit(asyncio.run, _run()).result()
     except Exception as exc:  # noqa: BLE001
         logger.debug("llm_probe: sync probe failed: {}", exc)
         return ProbeResult(reachable=False, tier="none", model="", note=TIER_GUIDE)

@@ -87,6 +87,47 @@ def test_cache_hit_on_second_call(tmp_path: Path) -> None:
     assert r2.kind == r1.kind
 
 
+def test_failed_stage_is_not_cached_and_retries(tmp_path: Path, monkeypatch) -> None:
+    """A failed extraction STAGE (missing extractor / transient crash) must not be cached, so
+    the next call re-runs it. Installing python-docx/ffmpeg does NOT bump EXTRACT_VERSION, so a
+    cached failure would otherwise replay empty text for the whole 24h TTL — mis-routing the doc
+    to archive and never retrying. (An unsupported file type stays cached — see the test above.)"""
+
+    class _Cache:
+        def __init__(self):
+            self.store = {}
+
+        def get(self, k):
+            return self.store.get(k)
+
+        def put(self, k, v):
+            self.store[k] = v
+
+    cache = _Cache()
+    p = tmp_path / "report.docx"
+    p.write_bytes(b"PK\x03\x04 fake docx")
+
+    calls = {"n": 0}
+
+    def flaky_docx(path, raw, policy, budget, res):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            res.errors.append("python-docx not installed — .docx not extracted")  # stage fails
+        else:
+            res.text = "recovered document text"  # succeeds after the tool is 'installed'
+
+    monkeypatch.setattr(ex, "_extract_docx", flaky_docx)
+
+    r1 = ex.extract(p, cache=cache)
+    assert r1.text == "" and r1.errors  # a genuine stage failure
+    assert cache.store == {}, "a failed extraction stage must NOT be cached"
+
+    r2 = ex.extract(p, cache=cache)
+    assert r2.cached is False, "must re-run the stage, not serve the stale failure"
+    assert r2.text == "recovered document text"
+    assert calls["n"] == 2
+
+
 def test_cloud_vision_gated_off_in_local_mode(monkeypatch, tmp_path: Path) -> None:
     called = {"vision": False}
 

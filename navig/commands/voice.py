@@ -77,7 +77,10 @@ def speak_command(
                 except Exception as e:
                     ch.warning(f"Playback error: {e}")
         else:
+            # `navig voice speak "x" -o out.mp3 && upload out.mp3` used to upload a
+            # file that was never written. typer.Exit propagates out of asyncio.run.
             ch.error(f"TTS Failed: {result.error}")
+            raise typer.Exit(1)
 
     asyncio.run(_run())
 
@@ -99,9 +102,9 @@ def transcribe_command(
         if provider:
             try:
                 prov_enum = STTProvider(provider.lower())
-            except ValueError:
+            except ValueError as exc:
                 ch.error(f"Unknown provider: {provider}")
-                return
+                raise typer.Exit(2) from exc  # bad input, per this module's callback
 
         ch.info(f"Transcribing {file}...")
         result = await stt.transcribe(file, provider=prov_enum)
@@ -113,6 +116,7 @@ def transcribe_command(
                 ch.dim(f"Confidence: {result.confidence:.2f}")
         else:
             ch.error(f"Transcription failed: {result.error}")
+            raise typer.Exit(1)
 
     asyncio.run(_run())
 
@@ -130,14 +134,15 @@ def list_voices(
         tts = get_tts()
         try:
             prov_enum = TTSProvider(provider.lower())
-        except ValueError:
+        except ValueError as exc:
             ch.error(f"Unknown provider: {provider}")
-            return
+            raise typer.Exit(2) from exc
 
         voices = await tts.list_voices(prov_enum)
 
         if not voices:
-            ch.warning("No voices found or provider not configured.")
+            ch.warning(f"No voices returned for '{provider}'.")
+            ch.info(f"  If that is unexpected, check its credential: navig vault list")
             return
 
         from rich.table import Table

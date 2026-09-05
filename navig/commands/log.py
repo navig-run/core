@@ -56,6 +56,7 @@ def log_run(
         rotate_logs(ctx.obj)
     else:
         ch.error("Specify an action: --rotate")
+        raise typer.Exit(2)
 
 
 # ============================================================================

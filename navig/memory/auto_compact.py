@@ -26,6 +26,8 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from navig.core.background import spawn
+
 logger = logging.getLogger("navig.memory.auto_compact")
 
 # ── Module-level constants ────────────────────────────────────────────────────
@@ -135,7 +137,7 @@ class AutoCompactManager:
             len(messages),  # type: ignore[arg-type]
         )
         self._state.compacting = True
-        asyncio.create_task(
+        spawn(
             self._run_compact(messages, effort=effort, extra_instructions=extra_instructions),
             name=f"auto-compact:{self.session_key}",
         )

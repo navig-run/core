@@ -12,8 +12,6 @@ No vault, no I/O, no network — all hermetic.
 
 from __future__ import annotations
 
-import pytest
-
 from navig.vault.resolver import (
     ENV_VAULT_LABELS,
     has_refs,
@@ -199,7 +197,14 @@ class TestVaultLabelsForEnv:
         assert a is not b  # must be a copy, not the same object
 
     def test_openai_labels_are_strings(self) -> None:
-        for lbl in vault_labels_for_env("OPENAI_API_KEY"):
+        # Three tests in this file assert vault_labels_for_env(...) == [] for unknown names,
+        # so an empty return is a reachable state -- and with [] this loop never runs. A
+        # resolver that stopped knowing OPENAI_API_KEY would satisfy this test while
+        # returning nothing. The sibling test_github_token_returns_labels already binds and
+        # asserts len(labels) > 0; this one now does the same.
+        labels = vault_labels_for_env("OPENAI_API_KEY")
+        assert labels, "no vault labels for OPENAI_API_KEY; the type check below never ran"
+        for lbl in labels:
             assert isinstance(lbl, str)
 
     def test_anthropic_labels_contain_anthropic(self) -> None:
@@ -224,3 +229,38 @@ class TestVaultLabelsForEnv:
     def test_openrouter_labels_present(self) -> None:
         labels = vault_labels_for_env("OPENROUTER_API_KEY")
         assert len(labels) > 0
+
+
+class TestResolveRefsSubstitution:
+    """resolve_refs() is the module's advertised primary API, but it fed a SecretStr into
+    re.sub (which requires a str) → TypeError, so `${VAULT:...}` substitution never worked.
+    _fetch_secret now unwraps to plaintext, exactly as resolve_secret does."""
+
+    def _patch_vault(self, monkeypatch, secret_value: str) -> None:
+        from types import SimpleNamespace
+
+        import navig.vault.core as vcore
+        from navig.vault.secret_str import SecretStr
+        monkeypatch.setattr(
+            vcore, "get_vault", lambda: SimpleNamespace(get_secret=lambda label: SecretStr(secret_value))
+        )
+
+    def test_substitutes_the_plaintext_value(self, monkeypatch) -> None:
+        from navig.vault.resolver import resolve_refs
+
+        self._patch_vault(monkeypatch, "sk-REAL-123")
+        out = resolve_refs("Authorization: Bearer ${VAULT:openai/api_key}")
+        # Substituted with the real value — not crashed, and not the masked "***".
+        assert out == "Authorization: Bearer sk-REAL-123"
+
+    def test_multiple_refs_all_substituted(self, monkeypatch) -> None:
+        from navig.vault.resolver import resolve_refs
+
+        self._patch_vault(monkeypatch, "V")
+        assert resolve_refs("${VAULT:a}-${CRED:b}-${BLACKBOX:c}") == "V-V-V"
+
+    def test_no_ref_text_is_unchanged(self, monkeypatch) -> None:
+        from navig.vault.resolver import resolve_refs
+
+        self._patch_vault(monkeypatch, "unused")
+        assert resolve_refs("plain text, no refs") == "plain text, no refs"

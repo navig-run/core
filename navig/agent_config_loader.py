@@ -150,9 +150,13 @@ def load_agent_json(
         ]
     )
 
-    # Global
-    home = Path.home()
-    paths_to_check.append(home / ".navig" / "agents" / agent_id / "agent.json")
+    # Global — config-scoped, like every other navig-owned dir (tui/resolvers.py reads
+    # config_dir()/"agents" for exactly these files). A hardcoded home made globally
+    # installed agents invisible under NAVIG_CONFIG_DIR, and resolvable from the wrong
+    # install when two brains share a machine.
+    from navig.platform.paths import config_dir  # noqa: PLC0415
+
+    paths_to_check.append(config_dir() / "agents" / agent_id / "agent.json")
 
     # Custom search paths
     if search_paths:

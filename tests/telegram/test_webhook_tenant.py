@@ -109,6 +109,61 @@ def _patch_config(monkeypatch, cfg):
     monkeypatch.setattr(navig.core, "Config", lambda *a, **k: cfg)
 
 
+def test_lighthouse_status_says_so_when_the_tenant_check_ITSELF_fails(monkeypatch, capsys):
+    """`navig lighthouse status` must not swallow the failure of this very check.
+
+    The stale-tenant block exists because the bot can be 100% deaf while every other line
+    of `status` reads green. It ended in `except Exception: pass`, so if the check itself
+    raised, the operator saw nothing, `stale_tenant` stayed False, and the command exited
+    0 — restoring exactly the condition the check was written to eliminate, and breaking
+    the documented `navig lighthouse status || navig lighthouse redeploy` chain.
+
+    `navig doctor`'s copy of the same check already reports `COULD NOT VERIFY (...)`; the
+    two surfaces must not disagree about whether an unanswerable question is good news.
+    """
+    from navig.commands import lighthouse
+
+    cfg = FakeConfig(**{
+        "cloud.mode": "lighthouse",
+        "cloud.lighthouse_url": EDGE,
+        "deck.api_key": NEW_KEY,
+        "telegram.webhook_url": webhook_url_for(EDGE, NEW_KEY),
+    })
+    monkeypatch.setattr(lighthouse, "_config", lambda: cfg)
+
+    # the daemon answers, so status gets past its own early return and reaches the check
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"status": "online", "lighthouse": {"status": "online"}}'
+
+    monkeypatch.setattr(
+        "navig.gateway_client.gateway_live_defaults", lambda *a, **k: (7421, "127.0.0.1")
+    )
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: _Resp())
+
+    # the check itself blows up — the case that used to be silent
+    import navig.telegram.updates as updates
+
+    def boom(*a, **k):
+        raise RuntimeError("tenant lookup exploded")
+
+    monkeypatch.setattr(updates, "corrected_webhook_url", boom)
+
+    lighthouse.lighthouse_status()
+
+    out = capsys.readouterr().out
+    assert "could NOT verify" in out, (
+        f"the tenant check failed and status said nothing about it: {out}"
+    )
+    assert "deaf" in out, "the operator must be told what an unverified tenant would mean"
+
+
 def test_doctor_flags_a_stale_tenant(monkeypatch):
     from navig.commands.doctor import check_reachability
 
@@ -278,3 +333,100 @@ async def test_menu_button_heal_skips_when_no_deck(monkeypatch):
 
     await TelegramChannel._heal_menu_button(Chan())
     assert calls == [], "no deck deployed → no button to re-point"
+
+
+# ── the heal must be VISIBLE, not just logged ────────────────────────────────
+
+
+def _heal_cfg(saved: dict, key: str):
+    class Cfg:
+        def get(self, k, d=None):
+            return {"cloud.mode": "lighthouse", "cloud.lighthouse_url": EDGE,
+                    "deck.api_key": key}.get(k, d)
+
+        def set(self, k, v, scope=None):
+            saved[k] = v
+
+        def save(self, scope=None):
+            pass
+
+    return Cfg()
+
+
+def test_healing_a_stale_tenant_records_an_incident(monkeypatch):
+    """This heal repairs the exact failure that made the bot 100% deaf with every light
+    green. Fixing it silently rebuilds the original trap, so it must record an incident —
+    that is what puts it in `navig doctor` -> Config Health and pushes it out the notify
+    path (the producer covers new types automatically, it renders DESCRIPTIONS)."""
+    from navig.core import incidents
+    from navig.gateway.channels.telegram import TelegramChannel
+
+    seen: list[tuple[str, dict]] = []
+    monkeypatch.setattr(incidents, "record", lambda event, **data: seen.append((event, data)))
+
+    import navig.core
+
+    saved: dict = {}
+    monkeypatch.setattr(navig.core, "Config", lambda *a, **k: _heal_cfg(saved, NEW_KEY))
+
+    stale = type("S", (), {"webhook_url": webhook_url_for(EDGE, OLD_KEY)})()
+    assert TelegramChannel._heal_stale_tenant(stale) is True
+
+    assert [e for e, _ in seen] == [incidents.WEBHOOK_TENANT_HEALED]
+
+
+def test_a_healthy_tenant_records_nothing(monkeypatch):
+    """No rotation -> no heal -> no incident. Reporting on every boot would be noise
+    that teaches the operator to skip the row that matters."""
+    from navig.core import incidents
+    from navig.gateway.channels.telegram import TelegramChannel
+
+    seen: list = []
+    monkeypatch.setattr(incidents, "record", lambda event, **data: seen.append(event))
+
+    import navig.core
+
+    monkeypatch.setattr(navig.core, "Config", lambda *a, **k: _heal_cfg({}, NEW_KEY))
+
+    healthy = type("S", (), {"webhook_url": webhook_url_for(EDGE, NEW_KEY)})()
+    assert TelegramChannel._heal_stale_tenant(healthy) is False
+    assert seen == []
+
+
+def test_a_failed_heal_records_nothing(monkeypatch):
+    """The incident is written only after the repair is PERSISTED. If the save raises,
+    the webhook is still stale — claiming a heal would be a phantom success."""
+    from navig.core import incidents
+    from navig.gateway.channels.telegram import TelegramChannel
+
+    seen: list = []
+    monkeypatch.setattr(incidents, "record", lambda event, **data: seen.append(event))
+
+    class ExplodingCfg:
+        def get(self, k, d=None):
+            return {"cloud.mode": "lighthouse", "cloud.lighthouse_url": EDGE,
+                    "deck.api_key": NEW_KEY}.get(k, d)
+
+        def set(self, k, v, scope=None):
+            pass
+
+        def save(self, scope=None):
+            raise OSError("config is locked")
+
+    import navig.core
+
+    monkeypatch.setattr(navig.core, "Config", lambda *a, **k: ExplodingCfg())
+
+    stale = type("S", (), {"webhook_url": webhook_url_for(EDGE, OLD_KEY)})()
+    assert TelegramChannel._heal_stale_tenant(stale) is False, "a failed save is not a heal"
+    assert seen == []
+
+
+def test_the_incident_type_has_an_operator_facing_description():
+    """The producer renders DESCRIPTIONS; without one it would push the raw id."""
+    from navig.core import incidents
+
+    assert incidents.WEBHOOK_TENANT_HEALED in incidents.DESCRIPTIONS
+    text = incidents.DESCRIPTIONS[incidents.WEBHOOK_TENANT_HEALED]
+    assert "deck.api_key" in text and len(text) > 40
+    assert incidents.WEBHOOK_TENANT_HEALED not in text

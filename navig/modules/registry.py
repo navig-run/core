@@ -116,10 +116,15 @@ class ModuleDef:
 
 # ── Built-in operator apps (was the hardcoded os `MODULES` array) ────────────
 # category order for surfaces: operate · grow · build · tools · system
-CATEGORY_ORDER = ["operate", "grow", "build", "tools", "system"]
+CATEGORY_ORDER = ["operate", "grow", "build", "tools", "system", "telegram"]
 CATEGORY_LABELS = {
     "operate": "Operate", "grow": "Grow", "build": "Build",
     "tools": "Tools", "system": "System",
+    # Telegram bot feature bundles (hidden from the app grid; rendered by the
+    # /extensions card and Deck → Social → Telegram). Listed here because
+    # list_modules() sorts on CATEGORY_ORDER.index with a fallback of 99 — an
+    # unlisted category renders as an unlabeled bucket at the end.
+    "telegram": "Telegram",
 }
 
 # The user-facing APPS grouping (desktop sidebar sections + Bay filters) — an
@@ -242,14 +247,11 @@ BUILTIN_MODULES: list[ModuleDef] = [
         requires=["gateway"], default_enabled=True, app_category="Comms",
         hidden=True, merged_into="messages",
     ),
-    # Create
-    ModuleDef(
-        id="studio", label="Studio", description="Compose, schedule & publish across networks.",
-        kind=ModuleKind.APP, category="grow", icon="sparkles",
-        capability=None,
-        surfaces=["os-tile:studio"],  # deck code deleted 2026-07-12 (deck→OS)
-        requires=["gateway"], default_enabled=True, app_category="Create",
-    ),
+    # Create — the "Social" app (compose/schedule/publish) is NOT a builtin: it's
+    # the navig-social plugin's `social` module (os-tile:social, app_category
+    # Create). It used to be a duplicate builtin `studio` tile shadowing that
+    # plugin module — toggling one didn't affect the other. Consolidated
+    # 2026-07-20: one module owns the tile + routes + scheduler.
     # Life
     ModuleDef(
         id="tasks", label="Tasks", description="Goals & AI task board.",
@@ -398,10 +400,31 @@ class ModuleRegistry:
         # over built-ins so a plugin can override, and survives rediscovery.
         for m in _EXTERNAL_DEFS:
             self._defs[m.id] = m
+        self._discover_telegram_extensions()
         self._discover_plugins()
         self._discover_launchers()
         self._discovered = True
         return self
+
+    def _discover_telegram_extensions(self) -> None:
+        """Surface each Telegram bot feature bundle as a hidden SERVICE module.
+
+        They live in the SAME `modules.overrides` store as every other module, so
+        the /extensions card, `navig telegram extensions` and the Deck cannot
+        disagree about what is on. They are `hidden=True` so 18 of them do not
+        flood the desktop app grid; the Telegram surfaces filter on the
+        `telegram:` entry in `surfaces` instead.
+
+        Best-effort: a missing or broken channels package must never take the
+        module registry down with it (same contract as `_discover_plugins`).
+        """
+        try:
+            from navig.gateway.channels.telegram_extensions import module_defs
+
+            for m in module_defs():
+                self._defs[m.id] = m
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("telegram extension modules unavailable: %s", exc)
 
     def _ensure(self) -> None:
         if not self._discovered:
@@ -493,9 +516,15 @@ class ModuleRegistry:
     def _overrides(self) -> dict[str, bool]:
         try:
             from navig.core import Config
+            from navig.core.coerce import coerce_bool
 
+            # `navig config set modules.overrides.<id> false` stores the STRING "false",
+            # and bool("false") is True — so coerce, or a disabled module reads as enabled
+            # here AND in every surface that renders list_modules() (deck store / hub).
             val = Config().get(_OVERRIDES_KEY, {})
-            return {str(k): bool(v) for k, v in (val or {}).items()} if isinstance(val, dict) else {}
+            return {
+                str(k): coerce_bool(v, default=False) for k, v in (val or {}).items()
+            } if isinstance(val, dict) else {}
         except Exception:  # noqa: BLE001
             return {}
 

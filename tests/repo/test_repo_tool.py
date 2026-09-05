@@ -130,3 +130,61 @@ def test_collect_stale_reports_branch_stash_and_worktree(repo: Path) -> None:
     assert [Path(wt["path"]).name for wt in data["worktrees"]] == ["wt4"]
     assert data["lock"] is None
     assert lock_state(data["lock"])["state"] == "free"
+
+
+def test_git_timeout_degrades_to_a_failed_result_instead_of_raising(monkeypatch):
+    """A timed-out git call must not abort the command mid-flight.
+
+    ``repo remove`` unregisters the worktree, then makes sure the directory is
+    gone. While ``git worktree remove`` raised ``TimeoutExpired`` (deleting a JS
+    worktree's node_modules takes far longer than the query budget), the command
+    crashed *after* git had already unregistered it — leaving behind exactly the
+    orphan dir it exists to prevent. Degrading to a failed result keeps the
+    caller's own ``_rmtree_force`` recovery reachable.
+    """
+    from navig.commands import repo as repo_mod
+
+    def _timeout(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd=["git", "worktree", "remove"], timeout=15)
+
+    monkeypatch.setattr(repo_mod.subprocess, "run", _timeout)
+    res = repo_mod._git(["worktree", "remove", "wt"], ".", timeout=300)
+
+    assert res.returncode == 124  # conventional timeout exit code, not an exception
+    assert "timed out after 300s" in res.stderr
+    assert res.stdout == ""  # callers read .stdout unconditionally
+
+
+def test_remove_runs_the_deletion_on_the_longer_timeout(tmp_path, monkeypatch):
+    """`repo remove` must not delete a checkout on the 15s *query* budget.
+
+    That budget is what broke it: a worktree carrying node_modules takes longer
+    than 15s to delete on Windows, so the call blew up mid-command.
+    """
+    from navig.commands import repo as repo_mod
+
+    root = tmp_path
+    wt_dir = root / ".dev" / "worktrees" / "wt"
+    wt_dir.mkdir(parents=True)
+
+    calls: list[dict] = []
+    registered = {"yes": True}
+
+    def fake_list_worktrees(_root):
+        return [{"path": wt_dir, "branch": "feat/x"}] if registered["yes"] else []
+
+    def fake_git(args, cwd, timeout=None):
+        calls.append({"args": args, "timeout": timeout})
+        if args[:2] == ["worktree", "remove"]:
+            registered["yes"] = False  # git unregisters the worktree
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(repo_mod, "_require_root", lambda repo=None: root)
+    monkeypatch.setattr(repo_mod, "list_worktrees", fake_list_worktrees)
+    monkeypatch.setattr(repo_mod, "_git", fake_git)
+
+    repo_mod.remove_cmd(slug="wt", repo=None, force=False, json_out=True)
+
+    removal = next(c for c in calls if c["args"][:2] == ["worktree", "remove"])
+    assert removal["timeout"] == repo_mod._GIT_DELETE_TIMEOUT
+    assert repo_mod._GIT_DELETE_TIMEOUT > repo_mod._GIT_TIMEOUT

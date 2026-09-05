@@ -75,15 +75,44 @@ def _check_env_keys(manifest: ProviderManifest) -> bool:
 
 
 def _check_vault_keys(manifest: ProviderManifest) -> bool:
-    """Return True if any vault key is available (best-effort)."""
+    """Return True if a usable credential for this provider is in the vault.
+
+    Mirrors ``verifier._check_key``'s vault detection. The previous version called
+    ``vault.get(vk)`` with a manifest LABEL PATH (e.g. ``"openai/api-key"``), but
+    ``Vault.get`` treats its first arg as a PROVIDER ID (it builds
+    ``_cred_label(provider, "default")``) — so a key stored via ``navig vault add
+    openai`` was never matched and the provider showed as disconnected (and
+    ``resolve_vision_model`` skipped it). Best-effort throughout.
+    """
     try:
         from navig.vault import get_vault
 
         vault = get_vault()
-        if vault:
-            for vk in manifest.vault_keys:
-                if vault.get(vk):
+        if vault is None:
+            return False
+        # 1. Canonical credential keyed by the provider id (what `navig vault add <id>` writes).
+        try:
+            if vault.get_api_key(manifest.id):
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+        # 2. Manifest-declared vault label paths (e.g. "openai/api-key") — get_secret,
+        #    NOT get(): get() would re-interpret the label as a provider id.
+        for vk in manifest.vault_keys:
+            try:
+                if vault.get_secret(vk):
                     return True
+            except Exception:  # noqa: BLE001
+                pass
+        # 3. Presence-only via list() — no decryption, so it still detects a stored
+        #    key when the daemon has no loaded master key (get_api_key/get_secret fail).
+        try:
+            labels = {manifest.id, *manifest.vault_keys}
+            for item in vault.list():
+                if getattr(item, "label", "") in labels or getattr(item, "provider", "") == manifest.id:
+                    return True
+        except Exception:  # noqa: BLE001
+            pass
     except Exception:  # noqa: BLE001
         pass
     return False

@@ -1,9 +1,7 @@
 """Tests for navig.tools.domains.web_pack — register_tools."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call
-
-import pytest
+from unittest.mock import MagicMock
 
 from navig.tools.domains.web_pack import register_tools
 

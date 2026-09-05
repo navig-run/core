@@ -1,10 +1,6 @@
 """Tests for navig.connectors.gmail.mappers."""
 from __future__ import annotations
 
-import re
-
-import pytest
-
 from navig.connectors.gmail.mappers import (
     _extract_header,
     _parse_timestamp,

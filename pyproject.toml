@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "navig"
-version = "3.24.0"
+version = "3.25.0"
 description = "Terminal-first infrastructure CLI with multi-host SSH management, encrypted vault, AI operator layer, and memory"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -34,7 +34,7 @@ dependencies = [
   "rich>=13.7.0",
   "pyyaml>=6.0",
   "requests>=2.32.3",
-  "aiohttp>=3.9.0,<3.15.0; python_version >= '3.14'",  # aiohttp 3.13+ deadlocks on CPython 3.14
+  "aiohttp>=3.9.0,<3.13.0; python_version >= '3.14'",  # aiohttp 3.13+ deadlocks on CPython 3.14
   "aiohttp>=3.9.0; python_version < '3.14'",           # no restriction on 3.13 and below
   "paramiko>=3.4.0",
   "colorama>=0.4.6",
@@ -58,7 +58,7 @@ dependencies = [
   # NOT default deps — this keeps a bare `pip install navig` lean and always
   # resolvable (no unpublished packages in the base). They ship as optional
   # extras below and are delivered for the complete product by the installer /
-  # `navig store install pip:<pkg>`.
+  # `navig store install pip:<pkg>`. See [tool.uv.sources] for local dev resolution.
 ]
 
 [project.optional-dependencies]
@@ -119,18 +119,39 @@ firefox = [
 ]
 # First-party companion plugins (free, in-process engines). Optional so a bare
 # install stays lean; the installer / `navig store install pip:<pkg>` pulls them
-# for the complete product. Resolve from PyPI (once published).
+# for the complete product. Resolve from PyPI (once published) or from the local
+# monorepo in dev via [tool.uv.sources] below.
 github = ["navig-github>=0.2.0"]
+ebay = ["navig-ebay>=0.1.0"]
 social = ["navig-social>=0.1.0"]
 download = ["navig-download>=0.1.0"]
 generate = ["navig-generate>=0.1.0"]
 antivirus = ["navig-antivirus>=0.1.0"]
 games = ["navig-games>=0.1.0"]
 mobile = ["navig-mobile>=0.1.0"]
+# Perceptual duplicate finder (photos/video/audio + exact files). The engine
+# (numpy/Pillow) was extracted here from core; `navig.media.*_dedupe` are now
+# thin shims, and `navig dedupe` / `navig media dedupe-*` need this extra.
+dedupe = ["navig-dedupe>=0.1.0"]
+# Flight-recorder & crash black-box (event log + sealed .navbox bundles). The engine
+# was extracted here from core; `navig.blackbox.*` are now thin shims, and both
+# `navig blackbox` and the standalone `navig-blackbox` CLI need this extra.
+blackbox = ["navig-blackbox>=0.1.0"]
 # Back-compat no-op aliases: `navig[media]`/`navig[tiktok]` still resolve, now
 # delivered by the split plugins (social + download + generate) above.
 media = []
 tiktok = ["navig-download>=0.1.0"]
+# Local OCR — on-screen text in images and video frames (the Telegram catalog,
+# the TikTok Transcript button, the inbox extractor, `navig media brief`,
+# `navig wiki`). ⚠ This installs the PYTHON side only; Tesseract itself is an
+# OS-level install (`scoop install tesseract` / `brew install tesseract` /
+# `apt install tesseract-ocr`). `navig doctor` → Media Tools reports which half
+# is missing — without it, OCR returns nothing and looks like an image with no
+# text in it.
+ocr = [
+  "pytesseract>=0.3.10",
+  "Pillow>=10.0",
+]
 interactive = [
   # readchar is now a hard dependency (included in main deps).
   # This extra remains as a convenience alias: pip install navig[interactive]
@@ -144,6 +165,22 @@ tui = [
   "textual>=0.50.0",
 ]
 
+# Dev-only: resolve the first-party plugin extras from the local monorepo so
+# `uv lock` / `uv sync` work without the packages being on PyPI. Ignored by pip
+# and stripped from published wheel metadata — a released `navig[github]`
+# resolves the PyPI package via the `>=` specifier in the extra above.
+[tool.uv.sources]
+navig-github = { path = "../plugins/navig-github", editable = true }
+navig-ebay = { path = "../plugins/navig-ebay", editable = true }
+navig-social = { path = "../plugins/navig-social", editable = true }
+navig-download = { path = "../plugins/navig-download", editable = true }
+navig-generate = { path = "../plugins/navig-generate", editable = true }
+navig-audio = { path = "../plugins/navig-audio", editable = true }
+navig-antivirus = { path = "../plugins/navig-antivirus", editable = true }
+navig-games = { path = "../plugins/navig-games", editable = true }
+navig-mobile = { path = "../plugins/navig-mobile", editable = true }
+navig-dedupe = { path = "../plugins/navig-dedupe", editable = true }
+navig-blackbox = { path = "../plugins/navig-blackbox", editable = true }
 
 [project.urls]
 Homepage = "https://navig.run"
@@ -157,7 +194,7 @@ Security = "https://github.com/navig-run/core/blob/main/SECURITY.md"
 navig = "navig.main:main"
 
 [tool.setuptools.packages.find]
-where = [".", "sdk/python"]
+where = ["."]
 include = ["navig*"]
 
 [tool.setuptools.package-data]
@@ -175,29 +212,50 @@ include = ["navig*"]
 # If a file is in the package, it is there to be used. Guarded by
 # tests/packaging/test_package_data.py, which fails if any asset is left uncovered.
 navig = ["**/*"]
-"navig_sdk" = ["**/*"]
 
 [tool.setuptools.exclude-package-data]
 navig = ["**/__pycache__/*", "**/*.pyc", "**/*.pyo"]
-"navig_sdk" = ["**/__pycache__/*", "**/*.pyc", "**/*.pyo"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+# Local dev artifacts live under .dev/ — never at the package root.
+cache-dir = ".dev/cache/ruff"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "S", "C4", "SIM"]
+# W605 only, not the whole "W" family: W605 (invalid escape sequence) found 4 real
+# defects and is a future SyntaxError, while all of "W" reports 411 — 407 of them
+# cosmetic whitespace (W293/W291/W292). A repo-wide whitespace sweep would collide
+# with every other session's in-flight work; this rule is the part that catches bugs.
+# It was OFF while three `ch.*` Rich escapes shipped with a single backslash, which
+# still rendered correctly but warned on every compile and is deprecated.
+select = ["E", "F", "I", "B", "UP", "S", "C4", "SIM", "W605"]
 ignore = [
   "E501",    # line too long (handled by formatter)
   "E402",    # module level import not at top (intentional lazy loading pattern)
   "E712",    # comparison to True/False (accepted pattern in this codebase)
   "E731",    # lambda assignment (used for simple functional helpers)
   "E741",    # ambiguous variable name
-  "F401",    # unused import (many are intentional re-exports in __init__.py)
-  "F821",    # undefined name (false positives from lazy_loader / TYPE_CHECKING pattern)
-  "F841",    # local variable assigned but never used
+  # F401 (unused import) was ignored here with the reason "many are intentional re-exports
+  # in __init__.py". MEASURED 2026-08-06: of 65 findings, __init__.py held **zero** — every
+  # one was a genuinely dead import in a regular module, and plugins had none at all. The
+  # stated reason was simply not true, and while it stood the gate could not see dead
+  # imports: one survived a review in this very repo (media/browse.py, 3ead7bbfb) because a
+  # clean `ruff check` looked like proof there were none. Same shape as F821, which was
+  # globally ignored on a false premise and was hiding three live NameErrors.
+  # All 65 are now fixed. The ONE legitimate exception — an availability probe in
+  # gateway/channels/telegram.py that imports names purely to prove the voice stack is
+  # importable — carries a per-line `# noqa: F401` explaining itself.
   "F541",    # f-string without placeholders
   "B007",    # loop variable not used in loop body
+  # B008 — MEASURED 2026-08-07: 130 findings, ALL of them typer — 72 in core/, 58 in
+  # plugins/ (which no lint tier covers for this rule at all: the plugin step runs
+  # `--isolated --select F,S…`). Zero are an ordinary function call, which is the shape
+  # that would actually bite: a call in a default is evaluated ONCE at import and the
+  # resulting object is shared by every invocation.
+  # Checked at the COLUMN ruff reports, not by grepping the line — one signature can carry
+  # a typer default AND a plain call (`def f(a=typer.Option(...), b=build())`), so a
+  # line-level match would have called that clean.
   "B008",    # function call in default argument (required for typer.Option/Argument)
   "B905",    # zip without strict= (style preference)
   "B027",    # empty method in ABC without abstractmethod (intentional stub pattern)
@@ -213,6 +271,16 @@ ignore = [
   # Security rules that are appropriate / unavoidable in a CLI subprocess tool
   "S103",    # os.chmod permissive mask — intentional for CLI-managed files
   "S104",    # binding to all interfaces — intentional for local daemon/server
+  # S105/S106/S107 — MEASURED 2026-08-07: 32 findings in navig/ (26+4+2), zero real
+  # secrets. They are OAuth endpoint URLs (TOKEN_URL, GOOGLE_TOKEN_URL, CLAUDE_TOKEN_URL,
+  # the four connector oauth_config.py files), env-var NAMES (_TOKEN_ENV,
+  # github_token_env), vault label prefixes (_TOKEN_PREFIX, _SECRET_PREFIX,
+  # SECRET_LABEL_PREFIX), enum members (vault/types.py TOKEN/PASSWORD/SECRET), and — in
+  # the five sites whose variable name most suggests a credential — the redaction
+  # machinery itself: `password = "[REDACTED]"`, the `"<encrypted>"` sentinel, the
+  # `"${CALDAV_PASSWORD}"` env template, a CLI-arg parser variable that happens to be
+  # called `token`, and a currency regex. Recorded because the premise is the whole
+  # justification, and F401 sat here for a long time on a premise that turned out false.
   "S105",    # possible hardcoded password — variable names like 'password', not real secrets
   "S107",    # password in function default — variable naming, not real secret
   "S110",    # try-except-pass — common defensive pattern in CLI error handling
@@ -222,8 +290,22 @@ ignore = [
   "S301",    # pickle — intentional use for internal cache/state serialization
   "S311",    # standard pseudo-random — not used for cryptographic purposes here
   "S308",    # mark_safe equivalent — not applicable
+  # S324 — MEASURED 2026-08-07: 8 findings in navig/ (16 counting tests and tools), and
+  # every one is an identifier or a cache key, never a signature or an integrity check on
+  # anything security-relevant: `_cache_key` in tools/web.py and memory/embeddings.py, the
+  # thumbnail filename in media/browse.py, the trigger-id suffix in commands/triggers.py,
+  # `_goal_id`, the speculative-execution key, `_file_hash`, and a 12-char asset
+  # fingerprint in commands/miniapp.py. Nothing hashes a credential or verifies a token.
   "S324",    # md5/sha1 — used for checksums/cache keys, not cryptographic security
   "S606",    # starting process without shell — more secure than shell=True
+  # S608 — MEASURED 2026-08-07: all 25 findings in navig/ read individually. Every one
+  # interpolates a CODE-BUILT fragment — `{sets}`, `{where}`, `{stale}`, `{mc}`,
+  # `{' AND '.join(clauses)}` — assembled from column names the module itself chooses,
+  # while every VALUE goes through a `?` bind parameter. That includes the search paths
+  # most likely to carry attacker input: telegram_catalog's FTS and LIKE queries bind the
+  # term (`text LIKE ?`), and key_facts binds `older_than_days`. No site interpolates a
+  # value. If a new query ever formats one in, this ignore stops being true — re-check
+  # rather than assume.
   "S608",    # possible SQL injection — queries are internal/parameterised in context
   "S108",    # hardcoded temp file path — CLI tools legitimately use /tmp
   "S310",    # URL open for audit — used for legitimate HTTP calls
@@ -261,6 +343,31 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
+  # Test helpers annotate their return as a STRING and import the type inside the function
+  # body (`def _make(...) -> "CircuitBreaker":`). The annotation is never evaluated, so the
+  # name genuinely is undefined at module scope and F821 is right but useless here. All 9
+  # current findings were inspected and are exactly that shape. Shipped code is NOT exempt:
+  # F821 was globally ignored until 55dd7fed4's follow-up, and it was hiding three live
+  # NameErrors (navig security's fail2ban/network audits, navig connect remove, and the
+  # Telegram "Active Habits" view).
+  "F821",    # string return annotation resolved by a function-local import
+  # 80 findings, not individually vetted — a test that binds a result it never asserts
+  # on is usually deliberate (readability, or holding a context manager open). This is a
+  # scope decision, NOT a claim that all 80 are benign. Shipped code is not exempt: F841
+  # was globally ignored and hiding a real one — blocks/policy.py computed `has_network`
+  # and never read it, so every block declaring `network:` was classified "safe".
+  "F841",    # local assigned but never used
+  # F401 is NOT ignored here any more — the 769 were swept and the premise was checked.
+  # The fear was that test modules import fixtures for collection, where "unused here" is
+  # weak evidence. Measured before deleting anything: of 769 findings across 435 files,
+  # ZERO were fixture-shaped (a name imported and then consumed as a test PARAMETER — the
+  # shape that resolves at runtime and breaks if removed) and ZERO came from conftest /
+  # fixtures / helpers modules. No test file declares `__all__`, and the only
+  # `pytest_plugins` is an empty list. What remained was ordinary dead weight: 274 unused
+  # `import pytest`, 88 `Path`, 53 `MagicMock`. The full suite is green after the sweep.
+  # Keeping it ignored had a measured cost: while it stood, a dead `Path` import survived
+  # review in tests/web/test_webserver_autodetect.py because ruff was configured not to
+  # look. Shipped code was never exempt.
   "S101",    # assert statements are idiomatic and required in pytest tests
   "S105",    # hardcoded password strings are expected in test fixtures
   "S106",    # hardcoded password in function arguments (test helpers)
@@ -298,3 +405,17 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 ignore_missing_imports = true
+# Local dev artifacts live under .dev/ — never at the package root.
+cache_dir = ".dev/cache/mypy"
+
+[tool.coverage.run]
+# Coverage data + reports land under .dev/, not at the package root. A `.coverage`
+# database at the root was previously committed because the ignore rule was dead.
+data_file = ".dev/coverage/.coverage"
+branch = true
+
+[tool.coverage.html]
+directory = ".dev/coverage/html"
+
+[tool.coverage.xml]
+output = ".dev/coverage/coverage.xml"

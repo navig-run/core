@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 from navig.adapters.automation.types import ExecutionResult, WindowInfo
+from navig.core.proc_text import decode_console_result
 
 # Seconds for osascript / shell-command subprocesses.
 _MACOS_SCRIPT_TIMEOUT: int = 10
@@ -59,7 +60,7 @@ class MacOSAdapter:
     def _run_command(self, cmd: list) -> ExecutionResult:
         """Run shell command."""
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=_MACOS_SCRIPT_TIMEOUT)
+            result = decode_console_result(subprocess.run(cmd, capture_output=True, timeout=_MACOS_SCRIPT_TIMEOUT))
             return ExecutionResult(
                 success=result.returncode == 0,
                 stdout=result.stdout,
@@ -159,6 +160,10 @@ class MacOSAdapter:
                 height=int(parts[5]),
                 pid=0,
                 process_name=parts[0],
+                # REQUIRED on WindowInfo — omitting it raised TypeError on every call. AppleScript
+                # gives the app name (already in process_name), not a window class, so "" =
+                # unknown (the ahk.py convention) rather than inventing a mapping.
+                class_name="",
             )
         except Exception:
             return None
@@ -309,6 +314,7 @@ class MacOSAdapter:
                             height=int(parts[5]),
                             pid=0,
                             process_name=parts[0],
+                            class_name="",  # unknown — see get_active_window above
                         )
                     )
             except Exception:

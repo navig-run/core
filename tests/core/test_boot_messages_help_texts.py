@@ -7,8 +7,6 @@ Batch 81: hermetic unit tests for
 
 from __future__ import annotations
 
-import pytest
-
 # ---------------------------------------------------------------------------
 # navig/boot_messages.py
 # ---------------------------------------------------------------------------

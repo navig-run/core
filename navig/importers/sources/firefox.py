@@ -65,8 +65,7 @@ class FirefoxImporter(BaseImporter):
             con.close()
             return items
         except Exception as exc:
-            logger.warning("[%s] %s", self.SOURCE_NAME, exc)
-            return []
+            return self._fail(exc)
 
     def _resolve_folder_chain(self, parent_id: int, folders: dict[int, dict]) -> str:
         chain: list[str] = []

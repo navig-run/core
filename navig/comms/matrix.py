@@ -164,6 +164,15 @@ class NavigMatrixBot:
 
         self._running = True
         self._sync_task = asyncio.create_task(self._sync_loop())
+        if _bot is not None and _bot is not self and _bot.is_running:
+            # Registering silently would leave the previous bot syncing and logged in
+            # while `get_matrix_bot()` stopped returning it — an orphan nobody can
+            # reach to stop. Say so; the caller almost certainly meant to reuse it.
+            logger.warning(
+                "Matrix: a different bot was already registered and still running — "
+                "replacing the registration. The previous one keeps syncing and is no "
+                "longer reachable via get_matrix_bot()."
+            )
         _bot = self
 
         # Wait for initial sync to complete so we have a valid next_batch token
@@ -199,7 +208,13 @@ class NavigMatrixBot:
         if self._store:
             self._store.close()
             self._store = None
-        _bot = None
+        # Only deregister OURSELVES. Clearing unconditionally meant one bot's shutdown
+        # deregistered whichever bot happened to be registered — so a still-running
+        # instance became invisible to `get_matrix_bot()`, and every consumer that
+        # resolves through it (the HitL router, E2EE, the channel adapter) would build
+        # a second bot on the same account.
+        if _bot is self:
+            _bot = None
         logger.info("Matrix bot stopped")
 
     @property
@@ -280,16 +295,11 @@ class NavigMatrixBot:
                 # Persist room in store
                 if self._store:
                     try:
-                        from navig.comms.matrix_store import MatrixRoom as _MR
-
-                        self._store.upsert_room(
-                            _MR(
-                                room_id=resp.room_id,
-                                name=name,
-                                topic=topic,
-                                purpose="general",
-                                encrypted=False,
-                            )
+                        # Server-side facts only. Sending a whole MatrixRoom here would push
+                        # the dataclass defaults for purpose/encrypted/metadata into the
+                        # upsert's ON CONFLICT clause and wipe whatever was stored.
+                        self._store.sync_room_from_server(
+                            resp.room_id, name=name, topic=topic
                         )
                     except Exception:
                         logger.debug("Matrix: could not persist room to store")
@@ -460,15 +470,11 @@ class NavigMatrixBot:
         # Sync joined rooms to persistent store
         if self._store and rooms:
             try:
-                from navig.comms.matrix_store import MatrixRoom as _MR
-
+                # This runs on every room sync, so the clobber was not a rare edge: it reset
+                # purpose/encrypted/metadata for EVERY known room, every time.
                 for r in rooms:
-                    self._store.upsert_room(
-                        _MR(
-                            room_id=r["room_id"],
-                            name=r["name"],
-                            topic=r["topic"],
-                        )
+                    self._store.sync_room_from_server(
+                        r["room_id"], name=r.get("name") or "", topic=r.get("topic") or ""
                     )
             except Exception:
                 logger.debug("Matrix: room sync to store failed (non-fatal)")

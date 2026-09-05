@@ -4,7 +4,6 @@ import os
 import sys
 import time
 from pathlib import Path
-from textwrap import dedent
 from typing import Any
 
 from navig.platform.paths import config_dir
@@ -398,6 +397,31 @@ def register(server: Any) -> None:
         }
     )
 
+    # See navig.mcp_server._gate_tool — unlisted defaults to "safe".
+    # A module's register() must be self-sufficient: register_all_tools creates this
+    # dict, but a direct `module.register(server)` call (tests, a plugin host) does not,
+    # and assuming it exists raised AttributeError. cdp.py already guarded; these did not.
+    if not hasattr(server, "_tool_safety"):
+        server._tool_safety = {}
+    server._tool_safety.update({
+        "desktop_ahk": "dangerous",         # arbitrary AutoHotkey script
+        "desktop_type": "dangerous",        # types into whatever has focus — incl. a shell
+        "desktop_set_value": "dangerous",   # writes into arbitrary UI fields
+        "desktop_multi_edit": "dangerous",  # the same, in bulk
+        "desktop_shortcut": "dangerous",    # key combos reach Win+R / the OS itself
+        "desktop_screenshot": "dangerous",  # captures the WHOLE screen, not one page
+        "desktop_app": "moderate",
+        "desktop_click": "moderate",
+        "desktop_move": "moderate",
+        "desktop_scroll": "moderate",
+        "desktop_multi_select": "moderate",
+        # read-only — recorded explicitly so a missing entry is a build failure,
+        # not a silent default to "safe".
+        "desktop_snapshot": "safe",
+        "desktop_tree": "safe",
+        "desktop_find": "safe",
+    })
+
 
 def _desktop_client():
     """Return a live _DesktopClient, raising structured errors on failure."""
@@ -749,13 +773,16 @@ def _tool_desktop_screenshot(server: Any, args: dict[str, Any]) -> Any:
 # ─── Input / interaction helpers ─────────────────────────────────────────────
 
 
-def _coerce_bool(value: bool | str | None, default: bool = False) -> bool:
-    """Coerce MCP boolean/string inputs to a Python bool."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in ("true", "1", "yes")
-    return default
+def _coerce_bool(value: object, default: bool = False) -> bool:
+    """Coerce an MCP boolean argument — see navig.mcp.tools._args.coerce_bool.
+
+    Kept as a module-local name so call sites read unchanged; the logic lives in
+    one place now (this was triplicated across desktop/filesystem/windows, and all
+    three silently discarded a JSON number).
+    """
+    from navig.mcp.tools._args import coerce_bool
+
+    return coerce_bool(value, default)
 
 
 def _run_ahk(script: str, tool_name: str) -> Any:

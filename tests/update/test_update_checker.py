@@ -58,6 +58,18 @@ class TestCheckLocal:
         vi = checker.check_local()
         assert vi.latest is None
 
+    def test_install_type_is_git_when_source_is_a_git_checkout(self):
+        # `.git` is at the monorepo ROOT, not core/ — so install_type must ask git whether it
+        # tracks the source, NOT `(src/.git).exists()` (which mis-reported "pip"; the #533 trap).
+        with patch("navig.commands.update._is_navig_git_checkout", return_value=True):
+            vi = VersionChecker(_make_source("2.5.0")).check_local()
+        assert vi.install_type == "git"
+
+    def test_install_type_is_pip_for_a_wheel(self):
+        with patch("navig.commands.update._is_navig_git_checkout", return_value=False):
+            vi = VersionChecker(_make_source("2.5.0")).check_local()
+        assert vi.install_type == "pip"
+
 
 # ---------------------------------------------------------------------------
 # check_ssh

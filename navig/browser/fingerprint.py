@@ -22,6 +22,7 @@ both. The curated pool wins on every axis that matters here — see the comment 
 from __future__ import annotations
 
 import hashlib
+import json
 import random
 from dataclasses import dataclass, field
 
@@ -206,30 +207,64 @@ def webrtc_launch_args() -> list[str]:
     ]
 
 
+def _js_int(value: object, default: int) -> int:
+    """Coerce a numeric fingerprint slot to an int, falling back to *default*.
+
+    A capsule-supplied string here would otherwise be pasted straight into the script body.
+    """
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
+def _js_float(value: object, default: float) -> float:
+    """Same as :func:`_js_int` for the canvas-noise slot."""
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
 def to_init_script(fp: Fingerprint) -> str:
     """JS shim overriding navigator/screen/WebGL/canvas coherently with *fp*.
 
     Apply on vanilla Playwright / CDP tiers. NOT recommended on Patchright (its engine-level
     patches already cover these, and a second JS layer can contradict them).
     """
-    langs = ",".join(f'"{x}"' for x in fp.languages)
+    # Every value is emitted as a JSON literal, never pasted between hand-written quotes.
+    # These strings are NOT all curated: `Persona.from_dict` / `import_capsule` rebuild a
+    # Fingerprint from a capsule file's JSON (an UNENCRYPTED capsule is accepted with no
+    # passphrase and no signature), and `stealth.py` feeds the result to `add_init_script`,
+    # which runs on EVERY page. A `'` in any of these used to break the shim outright; a
+    # crafted one closed the quote and appended arbitrary JS to that init script.
+    langs = json.dumps(list(fp.languages))
+    platform = json.dumps(fp.platform)
+    webgl_vendor = json.dumps(fp.webgl_vendor)
+    webgl_renderer = json.dumps(fp.webgl_renderer)
+    # Numeric slots must not accept a string either — a capsule could put JS in one.
+    cores = _js_int(fp.hardware_concurrency, 8)
+    memory = _js_int(fp.device_memory, 8)
+    width = _js_int(fp.screen[0], 1920)
+    height = _js_int(fp.screen[1], 1080)
+    noise_value = _js_float(fp.canvas_noise, 0.0)
     return f"""(() => {{
   const defP = (o, k, v) => {{ try {{ Object.defineProperty(o, k, {{ get: () => v }}); }} catch (e) {{}} }};
-  defP(navigator, 'hardwareConcurrency', {fp.hardware_concurrency});
-  defP(navigator, 'deviceMemory', {fp.device_memory});
-  defP(navigator, 'platform', '{fp.platform}');
-  defP(navigator, 'languages', [{langs}]);
-  defP(screen, 'width', {fp.screen[0]}); defP(screen, 'height', {fp.screen[1]});
-  defP(screen, 'availWidth', {fp.screen[0]}); defP(screen, 'availHeight', {fp.screen[1] - 40});
+  defP(navigator, 'hardwareConcurrency', {cores});
+  defP(navigator, 'deviceMemory', {memory});
+  defP(navigator, 'platform', {platform});
+  defP(navigator, 'languages', {langs});
+  defP(screen, 'width', {width}); defP(screen, 'height', {height});
+  defP(screen, 'availWidth', {width}); defP(screen, 'availHeight', {height - 40});
   // WebGL vendor/renderer coherence
   const gp = WebGLRenderingContext.prototype.getParameter;
   WebGLRenderingContext.prototype.getParameter = function (p) {{
-    if (p === 37445) return '{fp.webgl_vendor}';
-    if (p === 37446) return '{fp.webgl_renderer}';
+    if (p === 37445) return {webgl_vendor};
+    if (p === 37446) return {webgl_renderer};
     return gp.call(this, p);
   }};
   // Deterministic canvas noise (per-seed) so the hash is stable but not the default one
-  const noise = {fp.canvas_noise};
+  const noise = {noise_value};
   const td = CanvasRenderingContext2D.prototype.getImageData;
   CanvasRenderingContext2D.prototype.getImageData = function (...a) {{
     const d = td.apply(this, a);

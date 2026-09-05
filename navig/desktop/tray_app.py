@@ -67,9 +67,14 @@ log = logging.getLogger("navig-tray")
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-APP_NAME = "NAVIG Tray"
-REGISTRY_KEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
-REGISTRY_VALUE = "NavigTray"
+# Re-exported from tray_constants so the CLI can read them WITHOUT importing this
+# module, which replaces sys.stdout/sys.stderr above. Existing readers of
+# `tray_app.REGISTRY_KEY` are unaffected.
+from navig.desktop.tray_constants import (  # noqa: E402
+    REGISTRY_KEY,
+    REGISTRY_VALUE,
+)
+
 PYTHON_EXE = sys.executable
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 NAVIG_DIR = paths.config_dir()
@@ -274,36 +279,23 @@ class NavigTray:
     # --- Daemon (Telegram Bot + Gateway + Scheduler) ---
 
     def _kill_orphan_bots(self):
-        """Find and kill any orphan navig_bot.py processes."""
+        """Kill orphan legacy ``navig_bot.py`` processes for OUR config dir only.
+
+        This used to sweep ``navig_bot.py`` machine-wide (Get-CimInstance + taskkill).
+        That name is defunct (the bot host is now the daemon's ``telegram_worker``), but
+        the unscoped sweep was the same bot-killing footgun the gateway (#173), daemon
+        (#669) and ``navig bot stop`` (#672) paths were fixed for — a run under a
+        different ``NAVIG_CONFIG_DIR`` could reach another brain. Route through the
+        config-dir-scoped killer so it can only ever touch our own processes.
+        """
         try:
-            result = subprocess.run(
-                [
-                    "powershell",
-                    "-Command",
-                    "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*navig_bot.py*' } | Select-Object ProcessId | ForEach-Object { $_.ProcessId }",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-            pids = [
-                int(p.strip()) for p in result.stdout.strip().split("\n") if p.strip().isdigit()
-            ]
-            for pid in pids:
-                try:
-                    subprocess.run(
-                        ["taskkill", "/F", "/PID", str(pid)],
-                        capture_output=True,
-                        timeout=_PROC_GRACEFUL_TIMEOUT,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                    )
-                    log.info("Killed orphan bot process PID %s", pid)
-                except Exception:  # noqa: BLE001
-                    pass  # best-effort; failure is non-critical
-            if pids:
-                log.info("Cleaned up %s orphan bot process(es)", len(pids))
-        except Exception as e:
+            from navig.daemon.single_instance import kill_other_instances
+            from navig.platform import paths
+
+            killed = kill_other_instances(("navig_bot.py",), config_dir=paths.config_dir())
+            if killed:
+                log.info("Cleaned up %s orphan bot process(es): %s", len(killed), killed)
+        except Exception as e:  # noqa: BLE001
             log.error("Orphan bot cleanup failed: %s", e)
 
     def start_daemon(self):

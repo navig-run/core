@@ -92,59 +92,89 @@ class MatrixNotifier(ChannelNotifier):
                 pass  # task cancelled; expected during shutdown
         logger.info("Matrix notifier stopped")
 
-    async def send(self, notification: Notification) -> None:
-        """Queue or immediately send a notification."""
+    async def send(self, notification: Notification) -> bool:
+        """Queue or immediately send a notification.
+
+        Immediate sends (CRITICAL/HIGH/NORMAL) return their real delivery result;
+        batched LOW returns True ("accepted for delivery").
+        """
         if notification.priority in (
             NotificationPriority.CRITICAL,
             NotificationPriority.HIGH,
         ):
             # Send immediately to priority room
-            await self._send_now(notification, self.priority_room_id)
+            return await self._send_now(notification, self.priority_room_id)
         elif notification.priority == NotificationPriority.LOW:
             # Batch low-priority
             async with self._batch_lock:
                 self._batch_buffer.append(notification)
+            return True
         else:
             # NORMAL — send now to default room
-            await self._send_now(notification, self.room_id)
+            return await self._send_now(notification, self.room_id)
 
     async def send_alert(
         self,
         title: str,
         message: str,
         priority: NotificationPriority = NotificationPriority.HIGH,
-    ) -> None:
+    ) -> bool:
         notif = Notification(
             type="alert",
             title=title,
             message=message,
             priority=priority,
         )
-        await self.send(notif)
+        return await self.send(notif)
 
     # ── Internal helpers ──
 
-    async def _send_now(self, notification: Notification, room_id: str) -> None:
-        """Send a single notification to a Matrix room."""
+    async def _send_now(self, notification: Notification, room_id: str) -> bool:
+        """Send a single notification to a Matrix room. True only if it landed.
+
+        This used to catch exceptions and otherwise return True — and its docstring
+        claimed that closed the phantom-success hole. It did not. ``NavigMatrixBot``
+        signals failure by **returning None**, not by raising: it has no client, the
+        server answered with something other than a ``RoomSendResponse``, or it
+        caught its own exception. So the `except` arm never fired for a failed send
+        and every rejection was reported as delivered — including from a bot that
+        never connected.
+        """
         text = _format_for_matrix(notification)
         try:
             if notification.priority == NotificationPriority.CRITICAL:
-                await self.bot.send_message(room_id, text)
+                event_id = await self.bot.send_message(room_id, text)
             else:
-                await self.bot.send_notice(room_id, text)
+                event_id = await self.bot.send_notice(room_id, text)
+            if not event_id:
+                logger.warning(
+                    "Matrix notifier: NOT delivered to %s — the bot returned no event "
+                    "id (not connected or rejected): %r",
+                    room_id,
+                    notification.title,
+                )
+                return False
+            return True
         except Exception:
             logger.exception("Matrix notifier: failed to send to %s", room_id)
+            return False
 
-    async def _flush_batch(self) -> None:
-        """Flush batched LOW-priority notifications."""
+    async def _flush_batch(self) -> bool:
+        """Flush batched LOW-priority notifications. True when delivered.
+
+        The buffer is drained BEFORE the send, so a raise here used to lose every
+        batched notification at once, leaving a log line as the only trace — the
+        same drop the Telegram notifier's queue had. Batched LOW is the one
+        priority whose ``send()`` already returned True ("accepted for
+        delivery"), which makes the loss entirely invisible upstream.
+
+        Rejected items go back for another window, on the shared attempt budget.
+        """
         async with self._batch_lock:
             if not self._batch_buffer:
-                return
+                return True
             items = self._batch_buffer.copy()
             self._batch_buffer.clear()
-
-        if not items:
-            return
 
         # Combine into a single message
         parts = []
@@ -153,9 +183,43 @@ class MatrixNotifier(ChannelNotifier):
 
         combined = f"\U0001f4e5 **Notifications** ({len(items)})\n\n" + "\n".join(parts)
         try:
-            await self.bot.send_notice(self.room_id, combined)
+            # None, not an exception, is how this transport reports a failed send —
+            # so the retry machinery below was unreachable for the common failure.
+            if not await self.bot.send_notice(self.room_id, combined):
+                logger.warning(
+                    "Matrix notifier: batch NOT delivered (%d items) — the bot "
+                    "returned no event id",
+                    len(items),
+                )
+                await self._requeue_batch(items)
+                return False
         except Exception:
             logger.exception("Matrix notifier: batch flush failed")
+            await self._requeue_batch(items)
+            return False
+        for n in items:
+            n.delivery_attempts = 0
+        return True
+
+    async def _requeue_batch(self, items: list[Notification]) -> None:
+        """Return a rejected batch to the buffer for the next flush window."""
+        retry: list[Notification] = []
+        for n in items:
+            n.delivery_attempts += 1
+            if n.delivery_attempts >= self._MAX_DELIVERY_ATTEMPTS:
+                logger.error(
+                    "Matrix notification DROPPED after %d failed attempts: %r [%s]",
+                    n.delivery_attempts,
+                    n.title,
+                    n.type,
+                )
+            else:
+                retry.append(n)
+        if not retry:
+            return
+        async with self._batch_lock:
+            # Preserve arrival order against anything buffered during the send.
+            self._batch_buffer[:0] = retry
 
     async def _flush_loop(self) -> None:
         """Periodically flush the batch buffer."""

@@ -19,6 +19,8 @@ import sys
 import time
 from typing import TYPE_CHECKING
 
+from navig.core.proc_text import console_encoding
+
 if TYPE_CHECKING:
     from navig.identity.entity import NaviEntity
 
@@ -80,7 +82,8 @@ def _measure_ping() -> tuple[int, str, str]:
             result = subprocess.run(
                 ["ping", flag, "1", _probe_host],
                 capture_output=True,
-                text=True,
+                encoding=console_encoding(),
+                errors="replace",
                 timeout=5,
             )
             m = re.search(r"[=<](\d+(?:\.\d+)?)\s*ms", result.stdout)

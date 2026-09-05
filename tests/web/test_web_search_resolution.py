@@ -288,3 +288,119 @@ def test_web_search_auto_cascades_past_failing_keyed_provider(monkeypatch):
     assert result.success is True
     assert result.provider == "brave"  # cascaded past the failing Tavily
     assert result.results and "good" in result.results[0].snippet
+
+
+def test_web_search_cache_hit_returns_searchresult_objects(monkeypatch):
+    """Regression: a repeat search within the TTL must return SearchResult objects, not
+    raw dicts. Results are cached as dicts and the read path did WebSearchResult(**cached)
+    with no rehydration, so every consumer's r.title raised AttributeError on the 2nd call
+    (MCP web-search, `navig docs` search, the deck board deep-dive, the agent search tool)."""
+    import navig.tools.web as web
+
+    web._search_cache.clear()
+    monkeypatch.setattr("navig.tools.web.REQUESTS_AVAILABLE", True)
+    monkeypatch.setattr("navig.tools.web._search_brave", _ok_brave)
+    monkeypatch.setattr("navig.tools.web._search_keyless", _ok_ddg)
+    monkeypatch.setattr(
+        "navig.tools.web.get_web_config",
+        lambda config_manager=None: {
+            "search": {"provider": "brave", "api_key": "k", "api_keys": {}}
+        },
+    )
+
+    try:
+        # First call runs the provider and populates the cache (as dicts).
+        first = web_search("cache me", provider="brave", api_key="k", use_cache=True)
+        assert first.success is True and first.cached is False
+        assert first.results and isinstance(first.results[0], SearchResult)
+
+        # Second identical call hits the cache — must rehydrate to SearchResult.
+        second = web_search("cache me", provider="brave", api_key="k", use_cache=True)
+        assert second.cached is True
+        assert second.results, "cache hit dropped the results"
+        for r in second.results:
+            assert isinstance(r, SearchResult)  # NOT a dict
+            # attribute access — exactly what every consumer does — must not raise
+            _ = (r.title, r.url, r.snippet, r.age)
+        assert second.results[0].title == first.results[0].title
+        assert second.results[0].snippet == first.results[0].snippet
+    finally:
+        web._search_cache.clear()
+
+
+def test_web_search_explicit_key_not_used_for_wrong_provider_in_auto(monkeypatch):
+    """An explicit api_key is documented as the BRAVE key. In the auto-cascade it must NOT
+    be handed to Tavily/SerpApi (a Brave key fired at the wrong API → 401) and must NOT
+    mask the user's real vaulted per-provider keys. Regression for the correctness-hunt
+    finding: the old code short-circuited `return explicit` for every provider_name."""
+    monkeypatch.setattr("navig.tools.web.REQUESTS_AVAILABLE", True)
+    monkeypatch.setattr(
+        "navig.vault.core.get_vault",
+        lambda: _SecretStrVault({"tavily": "real-tavily-key"}),
+    )
+    monkeypatch.setattr(
+        "navig.integrations.firecrawl.get_firecrawl_client",
+        lambda: (_ for _ in ()).throw(FirecrawlError("no key", status_code=401)),
+    )
+    captured: dict[str, Any] = {}
+
+    def _cap_tavily(query, api_key, count=5, timeout_seconds=30):
+        captured["tavily_key"] = api_key
+        return WebSearchResult(
+            success=True,
+            query=query,
+            provider="tavily",
+            results=[SearchResult(title="t", url="u", snippet="ok")],
+        )
+
+    monkeypatch.setattr("navig.tools.web._search_tavily", _cap_tavily)
+    monkeypatch.setattr(
+        "navig.tools.web.get_web_config",
+        lambda config_manager=None: {
+            "search": {"provider": "auto", "api_key": "", "api_keys": {}}
+        },
+    )
+
+    # Caller passes an explicit Brave key, exactly as the MCP tool forwards BRAVE_API_KEY.
+    result = web_search(
+        "anything", provider="auto", api_key="brave-explicit", use_cache=False
+    )
+
+    assert result.success is True
+    assert result.provider == "tavily"
+    # Tavily received its OWN vaulted key — never the Brave explicit key.
+    assert captured["tavily_key"] == "real-tavily-key"
+
+
+def test_web_search_explicit_key_still_honored_for_brave(monkeypatch):
+    """Backward-compat: the explicit api_key IS the Brave key, so it must still be used
+    when Brave runs — both when Brave is explicitly requested and when the cascade
+    reaches Brave."""
+    monkeypatch.setattr("navig.tools.web.REQUESTS_AVAILABLE", True)
+    monkeypatch.setattr("navig.tools.web._search_brave", _ok_brave)
+    monkeypatch.setattr("navig.tools.web._search_keyless", _ok_ddg)
+    # No Firecrawl key → the auto path falls through to the keyed cascade (reaches Brave).
+    monkeypatch.setattr(
+        "navig.integrations.firecrawl.get_firecrawl_client",
+        lambda: (_ for _ in ()).throw(FirecrawlError("no key", status_code=401)),
+    )
+    monkeypatch.setattr(
+        "navig.tools.web.get_web_config",
+        lambda config_manager=None: {
+            "search": {"provider": "auto", "api_key": "", "api_keys": {}}
+        },
+    )
+
+    # Explicitly requested Brave with an explicit key.
+    explicit = web_search(
+        "python", provider="brave", api_key="brave-explicit", use_cache=False
+    )
+    assert explicit.success is True and explicit.provider == "brave"
+    assert explicit.results and "brave-explicit" in explicit.results[0].snippet
+
+    # And when the auto-cascade reaches Brave, the explicit Brave key is still applied.
+    cascaded = web_search(
+        "python", provider="auto", api_key="brave-explicit", use_cache=False
+    )
+    assert cascaded.success is True and cascaded.provider == "brave"
+    assert cascaded.results and "brave-explicit" in cascaded.results[0].snippet

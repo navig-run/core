@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock
 
 # ---------------------------------------------------------------------------
@@ -257,7 +256,7 @@ def test_app_config_provider_protocol_importable():
 
 
 def test_config_provider_is_protocol():
-    from typing import Protocol, get_args, get_origin
+    from typing import Protocol
 
     from navig.core.protocols import ConfigProvider
 

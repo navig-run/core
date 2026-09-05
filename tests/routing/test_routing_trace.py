@@ -2,10 +2,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 import navig.llm.routing.trace as trace_mod
 from navig.llm.routing.trace import RouteTrace, log_trace, recent_traces

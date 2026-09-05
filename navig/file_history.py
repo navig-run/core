@@ -194,9 +194,25 @@ class FileHistoryStore:
     # ------------------------------------------------------------------
 
     def _is_enabled(self) -> bool:
+        """Whether file history is on. Read LIVE and coerced.
+
+        ``navig config set file_history.enabled false`` stores the raw STRING
+        ``"false"``, and ``bool("false")`` is ``True`` — so the documented way to turn
+        this off left it running, still snapshotting every changed file. Use
+        ``coerce_bool``, the canonical config-safe coercion.
+
+        The read also goes through a refreshed manager: ``Config()`` serves the
+        snapshot taken at process start, so in the daemon a toggle needed a restart.
+        This gates a snapshot write (diff + disk I/O) and is called once per file
+        operation, so the ~1.5 ms refresh is negligible against the work it guards.
+        """
         try:
-            from navig.core import Config
-            return bool(Config().get("file_history.enabled", False))
+            from navig.config import get_config_manager
+            from navig.core.coerce import coerce_bool
+
+            cm = get_config_manager()
+            cm.refresh_global_config()
+            return coerce_bool(cm.get("file_history.enabled"), default=False)
         except Exception as exc:  # noqa: BLE001
             logger.debug("file_history enabled-check failed: %r", exc)
             return False

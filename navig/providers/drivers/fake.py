@@ -51,13 +51,11 @@ class FakeDriver(ProviderDriver):
     # ── auth ────────────────────────────────────────────────────────────────
     async def start_auth(self, template_id, *, api_key=None, endpoint=None, **kwargs) -> AuthStart:
         if self._flow == "api_key":
-            # Completes inline: "store" the key and hand back a vault-ish ref.
-            ref = f"fake/{template_id}"
+            # Completes inline — nothing to poll and nothing to hand back: AuthStart has no
+            # secret_ref field, and this branch returns handle=None so there is no key to
+            # stash one under either. (A `ref` was built here and dropped on the floor.)
             return AuthStart(flow="api_key", handle=None, auth_url=None,
-                             user_code=None, verification_uri=None,
-                             # secret_ref is conveyed via auth_status for async;
-                             # for inline we stash it on the handle map by key
-                             )
+                             user_code=None, verification_uri=None)
         if self._flow == "device_code":
             self._counter += 1
             h = f"handle-{self._counter}"

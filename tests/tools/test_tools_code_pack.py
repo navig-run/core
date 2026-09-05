@@ -1,8 +1,6 @@
 """Tests for navig/tools/domains/code_pack.py."""
 
-from unittest.mock import MagicMock, call
-
-import pytest
+from unittest.mock import MagicMock
 
 from navig.tools.domains.code_pack import register_tools
 
@@ -37,18 +35,37 @@ def test_register_tools_meta_safety_is_dangerous():
     assert "DANGEROUS" in str(meta.safety).upper()
 
 
-def test_register_tools_meta_has_module_path():
+def test_register_tools_declares_no_lazy_handler():
+    """These two assertions used to pin `module_path="navig.tools.sandbox"` and
+    `handler_name="execute"` — and `navig.tools.sandbox` has never defined
+    `execute` (it exposes `sandboxed_execute`). So the tests were green while
+    `get_handler()` caught the AttributeError and returned None on every call:
+    the test asserted the *typo*, not the contract.
+
+    There is deliberately no lazy handler now. Wiring one is not a rename — the
+    real function takes a shell `command` while this tool's schema promises
+    `code` + `language` — so the tool reports UNAVAILABLE until an adapter
+    exists. `tests/quality/test_tool_handler_names_exist.py` fails the build if
+    a declared handler name ever stops resolving again.
+    """
     registry = MagicMock()
     register_tools(registry)
     meta = registry.register.call_args[0][0]
-    assert meta.module_path == "navig.tools.sandbox"
+
+    assert meta.module_path is None
+    assert meta.handler_name is None
 
 
-def test_register_tools_meta_handler_name_is_execute():
+def test_register_tools_meta_is_unavailable_with_a_reason():
+    from navig.tools.router import ToolStatus
+
     registry = MagicMock()
     register_tools(registry)
     meta = registry.register.call_args[0][0]
-    assert meta.handler_name == "execute"
+
+    assert meta.status is ToolStatus.UNAVAILABLE
+    assert not meta.is_available()
+    assert meta.status_message, "an unavailable tool must say why"
 
 
 # ---------------------------------------------------------------------------

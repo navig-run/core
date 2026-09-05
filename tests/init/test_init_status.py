@@ -18,6 +18,13 @@ def _isolate_home(tmp_path: Path, monkeypatch) -> Path:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.chdir(tmp_path)
+    # HOME alone does not isolate the GLOBAL config: `global_config_dir` is a live
+    # property reading NAVIG_CONFIG_DIR, which conftest points at ONE session-wide
+    # dir for the whole run. Without pinning it per test, this file's
+    # `update_global_config({"openrouter_api_key": "sk-or-test"})` lands in the
+    # shared config, where every later test that asks "is a provider configured?"
+    # can see the fake key.
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / ".navig"))
 
     from navig.config import reset_config_manager
 

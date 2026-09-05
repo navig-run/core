@@ -4,8 +4,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -13,9 +12,6 @@ import pytest
 # navig.core.security
 # ---------------------------------------------------------------------------
 from navig.core.security import (
-    DANGEROUS_PATTERNS,
-    DEFAULT_REDACT_PATTERNS,
-    SAFE_EXECUTABLES,
     MissingEnvVarError,
     RedactingFormatter,
     SecurityFinding,

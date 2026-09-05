@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 
 _CONNECTORS_LOADED = False
+_LOADING = False
 _log = logging.getLogger("navig.connectors")
 
 
@@ -21,12 +22,48 @@ def ensure_connectors_loaded() -> None:
     Idempotent: safe to call multiple times; registration happens only once.
     Individual connectors that fail to import (missing deps / bad config) are
     silently skipped so one broken connector cannot block the others.
+
+    The "already done" flag is set only **after** the work succeeds. It used to be
+    set on entry, which conflated two different jobs: guarding against re-entrancy
+    and recording completion. Anything that escaped this function — the registry
+    import below is not inside a ``try`` — then left the flag stuck at True, so
+    every later call returned immediately and the process stayed permanently
+    connector-less with no way to retry. Re-entrancy now has its own flag, so a
+    connector module that imports something which calls back in here still cannot
+    recurse, while a genuine failure remains retryable.
     """
-    global _CONNECTORS_LOADED
-    if _CONNECTORS_LOADED:
+    global _CONNECTORS_LOADED, _LOADING
+    if _CONNECTORS_LOADED or _LOADING:
         return
+    _LOADING = True
+    try:
+        _register_all()
+    finally:
+        _LOADING = False
     _CONNECTORS_LOADED = True
 
+
+def invalidate() -> None:
+    """Forget that connectors were loaded, so the next call re-registers them.
+
+    Called by :meth:`ConnectorRegistry.reset`, because clearing the registrations is
+    exactly what makes the "already loaded" claim false. Without this the two disagree:
+    the registry is empty while the flag says loaded, so `ensure_connectors_loaded()`
+    returns immediately and the process stays permanently connector-less — the failure
+    this module's own docstring describes, reached from the other direction.
+
+    Measured before the fix: after `tests/connectors/test_connectors_bootstrap.py` ran,
+    `flag=True registry=0`, and a reload could not recover it. Every connector-derived
+    MCP tool then vanished, which silently made two coverage guards vacuous
+    (`test_connector_write_tools_are_dangerous` / `test_connector_reads_are_not_safe`).
+    """
+    global _CONNECTORS_LOADED, _LOADING
+    _CONNECTORS_LOADED = False
+    _LOADING = False
+
+
+def _register_all() -> None:
+    """Do the actual registration. Raising leaves the load retryable."""
     from navig.connectors.registry import get_connector_registry
 
     registry = get_connector_registry()

@@ -5,8 +5,6 @@ Tests for navig.agent.tools.background_task_tools
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from navig.agent.tools.background_task_tools import (
     BackgroundTaskKillTool,
     BackgroundTaskOutputTool,
@@ -97,6 +95,55 @@ class TestBackgroundTaskStartTool:
         mock_manager.start.assert_awaited_once()
         call_kwargs = mock_manager.start.call_args.kwargs
         assert call_kwargs.get("cwd") == "/tmp"
+
+    def test_immediate_failure_is_not_a_phantom_started(self):
+        """A command that dies on startup → failure, not a phantom 'Started (pid …)'.
+
+        Regression: the tool reported success('Started …') the instant start()
+        returned, even when the command exited non-zero on startup.
+        """
+        mock_manager = MagicMock()
+        mock_task = MagicMock()
+        mock_task.task_id = 4
+        mock_task.pid = 999
+        mock_task.label = "doomed"
+        mock_task.is_running = False
+        mock_task.exit_code = 127
+        mock_manager.start = AsyncMock(return_value=mock_task)
+        mock_manager.get_output.return_value = "'pythn' is not recognized"
+
+        with patch(
+            "navig.agent.tools.background_task_tools._get_manager",
+            return_value=mock_manager,
+        ):
+            result = _run(self.tool.run({"command": "pythn app.py"}))
+
+        assert result.success is False
+        assert "127" in result.error
+        assert "not recognized" in result.error  # output tail surfaced to the agent
+
+    def test_immediate_exit_zero_reported_as_completed(self):
+        """A command that finishes instantly with exit 0 is a success, and the
+        message says it completed rather than pretending it is still running."""
+        mock_manager = MagicMock()
+        mock_task = MagicMock()
+        mock_task.task_id = 2
+        mock_task.pid = 5
+        mock_task.label = "quickie"
+        mock_task.is_running = False
+        mock_task.exit_code = 0
+        mock_manager.start = AsyncMock(return_value=mock_task)
+        mock_manager.get_output.return_value = "hi"
+
+        with patch(
+            "navig.agent.tools.background_task_tools._get_manager",
+            return_value=mock_manager,
+        ):
+            result = _run(self.tool.run({"command": "echo hi"}))
+
+        assert result.success is True
+        assert "completed immediately" in result.output.lower()
+        assert "Started background task #2" in result.output  # keeps the stable prefix
 
 
 # ---------------------------------------------------------------------------

@@ -40,4 +40,4 @@
 | [upgrade-roadmap.md](upgrade-roadmap.md) | Version upgrade roadmap |
 | [STABILIZATION_DEBT.md](STABILIZATION_DEBT.md) | Known technical debt |
 
-Script catalog: [scripts/README.md](../scripts/README.md)
+Installer catalog: [installers/README.md](../installers/README.md)

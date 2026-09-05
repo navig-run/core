@@ -10,7 +10,6 @@ Covers:
 """
 
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -20,6 +19,27 @@ pytestmark = pytest.mark.integration
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+def _builtin_formations_dir():
+    """The built-in formations the PRODUCT reads, resolved the way the product resolves it.
+
+    These tests hardcoded `<repo>/core/store/formations`. Builtin content moved inside the
+    package in #144 ("every published wheel shipped with ZERO builtin content"), so that
+    path stopped existing -- and because the tests gate on `.exists()` with `pytest.skip`,
+    they did not fail. They silently stopped running: measured 2026-09-01, 11 skips naming
+    navig_app, government, football_club and creative_studio.
+
+    Going through `builtin_store_dir()` instead of a second hardcoded path means these
+    follow the content wherever it moves next, and assert against exactly the directory
+    `formations/loader.py` loads from.
+
+    A plain function, deliberately not a fixture: it is called from inside test bodies and
+    from a class attribute, neither of which can request one.
+    """
+    from navig.platform.paths import builtin_store_dir
+
+    return builtin_store_dir() / "formations"
 
 
 @pytest.fixture
@@ -316,7 +336,6 @@ class TestDiscovery:
 
     def test_fallback_to_app_project(self, tmp_path):
         """When no profile.json exists, get_active_formation falls back to app_project."""
-        from pathlib import Path
 
         from navig.formations.loader import (
             clear_formations_roots,
@@ -325,7 +344,7 @@ class TestDiscovery:
         )
 
         # Point formation roots at the real built-in formations
-        builtin = Path(__file__).parent.parent.parent / "store" / "formations"
+        builtin = _builtin_formations_dir()
         if not builtin.exists():
             pytest.skip("Built-in formations dir not found")
 
@@ -340,7 +359,6 @@ class TestDiscovery:
 
     def test_fallback_on_unknown_profile(self, tmp_path):
         """When profile references unknown formation, falls back to app_project."""
-        from pathlib import Path
 
         from navig.formations.loader import (
             clear_formations_roots,
@@ -348,7 +366,7 @@ class TestDiscovery:
             set_formations_roots,
         )
 
-        builtin = Path(__file__).parent.parent.parent / "store" / "formations"
+        builtin = _builtin_formations_dir()
         if not builtin.exists():
             pytest.skip("Built-in formations dir not found")
 
@@ -377,7 +395,7 @@ class TestDiscovery:
 class TestBuiltinFormations:
     """Validate the 4 built-in formations shipped with NAVIG."""
 
-    FORMATIONS_DIR = Path(__file__).parent.parent.parent / "store" / "formations"
+    FORMATIONS_DIR = _builtin_formations_dir()
 
     @pytest.mark.parametrize(
         "formation_id,expected_agents",

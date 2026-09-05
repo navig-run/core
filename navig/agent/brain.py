@@ -170,18 +170,18 @@ You can generate new automation at runtime:
 - `navig evolve fix app.py "Fix the validation bug"` - Fix code with AI
 
 Workflow Management:
-- `navig workflow list` - List available workflows
-- `navig workflow run <name>` - Execute a workflow
-- `navig workflow run <name> --var key=value` - Execute with variables
+- `navig flow list` - List available workflows
+- `navig flow run <name>` - Execute a workflow
+- `navig flow run <name> --var key=value` - Execute with variables
 
 Script Management:
 - `navig script list` - List scripts
 - `navig script run <name>` - Execute a script
 
 When asked to automate tasks:
-1. Check if a workflow already exists with `navig workflow list`
+1. Check if a workflow already exists with `navig flow list`
 2. If not, generate one with `navig evolve workflow "description"`
-3. Run it with `navig workflow run <name>`
+3. Run it with `navig flow run <name>`
 
 Guidelines:
 - Prioritize system stability and user productivity
@@ -352,16 +352,38 @@ Guidelines:
         if not self._ai_client:
             return None
 
-        # Get system prompt - prioritize Soul's personality-enhanced prompt
-        system_prompt = self.DEFAULT_SYSTEM_PROMPT
+        # Get system prompt - prioritize Soul's personality-enhanced prompt.
+        #
+        # THREE branches reach a system prompt here and only the first used to carry
+        # the guardrail floor. `Soul.get_system_prompt()` emits the floor itself and
+        # can never return it empty, so that branch was fine — but the other two
+        # (`DEFAULT_SYSTEM_PROMPT` alone, and an operator-authored
+        # `personality.system_prompt`) emitted no boundaries at all, and this Brain
+        # ACTS: `navig agent start` -> runner -> Brain -> _query_ai.
+        #
+        # In production `runner.py` calls `set_soul()` immediately after constructing
+        # the Brain, so branch 1 is what actually runs today. That is exactly the
+        # problem worth removing: the floor's presence depended on ONE line in ONE
+        # caller, `Brain` is exported from `navig.agent`, and nothing asserted the
+        # dependency. Floor the fallbacks so the guarantee holds by construction
+        # rather than by a chain someone has to keep intact.
+        from navig.agent.conv.guardrails import guardrail_block  # noqa: PLC0415
+
+        system_prompt = f"{guardrail_block()}\n\n{self.DEFAULT_SYSTEM_PROMPT}"
 
         if self._soul:
-            # Use Soul's system prompt which includes SOUL.md if present
+            # Use Soul's system prompt which includes SOUL.md if present. It is
+            # already floor-first and demotes the identity beneath it, so it is used
+            # as-is — prefixing again would emit the floor twice.
             soul_prompt = self._soul.get_system_prompt()
             if soul_prompt:
                 system_prompt = f"{self.DEFAULT_SYSTEM_PROMPT}\n\n{soul_prompt}"
         elif self.agent_config and self.agent_config.personality.system_prompt:
-            system_prompt = self.agent_config.personality.system_prompt
+            # Operator-authored text — the "identity a user can write" the floor
+            # exists to survive, so the floor goes FIRST and the identity after it.
+            system_prompt = (
+                f"{guardrail_block()}\n\n{self.agent_config.personality.system_prompt}"
+            )
 
         full_prompt = f"{context}\n\nUser: {prompt}"
 

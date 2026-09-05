@@ -4,8 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from navig.deploy.health import HealthChecker
 from navig.deploy.models import HealthConfig
 

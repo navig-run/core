@@ -14,7 +14,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # navig/permissions/rules.py — RuleAction, PermissionRule
 # ---------------------------------------------------------------------------
-from navig.permissions.rules import PermissionDecision, PermissionRule, RuleAction
+from navig.permissions.rules import PermissionRule, RuleAction
 
 
 class TestRuleAction:

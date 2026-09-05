@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import warnings
 from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -386,9 +386,9 @@ class TestValidateGlobalConfig:
         if not cs.PYDANTIC_AVAILABLE:
             pytest.skip("pydantic not installed")
         result = cs.validate_global_config({"execution": {"mode": "not-valid-mode"}})
-        # Either succeeds (coerces) or returns None (invalid but non-strict)
-        # Either way should not raise
-        assert result is None or result is not None
+        # Was `result is None or result is not None` -- true for every value, so the
+        # "returns none on invalid" in the name went unchecked. Measured: it returns None.
+        assert result is None
 
     def test_valid_empty_config(self):
         from navig.core import config_schema as cs
@@ -430,29 +430,32 @@ class TestValidateHostConfig:
         from navig.core import config_schema as cs
         if not cs.PYDANTIC_AVAILABLE:
             pytest.skip("pydantic not installed")
-        # Use non-strict so missing required fields return None instead of raising
+        # Two defects: the assertion was true for every value, and the keys were
+        # "host"/"user" -- not the schema's field names -- so this "valid minimal host"
+        # was actually an INVALID one returning None. Correct keys, and assert the model.
         result = cs.validate_host_config({
-            "host": "192.168.1.1",
-            "user": "admin",
+            "hostname": "192.168.1.1",
+            "username": "admin",
         }, strict=False)
-        # Should either succeed or return None (not raise)
-        assert result is None or result is not None
+        assert result is not None, "a minimal valid host config should validate"
 
     def test_password_auth_without_password_raises_strict(self):
         from navig.core import config_schema as cs
         if not cs.PYDANTIC_AVAILABLE:
             pytest.skip("pydantic not installed")
+        # Two defects: the try/except swallowed everything with no assertion, so this could
+        # not fail; and the keys were "host"/"user", which are not the schema's field names,
+        # so the raise it did get was "hostname: Field required" -- the test passed
+        # identically with `auth_method` deleted, i.e. it never exercised the password rule
+        # it is named for. Correct keys + pytest.raises makes it test its own premise.
         config = {
-            "host": "192.168.1.1",
-            "user": "admin",
+            "hostname": "192.168.1.1",
+            "username": "admin",
             "auth_method": "password",
             # no password field
         }
-        try:
-            result = cs.validate_host_config(config, strict=True)
-            # Some versions may raise; others may return None
-        except Exception:
-            pass  # expected in strict mode
+        with pytest.raises(cs.ConfigValidationError):
+            cs.validate_host_config(config, strict=True)
 
 
 # ---------------------------------------------------------------------------

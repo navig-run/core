@@ -28,6 +28,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from navig.core.coerce import coerce_bool
 from navig.platform.paths import config_dir
 
 logger = logging.getLogger("navig.cost_tracker")
@@ -127,7 +128,7 @@ class SessionCostTracker:
             cache_read_tokens: Prompt-cache read tokens (billed at reduced rate).
             api_duration_s:    Wall-clock seconds spent waiting for the API.
         """
-        if not self._cfg.get("enabled", True):
+        if not coerce_bool(self._cfg.get("enabled", True), default=True):
             return
 
         pricing = self._get_pricing(model)
@@ -207,7 +208,7 @@ class SessionCostTracker:
         Creates the file and parent directory if absent.
         Rotates (keeps last ``history_keep`` entries) automatically.
         """
-        if not self._cfg.get("persist", True):
+        if not coerce_bool(self._cfg.get("persist", True), default=True):
             return
 
         snapshot = self._build_snapshot()
@@ -383,7 +384,7 @@ def get_session_tracker() -> SessionCostTracker:
             return _active_tracker
 
         cfg = _load_tracker_config()
-        if not cfg.get("enabled", True):
+        if not coerce_bool(cfg.get("enabled", True), default=True):
             # Disabled — return a no-op tracker so call-sites never branch.
             tracker = SessionCostTracker(
                 session_id="disabled",

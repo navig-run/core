@@ -4,6 +4,8 @@ import fnmatch
 from dataclasses import dataclass, field
 from enum import Enum
 
+from navig.core.coerce import coerce_bool
+
 
 class ApprovalLevel(Enum):
     """Command approval levels."""
@@ -125,7 +127,7 @@ class ApprovalPolicy:
         auto_evolve_cfg = approval_cfg.get("auto_evolve", {})
 
         return cls(
-            enabled=approval_cfg.get("enabled", True),
+            enabled=coerce_bool(approval_cfg.get("enabled", True), default=True),
             timeout_seconds=approval_cfg.get("timeout_seconds", 120),
             default_action=approval_cfg.get("default_action", "deny"),
             safe_patterns=levels.get("safe", DEFAULT_SAFE_PATTERNS.copy()),
@@ -133,7 +135,7 @@ class ApprovalPolicy:
             dangerous_patterns=levels.get("dangerous", DEFAULT_DANGEROUS_PATTERNS.copy()),
             never_patterns=levels.get("never", DEFAULT_NEVER_PATTERNS.copy()),
             auto_approve_users=channels.get("auto_approve_users", []),
-            auto_evolve_enabled=auto_evolve_cfg.get("enabled", False),
+            auto_evolve_enabled=coerce_bool(auto_evolve_cfg.get("enabled", False), default=False),
             auto_evolve_whitelist=auto_evolve_cfg.get(
                 "whitelist", DEFAULT_AUTO_EVOLVE_WHITELIST.copy()
             ),

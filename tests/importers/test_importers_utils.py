@@ -5,11 +5,8 @@ Covers platform detection helpers, env_path, and browser default path functions.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 import navig.importers.utils as utils_mod
 from navig.importers.utils import (

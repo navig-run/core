@@ -31,6 +31,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from navig.core.json_io import safe_json_loads
 from navig.store.base import BaseStore, _utcnow
 
 logger = logging.getLogger(__name__)
@@ -98,8 +99,10 @@ class GeneratedMediaStore(BaseStore):
             "provider": row["provider"] or "",
             "model": row["model"],
             "seed": row["seed"],
-            "params": json.loads(row["params_json"] or "{}"),
-            "context": json.loads(row["context_json"] or "{}"),
+            # safe_json_loads: this mapper runs inside `[_row_to_dict(r) for r in rows]`,
+            # so one corrupt blob would take out the whole media listing.
+            "params": safe_json_loads(row["params_json"], {}),
+            "context": safe_json_loads(row["context_json"], {}),
             "path": row["path"],
             "space": row["space"],
             "license": row["license"] if "license" in row.keys() else None,

@@ -1,8 +1,6 @@
 """Unit tests for messaging/adapters/discord_adapter.py and whatsapp_cloud.py."""
 from __future__ import annotations
 
-import pytest
-
 from navig.messaging.adapters.discord_adapter import (
     DISCORD_AVAILABLE,
     DiscordMessagingAdapter,

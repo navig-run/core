@@ -134,7 +134,12 @@ class MatrixHitLChannel(HitLChannel):
             # Upload screenshot if given
             if screenshot_path and Path(screenshot_path).exists():
                 await bot.upload_file(self._room_id, screenshot_path, body="📸 Task Screenshot")
-            await bot.send_message(self._room_id, f"🤖 NAVIG\n\n{message}")
+            # None is this bot's failure signal, not an exception — `is_running`
+            # above only proves it started, not that the send landed.
+            if not await bot.send_message(self._room_id, f"🤖 NAVIG\n\n{message}"):
+                logger.warning("Matrix notify NOT delivered: the bot returned no event id")
+                self.record_failure()
+                return False
             self.record_success()
             return True
         except Exception as exc:
@@ -168,10 +173,17 @@ class MatrixHitLChannel(HitLChannel):
                     f.set_result(body.strip())
 
             bot.on_message(_on_reply)
-            await bot.send_message(
+            sent = await bot.send_message(
                 self._room_id,
                 f"⏸️ NAVIG (ref:{corr})\n\n{question}\n\n_Reply to this message with your answer_",
             )
+            if not sent:
+                # Nobody was asked, so nobody will answer. Waiting the full timeout
+                # here made an undelivered question indistinguishable from an ignored
+                # one — and the router would sit on it before trying the next channel.
+                logger.warning("Matrix ask NOT delivered: the bot returned no event id")
+                self.record_failure()
+                return ""
             reply = await asyncio.wait_for(future, timeout=timeout)
             self.record_success()
             return reply
@@ -308,26 +320,40 @@ class SMSHitLChannel(HitLChannel):
     async def notify(self, message: str, screenshot_path: str | None = None) -> bool:
         # SMS can't send images; strip screenshot reference
         ok = await self._send_sms(f"NAVIG: {message}")
-        if ok:
-            self.record_success()
-        else:
-            self.record_failure()
+        self._record(ok)
         return ok
 
     async def ask(self, question: str, timeout: int = 300) -> str:
         """Send question via SMS. Cannot auto-receive reply — returns '' (limitation).
         The user's reply would need a Twilio webhook configured to feed back.
         For now: sends SMS and returns '' to signal no reply available.
+
+        The empty return is a REPLY limitation, not a send result — so the send
+        result still has to reach the health counters. Matrix and Telegram record
+        it in both ask() and choose(); SMS discarded it, which is why a Twilio
+        account that rejected every message stayed ``available`` forever and kept
+        reporting ``failures: 0`` in ``comms status``.
         """
-        await self._send_sms(
-            f"NAVIG asks: {question}\n\nReply to your NAVIG dashboard to continue."
+        self._record(
+            await self._send_sms(
+                f"NAVIG asks: {question}\n\nReply to your NAVIG dashboard to continue."
+            )
         )
         return ""  # Can't wait for SMS reply without inbound webhook
 
     async def choose(self, question: str, options: list[str], timeout: int = 300) -> str:
         numbered = " | ".join(f"{i + 1}:{opt}" for i, opt in enumerate(options))
-        await self._send_sms(f"NAVIG: {question} [{numbered}] Reply via dashboard.")
+        self._record(
+            await self._send_sms(f"NAVIG: {question} [{numbered}] Reply via dashboard.")
+        )
         return ""
+
+    def _record(self, ok: bool) -> None:
+        """Feed a send result into the shared consecutive-failure health counter."""
+        if ok:
+            self.record_success()
+        else:
+            self.record_failure()
 
 
 # ─────────────────────────── CommsRouter ─────────────────────────────────────

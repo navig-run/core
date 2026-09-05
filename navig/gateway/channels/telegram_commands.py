@@ -40,6 +40,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.core.aio_subprocess import communicate_or_kill
+from navig.core.background import spawn
 from navig.core.yaml_io import atomic_write_text
 from navig.gateway.channels.types import MessageMetadata
 from navig.gateway.channels.utils.decorators import (
@@ -47,7 +49,7 @@ from navig.gateway.channels.utils.decorators import (
     rate_limited,
     typing_context,
 )
-from navig.platform.paths import config_dir, global_config_path, msg_trace_path
+from navig.platform.paths import global_config_path, msg_trace_path
 from navig.ui.icons import icon as _ni
 
 logger = logging.getLogger(__name__)
@@ -78,8 +80,10 @@ async def _maybe_bind_telegram_to_broker(user_id: int) -> None:
         return
     try:
         from navig.core import Config
+        from navig.core.coerce import coerce_bool
         cfg = Config()
-        if not bool(cfg.get("cloud.enabled", True)):  # default ON
+        # coerce_bool so a stored "false" string (navig config set) reads as disabled.
+        if not coerce_bool(cfg.get("cloud.enabled", True)):  # default ON
             return
 
         # Lighthouse mode: the daemon dials OUT to its own edge worker (the
@@ -202,7 +206,16 @@ except ImportError:
 # Commands that can never be disabled via the Deck UI — disabling them would
 # leave users unable to reach the bot's settings UI. Mirror this set in
 # navig/gateway/deck/routes/social.py (_TELEGRAM_LOCKED_COMMANDS).
-LOCKED_COMMANDS: frozenset[str] = frozenset({"start", "help", "settings", "status"})
+#
+# `extensions` (and its `ext` alias) are locked for the same reason, one level
+# up: /extensions is the switch for every OTHER switch, so if it could be
+# switched off the only route back would be a terminal. It is also claimed by
+# the locked `core` Telegram extension, so it cannot be taken away that way
+# either — both halves are pinned by
+# core/tests/quality/test_telegram_extension_coverage.py.
+LOCKED_COMMANDS: frozenset[str] = frozenset(
+    {"start", "help", "settings", "status", "extensions", "ext"}
+)
 
 
 def get_command_style(command: str, default: str = "plain") -> str:
@@ -260,6 +273,41 @@ def get_disabled_commands() -> set[str]:
         return set()
 
 
+def command_is_live(command: str, category: str | None = None) -> bool:
+    """True when a command should be OFFERED to the user.
+
+    THE predicate every "should this appear?" surface calls — setMyCommands, the
+    ``/help`` text, the Help Encyclopedia and its command detail cards. It folds
+    BOTH switches together on purpose:
+
+    * ``telegram.disabled_commands`` — the per-command toggle (Deck → Commands)
+    * the Telegram Extensions gate — the per-feature toggle (/extensions)
+
+    Keeping them in one predicate is the point. Before this, ``/help`` filtered
+    on NEITHER, so a command switched off in the Deck was still advertised; two
+    separate checks at four call sites is how that happens again.
+
+    Locked commands (``/start``, ``/help``, ``/status``, ``/extensions`` …) are
+    always live. Never raises — on any error the command stays visible.
+    """
+    name = command.lstrip("/").strip().lower()
+    if name in LOCKED_COMMANDS:
+        return True
+    try:
+        if name in get_disabled_commands():
+            return False
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from navig.gateway.channels.telegram_extensions import (  # noqa: PLC0415
+            command_enabled,
+        )
+
+        return command_enabled(name, category)
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def _format_bridge_status(online: bool, url: str) -> str:
     """Return a single HTML line describing Bridge Grid status."""
     _url = html.escape(url)
@@ -299,6 +347,51 @@ class SlashCommandEntry:
 _SLASH_REGISTRY: list[SlashCommandEntry] = [
     # --- Core ----------------------------------------------------------------
     SlashCommandEntry("start", "Wake up greeting", handler="_handle_start", category="core"),
+    # Extensions — the switch for every other switch. LOCKED (see LOCKED_COMMANDS)
+    # and owned by the locked `core` Telegram extension, so neither the Deck's
+    # per-command toggle nor an extension toggle can take it away.
+    SlashCommandEntry(
+        "extensions",
+        "Turn bot features on or off",
+        handler="_handle_extensions",
+        category="core",
+        usage="/extensions",
+    ),
+    SlashCommandEntry(
+        "ext",
+        "Turn bot features on or off",
+        handler="_handle_extensions",
+        category="core",
+        visible=False,  # hidden alias — one entry in autocomplete is enough
+    ),
+    # ── Mesh control (TelegramMeshMixin) ──────────────────────────────────────
+    # These four handlers existed, complete and tested, with no registry entry and no
+    # dispatcher path — /nodes, /leader, /mesh and /switch were code and nothing else.
+    # The handlers live on TelegramMeshMixin, which TelegramChannel does not inherit;
+    # the dispatcher resolves them by name against that mixin (see telegram.py).
+    SlashCommandEntry(
+        "nodes", "List mesh peers — role, load, capabilities",
+        handler="_handle_mesh_nodes", category="mesh",
+    ),
+    SlashCommandEntry(
+        "leader", "Show which mesh node is currently leader",
+        handler="_handle_mesh_leader", category="mesh",
+    ),
+    SlashCommandEntry(
+        "mesh", "Mesh mode on/off, or current status",
+        handler="_handle_mesh_toggle", category="mesh", usage="/mesh [on|off|status]",
+    ),
+    SlashCommandEntry(
+        "switch", "Hand leadership to another node",
+        handler="_handle_mesh_switch", category="mesh", usage="/switch [host]",
+    ),
+    SlashCommandEntry(
+        "lang",
+        "Set the output language (transcripts, briefings) — /lang auto to follow the content",
+        handler="_handle_lang",
+        category="core",
+        usage="/lang [Russian|English|auto]",
+    ),
     SlashCommandEntry(
         "help",
         "Full command reference",
@@ -715,6 +808,21 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="diagnostics",
         usage="/autoheal [on|off|status|hive on|hive off]",
     ),
+    # --- Habits ---------------------------------------------------------------
+    # The tracker lives on the phone: the cards arrive here, the taps land here.
+    # Leaving `stats` and `pause` CLI-only meant the two things you reach for while
+    # holding the phone — "how am I doing?" and "stop for a week" — required a
+    # terminal. The second one matters most: without a pause button the reminders
+    # get muted in Telegram instead, and a muted reminder is indistinguishable from
+    # a broken one.
+    SlashCommandEntry(
+        "stats", "Habit progress — streaks, complete days, which weekday you lose",
+        handler="_handle_habit_stats", category="habits", usage="/stats [7|14|all]",
+    ),
+    SlashCommandEntry(
+        "card", "Send today's check-in card now",
+        handler="_handle_habit_card", category="habits",
+    ),
     # --- Bot Identity ---
     SlashCommandEntry("about", "Learn about NAVIG", handler="_handle_about", category="core"),
     SlashCommandEntry(
@@ -841,7 +949,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     SlashCommandEntry(
         "habits",
-        "Show active habit reminders",
+        "Habit reminders — pause or resume any of them",
         handler="_handle_habits",
         category="utilities",
     ),
@@ -1142,6 +1250,36 @@ def _ensure_help_cmd_index() -> dict[str, SlashCommandEntry]:
     return _HELP_CMD_INDEX
 
 
+def _live_help_commands(names: list[str] | None) -> list[str]:
+    """Filter a Help Encyclopedia command list down to what the user can run.
+
+    Resolves each name through the registry so the extension gate sees the real
+    ``category``. A name with no registry entry is KEPT — the encyclopedia is
+    already known to drift from ``_SLASH_REGISTRY`` (the coverage guard reports
+    it), and silently hiding an entry here would disguise that drift as a
+    working toggle.
+    """
+    if not names:
+        return []
+    idx = _ensure_help_cmd_index()
+    out: list[str] = []
+    for name in names:
+        entry = idx.get(name.lower())
+        if entry is None or command_is_live(entry.command, entry.category):
+            out.append(name)
+    return out
+
+
+def _help_category_has_live_commands(cat: "_HelpCategory") -> bool:
+    """True when a help category still has at least one runnable command."""
+    if _live_help_commands(cat.commands):
+        return True
+    for sub in cat.subcategories or []:
+        if _live_help_commands(sub.commands):
+            return True
+    return False
+
+
 class TelegramCommandsMixin:
     _NL_SWITCH_VERBS: tuple[str, ...] = (
         "switch",
@@ -1384,10 +1522,11 @@ class TelegramCommandsMixin:
             return
 
         if screen_name == "briefing":
-            try:
-                from navig.gateway.media import MessageMetadata
-            except ImportError:
-                MessageMetadata = dict  # type: ignore[misc,assignment]
+            # `navig.gateway.channels.types` — `navig.gateway.media` has never existed, so
+            # the fallback below was taken on every call. Harmless in effect (MessageMetadata
+            # is a TypedDict, so `MessageMetadata()` and `dict()` are both `{}`), but it made
+            # a dead import look like a supported optional one.
+            from navig.gateway.channels.types import MessageMetadata
             await self._handle_briefing(
                 chat_id=chat_id, user_id=user_id, metadata=MessageMetadata()
             )
@@ -1472,11 +1611,10 @@ class TelegramCommandsMixin:
         Excludes any command whose name appears in telegram.disabled_commands so
         disabled commands vanish from Telegram's autocomplete on next register.
         """
-        disabled = get_disabled_commands()
         return [
             {"command": e.command, "description": e.description}
             for e in _iter_unique_registry(visible_only=True)
-            if e.command.lower() not in disabled
+            if command_is_live(e.command, e.category)
         ]
 
     @staticmethod
@@ -1497,6 +1635,11 @@ class TelegramCommandsMixin:
         grouped: dict[str, list[SlashCommandEntry]] = {}
         for entry in _iter_unique_registry(visible_only=True):
             if entry.command == "deck" and not deck_enabled:
+                continue
+            # Never advertise a command the user cannot run. Before this, /help
+            # filtered on NOTHING — not even telegram.disabled_commands — so a
+            # command switched off in the Deck was still listed here.
+            if not command_is_live(entry.command, entry.category):
                 continue
             grouped.setdefault(entry.category, []).append(entry)
 
@@ -1688,10 +1831,13 @@ class TelegramCommandsMixin:
         ]
         text = "\n".join(lines)
 
-        # 2 buttons per row
+        # 2 buttons per row. A category whose every command is switched off is
+        # omitted — a button leading to an empty screen is worse than no button.
         rows: list[list[dict[str, str]]] = []
         row: list[dict[str, str]] = []
         for cat in _HELP_CATEGORIES:
+            if not _help_category_has_live_commands(cat):
+                continue
             row.append(
                 {
                     "text": f"{cat.emoji} {cat.label}",
@@ -1705,6 +1851,9 @@ class TelegramCommandsMixin:
             rows.append(row)
         # Reply-keyword actions (translate / summarize / music / … — not slash commands)
         rows.append([{"text": "🎛 Reply keywords", "callback_data": "help:t"}])
+        # The switch for every other switch — how a user learns their /help list
+        # is shorter than someone else's.
+        rows.append([{"text": "🧩 Extensions", "callback_data": "xt:r"}])
         # Close button
         rows.append([{"text": "✕ Close", "callback_data": "help:close"}])
         return text, rows
@@ -1725,6 +1874,11 @@ class TelegramCommandsMixin:
         cat = next((c for c in _HELP_CATEGORIES if c.key == cat_key), None)
         if cat is None:
             return None
+        # Every command in it is switched off — treat as absent, so a stale
+        # button from an older card lands on "not found" rather than an empty
+        # screen that looks broken.
+        if not _help_category_has_live_commands(cat):
+            return None
 
         idx = _ensure_help_cmd_index()
 
@@ -1737,6 +1891,8 @@ class TelegramCommandsMixin:
             ]
             rows: list[list[dict[str, str]]] = []
             for sub in cat.subcategories:
+                if not _live_help_commands(sub.commands):
+                    continue
                 rows.append(
                     [
                         {
@@ -1754,7 +1910,7 @@ class TelegramCommandsMixin:
             return "\n".join(lines), rows
 
         # -- Category with direct commands ---------------------------------
-        cmds = cat.commands or []
+        cmds = _live_help_commands(cat.commands)
         lines = [
             f"{cat.emoji}  <b>{cat.label}</b>",
             "",
@@ -1803,6 +1959,9 @@ class TelegramCommandsMixin:
         sub = next((s for s in cat.subcategories if s.key == sub_key), None)
         if sub is None:
             return None
+        live = _live_help_commands(sub.commands)
+        if not live:
+            return None
 
         idx = _ensure_help_cmd_index()
         # HTML: no escape needed — use element tags instead
@@ -1812,7 +1971,7 @@ class TelegramCommandsMixin:
             f"<i>{cat.emoji} {cat.label}</i>",
             "",
         ]
-        for cmd_name in sub.commands:
+        for cmd_name in live:
             entry = idx.get(cmd_name)
             if entry:
                 import html as _html
@@ -1824,7 +1983,7 @@ class TelegramCommandsMixin:
 
         rows: list[list[dict[str, str]]] = []
         row: list[dict[str, str]] = []
-        for cmd_name in sub.commands:
+        for cmd_name in live:
             if idx.get(cmd_name):
                 row.append(
                     {
@@ -1855,6 +2014,10 @@ class TelegramCommandsMixin:
         idx = _ensure_help_cmd_index()
         entry = idx.get(cmd_name)
         if entry is None:
+            return None
+        # A stale detail button for a command whose extension is now off lands on
+        # "not found" rather than a page describing something that will not run.
+        if not command_is_live(entry.command, entry.category):
             return None
 
         import html as _html
@@ -1967,6 +2130,53 @@ class TelegramCommandsMixin:
     async def _handle_ping(self, chat_id: int, **_: Any) -> None:
         """Minimal alive heartbeat (/ping). Use /status for full diagnostics."""
         await self.send_message(chat_id, "🏓 <b>pong</b> — NAVIG is live", parse_mode="HTML")
+
+    # ── Habits: the tracker, reachable from the phone it already lives on ──────
+
+    async def _handle_habit_stats(self, chat_id: int, text: str = "", **_: Any) -> None:
+        """Habit progress in chat (/stats [7|14|all])."""
+        from datetime import date as _date
+
+        from navig.spaces import habit_tracker
+        from navig.telegram import habit_actions
+
+        arg = (text or "").split(" ", 1)[1].strip().lower() if " " in (text or "") else ""
+        days = 0 if arg in ("all", "0") else (int(arg) if arg.isdigit() else 7)
+
+        body, keyboard = habit_actions.build_stats(
+            habit_tracker.resolve_target(chat_id), _date.today(), days
+        )
+        await self.send_message(chat_id, body, parse_mode="HTML", keyboard=keyboard)
+
+    async def _handle_habit_card(self, chat_id: int, **_: Any) -> None:
+        """Send today's check-in card on demand (/card).
+
+        The scheduled cards are the system; this is for the moment you have just
+        done something and want to mark it while it is true, rather than waiting
+        for 22:15 and trying to remember.
+        """
+        from datetime import date as _date
+
+        from navig.spaces import habit_tracker
+        from navig.telegram import habit_actions
+
+        path = habit_tracker.resolve_target(chat_id)
+        day = _date.today().isoformat()
+        body, keyboard = habit_actions.build_card(path, day)
+        sent = await self._api_call(
+            "sendMessage",
+            {
+                "chat_id": chat_id,
+                "text": body,
+                "parse_mode": "HTML",
+                "reply_markup": keyboard,
+            },
+        )
+        # Remember it, or the end-of-day close would edit an older card and this
+        # one would keep live buttons on a day that is already settled.
+        habit_tracker.remember_target(
+            chat_id, path, message_id=((sent or {}).get("result") or {}).get("message_id"), day=day
+        )
 
     async def _handle_status(
         self,
@@ -2974,6 +3184,10 @@ class TelegramCommandsMixin:
 
         for entry in _iter_unique_registry(visible_only=True):
             command = entry.command
+            # Never SUGGEST a command the user cannot run — a natural-language
+            # hint pointing at a switched-off feature is worse than no hint.
+            if not command_is_live(command, entry.category):
+                continue
             usage = entry.usage or f"/{command}"
             phrases = {command, command.replace("_", " ")}
             phrases.update(alias_map.get(command, ()))
@@ -3236,7 +3450,7 @@ class TelegramCommandsMixin:
                     ]
                 ],
             )
-            asyncio.create_task(
+            spawn(
                 self._execute_nl_pending_after_delay(
                     chat_id=chat_id,
                     user_id=user_id,
@@ -3444,6 +3658,70 @@ class TelegramCommandsMixin:
 
         return True
 
+    async def _handle_pending_journal_input(
+        self,
+        chat_id: int,
+        text: str,
+        reply_to_message_id: int | None,
+        dictated: bool = False,
+    ) -> bool:
+        """Capture the three lines owed to the journal after the day was closed.
+
+        ``dictated`` marks a reply that arrived as a voice note — by then *text*
+        is already the transcript, because the voice pipeline transcribes and
+        falls through to this chain.
+
+        Consumed ONLY when the message is a reply to the prompt the closing card
+        sent. That is deliberately strict: the alternative — treating any message
+        from a chat with an open prompt as the entry — would silently swallow an
+        ordinary question into a file instead of answering it, and the owner would
+        have no way to tell which happened.
+
+        Returns True when the message was consumed.
+        """
+        if not text or not reply_to_message_id:
+            return False
+
+        from navig.spaces import habit_tracker
+
+        day, prompt_id = habit_tracker.journal_prompt(chat_id)
+        if not day or not prompt_id or reply_to_message_id != prompt_id:
+            return False
+
+        if text.strip().lower() in {"skip", "cancel", "stop", "no", "-"}:
+            habit_tracker.clear_journal_prompt(chat_id)
+            await self.send_message(
+                chat_id,
+                f"Fine — {day} stays without the three lines. The marks are already saved.",
+                parse_mode=None,
+            )
+            return True
+
+        from navig.spaces import journal
+
+        tracker = habit_tracker.resolve_target(chat_id)
+        try:
+            path, written = journal.append_entry(tracker, day, text, dictated=dictated)
+        except OSError as exc:
+            logger.warning("journal write failed (chat=%s): %s", chat_id, exc)
+            await self.send_message(
+                chat_id,
+                "⚠️ Could not write the journal file. The three lines are still in this chat.",
+                parse_mode=None,
+            )
+            return True
+
+        habit_tracker.clear_journal_prompt(chat_id)
+        # The confirmation names the file. "Saved" alone is unverifiable, and this
+        # is a system whose whole point is that the record exists on disk.
+        note = "Written to" if written else "Already in"
+        await self.send_message(
+            chat_id,
+            f"✅ {note} journal/{path.name}. The day is recorded.",
+            parse_mode=None,
+        )
+        return True
+
     async def _handle_eve_pending_reply(self, chat_id: int, user_id: int, text: str) -> bool:
         """Capture user replies to eve:log_shipped and eve:plan_tomorrow prompts.
 
@@ -3466,11 +3744,24 @@ class TelegramCommandsMixin:
 
         if lowered in {"cancel", "skip", "no", "stop"}:
             context["eve_pending"] = {"active": False}
-            store.set_ai_state(user_id=user_id, channel="telegram", chat_id=str(chat_id), context=context)
+            # No `channel` parameter, and `mode` is REQUIRED — this raised TypeError, and
+            # unlike the keyboards sites it is not inside a try, so the evening-log reply
+            # crashed outright. `persona` is passed because the UPSERT does
+            # `persona = excluded.persona`: omitting it would erase the user's persona.
+            store.set_ai_state(
+                user_id=user_id,
+                chat_id=chat_id,
+                mode=state.get("mode") or "active",
+                persona=state.get("persona") or "assistant",
+                context=context,
+            )
             await self.send_message(chat_id, "👌 Skipped.", parse_mode=None)
             return True
 
-        # Persist the captured text
+        # Persist the captured text. A save that did not happen must NOT come back
+        # as a checkmark: `_save` used to swallow its own failure, so the reply said
+        # "✅ Logged: <what you typed>" for an entry that was never written — and the
+        # morning reminder then had nothing to show. It raises now, and this reports it.
         try:
             from navig.agent.proactive.eve_log import save_priority, save_shipped
 
@@ -3486,11 +3777,24 @@ class TelegramCommandsMixin:
             else:
                 confirm = "✅ Noted."
         except Exception as exc:
-            logger.debug("eve_pending save failed: %s", exc)
-            confirm = "✅ Noted."
+            logger.warning("eve_pending save failed: %s", exc)
+            # Echo the text back: it is the only copy left, and the operator can
+            # retype it somewhere that persists rather than lose the day's entry.
+            confirm = (
+                "⚠️ <b>Couldn't save that</b> — the evening log wasn't written.\n\n"
+                # User text into an HTML-parsed message — escape it.
+                f"<i>{html.escape(text.strip())}</i>\n\n"
+                "Try again in a moment; if it keeps failing, check <code>navig doctor</code>."
+            )
 
         context["eve_pending"] = {"active": False}
-        store.set_ai_state(user_id=user_id, channel="telegram", chat_id=str(chat_id), context=context)
+        store.set_ai_state(
+            user_id=user_id,
+            chat_id=chat_id,
+            mode=state.get("mode") or "active",
+            persona=state.get("persona") or "assistant",
+            context=context,
+        )
         await self.send_message(chat_id, confirm, parse_mode="HTML")
         return True
 
@@ -3771,6 +4075,89 @@ class TelegramCommandsMixin:
 
         await self.send_message(chat_id, fm.confirmation, parse_mode=None)
 
+    async def _handle_lang(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+    ) -> None:
+        """Set the global output language — ``user.language`` — from chat.
+
+        Exists because the model was already answering ``/lang Russian`` with a
+        cheerful "Язык переключён на русский" and writing **nothing**: an
+        unregistered slash command falls through to the agent, which has no way
+        to change configuration but every incentive to sound like it did. A
+        confirmation the operator cannot distinguish from a real one is worse
+        than an error, so this command performs the write and reports the value
+        it read back.
+        """
+        from navig.core.language import CFG_LANGUAGE, normalise_language
+
+        raw = (text or "").strip()
+        # Strip the command token itself (`/lang`, `/lang@botname`).
+        arg = raw.split(" ", 1)[1].strip() if " " in raw else ""
+
+        if not arg:
+            try:
+                from navig.config import ConfigManager
+
+                current = normalise_language(ConfigManager().get(CFG_LANGUAGE, ""))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("/lang read failed: %s", exc)
+                current = None
+            shown = current or "auto (follow the content)"
+            await self.send_message(
+                chat_id,
+                f"🌍 Output language: <b>{html.escape(str(shown))}</b>\n\n"
+                "Change it with <code>/lang Russian</code>, or "
+                "<code>/lang auto</code> to follow whatever the content is.\n"
+                "Applies to transcripts, AI briefings and summaries.",
+                parse_mode="HTML",
+            )
+            return
+
+        value = normalise_language(arg)
+        try:
+            from navig.config import ConfigManager
+
+            cm = ConfigManager()
+            cm.set_global(CFG_LANGUAGE, value or "auto")
+            # Read back rather than echoing what we were handed: a write that
+            # silently failed must not produce a success message.
+            saved = normalise_language(ConfigManager().get(CFG_LANGUAGE, ""))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("/lang could not save the language: %s", exc)
+            await self.send_message(
+                chat_id,
+                "⚠️ Couldn't save the language setting — the config is not writable.",
+                parse_mode=None,
+            )
+            return
+
+        if (saved or None) != (value or None):
+            await self.send_message(
+                chat_id,
+                "⚠️ The language setting did not persist — config reads back as "
+                f"<b>{html.escape(str(saved or 'auto'))}</b>.",
+                parse_mode="HTML",
+            )
+            return
+
+        if saved is None:
+            await self.send_message(
+                chat_id,
+                "🌍 Output language: <b>auto</b> — transcripts and briefings now "
+                "follow the language of the content itself.",
+                parse_mode="HTML",
+            )
+        else:
+            await self.send_message(
+                chat_id,
+                f"🌍 Output language set to <b>{html.escape(saved)}</b>. "
+                "Transcripts, briefings and summaries will use it from now on.",
+                parse_mode="HTML",
+            )
+
     async def _handle_tier_override(
         self,
         chat_id: int,
@@ -3862,19 +4249,20 @@ class TelegramCommandsMixin:
         """Handle /trace + /trace debug on|off from dynamic slash dispatch."""
         trace_arg = text.strip()[len("/trace") :].strip().lower() if text else ""
         if trace_arg in ("debug on", "debug"):
-            self._debug_users.add(user_id)
+            self._set_debug_mode(user_id, True)
             await self.send_message(
                 chat_id,
-                "🔍 Debug mode <b>ON</b> — model names will appear in every response.\n"
+                "🔬 Debug mode <b>ON</b> — every message now shows what NAVIG "
+                "decided, which tools ran, and the tokens/cost, under the reply.\n"
                 "Run <code>/trace debug off</code> to disable.",
                 parse_mode="HTML",
             )
             return
         if trace_arg == "debug off":
-            self._debug_users.discard(user_id)
+            self._set_debug_mode(user_id, False)
             await self.send_message(
                 chat_id,
-                "🔍 Debug mode <b>OFF</b> — model footers hidden.",
+                "🔬 Debug mode <b>OFF</b> — the X-ray is hidden.",
                 parse_mode="HTML",
             )
             return
@@ -6674,8 +7062,20 @@ class TelegramCommandsMixin:
             return
 
         chunks = formatter.convert_chunked(text_arg, prefs)  # text_arg stripped above
-        for chunk in chunks:
-            await self.send_message(chat_id, chunk, parse_mode=None)
+        for i, chunk in enumerate(chunks):
+            # Stop at the first rejection instead of carrying on. Firing N sends
+            # back to back is exactly what earns a 429, and continuing past a
+            # rejected chunk delivers 1, 3, 4 — output that reads as complete and
+            # is missing its middle. A short prefix is visibly cut off.
+            if await self.send_message(chat_id, chunk, parse_mode=None) is None:
+                logger.error(
+                    "/format: reply TRUNCATED — chunk %d of %d was rejected "
+                    "(API retry budget exhausted); %d already delivered.",
+                    i + 1,
+                    len(chunks),
+                    i,
+                )
+                break
 
     async def _handle_think(
         self,
@@ -6791,7 +7191,7 @@ class TelegramCommandsMixin:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.DEVNULL,
                 )
-                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=8)
+                stdout, _ = await communicate_or_kill(proc, 8)
                 public_ip = (stdout or b"").decode().strip()
             except Exception:
                 pass
@@ -6895,7 +7295,7 @@ class TelegramCommandsMixin:
                 "nslookup", "-type=MX", domain,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=8)
+            stdout, _ = await communicate_or_kill(proc, 8)
             out = stdout.decode(errors="replace")
             mx_records: list[tuple[int, str]] = []
             for ln in out.splitlines():
@@ -6919,7 +7319,7 @@ class TelegramCommandsMixin:
                 "nslookup", "-type=TXT", domain,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             )
-            stdout2, _ = await asyncio.wait_for(proc2.communicate(), timeout=8)
+            stdout2, _ = await communicate_or_kill(proc2, 8)
             out2 = stdout2.decode(errors="replace")
             txt_records: list[str] = []
             for ln in out2.splitlines():
@@ -9075,6 +9475,7 @@ class TelegramCommandsMixin:
         username: str,
         metadata: Any,
         is_group: bool,
+        text: str = "",
     ) -> dict[str, Any]:
         """Build the slash-command dispatch table from _SLASH_REGISTRY.
 
@@ -9085,12 +9486,20 @@ class TelegramCommandsMixin:
         """
         import inspect
 
+        # ``text`` MUST be here. Handlers take their argument from it (`/lang
+        # Russian`, `/trace on`), and a context that omits it hands them an empty
+        # string — so a parameterised command would silently act as if it had been
+        # sent bare, which for `/lang Russian` means reporting the current value
+        # instead of setting it. The live dispatcher in TelegramChannel passes it;
+        # this one is currently unwired, and diverging here is how it would come
+        # back the day someone wires it. `test_slash_registry` pins the parity.
         _ctx = {
             "chat_id": chat_id,
             "user_id": user_id,
             "username": username,
             "metadata": metadata,
             "is_group": is_group,
+            "text": text,
         }
         result: dict[str, Any] = {}
         for entry in _SLASH_REGISTRY:
@@ -9632,7 +10041,21 @@ class TelegramCommandsMixin:
                     channel="telegram",
                     user_id=str(user_id or chat_id),
                     message=prompt,
-                    metadata={"system_override": "You are an expert explainer. Be clear, concise, and insightful."},
+                    # NO `system_override` here, and none should be added back.
+                    #
+                    # This used to pass metadata={"system_override": "You are an expert
+                    # explainer..."}. Nothing has ever read that key — it appeared exactly
+                    # ONCE in the whole tree, at this line — so the persona it named never
+                    # applied and `/explain_ai` has always answered in the ordinary agent
+                    # voice. Removing it changes no behaviour: `channel_router.route()`
+                    # does `metadata = metadata or {}` and reads only `user_id`/`group_id`.
+                    #
+                    # It is removed rather than WIRED on purpose. Honouring a
+                    # caller-supplied "replace the system prompt" key would create exactly
+                    # the channel the guardrail floor exists to prevent: a per-message way
+                    # to substitute an identity for the one that carries the boundaries
+                    # (#1119, #1129). The instruction is already carried by `prompt` above,
+                    # in the USER turn, where it cannot displace the floor.
                 )
             if not llm_text:
                 # Minimal fallback: call llm_router directly
@@ -9922,52 +10345,55 @@ class TelegramCommandsMixin:
                 parse_mode=None,
             )
 
-    async def _handle_habits(self, chat_id: int, user_id: int) -> None:
-        """List active habit cron jobs in a formatted Telegram message."""
-        try:
-            # Live scheduler store (the in-process service inside the gateway).
-            from navig.scheduler import habit_store
+    async def _handle_extensions(self, chat_id: int, user_id: int = 0, **_: Any) -> None:
+        """Switch bot features on and off from the phone (/extensions).
 
-            habits = habit_store.list_habit_jobs()
-        except Exception:
+        The switch for every other switch — LOCKED, because if this one could be
+        turned off the only route back would be a terminal.
+        """
+        from navig.telegram import extension_actions
+
+        try:
+            body, keyboard = extension_actions.build_list()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("/extensions could not read the module registry: %s", exc)
+            await self.send_message(chat_id, "⚠️ Could not read the extension list.")
+            return
+        # `keyboard=`, not `reply_markup=` — send_message's parameter is `keyboard`
+        # and _reply_markup passes an already-built markup dict through unchanged.
+        await self.send_message(chat_id, body, parse_mode="HTML", keyboard=keyboard)
+
+    async def _handle_habits(self, chat_id: int, user_id: int = 0, **_: Any) -> None:
+        """Habit reminders, with a switch on each one (/habits).
+
+        This used to be a read-only list that ended with "Manage: navig habit list"
+        — a screen that shows you a problem and then tells you to go and find a
+        terminal. The reminders arrive on this phone; the switch belongs on it too.
+        Without one they get muted in Telegram instead, and a muted reminder is
+        indistinguishable from a broken one.
+        """
+        from navig.telegram import habit_actions
+
+        try:
+            body, keyboard = habit_actions.build_pause_menu()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("/habits could not read the scheduler: %s", exc)
             await self.send_message(chat_id, "⚠️ Could not read habit data.")
             return
 
-        if not habits:
+        if not keyboard.get("inline_keyboard"):
             await self.send_message(
                 chat_id,
-                "No habits configured yet.\n\nUse <code>navig habit add workout</code> or <code>navig habit templates</code> to see options.",
+                "No habits configured yet.\n\nUse <code>navig habit templates</code> "
+                "to see the options, then <code>navig habit add wake</code>.",
                 parse_mode="HTML",
             )
             return
 
-        lines = ["💪 <b>Active Habits</b>", ""]
-        for j in sorted(habits, key=lambda x: x.get("name", "")):
-            key = j.get("name", "").removeprefix(_HABIT_PREFIX)
-            from navig.spaces.health import get_habit_template as _ght
-            tmpl = _ght(key)
-            emoji = tmpl.emoji if tmpl else "📌"
-            enabled = j.get("enabled", True)
-            status_str = "✅" if enabled else "⏸"
-            schedule = j.get("schedule", "—")
-            next_raw = j.get("next_run", "")
-            try:
-                from datetime import datetime as _dt
-                next_str = _dt.fromisoformat(next_raw).strftime("%a %H:%M")
-            except Exception:
-                next_str = "—"
-            lines.append(f"{status_str} {emoji} <b>{key}</b> — {schedule}\n   Next: {next_str}")
-        lines.append("\n<i>Manage: navig habit list | navig habit add | navig habit remove</i>")
-
-        keyboard = [[
-            {"text": "➕ Add workout", "callback_data": "slash:workout"},
-            {"text": "📋 Reminders", "callback_data": "slash:reminders"},
-        ]]
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+        await self.send_message(chat_id, body, parse_mode="HTML", keyboard=keyboard)
 
     async def _handle_health(self, chat_id: int, user_id: int) -> None:
         """Show health space status: active habits, reminder count, space."""
-        from datetime import datetime as _dt
 
         try:
             from navig.scheduler import habit_store
@@ -9991,7 +10417,16 @@ class TelegramCommandsMixin:
         except Exception:
             space = "personal"
 
-        lines = [
+        # "Active habits: 8" is a lie while the extension is off — the jobs are
+        # scheduled and nothing is delivered. The banner outranks the count.
+        try:
+            from navig.telegram.habit_actions import extension_banner
+
+            _banner = extension_banner()
+        except Exception:  # noqa: BLE001
+            _banner = ""
+
+        lines = ([_banner] if _banner else []) + [
             "🏥 <b>Health Space</b>", "",
             f"💪 Active habits:    <b>{habit_count}</b>",
             f"⏰ Pending reminders: <b>{reminder_count}</b>",
@@ -10013,7 +10448,6 @@ class TelegramCommandsMixin:
         /workout daily 07:30 — create/update recurring workout habit
         """
         import re as _re
-        from datetime import date as _date
         from datetime import datetime as _dt
         from datetime import timedelta as _td
 
@@ -10054,26 +10488,42 @@ class TelegramCommandsMixin:
                 await self.send_message(chat_id, f"⚠️ Could not create habit: {exc}", parse_mode=None)
             return
 
-        # "HH:MM" → one-time reminder for today
+        # "HH:MM" → one-time reminder today (or tomorrow if the time already passed)
         time_match = _re.match(r"^(\d{1,2}):(\d{2})$", arg)
         if time_match:
             h, m = int(time_match.group(1)), int(time_match.group(2))
-            now = _dt.now()
-            remind_at = now.replace(hour=h, minute=m, second=0, microsecond=0)
-            if remind_at <= now:
-                remind_at += _td(days=1)
+            if h > 23 or m > 59:
+                await self.send_message(
+                    chat_id,
+                    "Time must be 24h, e.g. <code>/workout 07:30</code>.",
+                    parse_mode="HTML",
+                )
+                return
+            # Build the time in the server's LOCAL timezone, then store it as UTC. The reminder
+            # poller compares remind_at lexicographically against a UTC-canonical now, so a naive
+            # local time (the old bug) fired off by the server's UTC offset. Mirrors the correct
+            # sibling `_parse_remindme_request`.
+            now_local = _dt.now().astimezone()
+            remind_local = now_local.replace(hour=h, minute=m, second=0, microsecond=0)
+            rolled = remind_local <= now_local
+            if rolled:
+                remind_local += _td(days=1)
+            when_str = remind_local.strftime("%H:%M")  # show the LOCAL time the user entered
 
             from navig.store.runtime import get_runtime_store
             rid = get_runtime_store().create_reminder(
                 user_id=user_id,
                 chat_id=chat_id,
                 message="💪 Time to work out! Consistency beats intensity.",
-                remind_at=remind_at,
+                remind_at=remind_local.astimezone(timezone.utc),
             )
-            when_str = remind_at.strftime("%H:%M")
             await self.send_message(
                 chat_id,
-                f"⏰ Workout reminder set for <b>{when_str}</b> today. (ID: <code>{rid}</code>)\n\nFor recurring: <code>/workout daily {when_str}</code>",
+                (
+                    f"⏰ Workout reminder set for <b>{when_str}</b> "
+                    f"{'tomorrow' if rolled else 'today'}. (ID: <code>{rid}</code>)\n\n"
+                    f"For recurring: <code>/workout daily {when_str}</code>"
+                ),
                 parse_mode="HTML",
             )
             return

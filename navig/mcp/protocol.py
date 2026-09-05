@@ -101,6 +101,12 @@ class MCPTool:
     description: str
     input_schema: dict[str, Any]
     server_id: str
+    #: The server's own ``annotations`` object. Load-bearing, not decorative: it carries
+    #: ``readOnlyHint``, which is what lets a well-behaved server's read run without
+    #: prompting the operator. Dropping it (as this dataclass used to) meant every
+    #: third-party tool looked identical to the approval gate.
+    #: Read ONLY by :mod:`navig.mcp.trust` — see that module's docstring.
+    annotations: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -108,15 +114,18 @@ class MCPTool:
             "description": self.description,
             "inputSchema": self.input_schema,
             "server_id": self.server_id,
+            "annotations": self.annotations,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], server_id: str = "") -> MCPTool:
+        annotations = data.get("annotations")
         return cls(
             name=data["name"],
             description=data.get("description", ""),
             input_schema=data.get("inputSchema", {}),
             server_id=server_id,
+            annotations=annotations if isinstance(annotations, dict) else {},
         )
 
 

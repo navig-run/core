@@ -479,6 +479,64 @@ class TestRemoteTools:
         result = await tool.run({})
         assert result.success is False
 
+    async def test_remote_file_read_path_injection_not_in_local_shell(self):
+        """A `path` with shell metacharacters must never reach the LOCAL shell
+        verbatim: forcing use_b64=False previously interpolated it straight into
+        create_subprocess_shell, so `$(id)` command-substituted on this machine
+        (prompt-injection → local RCE). It must take the safe --b64 path instead."""
+        from navig.agent.tools.remote_tools import RemoteFileReadTool
+
+        proc = _make_proc(stdout="", returncode=0)
+        with patch(
+            "navig.agent.remote_agent.asyncio.create_subprocess_shell", return_value=proc
+        ) as mock_sub:
+            tool = RemoteFileReadTool()
+            await tool.run({"path": "$(id)"})
+            call_cmd = mock_sub.call_args[0][0]
+            assert "$(id)" not in call_cmd  # not interpolated into the local shell
+            assert "--b64" in call_cmd  # took the base64-encoded (safe) path
+
+    async def test_remote_file_read_host_injection_not_in_local_shell(self):
+        """The `host` value was interpolated completely unquoted — a second
+        injection point. It must not reach the local shell verbatim either."""
+        from navig.agent.tools.remote_tools import RemoteFileReadTool
+
+        proc = _make_proc(stdout="", returncode=0)
+        with patch(
+            "navig.agent.remote_agent.asyncio.create_subprocess_shell", return_value=proc
+        ) as mock_sub:
+            tool = RemoteFileReadTool()
+            await tool.run({"path": "/tmp/x", "host": "; touch /tmp/pwned"})
+            call_cmd = mock_sub.call_args[0][0]
+            assert "touch /tmp/pwned" not in call_cmd
+            assert "--b64" in call_cmd
+
+    async def test_remote_file_read_lines_injection_not_in_local_shell(self):
+        from navig.agent.tools.remote_tools import RemoteFileReadTool
+
+        proc = _make_proc(stdout="", returncode=0)
+        with patch(
+            "navig.agent.remote_agent.asyncio.create_subprocess_shell", return_value=proc
+        ) as mock_sub:
+            tool = RemoteFileReadTool()
+            await tool.run({"path": "/tmp/x", "lines": "1; id"})
+            call_cmd = mock_sub.call_args[0][0]
+            assert "; id" not in call_cmd
+            assert "--b64" in call_cmd
+
+    async def test_remote_file_read_benign_path_still_reads(self):
+        """A normal read still works end to end after the hardening."""
+        from navig.agent.tools.remote_tools import RemoteFileReadTool
+
+        proc = _make_proc(stdout="hello", returncode=0)
+        with patch(
+            "navig.agent.remote_agent.asyncio.create_subprocess_shell", return_value=proc
+        ):
+            tool = RemoteFileReadTool()
+            result = await tool.run({"path": "/var/log/app.log"})
+            assert result.success is True
+            assert "hello" in result.output
+
     async def test_remote_host_switch_tool(self):
         from navig.agent.tools.remote_tools import RemoteHostSwitchTool
 

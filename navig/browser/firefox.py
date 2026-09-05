@@ -27,15 +27,18 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from navig.browser._paths import profile_dir
 from navig.debug_logger import get_debug_logger
 
 logger = get_debug_logger()
 
 __all__ = ["FirefoxController", "FirefoxUnavailable", "camoufox_available",
            "camoufox_binary_available", "ensure_camoufox", "ensure_playwright_firefox",
-           "best_login_engine"]
+           "best_login_engine", "camoufox_known_broken", "record_camoufox_incompatible"]
 
-_DEFAULT_PROFILE = "~/.navig/browser/profiles/firefox"
+# Resolved per call, not frozen at import: config_dir() reads NAVIG_CONFIG_DIR live.
+def _default_profile() -> str:
+    return profile_dir("firefox")
 
 
 class FirefoxUnavailable(RuntimeError):
@@ -50,6 +53,70 @@ def camoufox_available() -> bool:
         return True
     except Exception:  # noqa: BLE001
         return False
+
+
+def _engine_versions() -> dict[str, str]:
+    """Installed versions of the two packages whose pairing decides compatibility."""
+    import importlib.metadata as md  # noqa: PLC0415
+
+    out: dict[str, str] = {}
+    for pkg in ("playwright", "camoufox"):
+        try:
+            out[pkg] = md.version(pkg)
+        except Exception:  # noqa: BLE001 - absent is just "unknown", never fatal
+            out[pkg] = ""
+    return out
+
+
+def _camoufox_incompat_file():
+    from navig.platform.paths import config_dir  # noqa: PLC0415
+
+    return config_dir() / "browser" / "camoufox-incompatible.json"
+
+
+def camoufox_known_broken() -> str | None:
+    """Why Camoufox is known to crash with THIS package pairing, or None.
+
+    Camoufox declares an **unpinned** ``playwright`` dependency, so pip is free to
+    install a Playwright whose Juggler protocol does not match the Firefox that
+    Camoufox ships. When they disagree the Node driver dies mid-navigation -
+    observed as ``FFPage._onWebSocketOpened`` asserting, which takes the whole
+    driver process with it and surfaces as "Connection closed while reading from
+    the driver". Measured on the operator's machine: playwright 1.61.0 (Juggler
+    for firefox revision 1532) against Camoufox's Firefox 135.0.1-beta.
+
+    Rather than predict compatibility from a version matrix - fragile, and wrong
+    the moment either project moves - this REMEMBERS a driver-level crash and
+    records the exact pair it happened with. A different version of either package
+    no longer matches, so Camoufox is retried automatically: the suppression
+    cannot outlive the incompatibility that caused it.
+    """
+    try:
+        import json  # noqa: PLC0415
+
+        path = _camoufox_incompat_file()
+        if not path.exists():
+            return None
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        now = _engine_versions()
+        if all(saved.get(k) == v for k, v in now.items()):
+            return str(saved.get("reason") or "a previous run crashed the browser driver")
+    except Exception:  # noqa: BLE001 - a health note must never block a launch
+        pass
+    return None
+
+
+def record_camoufox_incompatible(reason: str) -> None:
+    """Remember that Camoufox crashed the driver with the installed package pair."""
+    try:
+        import json  # noqa: PLC0415
+
+        path = _camoufox_incompat_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {**_engine_versions(), "reason": reason[:300]}
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except Exception:  # noqa: BLE001 - best-effort; the fallback already happened
+        pass
 
 
 def ensure_playwright_firefox() -> None:
@@ -99,8 +166,16 @@ def ensure_camoufox() -> bool:
 def best_login_engine() -> str:
     """The stealthiest Firefox engine available: ``camoufox`` if its package is installed
     (it hides ``navigator.webdriver`` at the C++ level — plain Playwright Firefox cannot),
-    otherwise plain ``firefox``. The Camoufox binary is fetched on first use."""
-    return "camoufox" if camoufox_available() else "firefox"
+    otherwise plain ``firefox``. The Camoufox binary is fetched on first use.
+
+    Skips Camoufox when this exact package pairing has already crashed the driver
+    (:func:`camoufox_known_broken`). Installed-and-importable was the only test
+    before, so an incompatible pair launched a browser that died mid-navigation on
+    **every** login - the operator saw a raw Node stack trace and a fallback each
+    time, and paid the launch for it. The record is keyed to the versions, so an
+    upgrade of either package silently re-enables Camoufox.
+    """
+    return "camoufox" if camoufox_available() and not camoufox_known_broken() else "firefox"
 
 
 def _to_pw_proxy(proxy: str | None) -> dict | None:
@@ -133,7 +208,7 @@ class FirefoxController:
         self.engine_name = "camoufox" if engine == "camoufox" else "firefox"
         self.headless = headless
         self.proxy = proxy
-        self.user_data_dir = user_data_dir or _DEFAULT_PROFILE
+        self.user_data_dir = user_data_dir or _default_profile()
         self.locale = locale
         self.timezone_id = timezone_id
         self.geolocation = geolocation

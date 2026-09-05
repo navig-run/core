@@ -13,7 +13,9 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from navig.core.coerce import coerce_bool
 from navig.core.connection import _resolve_scp_bin, _resolve_ssh_bin
+from navig.core.proc_text import decode_console_result
 
 
 def _resolve_ssh_timeout_seconds(default: int = 30) -> int:
@@ -67,6 +69,7 @@ class RemoteOperations:
         server_config: dict[str, Any],
         capture_output: bool = True,
         trust_new_host: bool = False,
+        timeout: float | None = None,
     ) -> subprocess.CompletedProcess:
         """Execute a command on the remote server via SSH.
 
@@ -76,6 +79,8 @@ class RemoteOperations:
             capture_output: Whether to capture stdout/stderr
             trust_new_host: If True, accepts new SSH host keys (use cautiously!)
                            If False (default), requires host key in known_hosts
+            timeout: Per-call limit in seconds. Defaults to the process-wide
+                     ``NAVIG_SSH_TIMEOUT`` limit when not given.
 
         Security Note:
             By default, StrictHostKeyChecking=yes is used to prevent MITM attacks.
@@ -96,7 +101,9 @@ class RemoteOperations:
         # Local-host bypass: run directly without SSH so there's no dependency
         # on an SSH client being installed, and Windows-native commands work.
         if is_local_host(server_config):
-            return self.execute_local(command, capture_output=capture_output)
+            # Only forward an explicit timeout, so the default call shape is unchanged.
+            extra = {} if timeout is None else {"timeout": timeout}
+            return self.execute_local(command, capture_output=capture_output, **extra)
 
         _ssh_bin = _resolve_ssh_bin()
 
@@ -138,19 +145,29 @@ class RemoteOperations:
 
         # Execute
         # void: every command leaves a trace. in logs. in memory. in bash_history.
+        limit = _SSH_TIMEOUT if timeout is None else timeout
         try:
             if capture_output:
+                # UTF-8, not text=True: the bytes came from the REMOTE host, and the
+                # local ANSI code page has nothing to do with them. Every server navig
+                # targets is UTF-8, which is why the sibling SSH executor
+                # (`core.connection.SSHConnection.run`) already names it; this one
+                # decoded a Linux host's output with cp1251 on a Russian-locale Windows.
+                # errors="replace" covers a legacy remote with an undeclared encoding.
+                # Deliberately NOT decode_console_result: its fallback is the *local*
+                # console page, which is meaningless for output produced elsewhere.
                 result = subprocess.run(
                     ssh_args,
                     capture_output=True,
-                    text=True,
-                    timeout=_SSH_TIMEOUT,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=limit,
                 )
             else:
-                result = subprocess.run(ssh_args, timeout=_SSH_TIMEOUT)
+                result = subprocess.run(ssh_args, timeout=limit)
         except subprocess.TimeoutExpired as _exc:
             raise RuntimeError(
-                f"SSH connection timed out after {_SSH_TIMEOUT}s — "
+                f"SSH connection timed out after {limit}s — "
                 f"'{host}' is unreachable or not responding.\n"
                 f"Tip: set NAVIG_SSH_TIMEOUT=<seconds> to change the limit, "
                 f"or use the IP address instead of a hostname."
@@ -158,27 +175,41 @@ class RemoteOperations:
 
         return result
 
-    def execute_local(self, command: str, capture_output: bool = True) -> subprocess.CompletedProcess:
+    def execute_local(
+        self,
+        command: str,
+        capture_output: bool = True,
+        timeout: float | None = None,
+    ) -> subprocess.CompletedProcess:
         """Execute a command on the *local* machine (no SSH).  Platform-aware.
 
         Uses the platform-native default shell (ComSpec on Windows, /bin/sh on
         POSIX) to avoid hard dependencies on specific shell binaries.
+
+        ``timeout`` defaults to the process-wide ``NAVIG_SSH_TIMEOUT`` limit.
+
+        Captured as BYTES and decoded afterwards rather than with ``text=True``: this runs
+        an arbitrary user command, the shell passes its child's bytes through untouched, and
+        no single codec is right for both a UTF-8-emitting tool and a console tool. See
+        :func:`navig.core.proc_text.decode_console_result`.
         """
+        limit = _SSH_TIMEOUT if timeout is None else timeout
         try:
-            return subprocess.run(  # noqa: S602
-                command,
-                shell=True,
-                capture_output=capture_output,
-                text=True,
-                timeout=_SSH_TIMEOUT,
+            return decode_console_result(
+                subprocess.run(  # noqa: S602
+                    command,
+                    shell=True,
+                    capture_output=capture_output,
+                    timeout=limit,
+                )
             )
         except subprocess.TimeoutExpired as _exc:
-            raise RuntimeError(f"Local command timed out after {_SSH_TIMEOUT}s") from _exc
+            raise RuntimeError(f"Local command timed out after {limit}s") from _exc
 
     def _ssh_base_args(self, server_config: dict[str, Any]) -> list[str]:
         """SSH argv up to ``user@host`` (no command) — mirrors execute_command's
         connection posture so exec-channel transfers behave identically."""
-        if server_config.get("trust_new_host"):
+        if coerce_bool(server_config.get("trust_new_host"), default=False):
             opts = ["-o", "StrictHostKeyChecking=accept-new"]
         else:
             opts = ["-o", "StrictHostKeyChecking=yes"]
@@ -224,7 +255,7 @@ class RemoteOperations:
     ) -> bool:
         """Upload via the scp binary (the fast native path)."""
         scp_args = [_resolve_scp_bin()]
-        if server_config.get("trust_new_host"):
+        if coerce_bool(server_config.get("trust_new_host"), default=False):
             scp_args.extend(["-o", "StrictHostKeyChecking=accept-new"])
         else:
             scp_args.extend(["-o", "StrictHostKeyChecking=yes"])
@@ -355,7 +386,7 @@ class RemoteOperations:
         self, remote_path: str, local_path: Path, server_config: dict[str, Any]
     ) -> bool:
         scp_args = [_resolve_scp_bin()]
-        if server_config.get("trust_new_host"):
+        if coerce_bool(server_config.get("trust_new_host"), default=False):
             scp_args.extend(["-o", "StrictHostKeyChecking=accept-new"])
         else:
             scp_args.extend(["-o", "StrictHostKeyChecking=yes"])

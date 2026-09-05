@@ -5,11 +5,9 @@ Usage: py read_region.py x1 y1 x2 y2
        py read_region.py 100 100 500 300
 Note: Requires pytesseract + Tesseract OCR installed
 """
-import io
 import sys
 
 import pyautogui
-from PIL import Image
 
 # Note: This is a fallback method. For better accuracy, install:
 # 1. Tesseract OCR: https://github.com/tesseract-ocr/tesseract
@@ -45,8 +43,18 @@ try:
     screenshot = pyautogui.screenshot(region=(x1, y1, width, height))
 
     if HAS_OCR:
-        # Extract text using OCR
-        text = pytesseract.image_to_string(screenshot)
+        # Extract text using OCR, in the language NAVIG is configured for. Without
+        # a `lang` Tesseract assumes English and does not decline a script it has
+        # no pack for — it returns confident-looking nonsense, so a Cyrillic window
+        # read back as plausible Latin garbage. Imported defensively: this script
+        # is also runnable standalone, where navig is not importable.
+        try:
+            from navig.core.ocr import ocr_language
+
+            _lang = ocr_language()
+        except Exception:
+            _lang = ""
+        text = pytesseract.image_to_string(screenshot, **({"lang": _lang} if _lang else {}))
         if text.strip():
             print(text.strip())
         else:

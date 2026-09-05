@@ -24,6 +24,7 @@ except ImportError:
     from yaml import SafeLoader
 
 from navig.console_helper import error, info, warning
+from navig.core.proc_text import decode_console_result
 from navig.core.safe_eval import safe_eval
 from navig.platform.paths import workflows_dir
 
@@ -250,7 +251,7 @@ class WorkflowEngine:
         if action == "run_command":
             cmd = args.get("command")
             if cmd:
-                res = subprocess.run(cmd, shell=True, capture_output=True, text=True)  # noqa: S602  # dynamic shell dispatch
+                res = decode_console_result(subprocess.run(cmd, shell=True, capture_output=True))  # noqa: S602  # dynamic shell dispatch
                 if res.returncode == 0:
                     return res.stdout.strip()
             return ""
