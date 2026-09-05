@@ -203,3 +203,77 @@ class TestDictatedEntry:
         assert consumed is True
         body = journal.entry_path(tracker, "2026-08-26").read_text(encoding="utf-8")
         assert "(dictated)" in body
+
+
+# ===========================================================================
+# The body block — the review asks about "тело" and used to answer from nothing
+# ===========================================================================
+
+
+@pytest.fixture
+def body_record(tmp_path, monkeypatch):
+    """An isolated metrics.csv that the review's body block will resolve to."""
+    from navig.spaces import body_metrics as bm
+
+    path = tmp_path / "metrics.csv"
+    path.write_text(
+        "date,weight_kg,body_fat_pct,resting_hr,sleep_hours,steps,mood_1_10,hrv,notes\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(bm, "default_path", lambda: path)
+    return path
+
+
+def test_the_review_reports_the_weeks_weight(tracker, body_record):
+    from navig.spaces import body_metrics as bm
+
+    for i, kg in enumerate([89.0, 88.6, 88.2]):
+        bm.upsert(body_record, date(2026, 8, 17 + i).isoformat(), {"weight_kg": str(kg)})
+
+    text = weekly_review.build(tracker, MON, SUN)
+    assert "**Weight:**" in text
+    assert "89" in text and "88.2" in text
+
+
+def test_the_review_names_the_days_with_no_reading(tracker, body_record):
+    """Same rule as the tracker's blank days: a gap is invisible in a summary of
+    what WAS recorded, and the average of three readings is not a week."""
+    from navig.spaces import body_metrics as bm
+
+    bm.upsert(body_record, MON.isoformat(), {"weight_kg": "89"})
+    text = weekly_review.build(tracker, MON, SUN)
+    assert "Recorded on 1 of 7 days" in text
+
+
+def test_a_full_week_of_readings_does_not_nag(tracker, body_record):
+    from navig.spaces import body_metrics as bm
+
+    for i in range(7):
+        bm.upsert(body_record, date(2026, 8, 17 + i).isoformat(), {"weight_kg": "88"})
+    assert "Recorded on" not in weekly_review.build(tracker, MON, SUN)
+
+
+def test_no_body_record_omits_the_block_entirely(tracker, body_record):
+    """No weight is not a zero-weight week — the section simply does not appear."""
+    text = weekly_review.build(tracker, MON, SUN)
+    assert "**Weight:**" not in text
+
+
+def test_readings_outside_the_window_are_not_counted(tracker, body_record):
+    from navig.spaces import body_metrics as bm
+
+    bm.upsert(body_record, "2026-07-01", {"weight_kg": "95"})
+    assert "**Weight:**" not in weekly_review.build(tracker, MON, SUN)
+
+
+def test_an_unreadable_body_record_does_not_take_the_review_down(tracker, monkeypatch):
+    """The habit half is still worth rendering — the review must survive."""
+    from navig.spaces import body_metrics as bm
+
+    def boom(*_a, **_k):
+        raise bm.MetricsReadError("locked")
+
+    monkeypatch.setattr(bm, "default_path", boom)
+    text = weekly_review.build(tracker, MON, SUN)
+    assert "## Review" in text
+    assert "**Weight:**" not in text

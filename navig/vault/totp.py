@@ -1,63 +1,24 @@
-"""RFC 6238 TOTP — stdlib-only (no dependency).
+"""Compat shim -- TOTP code generation (RFC 6238) now live in ``navig_vault.totp``.
 
-Generates the same 6-digit codes as Google Authenticator / Authy from a base32
-secret, so a login that stores ``totp_secret`` can clear its own 2FA step during
-auto-login. Pure stdlib (hmac + hashlib) — deliberately no ``pyotp`` dependency.
+The vault engine is being extracted into the standalone ``navig-vault`` package so the two
+cannot fork. This shim re-exports the ENTIRE module -- public and private names -- by
+aliasing itself to the implementation, rather than doing ``from navig_vault.totp import *``.
 
-Security note: storing the TOTP seed next to the password collapses 2FA into a
-single factor. This is opt-in per login and clearly surfaced; see the auto-login
-threat model.
+That distinction is load-bearing, not tidiness. ``core/tests/conftest.py`` ASSIGNS module
+globals in the vault package to reset state between test modules, and there are ~87 patches
+of ``navig.vault.core.get_vault`` and friends. Under a star-import shim those assignments
+would land on the shim while the real module kept its own value, and the symptom would be
+flaky Windows file locks in unrelated tests rather than a clean failure.
 """
-
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import struct
-import time
+import sys as _sys
 
-__all__ = ["totp_now", "is_valid_secret"]
+try:
+    from navig_vault import totp as _impl
+except ImportError as exc:  # pragma: no cover - exercised only on a bare install
+    raise ImportError(
+        "NAVIG's vault requires the navig-vault engine. Install it with: pip install navig-vault"
+    ) from exc
 
-
-def _decode_secret(secret_b32: str) -> bytes:
-    s = (secret_b32 or "").strip().replace(" ", "").replace("-", "").upper()
-    if not s:
-        raise ValueError("empty TOTP secret")
-    s += "=" * (-len(s) % 8)  # pad to a multiple of 8 for base32
-    return base64.b32decode(s, casefold=True)
-
-
-def is_valid_secret(secret_b32: str) -> bool:
-    """True if *secret_b32* decodes as base32 (a usable TOTP seed)."""
-    try:
-        _decode_secret(secret_b32)
-        return True
-    except Exception:  # noqa: BLE001
-        return False
-
-
-def totp_now(
-    secret_b32: str,
-    *,
-    digits: int = 6,
-    period: int = 30,
-    algorithm: str = "sha1",
-    t: float | None = None,
-) -> str:
-    """Return the current TOTP code for a base32 *secret_b32*.
-
-    Args:
-        digits: code length (6 is standard; 8 for some enterprise setups).
-        period: time step in seconds (30 is standard).
-        algorithm: HMAC hash — "sha1" (default), "sha256", or "sha512".
-        t: Unix time override (for testing / RFC vectors); defaults to now.
-    """
-    key = _decode_secret(secret_b32)
-    counter = int((time.time() if t is None else t) // period)
-    msg = struct.pack(">Q", counter)
-    digestmod = getattr(hashlib, algorithm.lower())
-    digest = hmac.new(key, msg, digestmod).digest()
-    offset = digest[-1] & 0x0F
-    code_int = struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF
-    return str(code_int % (10 ** digits)).zfill(digits)
+_sys.modules[__name__] = _impl

@@ -482,6 +482,30 @@ def resolve_target(chat_id: int) -> Path:
     return Path(recorded) if recorded else metrics_path()
 
 
+def default_path() -> Path:
+    """The metrics.csv to READ when no chat identifies one — the deck, a dashboard.
+
+    An HTTP request carries no chat id, and ``metrics_path()`` alone would resolve
+    to the ACTIVE space, which is very often not the health one: this operator's
+    check-ins are pinned to ``human-health-space`` while the active space is
+    usually ``human-growth-space``. A dashboard that silently read the wrong
+    (empty) file would report "nothing recorded" over a full record — the same
+    class of confident-wrong answer the rest of this module exists to avoid.
+
+    So: if every chat that has been sent a card agrees on one path, that is the
+    file. If they disagree, this cannot be resolved without guessing, and
+    guessing is what we are avoiding — fall back to normal resolution.
+    """
+    paths = {
+        entry.get("path")
+        for entry in _read_state().values()
+        if isinstance(entry, dict) and entry.get("path")
+    }
+    if len(paths) == 1:
+        return Path(next(iter(paths)))
+    return metrics_path()
+
+
 def last_card(chat_id: int) -> tuple[int | None, str | None]:
     """``(message_id, day)`` of the last card sent to *chat_id*."""
     entry = _chat_state(_read_state(), chat_id)

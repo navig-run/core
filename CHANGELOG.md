@@ -9,6 +9,25 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Add entries here until the next release, then move them under a new version heading. -->
 <!-- Run: git log v3.25.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
+### Changed
+- **The vault's leaf modules now live in the standalone `navig-vault` package, and `navig`
+  depends on it.** `navig.vault.types`, `.secret_str`, `.totp` and `._constants` are now thin
+  shims that ALIAS themselves to `navig_vault.<module>` (`sys.modules[__name__] = _impl`), so
+  there is one source of truth rather than two copies that drift. Every existing import keeps
+  working unchanged — the module objects are identical, private names included, and a guard
+  (`tests/vault/test_vault_shim_identity.py`) fails the build if a shim is ever "simplified"
+  into a star-import, which would break dotted monkeypatching and the conftest state resets
+  that stop `vault.db` leaking handles on Windows.
+
+  **If you have an existing editable install, run `pip install navig-vault` once.** A fresh
+  `pip install -e core[dev]` (or `pip install navig`) resolves it automatically because it is
+  now a declared dependency; only an already-installed environment needs the one-off, and the
+  symptom if you skip it is `ImportError: NAVIG's vault requires the navig-vault engine`.
+
+  `navig-vault` 0.2.0 is a library release: it deliberately installs **no** `nv` binary yet
+  (the commands arrive with the engine), and its `python -m navig_vault` placeholder exits
+  non-zero when asked to do something rather than reporting success for work it cannot do.
+
 ## [3.25.0] — 2026-09-03
 
 ### Added

@@ -64,6 +64,12 @@ dependencies = [
   "json-repair>=0.30.0",
   "readchar>=3.0",
   "tldextract>=5.0.0",  # registrable-domain (eTLD+1) for browser auto-login origin-binding
+  # navig-vault owns the vault's leaf modules (types, SecretStr, TOTP). Unlike every other
+  # navig-* package below this is a HARD dependency, not an extra: navig/vault/<mod>.py are
+  # now shims that alias themselves to it, so without it `import navig.vault.types` raises
+  # and the vault -- which the agent, the gateway and 7 plugins all read secrets through --
+  # does not work at all. An extra is for something the product is complete without.
+  "navig-vault>=0.2.0",
   # First-party plugins (Deck UI, navig-github, navig-social/download/generate) are intentionally
   # NOT default deps — this keeps a bare `pip install navig` lean and always
   # resolvable (no unpublished packages in the base). They ship as optional
@@ -180,6 +186,7 @@ tui = [
 # and stripped from published wheel metadata — a released `navig[github]`
 # resolves the PyPI package via the `>=` specifier in the extra above.
 [tool.uv.sources]
+navig-vault = { path = "../plugins/navig-vault", editable = true }
 navig-github = { path = "../plugins/navig-github", editable = true }
 navig-ebay = { path = "../plugins/navig-ebay", editable = true }
 navig-social = { path = "../plugins/navig-social", editable = true }

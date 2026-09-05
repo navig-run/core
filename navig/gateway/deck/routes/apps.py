@@ -162,30 +162,85 @@ def _err(msg: str, status: int = 400) -> "web.Response":
 
 async def handle_deck_apps_health(request: "web.Request") -> "web.Response":
     """
-    Return a HealthSummary derived from active habit cron jobs.
+    Return a HealthSummary from the space's metrics.csv, plus habit counts.
 
-    Shape: { date, steps, active_minutes, streak_days, heart_rate_zone }
+    Every body field was previously INVENTED: ``steps`` was the literal ``0``,
+    ``active_minutes`` was ``habits_done_today * 20`` under a "rough proxy"
+    comment, ``streak_days`` was the count of habits done today (not a streak,
+    and not days), and the renderer manufactured its own sparkline from the step
+    figure. The tab looked like measurement and contained none, which is worse
+    than an empty state because it cannot be told apart from real data.
+
+    Now the body numbers come from the file `navig body` and the Telegram
+    check-in write, and anything not measured is ``None`` — never ``0``.
+    "Not measured" and "you did zero" are different claims, and a green zero is
+    the honesty failure this codebase keeps re-learning.
+
+    Shape: { date, weight_kg, average_7d, trend_7d, points[], sleep_hours,
+             mood_1_10, recorded_days, window_days, steps, active_minutes,
+             streak_days, heart_rate_zone, habits_total, habits_done_today,
+             unavailable }
     """
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
     jobs, _ = await _async_load_cron_jobs()
     habit_jobs = [j for j in jobs if j.get("name", "").startswith(HABIT_NAME_PREFIX)]
-
-    # Count habits completed today (last_run is today)
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     completed_today = sum(
-        1
-        for j in habit_jobs
-        if (j.get("last_run") or "").startswith(today)
+        1 for j in habit_jobs if (j.get("last_run") or "").startswith(today)
     )
-    total_habits = len(habit_jobs)
-    streak = completed_today  # simple proxy for streak_days
+
+    body: dict[str, Any] = {
+        "weight_kg": None,
+        "weight_date": None,
+        "average_7d": None,
+        "trend_7d": None,
+        "points": [],
+        "sleep_hours": None,
+        "mood_1_10": None,
+        "recorded_days": 0,
+        "window_days": 30,
+        "unavailable": None,
+    }
+    try:
+        from navig.spaces import body_metrics as bm
+
+        path = bm.default_path()
+        summary = bm.summarize(path, days=30)
+        _, rows = bm.read_metrics(path)
+        row = next((r for r in rows if r.get("date") == today), {})
+
+        def _num(value: str) -> float | None:
+            try:
+                return float((value or "").strip().replace(",", "."))
+            except (TypeError, ValueError):
+                return None
+
+        body.update({
+            "weight_kg": summary["latest"],
+            "weight_date": summary["latest_date"],
+            "average_7d": bm.moving_average(path, days=7),
+            "trend_7d": bm.trend(path, days=7),
+            "points": summary["points"],
+            "sleep_hours": _num(row.get("sleep_hours", "")),
+            "mood_1_10": _num(row.get("mood_1_10", "")),
+            "recorded_days": summary["recorded"],
+        })
+    except Exception as exc:  # noqa: BLE001
+        # Could-not-read is NOT no-data. Say so, so the UI can show a warning
+        # instead of an empty state that reads as "you have logged nothing".
+        logger.warning("health summary could not read the body record: %s", exc)
+        body["unavailable"] = "Could not read the body record."
 
     return _ok({
         "date": today,
-        "steps": 0,                   # wearable integration not yet available
-        "active_minutes": completed_today * 20,  # rough proxy
-        "streak_days": streak,
+        **body,
+        # Not measured anywhere yet — null, not 0. There is no wearable
+        # integration, and pretending the answer is zero is a claim we cannot make.
+        "steps": None,
+        "active_minutes": None,
+        "streak_days": None,
         "heart_rate_zone": None,
-        "habits_total": total_habits,
+        "habits_total": len(habit_jobs),
         "habits_done_today": completed_today,
     })
 

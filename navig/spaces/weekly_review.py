@@ -89,6 +89,48 @@ def _average_number(values: list[str]) -> str | None:
     return f"{mean:.1f}".rstrip("0").rstrip(".")
 
 
+def _body_block(start: date, end: date) -> list[str] | None:
+    """The week's body numbers, or ``None`` when there is nothing to show.
+
+    The review reminder this renders for already says "streaks, **тело**, money,
+    what broke, one decision" — it has been asking about the body for months
+    against a metrics.csv nothing wrote to. This is the answer to its own
+    question.
+
+    It reads the BODY record, which lives in a different space from the tracker
+    (the growth space keeps the discipline; the health space keeps the numbers
+    and the medicine), so it resolves its own path rather than deriving one from
+    *tracker*. Never raises: a missing or unreadable body record must not take
+    the whole review down — the habit half is still worth rendering.
+    """
+    try:
+        from navig.spaces import body_metrics as bm  # noqa: PLC0415
+
+        path = bm.default_path()
+        points = [(d, v) for d, v in bm.series(path) if start <= d <= end]
+        if not points:
+            return None
+
+        span = (end - start).days + 1
+        average = bm.moving_average(path, days=span, ending=end)
+        change = bm.trend(path, days=span, ending=end)
+    except Exception:  # noqa: BLE001 — the review is worth more than this section
+        return None
+
+    listed = " · ".join(f"{v:g}" for _, v in points)
+    line = f"**Weight:** {listed}  (average **{average:g} kg**"
+    if change is not None:
+        line += f", **{change:+.1f} kg** vs the week before"
+    line += ")"
+
+    out = ["", line]
+    if len(points) < span:
+        # Same rule as the tracker's blank days: a gap is invisible in a summary
+        # of what WAS recorded, and the average of two readings is not a week.
+        out.append(f"_Recorded on {len(points)} of {span} days._")
+    return out
+
+
 def build(tracker: Path, start: date, end: date) -> str:
     """Render the review for the window as a markdown block."""
     rows = habit_tracker.read_tracker(tracker)
@@ -141,6 +183,10 @@ def build(tracker: Path, start: date, end: date) -> str:
     score_avg = _average_number([s for s in scores if s])
     if score_avg:
         out += ["", f"**Day score:** {' · '.join(s or '—' for s in scores)}  (average **{score_avg}**)"]
+
+    body = _body_block(start, end)
+    if body:
+        out += body
 
     # ── What the journal already said ────────────────────────────────────────
     setbacks = [(d, journal.setback_for(tracker, d.isoformat())) for d in days]
