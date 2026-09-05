@@ -169,6 +169,9 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "cron": ("navig.commands.cron", "cron_app"),
     "habit": ("navig.commands.habit", "habit_app"),
     "habits": ("navig.commands.habit", "habit_app"),             # alias
+    # `body`, not `health`: "health" is already an alias for `stack` (cross-service
+    # SYSTEM health checks). Two meanings of the word under one verb is a trap.
+    "body": ("navig.commands.body", "body_app"),
     "day": ("navig.commands.life_dashboard", "life_dashboard_app"),
     "life": ("navig.commands.life_dashboard", "life_dashboard_app"),
     "doctor": ("navig.commands.doctor", "doctor_app"),

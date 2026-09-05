@@ -179,6 +179,11 @@ navig block verify
 navig block verify-receipt
 navig blueprint apply
 navig blueprint list
+navig body checkin
+navig body export
+navig body log
+navig body today
+navig body trend
 navig boot run
 navig boot show
 navig bot start
@@ -420,6 +425,7 @@ navig explore photos arrange
 navig explore photos arrange-remove
 navig explore photos classes
 navig explore photos dates
+navig explore photos events
 navig explore photos explain
 navig explore photos faces
 navig explore photos gallery
@@ -429,6 +435,7 @@ navig explore photos people cluster
 navig explore photos people list
 navig explore photos people merge
 navig explore photos people name
+navig explore photos people sheet
 navig explore photos people split
 navig explore photos places
 navig explore photos search

@@ -955,9 +955,22 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     SlashCommandEntry(
         "health",
-        "Health space status and habit overview",
+        "Weight, sleep and mood — where the week stands",
         handler="_handle_health",
-        category="utilities",
+        category="health",
+    ),
+    SlashCommandEntry(
+        "weigh",
+        "Log this morning's weight",
+        handler="_handle_weigh",
+        category="health",
+        usage="/weigh [kg]",
+    ),
+    SlashCommandEntry(
+        "body",
+        "The weekly check-in card — trend, mood, sleep, treatment",
+        handler="_handle_body",
+        category="health",
     ),
     SlashCommandEntry(
         "workout",
@@ -10393,7 +10406,66 @@ class TelegramCommandsMixin:
         await self.send_message(chat_id, body, parse_mode="HTML", keyboard=keyboard)
 
     async def _handle_health(self, chat_id: int, user_id: int) -> None:
-        """Show health space status: active habits, reminder count, space."""
+        """Where the body stands: weight, trend, sleep, mood — then the habits.
+
+        This used to print habit counts and pending reminders under a
+        "Health Space" header, which is scheduler status wearing the word
+        health. The numbers it now leads with are the ones the space's own
+        CLAUDE.md says this space owns, and the ones its weekly-review prompt
+        has been reading from an empty file since April.
+
+        Habit counts stay, below, because they are still true and still useful —
+        they are just no longer the whole of what /health means.
+        """
+        from navig.spaces import body_metrics as bm
+        from navig.telegram import body_actions as ba
+
+        lines: list[str] = []
+        banner = ba.extension_banner()
+        if banner:
+            lines.append(banner)
+        lines.append("🏥 <b>Health</b>")
+        lines.append("")
+
+        try:
+            path = bm.resolve_target(chat_id)
+            summary = bm.summarize(path)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("/health could not read the body record: %s", exc)
+            summary = None
+
+        if summary is None:
+            # Could-not-read is NOT the same as nothing-recorded, and must never
+            # render as a confident zero.
+            lines.append("⚠️ <i>Could not read the body record.</i>")
+        elif summary["latest"] is None:
+            lines.append("<i>No weight recorded yet.</i>")
+            lines.append("<i>Send /weigh to start the record.</i>")
+        else:
+            kg = ba.t("unit.kg")
+            lines.append(
+                f"⚖️  Latest:      <b>{summary['latest']:g} {kg}</b>"
+                f"  <i>{summary['latest_date']}</i>"
+            )
+            if summary["average"] is not None:
+                change = (
+                    f"{summary['trend']:+.1f} {kg}"
+                    if summary["trend"] is not None
+                    else ba.t("week.no_prior")
+                )
+                lines.append(
+                    f"📉 7-day avg:   <b>{summary['average']:.1f} {kg}</b>  ({change})"
+                )
+            spark = summary.get("sparkline") or ""
+            if spark:
+                lines.append(f"<code>{spark}</code>")
+            lines.append(
+                f"📅 Logged:      <b>{summary['recorded']}/{summary['days']}</b> days"
+            )
+            fast = ba._clinician_line(summary.get("trend"))
+            if fast:
+                lines.append("")
+                lines.append(f"⚠️ <i>{html.escape(fast)}</i>")
 
         try:
             from navig.scheduler import habit_store
@@ -10401,44 +10473,71 @@ class TelegramCommandsMixin:
             habit_count = sum(
                 1 for j in habit_store.list_habit_jobs() if j.get("enabled", True)
             )
-        except Exception:
-            habit_count = 0
-
-        try:
-            from navig.store.runtime import get_runtime_store
-            reminder_count = len(get_runtime_store().get_user_reminders(user_id))
-        except Exception:
-            reminder_count = 0
-
-        try:
-            from navig.config import get_config_manager
-            cm = get_config_manager()
-            space = cm.get("spaces.active", default="personal")
-        except Exception:
-            space = "personal"
-
-        # "Active habits: 8" is a lie while the extension is off — the jobs are
-        # scheduled and nothing is delivered. The banner outranks the count.
-        try:
-            from navig.telegram.habit_actions import extension_banner
-
-            _banner = extension_banner()
+            habit_line = f"💪 Active habits: <b>{habit_count}</b>"
         except Exception:  # noqa: BLE001
-            _banner = ""
+            habit_line = "💪 Active habits: <i>unknown</i>"
 
-        lines = ([_banner] if _banner else []) + [
-            "🏥 <b>Health Space</b>", "",
-            f"💪 Active habits:    <b>{habit_count}</b>",
-            f"⏰ Pending reminders: <b>{reminder_count}</b>",
-            f"🗂  Active space:     <b>{space}</b>",
-            "",
-            "<i>Set habit: /workout | /habits — full list</i>",
-        ]
+        lines += ["", habit_line, "", "<i>/weigh — log now · /body — weekly card</i>"]
+
         keyboard = [[
+            {"text": "⚖️ Weigh in", "callback_data": "slash:weigh"},
+            {"text": "📊 Weekly", "callback_data": "slash:body"},
+        ], [
             {"text": "💪 Habits", "callback_data": "slash:habits"},
-            {"text": "⏰ Reminders", "callback_data": "slash:reminders"},
         ]]
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+        await self.send_message(
+            chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard
+        )
+
+    async def _handle_weigh(self, chat_id: int, user_id: int = 0, text: str = "") -> None:
+        """Log a weight now — either inline (/weigh 87.4) or by prompting for it."""
+        from navig.spaces import body_metrics as bm
+        from navig.telegram import body_actions as ba
+
+        arg = (text or "").split(" ", 1)[1].strip() if " " in (text or "") else ""
+        path = bm.resolve_target(chat_id)
+        day = datetime.now().date().isoformat()
+
+        if not arg:
+            await ba.ask_for_weight(self, chat_id, day, path)
+            return
+
+        try:
+            value = bm.parse_weight(arg)
+        except bm.WeightParseError as exc:
+            await self.send_message(chat_id, f"⚠️ {html.escape(str(exc))}")
+            return
+        try:
+            bm.upsert(path, day, {"weight_kg": f"{value:g}"})
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("/weigh could not write: %s", exc)
+            await self.send_message(chat_id, "⚠️ Could not record that.")
+            return
+        await self.send_message(
+            chat_id, f"✅ {html.escape(ba.t('weigh.recorded', value=f'{value:g}'))}"
+        )
+
+    async def _handle_body(self, chat_id: int, user_id: int = 0) -> None:
+        """Send the weekly check-in card on demand."""
+        from navig.spaces import body_metrics as bm
+        from navig.telegram import body_actions as ba
+
+        path = bm.resolve_target(chat_id)
+        day = datetime.now().date().isoformat()
+        try:
+            text, keyboard = ba.build_weekly_card(path, day)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("/body could not build the card: %s", exc)
+            await self.send_message(chat_id, "⚠️ Could not read the body record.")
+            return
+        result = await self.send_message(
+            chat_id, text, parse_mode="HTML", keyboard=keyboard
+        )
+        # The card is answered by taps handled in THIS process, but resolve_target
+        # still has to know which metrics.csv it belongs to.
+        message_id = ((result or {}).get("result") or {}).get("message_id")
+        bm.remember_target(chat_id, path, message_id=message_id, day=day)
+
 
     async def _handle_workout(self, chat_id: int, user_id: int, text: str) -> None:
         """Quick-add a workout reminder.

@@ -1,6 +1,6 @@
 # NAVIG Command Reference
 
-_Generated 2026-09-01T20:35:57.690735+00:00_
+_Generated 2026-09-05T18:27:22.134108+00:00_
 
 ## `navig action add`
 **Status:** `stable` · **Since:** 
@@ -1448,6 +1448,46 @@ List available blueprints.
 **Examples:**
 ```sh
 navig blueprint list
+```
+
+## `navig body checkin`
+**Status:** `stable` · **Since:** 
+Preview — or send to Telegram — the weigh-in prompt or the weekly card.
+**Examples:**
+```sh
+navig body checkin
+```
+
+## `navig body export`
+**Status:** `stable` · **Since:** 
+Write a dated summary to the space's out/ — what an appointment needs.
+**Examples:**
+```sh
+navig body export
+```
+
+## `navig body log`
+**Status:** `stable` · **Since:** 
+Record one or more measurements for a day.
+**Examples:**
+```sh
+navig body log
+```
+
+## `navig body today`
+**Status:** `stable` · **Since:** 
+Show what is recorded for a day, and where the week stands.
+**Examples:**
+```sh
+navig body today
+```
+
+## `navig body trend`
+**Status:** `stable` · **Since:** 
+Show the moving average and the change against the previous window.
+**Examples:**
+```sh
+navig body trend
 ```
 
 ## `navig boot run`
@@ -3384,6 +3424,14 @@ navig explore photos classes
 navig explore photos dates
 ```
 
+## `navig explore photos events`
+**Status:** `stable` · **Since:** 
+📅  Work out which occasion each photograph belongs to.
+**Examples:**
+```sh
+navig explore photos events
+```
+
 ## `navig explore photos explain`
 **Status:** `stable` · **Since:** 
 🔍  Show every fact the catalog holds about one photo, and where it came from.
@@ -3454,6 +3502,14 @@ Name a group and lock it, so re-clustering never loses the name.
 **Examples:**
 ```sh
 navig explore photos people name
+```
+
+## `navig explore photos people sheet`
+**Status:** `stable` · **Since:** 
+🖼️  One row of faces per group, labelled with the id — so you can name them.
+**Examples:**
+```sh
+navig explore photos people sheet
 ```
 
 ## `navig explore photos people split`

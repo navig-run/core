@@ -2317,6 +2317,9 @@ navig logs mysql
 
 Run comprehensive health check.
 
+> **Not your body.** `navig health` is an alias for `navig stack` and checks
+> *machines*. Weight, sleep and mood live under **[`navig body`](#navig-body)**.
+
 **Examples:**
 ```bash
 navig health
@@ -2330,6 +2333,54 @@ navig health
 - Network connections
 
 **Related Commands:** `navig logs`, `navig health-check`
+
+---
+
+### `navig body`
+
+Track body metrics — weight, sleep, mood — and see the trend. The counterpart to
+`navig habit`: habits are things you *do*, body metrics are things you *measure*.
+
+Measurements live in **`metrics.csv` in the space**, the same way habits live in
+`habits.csv` — so the file stays readable, editable by hand, and yours. A column
+you add yourself is preserved; logging twice on one day replaces rather than
+duplicates; the write is atomic and refuses to lose rows.
+
+**Examples:**
+```bash
+navig body                                  # today, plus where the week stands
+navig body log --weight 87.4                # a comma decimal (87,4) works too
+navig body log --sleep 7.5 --mood 8
+navig body trend --days 14
+navig body export                           # a dated summary into the space's out/
+navig body today --json                     # every subcommand takes --json
+```
+
+**The 7-day average is the headline, not the latest reading.** Day-to-day weight
+is dominated by water, food in transit and time of day; a single pair of readings
+a week apart cannot tell a real change from noise. An unknown trend prints as
+`no prior week`, never as `0.0` — those are different claims.
+
+**Check-ins.** `navig body checkin --send` asks for this morning's weight in
+Telegram; `--weekly` sends the Sunday card (trend, mood, sleep, treatment).
+Schedule them like habits:
+
+```bash
+navig body checkin --send --space <space>            # e.g. 08:10 daily
+navig body checkin --weekly --send --space <space>   # e.g. 18:45 Sunday
+```
+
+In Telegram: **`/health`** (where the body stands), **`/weigh`** (log now, or
+`/weigh 87.4`), **`/body`** (the weekly card). All three belong to the **Health**
+extension, switched independently of Habits. Messages follow your global output
+language — change it with `/lang`.
+
+**It never diagnoses.** A fast rate of loss produces one neutral line suggesting
+you mention it at your next appointment, and nothing else. Anything you write
+about a treatment is recorded verbatim and never interpreted.
+
+**Related Commands:** `navig habit`, `navig life`, `navig health` (that one checks
+*machines*, not you)
 
 ---
 
@@ -9519,9 +9570,16 @@ toggle that would do nothing.
 **Habits specifically.** Switching Habits off stops the daily check-in cards and
 reminders from being delivered, but deliberately does **not** rewrite your
 schedule — so habits you paused yourself with `navig habit pause` stay paused when
-you switch it back on. Because the schedule is untouched, `navig habit list`,
-`/habits` and `/health` show a banner saying the reminders are scheduled but not
-delivered, rather than reporting a healthy count into a void.
+you switch it back on. Because the schedule is untouched, `navig habit list` and
+`/habits` show a banner saying the reminders are scheduled but not delivered,
+rather than reporting a healthy count into a void.
+
+**Health is a separate switch.** `/health`, `/weigh` and `/body` belong to the
+**Health** extension, not Habits — so turning Habits off leaves the body check-in
+running, and vice versa. Health behaves the same way when switched off: the
+morning weigh-in and the Sunday card stop being delivered, the schedule and every
+measurement already in `metrics.csv` are left exactly as they are, and the
+surfaces show the same "scheduled but not delivered" banner.
 
 ---
 

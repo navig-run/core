@@ -1948,6 +1948,15 @@ class TelegramChannel:
                     dictated=bool(message.get("voice")),
                 ):
                     return
+                # Same shape and the same reason: it fires only for a reply to
+                # the one message id the weigh-in prompt recorded, so a bare
+                # "87.4" sent at any other moment stays an ordinary message.
+                if await self._handle_pending_body_input(
+                    chat_id=chat_id,
+                    text=text,
+                    reply_to_message_id=reply_to_message_id,
+                ):
+                    return
                 if not is_media_caption:
                     if await self._handle_pending_api_key_input(
                         chat_id=chat_id,
@@ -5084,6 +5093,53 @@ class TelegramChannel:
         return await TelegramCommandsMixin._handle_pending_journal_input(
             self, chat_id, text, reply_to_message_id, dictated
         )
+
+    async def _handle_pending_body_input(
+        self,
+        chat_id: int,
+        text: str,
+        reply_to_message_id: int | None,
+    ) -> bool:
+        """Consume a typed answer to the weigh-in or treatment-note prompt.
+
+        Consumes ONLY when the message is a reply to the exact prompt this chat
+        is waiting on. That strictness is the whole safety property: without it a
+        bare "87.4" typed for any other reason would be swallowed into the body
+        record instead of being answered, and — worse — an ordinary sentence
+        would be filed as a treatment note.
+
+        Returns False on anything unexpected so the message continues down the
+        normal chain; a bug here must not make the bot deaf.
+        """
+        pending_ok = False
+        try:
+            from navig.spaces import body_metrics as bm  # noqa: PLC0415
+
+            pending = bm.pending_prompt(chat_id)
+            if pending is None:
+                return False
+            _kind, _day, prompt_id = pending
+            if not reply_to_message_id or reply_to_message_id != prompt_id:
+                return False
+            pending_ok = True
+
+            from navig.telegram import body_actions as ba  # noqa: PLC0415
+
+            confirmation = ba.consume_reply(chat_id, text)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("body check-in reply failed (chat=%s): %s", chat_id, exc)
+            # The question was ours, so say something rather than going silent —
+            # a prompt that swallows the answer with no reply is the failure the
+            # disk-backed prompt exists to prevent.
+            if pending_ok:
+                await self.send_message(chat_id, "⚠️ Could not record that.")
+                return True
+            return False
+
+        if confirmation is None:
+            return False
+        await self.send_message(chat_id, f"✅ {confirmation}")
+        return True
 
     async def _handle_eve_pending_reply(
         self,

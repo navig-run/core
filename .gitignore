@@ -264,3 +264,11 @@ host/crates/**/target/
 # The built-in content store is now navig/builtin/ (tracked, shipped in the wheel
 # via package-data).
 navig/store/**/__pycache__/
+
+# uv.lock is NOT this repo's lockfile. requirements.lock is canonical (SECURITY.md,
+# docs/dev/development.md: "do not add a separate uv.lock for this repo"). One was
+# committed by accident inside a bulk commit, went stale at navig 2.9.1 while the project
+# reached 3.25.0, was shipped in nothing and read by nothing -- and was the sole source of
+# all 8 Dependabot alerts on the public repo. Ignored so it cannot come back silently the
+# next time someone runs `uv lock`.
+uv.lock

@@ -3,7 +3,7 @@
 # Pin only main dependencies. For dev deps: pip install -e .[dev]
 aiohappyeyeballs==2.6.1
     # via aiohttp
-aiohttp==3.13.3
+aiohttp==3.14.3
     # via navig (pyproject.toml)
 aiosignal==1.4.0
     # via aiohttp
@@ -35,7 +35,7 @@ colorama==0.4.6
     #   click
     #   loguru
     #   navig (pyproject.toml)
-cryptography==46.0.5
+cryptography==50.0.1
     # via
     #   navig (pyproject.toml)
     #   paramiko

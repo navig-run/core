@@ -3176,7 +3176,7 @@
       "path": "navig apply",
       "since": "",
       "status": "stable",
-      "summary": "Apply a block — run its outcome end-to-end and write a receipt.",
+      "summary": "Apply a block \u2014 run its outcome end-to-end and write a receipt.",
       "tags": []
     },
     {
@@ -3380,7 +3380,7 @@
       "path": "navig audio clone",
       "since": "",
       "status": "stable",
-      "summary": "👤 Clone a voice from your own recordings and print its id.",
+      "summary": "\ud83d\udc64 Clone a voice from your own recordings and print its id.",
       "tags": []
     },
     {
@@ -3437,7 +3437,7 @@
       "path": "navig audio draft",
       "since": "",
       "status": "stable",
-      "summary": "📝 Turn rough notes into a strict scenario you can review before rendering.",
+      "summary": "\ud83d\udcdd Turn rough notes into a strict scenario you can review before rendering.",
       "tags": []
     },
     {
@@ -3534,7 +3534,7 @@
       "path": "navig audio plan",
       "since": "",
       "status": "stable",
-      "summary": "🧮 What this episode will cost, before it costs it. Spends nothing.",
+      "summary": "\ud83e\uddee What this episode will cost, before it costs it. Spends nothing.",
       "tags": []
     },
     {
@@ -3569,7 +3569,7 @@
       "path": "navig audio publish",
       "since": "",
       "status": "stable",
-      "summary": "📤 Show exactly what would be uploaded to NobiCast. Uploads nothing yet.",
+      "summary": "\ud83d\udce4 Show exactly what would be uploaded to NobiCast. Uploads nothing yet.",
       "tags": []
     },
     {
@@ -3623,7 +3623,7 @@
       "path": "navig audio render",
       "since": "",
       "status": "stable",
-      "summary": "🎧 Build the episode — one mp3 per track, plus subtitles, transcript and a master.",
+      "summary": "\ud83c\udfa7 Build the episode \u2014 one mp3 per track, plus subtitles, transcript and a master.",
       "tags": []
     },
     {
@@ -3671,7 +3671,7 @@
       "path": "navig audio slowed",
       "since": "",
       "status": "stable",
-      "summary": "🐢 The \"slowed\" sound — pitch drops with the speed, plus optional reverb.",
+      "summary": "\ud83d\udc22 The \"slowed\" sound \u2014 pitch drops with the speed, plus optional reverb.",
       "tags": []
     },
     {
@@ -3713,7 +3713,7 @@
       "path": "navig audio speed",
       "since": "",
       "status": "stable",
-      "summary": "⏩ Change speed, keeping pitch — a lecture at 1.5x still sounds like the speaker.",
+      "summary": "\u23e9 Change speed, keeping pitch \u2014 a lecture at 1.5x still sounds like the speaker.",
       "tags": []
     },
     {
@@ -3755,7 +3755,7 @@
       "path": "navig audio translate",
       "since": "",
       "status": "stable",
-      "summary": "🌍 Translate the spoken lines, keeping the album structure identical.",
+      "summary": "\ud83c\udf0d Translate the spoken lines, keeping the album structure identical.",
       "tags": []
     },
     {
@@ -3783,7 +3783,7 @@
       "path": "navig audio voices",
       "since": "",
       "status": "stable",
-      "summary": "🗣  List the voices this key can speak with — your clones first.",
+      "summary": "\ud83d\udde3  List the voices this key can speak with \u2014 your clones first.",
       "tags": []
     },
     {
@@ -5159,7 +5159,7 @@
       "path": "navig block sign",
       "since": "",
       "status": "stable",
-      "summary": "Device-sign a block's manifest — writes BLOCK.sig (digest + Ed25519 signature).",
+      "summary": "Device-sign a block's manifest \u2014 writes BLOCK.sig (digest + Ed25519 signature).",
       "tags": []
     },
     {
@@ -5208,7 +5208,7 @@
       "path": "navig block verify-receipt",
       "since": "",
       "status": "stable",
-      "summary": "Verify a receipt's device signature — proves it wasn't altered after the run.",
+      "summary": "Verify a receipt's device signature \u2014 proves it wasn't altered after the run.",
       "tags": []
     },
     {
@@ -5253,6 +5253,240 @@
       "since": "",
       "status": "stable",
       "summary": "List available blueprints.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig body checkin"
+      ],
+      "handler": "body_checkin",
+      "module": "navig.commands.body",
+      "options": [
+        {
+          "flags": [
+            "--send"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--weekly"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--chat-id"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--date"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig body checkin",
+      "since": "",
+      "status": "stable",
+      "summary": "Preview \u2014 or send to Telegram \u2014 the weigh-in prompt or the weekly card.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig body export"
+      ],
+      "handler": "body_export",
+      "module": "navig.commands.body",
+      "options": [
+        {
+          "flags": [
+            "--days",
+            "-d"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig body export",
+      "since": "",
+      "status": "stable",
+      "summary": "Write a dated summary to the space's out/ \u2014 what an appointment needs.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig body log"
+      ],
+      "handler": "body_log",
+      "module": "navig.commands.body",
+      "options": [
+        {
+          "flags": [
+            "--weight",
+            "-w"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--sleep"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--mood"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--steps"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--note",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--date"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--force"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig body log",
+      "since": "",
+      "status": "stable",
+      "summary": "Record one or more measurements for a day.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig body today"
+      ],
+      "handler": "body_today",
+      "module": "navig.commands.body",
+      "options": [
+        {
+          "flags": [
+            "--date"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig body today",
+      "since": "",
+      "status": "stable",
+      "summary": "Show what is recorded for a day, and where the week stands.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig body trend"
+      ],
+      "handler": "body_trend",
+      "module": "navig.commands.body",
+      "options": [
+        {
+          "flags": [
+            "--days",
+            "-d"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--field"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig body trend",
+      "since": "",
+      "status": "stable",
+      "summary": "Show the moving average and the change against the previous window.",
       "tags": []
     },
     {
@@ -5384,7 +5618,7 @@
       "path": "navig brain prompts get",
       "since": "",
       "status": "stable",
-      "summary": "Output prompt content — intended for programmatic consumption by navig-bridge/CLI.",
+      "summary": "Output prompt content \u2014 intended for programmatic consumption by navig-bridge/CLI.",
       "tags": []
     },
     {
@@ -5498,7 +5732,7 @@
       "path": "navig bridge connect",
       "since": "",
       "status": "stable",
-      "summary": "Set up Bridge ↔ Daemon connection in one step.",
+      "summary": "Set up Bridge \u2194 Daemon connection in one step.",
       "tags": []
     },
     {
@@ -5933,7 +6167,7 @@
       "path": "navig cdp eval",
       "since": "",
       "status": "stable",
-      "summary": "Evaluate JavaScript in the page (gated — JS can change page state).",
+      "summary": "Evaluate JavaScript in the page (gated \u2014 JS can change page state).",
       "tags": []
     },
     {
@@ -6507,7 +6741,7 @@
       "path": "navig cdp profile import",
       "since": "",
       "status": "stable",
-      "summary": "Import a persona capsule → (re)create the profile, its proxy, and its session.",
+      "summary": "Import a persona capsule \u2192 (re)create the profile, its proxy, and its session.",
       "tags": []
     },
     {
@@ -6633,7 +6867,7 @@
       "path": "navig cdp profile open",
       "since": "",
       "status": "stable",
-      "summary": "Open (or reuse) a profile — same as `navig cdp open <name>`.",
+      "summary": "Open (or reuse) a profile \u2014 same as `navig cdp open <name>`.",
       "tags": []
     },
     {
@@ -6801,7 +7035,7 @@
       "path": "navig cdp record",
       "since": "",
       "status": "stable",
-      "summary": "Record the attached page to an mp4 (screencast → video).",
+      "summary": "Record the attached page to an mp4 (screencast \u2192 video).",
       "tags": []
     },
     {
@@ -7299,7 +7533,7 @@
       "path": "navig cloud tailscale",
       "since": "",
       "status": "stable",
-      "summary": "Self-host the Mini App via Tailscale Funnel — stable HTTPS, no domain needed.",
+      "summary": "Self-host the Mini App via Tailscale Funnel \u2014 stable HTTPS, no domain needed.",
       "tags": []
     },
     {
@@ -7806,7 +8040,7 @@
       "path": "navig connect login",
       "since": "",
       "status": "stable",
-      "summary": "Log in to a subscription via OAuth — `claude-max` (Claude Pro/Max) or `chatgpt`",
+      "summary": "Log in to a subscription via OAuth \u2014 `claude-max` (Claude Pro/Max) or `chatgpt`",
       "tags": []
     },
     {
@@ -9525,7 +9759,7 @@
       "path": "navig db local migrate",
       "since": "",
       "status": "stable",
-      "summary": "Run pending data migrations (legacy bot_data.db, daily_log.db → runtime.db).",
+      "summary": "Run pending data migrations (legacy bot_data.db, daily_log.db \u2192 runtime.db).",
       "tags": []
     },
     {
@@ -10019,7 +10253,7 @@
       "path": "navig deck dev",
       "since": "",
       "status": "stable",
-      "summary": "Run the deck dev server against an EXISTING daemon — never spawns a second daemon.",
+      "summary": "Run the deck dev server against an EXISTING daemon \u2014 never spawns a second daemon.",
       "tags": []
     },
     {
@@ -10041,7 +10275,7 @@
       "path": "navig deck open",
       "since": "",
       "status": "stable",
-      "summary": "Open the control deck — the gateway already serves it (no Node, no second daemon).",
+      "summary": "Open the control deck \u2014 the gateway already serves it (no Node, no second daemon).",
       "tags": []
     },
     {
@@ -10075,7 +10309,7 @@
       "path": "navig dedupe restore",
       "since": "",
       "status": "stable",
-      "summary": "Undo a quarantine — move files back to where they came from.",
+      "summary": "Undo a quarantine \u2014 move files back to where they came from.",
       "tags": []
     },
     {
@@ -10201,7 +10435,7 @@
       "path": "navig deploy check",
       "since": "",
       "status": "stable",
-      "summary": "Validate .navig/deploy.yaml and test connectivity — no deploy executed.",
+      "summary": "Validate .navig/deploy.yaml and test connectivity \u2014 no deploy executed.",
       "tags": []
     },
     {
@@ -10490,7 +10724,7 @@
       "path": "navig desktop crash-chrome",
       "since": "",
       "status": "stable",
-      "summary": "Crash all Chrome tabs + extensions to reclaim RAM — without closing the browser.",
+      "summary": "Crash all Chrome tabs + extensions to reclaim RAM \u2014 without closing the browser.",
       "tags": []
     },
     {
@@ -10776,7 +11010,7 @@
       "path": "navig devhost status",
       "since": "",
       "status": "stable",
-      "summary": "One-line health per domain (hosts · cert · dev-up · serving).",
+      "summary": "One-line health per domain (hosts \u00b7 cert \u00b7 dev-up \u00b7 serving).",
       "tags": []
     },
     {
@@ -10957,7 +11191,7 @@
       "path": "navig dl download",
       "since": "",
       "status": "stable",
-      "summary": "Download TikTok posts (organized <out>/<creator>/<id>) — concurrent, resumable.",
+      "summary": "Download TikTok posts (organized <out>/<creator>/<id>) \u2014 concurrent, resumable.",
       "tags": []
     },
     {
@@ -11032,7 +11266,7 @@
       "path": "navig dl post",
       "since": "",
       "status": "stable",
-      "summary": "Read a whole post via the browser in ONE pass — description + stats + comments.",
+      "summary": "Read a whole post via the browser in ONE pass \u2014 description + stats + comments.",
       "tags": []
     },
     {
@@ -11047,7 +11281,7 @@
       "path": "navig dl profile",
       "since": "",
       "status": "stable",
-      "summary": "Download a creator's whole profile — videos, slideshows images, audio, or just metadata.",
+      "summary": "Download a creator's whole profile \u2014 videos, slideshows images, audio, or just metadata.",
       "tags": []
     },
     {
@@ -11523,7 +11757,7 @@
       "path": "navig download download",
       "since": "",
       "status": "stable",
-      "summary": "Download TikTok posts (organized <out>/<creator>/<id>) — concurrent, resumable.",
+      "summary": "Download TikTok posts (organized <out>/<creator>/<id>) \u2014 concurrent, resumable.",
       "tags": []
     },
     {
@@ -11598,7 +11832,7 @@
       "path": "navig download post",
       "since": "",
       "status": "stable",
-      "summary": "Read a whole post via the browser in ONE pass — description + stats + comments.",
+      "summary": "Read a whole post via the browser in ONE pass \u2014 description + stats + comments.",
       "tags": []
     },
     {
@@ -11613,7 +11847,7 @@
       "path": "navig download profile",
       "since": "",
       "status": "stable",
-      "summary": "Download a creator's whole profile — videos, slideshows images, audio, or just metadata.",
+      "summary": "Download a creator's whole profile \u2014 videos, slideshows images, audio, or just metadata.",
       "tags": []
     },
     {
@@ -11643,7 +11877,7 @@
       "path": "navig ebay doctor",
       "since": "",
       "status": "stable",
-      "summary": "Verify prerequisites before publishing (creds · token · location · policies).",
+      "summary": "Verify prerequisites before publishing (creds \u00b7 token \u00b7 location \u00b7 policies).",
       "tags": []
     },
     {
@@ -11778,7 +12012,7 @@
       "path": "navig ebay publish",
       "since": "",
       "status": "stable",
-      "summary": "Publish an offer → live listing.",
+      "summary": "Publish an offer \u2192 live listing.",
       "tags": []
     },
     {
@@ -12279,7 +12513,7 @@
       "path": "navig explore audio-sort",
       "since": "",
       "status": "stable",
-      "summary": "🎧 Sort audio by CONTENT — music / voice / sfx — from the waveform, not the filename.",
+      "summary": "\ud83c\udfa7 Sort audio by CONTENT \u2014 music / voice / sfx \u2014 from the waveform, not the filename.",
       "tags": []
     },
     {
@@ -12300,7 +12534,7 @@
       "path": "navig explore audio-undo",
       "since": "",
       "status": "stable",
-      "summary": "↩️  Put every file an audio-sort run moved back where it came from.",
+      "summary": "\u21a9\ufe0f  Put every file an audio-sort run moved back where it came from.",
       "tags": []
     },
     {
@@ -12351,7 +12585,7 @@
       "path": "navig explore collect",
       "since": "",
       "status": "stable",
-      "summary": "🎯 Pull a themed selection (e.g. --res 4K --year 2024) into an edit folder via hardlinks (no copy).",
+      "summary": "\ud83c\udfaf Pull a themed selection (e.g. --res 4K --year 2024) into an edit folder via hardlinks (no copy).",
       "tags": []
     },
     {
@@ -12422,7 +12656,7 @@
       "path": "navig explore dedup",
       "since": "",
       "status": "stable",
-      "summary": "🎯 Find exact + identical-pixel (auto-trash) and near (flag-only) duplicates.",
+      "summary": "\ud83c\udfaf Find exact + identical-pixel (auto-trash) and near (flag-only) duplicates.",
       "tags": []
     },
     {
@@ -12513,7 +12747,7 @@
       "path": "navig explore gallery",
       "since": "",
       "status": "stable",
-      "summary": "🖼️  Build a shareable offline gallery.html — cached thumbnails, live filter, lightbox.",
+      "summary": "\ud83d\uddbc\ufe0f  Build a shareable offline gallery.html \u2014 cached thumbnails, live filter, lightbox.",
       "tags": []
     },
     {
@@ -12541,7 +12775,7 @@
       "path": "navig explore merge-episode",
       "since": "",
       "status": "stable",
-      "summary": "🎬 Merge an episode's clips into one lossless RAW file (MPEG-TS concat; skips corrupt clips).",
+      "summary": "\ud83c\udfac Merge an episode's clips into one lossless RAW file (MPEG-TS concat; skips corrupt clips).",
       "tags": []
     },
     {
@@ -12582,7 +12816,7 @@
       "path": "navig explore open",
       "since": "",
       "status": "stable",
-      "summary": "🔎 Browse & organize a folder in the local web UI (the default for `navig explore <folder>`).",
+      "summary": "\ud83d\udd0e Browse & organize a folder in the local web UI (the default for `navig explore <folder>`).",
       "tags": []
     },
     {
@@ -12651,7 +12885,7 @@
       "path": "navig explore photos arrange",
       "since": "",
       "status": "stable",
-      "summary": "🗂️  Folders per person, year, place or kind — as links, moving nothing.",
+      "summary": "\ud83d\uddc2\ufe0f  Folders per person, year, place or kind \u2014 as links, moving nothing.",
       "tags": []
     },
     {
@@ -12672,7 +12906,7 @@
       "path": "navig explore photos arrange-remove",
       "since": "",
       "status": "stable",
-      "summary": "↩️  Delete an arranged folder tree. Originals are never affected.",
+      "summary": "\u21a9\ufe0f  Delete an arranged folder tree. Originals are never affected.",
       "tags": []
     },
     {
@@ -12692,7 +12926,7 @@
       "options": [
         {
           "flags": [
-            "--margin"
+            "--min-probability"
           ],
           "takes_value": true
         }
@@ -12700,7 +12934,7 @@
       "path": "navig explore photos classes",
       "since": "",
       "status": "stable",
-      "summary": "🏷️  Re-decide what each file IS — file metadata first, guess second.",
+      "summary": "\ud83c\udff7\ufe0f  Re-decide what each file IS \u2014 file metadata first, guess second.",
       "tags": []
     },
     {
@@ -12740,7 +12974,41 @@
       "path": "navig explore photos dates",
       "since": "",
       "status": "stable",
-      "summary": "📅  Recover capture dates EXIF no longer holds — and record HOW.",
+      "summary": "\ud83d\udcc5  Recover capture dates EXIF no longer holds \u2014 and record HOW.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "root",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig explore photos events"
+      ],
+      "handler": "photos_events_cmd",
+      "module": "navig_explore.commands.explore",
+      "options": [
+        {
+          "flags": [
+            "--gap-hours"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--min-size"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig explore photos events",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83d\udcc5  Work out which occasion each photograph belongs to.",
       "tags": []
     },
     {
@@ -12768,7 +13036,7 @@
       "path": "navig explore photos explain",
       "since": "",
       "status": "stable",
-      "summary": "🔍  Show every fact the catalog holds about one photo, and where it came from.",
+      "summary": "\ud83d\udd0d  Show every fact the catalog holds about one photo, and where it came from.",
       "tags": []
     },
     {
@@ -12815,7 +13083,7 @@
       "path": "navig explore photos faces",
       "since": "",
       "status": "stable",
-      "summary": "🙂  Find and embed faces — only in files that are actually photographs.",
+      "summary": "\ud83d\ude42  Find and embed faces \u2014 only in files that are actually photographs.",
       "tags": []
     },
     {
@@ -12857,7 +13125,7 @@
       "path": "navig explore photos gallery",
       "since": "",
       "status": "stable",
-      "summary": "🖼️  A browsable page of the library, filtered by person, year, place and kind.",
+      "summary": "\ud83d\uddbc\ufe0f  A browsable page of the library, filtered by person, year, place and kind.",
       "tags": []
     },
     {
@@ -12910,7 +13178,7 @@
       "path": "navig explore photos index",
       "since": "",
       "status": "stable",
-      "summary": "🧠  Read every photo ONCE — hash, measure, embed and classify it.",
+      "summary": "\ud83e\udde0  Read every photo ONCE \u2014 hash, measure, embed and classify it.",
       "tags": []
     },
     {
@@ -12992,7 +13260,7 @@
       "path": "navig explore photos organize",
       "since": "",
       "status": "stable",
-      "summary": "🖼️  File photos into <date-root>/YYYY/YYYY-MM by EXIF, quarantine litter and salvage.",
+      "summary": "\ud83d\uddbc\ufe0f  File photos into <date-root>/YYYY/YYYY-MM by EXIF, quarantine litter and salvage.",
       "tags": []
     },
     {
@@ -13092,7 +13360,7 @@
       "path": "navig explore photos people merge",
       "since": "",
       "status": "stable",
-      "summary": "Fold groups together — clustering always over-splits the same person.",
+      "summary": "Fold groups together \u2014 clustering always over-splits the same person.",
       "tags": []
     },
     {
@@ -13124,6 +13392,53 @@
       "since": "",
       "status": "stable",
       "summary": "Name a group and lock it, so re-clustering never loses the name.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "root",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig explore photos people sheet"
+      ],
+      "handler": "people_sheet_cmd",
+      "module": "navig_explore.commands.explore",
+      "options": [
+        {
+          "flags": [
+            "--out"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--limit",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--per-group"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--min-photos"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig explore photos people sheet",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83d\uddbc\ufe0f  One row of faces per group, labelled with the id \u2014 so you can name them.",
       "tags": []
     },
     {
@@ -13177,7 +13492,7 @@
       "path": "navig explore photos places",
       "since": "",
       "status": "stable",
-      "summary": "🌍  Work out where photos were taken — GPS, neighbours, then folder names.",
+      "summary": "\ud83c\udf0d  Work out where photos were taken \u2014 GPS, neighbours, then folder names.",
       "tags": []
     },
     {
@@ -13255,7 +13570,7 @@
       "path": "navig explore photos search",
       "since": "",
       "status": "stable",
-      "summary": "🔎  Find photos by what is IN them — plus person, place, year and kind.",
+      "summary": "\ud83d\udd0e  Find photos by what is IN them \u2014 plus person, place, year and kind.",
       "tags": []
     },
     {
@@ -13276,7 +13591,7 @@
       "path": "navig explore photos status",
       "since": "",
       "status": "stable",
-      "summary": "📊  What the vision catalog currently knows about this library.",
+      "summary": "\ud83d\udcca  What the vision catalog currently knows about this library.",
       "tags": []
     },
     {
@@ -13302,6 +13617,12 @@
         },
         {
           "flags": [
+            "--row-sigma"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
             "--max-per-photo"
           ],
           "takes_value": true
@@ -13316,7 +13637,7 @@
       "path": "navig explore photos subjects",
       "since": "",
       "status": "stable",
-      "summary": "🏷️  Tag what photographs are OF — sunsets, food, the sea, cars, concerts.",
+      "summary": "\ud83c\udff7\ufe0f  Tag what photographs are OF \u2014 sunsets, food, the sea, cars, concerts.",
       "tags": []
     },
     {
@@ -13368,7 +13689,7 @@
       "path": "navig explore photos triage",
       "since": "",
       "status": "stable",
-      "summary": "🗂️  Plan the split: real photos vs webcam vs screenshots vs web litter.",
+      "summary": "\ud83d\uddc2\ufe0f  Plan the split: real photos vs webcam vs screenshots vs web litter.",
       "tags": []
     },
     {
@@ -13389,7 +13710,7 @@
       "path": "navig explore photos triage-undo",
       "since": "",
       "status": "stable",
-      "summary": "↩️  Put every file a triage run moved back where it came from.",
+      "summary": "\u21a9\ufe0f  Put every file a triage run moved back where it came from.",
       "tags": []
     },
     {
@@ -13410,7 +13731,7 @@
       "path": "navig explore photos undo",
       "since": "",
       "status": "stable",
-      "summary": "↩️  Put every file a photos-organize run moved back where it came from.",
+      "summary": "\u21a9\ufe0f  Put every file a photos-organize run moved back where it came from.",
       "tags": []
     },
     {
@@ -13448,6 +13769,12 @@
         },
         {
           "flags": [
+            "--keep-stale"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
             "--apply"
           ],
           "takes_value": true
@@ -13456,7 +13783,7 @@
       "path": "navig explore photos views",
       "since": "",
       "status": "stable",
-      "summary": "🗂️  Build the whole organised tree: year, event, person, place, screenshots.",
+      "summary": "\ud83d\uddc2\ufe0f  Build the whole organised tree: year, event, person, place, screenshots.",
       "tags": []
     },
     {
@@ -13477,7 +13804,7 @@
       "path": "navig explore photos views-remove",
       "since": "",
       "status": "stable",
-      "summary": "↩️  Delete the organised tree. Your photos are never affected.",
+      "summary": "\u21a9\ufe0f  Delete the organised tree. Your photos are never affected.",
       "tags": []
     },
     {
@@ -13512,7 +13839,7 @@
       "path": "navig explore probe",
       "since": "",
       "status": "stable",
-      "summary": "📐 Extract width/height/codec/date/GPS/camera → .mediaexplorer/meta.jsonl (resumable).",
+      "summary": "\ud83d\udcd0 Extract width/height/codec/date/GPS/camera \u2192 .mediaexplorer/meta.jsonl (resumable).",
       "tags": []
     },
     {
@@ -13564,7 +13891,7 @@
       "path": "navig explore route",
       "since": "",
       "status": "stable",
-      "summary": "🚚 Route media to the master library. Default: PLAN (manifest only). --apply to move.",
+      "summary": "\ud83d\ude9a Route media to the master library. Default: PLAN (manifest only). --apply to move.",
       "tags": []
     },
     {
@@ -13585,7 +13912,7 @@
       "path": "navig explore undo",
       "since": "",
       "status": "stable",
-      "summary": "↩️  Put every file a quarantine / photos-organize run moved back where it was.",
+      "summary": "\u21a9\ufe0f  Put every file a quarantine / photos-organize run moved back where it was.",
       "tags": []
     },
     {
@@ -14552,7 +14879,7 @@
       "path": "navig flux clear",
       "since": "",
       "status": "stable",
-      "summary": "Clear the routing target — commands run locally.",
+      "summary": "Clear the routing target \u2014 commands run locally.",
       "tags": []
     },
     {
@@ -14864,7 +15191,7 @@
       "path": "navig games art",
       "since": "",
       "status": "stable",
-      "summary": "🖼  Fetch/refresh Steam cover art for your unified (non-Steam) games.",
+      "summary": "\ud83d\uddbc  Fetch/refresh Steam cover art for your unified (non-Steam) games.",
       "tags": []
     },
     {
@@ -14879,7 +15206,7 @@
       "path": "navig games check",
       "since": "",
       "status": "stable",
-      "summary": "🔎 Show what's free right now (and, with --upcoming, what's next).",
+      "summary": "\ud83d\udd0e Show what's free right now (and, with --upcoming, what's next).",
       "tags": []
     },
     {
@@ -14894,7 +15221,7 @@
       "path": "navig games claim",
       "since": "",
       "status": "stable",
-      "summary": "🕹  Claim the currently-free games into your account.",
+      "summary": "\ud83d\udd79  Claim the currently-free games into your account.",
       "tags": []
     },
     {
@@ -14924,7 +15251,7 @@
       "path": "navig games deals notify",
       "since": "",
       "status": "stable",
-      "summary": "🔔 Check deals and fire notifications for anything new (the scheduler target).",
+      "summary": "\ud83d\udd14 Check deals and fire notifications for anything new (the scheduler target).",
       "tags": []
     },
     {
@@ -14969,7 +15296,7 @@
       "path": "navig games doctor",
       "since": "",
       "status": "stable",
-      "summary": "🩺 Full self-check across every subsystem (sourcing, browser, vault, Steam, library, art, deals).",
+      "summary": "\ud83e\ude7a Full self-check across every subsystem (sourcing, browser, vault, Steam, library, art, deals).",
       "tags": []
     },
     {
@@ -14984,7 +15311,7 @@
       "path": "navig games grab",
       "since": "",
       "status": "stable",
-      "summary": "Mark a free game as grabbed — it settles, so it stops nagging you.",
+      "summary": "Mark a free game as grabbed \u2014 it settles, so it stops nagging you.",
       "tags": []
     },
     {
@@ -14999,7 +15326,7 @@
       "path": "navig games history",
       "since": "",
       "status": "stable",
-      "summary": "📜 What has been claimed / attempted.",
+      "summary": "\ud83d\udcdc What has been claimed / attempted.",
       "tags": []
     },
     {
@@ -15014,7 +15341,7 @@
       "path": "navig games library",
       "since": "",
       "status": "stable",
-      "summary": "🗂  List installed games across Steam, Epic, GOG and Amazon (local scan).",
+      "summary": "\ud83d\uddc2  List installed games across Steam, Epic, GOG and Amazon (local scan).",
       "tags": []
     },
     {
@@ -15029,7 +15356,7 @@
       "path": "navig games login epic",
       "since": "",
       "status": "stable",
-      "summary": "🔐 Open Epic in a persistent browser, sign in once, and save the session.",
+      "summary": "\ud83d\udd10 Open Epic in a persistent browser, sign in once, and save the session.",
       "tags": []
     },
     {
@@ -15074,7 +15401,7 @@
       "path": "navig games schedule disable",
       "since": "",
       "status": "stable",
-      "summary": "⏹ Remove a recurring job.",
+      "summary": "\u23f9 Remove a recurring job.",
       "tags": []
     },
     {
@@ -15089,7 +15416,7 @@
       "path": "navig games schedule enable",
       "since": "",
       "status": "stable",
-      "summary": "▶ Register a recurring job (auto-claim · deal alerts · unify to Steam).",
+      "summary": "\u25b6 Register a recurring job (auto-claim \u00b7 deal alerts \u00b7 unify to Steam).",
       "tags": []
     },
     {
@@ -15119,7 +15446,7 @@
       "path": "navig games status",
       "since": "",
       "status": "stable",
-      "summary": "ℹ️  Plugin, login, library, Steam & schedule status.",
+      "summary": "\u2139\ufe0f  Plugin, login, library, Steam & schedule status.",
       "tags": []
     },
     {
@@ -15149,7 +15476,7 @@
       "path": "navig games steam auth",
       "since": "",
       "status": "stable",
-      "summary": "🔐 Store a Steam Guard secret (from --shared-secret or a --mafile) in the vault.",
+      "summary": "\ud83d\udd10 Store a Steam Guard secret (from --shared-secret or a --mafile) in the vault.",
       "tags": []
     },
     {
@@ -15164,7 +15491,7 @@
       "path": "navig games steam code",
       "since": "",
       "status": "stable",
-      "summary": "🔑 Print the current Steam Guard code.",
+      "summary": "\ud83d\udd11 Print the current Steam Guard code.",
       "tags": []
     },
     {
@@ -15194,7 +15521,7 @@
       "path": "navig games unify",
       "since": "",
       "status": "stable",
-      "summary": "➕ Add your Epic/GOG/Amazon games to the Steam library (one library for all).",
+      "summary": "\u2795 Add your Epic/GOG/Amazon games to the Steam library (one library for all).",
       "tags": []
     },
     {
@@ -15725,7 +16052,7 @@
       "path": "navig generate download",
       "since": "",
       "status": "stable",
-      "summary": "Download a video (TikTok & friends) — same engine as `navig download`.",
+      "summary": "Download a video (TikTok & friends) \u2014 same engine as `navig download`.",
       "tags": []
     },
     {
@@ -16055,7 +16382,7 @@
       "path": "navig generate process",
       "since": "",
       "status": "stable",
-      "summary": "LOCAL pixel pipeline → a game-ready sprite variant (Pillow).",
+      "summary": "LOCAL pixel pipeline \u2192 a game-ready sprite variant (Pillow).",
       "tags": []
     },
     {
@@ -16130,7 +16457,7 @@
       "path": "navig generate rembg",
       "since": "",
       "status": "stable",
-      "summary": "Remove the background → transparent PNG (Recraft).",
+      "summary": "Remove the background \u2192 transparent PNG (Recraft).",
       "tags": []
     },
     {
@@ -16190,7 +16517,7 @@
       "path": "navig generate tiktok download",
       "since": "",
       "status": "stable",
-      "summary": "Download TikTok posts (organized <out>/<creator>/<id>) — concurrent, resumable.",
+      "summary": "Download TikTok posts (organized <out>/<creator>/<id>) \u2014 concurrent, resumable.",
       "tags": []
     },
     {
@@ -16265,7 +16592,7 @@
       "path": "navig generate tiktok post",
       "since": "",
       "status": "stable",
-      "summary": "Read a whole post via the browser in ONE pass — description + stats + comments.",
+      "summary": "Read a whole post via the browser in ONE pass \u2014 description + stats + comments.",
       "tags": []
     },
     {
@@ -16280,7 +16607,7 @@
       "path": "navig generate tiktok profile",
       "since": "",
       "status": "stable",
-      "summary": "Download a creator's whole profile — videos, slideshows images, audio, or just metadata.",
+      "summary": "Download a creator's whole profile \u2014 videos, slideshows images, audio, or just metadata.",
       "tags": []
     },
     {
@@ -16409,7 +16736,7 @@
       "path": "navig github backup",
       "since": "",
       "status": "stable",
-      "summary": "📦 Clone / mirror every repo for a user (or --org organisation).",
+      "summary": "\ud83d\udce6 Clone / mirror every repo for a user (or --org organisation).",
       "tags": []
     },
     {
@@ -16424,7 +16751,7 @@
       "path": "navig github clone",
       "since": "",
       "status": "stable",
-      "summary": "⬇️  Clone a single repository (with the full toolbox if available, else plain git).",
+      "summary": "\u2b07\ufe0f  Clone a single repository (with the full toolbox if available, else plain git).",
       "tags": []
     },
     {
@@ -17806,7 +18133,7 @@
       "path": "navig github search",
       "since": "",
       "status": "stable",
-      "summary": "🔍 Search GitHub and clone matching repositories.",
+      "summary": "\ud83d\udd0d Search GitHub and clone matching repositories.",
       "tags": []
     },
     {
@@ -17946,7 +18273,7 @@
       "path": "navig github status",
       "since": "",
       "status": "stable",
-      "summary": "ℹ️  Show engine installation status and token configuration.",
+      "summary": "\u2139\ufe0f  Show engine installation status and token configuration.",
       "tags": []
     },
     {
@@ -18142,7 +18469,7 @@
       "path": "navig github token remove",
       "since": "",
       "status": "stable",
-      "summary": "🗑  Remove the stored GitHub token.",
+      "summary": "\ud83d\uddd1  Remove the stored GitHub token.",
       "tags": []
     },
     {
@@ -18157,7 +18484,7 @@
       "path": "navig github token set",
       "since": "",
       "status": "stable",
-      "summary": "🔑 Save a GitHub token for navig github to use automatically.",
+      "summary": "\ud83d\udd11 Save a GitHub token for navig github to use automatically.",
       "tags": []
     },
     {
@@ -18172,7 +18499,7 @@
       "path": "navig github token show",
       "since": "",
       "status": "stable",
-      "summary": "🔍 Display where the current GitHub token comes from (masked).",
+      "summary": "\ud83d\udd0d Display where the current GitHub token comes from (masked).",
       "tags": []
     },
     {
@@ -18817,7 +19144,7 @@
       "path": "navig habit checkin",
       "since": "",
       "status": "stable",
-      "summary": "Show — or send to Telegram — a one-tap check-in card.",
+      "summary": "Show \u2014 or send to Telegram \u2014 a one-tap check-in card.",
       "tags": []
     },
     {
@@ -19065,7 +19392,7 @@
       "path": "navig habit spark",
       "since": "",
       "status": "stable",
-      "summary": "Send one short line — chosen from the day, not at random.",
+      "summary": "Send one short line \u2014 chosen from the day, not at random.",
       "tags": []
     },
     {
@@ -19564,7 +19891,7 @@
       "path": "navig history undo",
       "since": "",
       "status": "stable",
-      "summary": "Undo a reversible (green) operation — confirm-gated.",
+      "summary": "Undo a reversible (green) operation \u2014 confirm-gated.",
       "tags": []
     },
     {
@@ -19675,7 +20002,7 @@
       "path": "navig host deploy",
       "since": "",
       "status": "stable",
-      "summary": "Install + start NAVIG on a host over SSH — idempotent (upgrades on re-run).",
+      "summary": "Install + start NAVIG on a host over SSH \u2014 idempotent (upgrades on re-run).",
       "tags": []
     },
     {
@@ -20269,7 +20596,7 @@
       "path": "navig host servers",
       "since": "",
       "status": "stable",
-      "summary": "List cloud (Hetzner) servers for hosts that have a key — beside the SSH hosts.",
+      "summary": "List cloud (Hetzner) servers for hosts that have a key \u2014 beside the SSH hosts.",
       "tags": []
     },
     {
@@ -20330,7 +20657,7 @@
       "path": "navig host status",
       "since": "",
       "status": "stable",
-      "summary": "Transport-aware status — probes SSH + Hetzner and shows the optimal path.",
+      "summary": "Transport-aware status \u2014 probes SSH + Hetzner and shows the optimal path.",
       "tags": []
     },
     {
@@ -20706,7 +21033,7 @@
       "path": "navig inbox process-current",
       "since": "",
       "status": "stable",
-      "summary": "Process a single inbox file — classify, transform, and route.",
+      "summary": "Process a single inbox file \u2014 classify, transform, and route.",
       "tags": []
     },
     {
@@ -20752,7 +21079,7 @@
       "path": "navig inbox promote",
       "since": "",
       "status": "stable",
-      "summary": "Promote an inbox item up the plan tiers — never deletes; appends a bullet",
+      "summary": "Promote an inbox item up the plan tiers \u2014 never deletes; appends a bullet",
       "tags": []
     },
     {
@@ -20858,7 +21185,7 @@
       "path": "navig inbox ui",
       "since": "",
       "status": "stable",
-      "summary": "Interactive TUI review panel — inspect inbox files and approve routing.",
+      "summary": "Interactive TUI review panel \u2014 inspect inbox files and approve routing.",
       "tags": []
     },
     {
@@ -21717,7 +22044,7 @@
       "path": "navig install upgrade",
       "since": "",
       "status": "stable",
-      "summary": "Upgrade an asset's **capabilities only** — memory/plans/inbox/state untouched.",
+      "summary": "Upgrade an asset's **capabilities only** \u2014 memory/plans/inbox/state untouched.",
       "tags": []
     },
     {
@@ -21747,7 +22074,7 @@
       "path": "navig ios dfu",
       "since": "",
       "status": "stable",
-      "summary": "Guide entering DFU mode (button timing is physical — can't be automated).",
+      "summary": "Guide entering DFU mode (button timing is physical \u2014 can't be automated).",
       "tags": []
     },
     {
@@ -21762,7 +22089,7 @@
       "path": "navig ios instruments",
       "since": "",
       "status": "stable",
-      "summary": "Drive DVT instruments (proclist/applist/kill/signal/…) — passthrough to",
+      "summary": "Drive DVT instruments (proclist/applist/kill/signal/\u2026) \u2014 passthrough to",
       "tags": []
     },
     {
@@ -22515,7 +22842,7 @@
       "path": "navig lighthouse deploy",
       "since": "",
       "status": "stable",
-      "summary": "Deploy Lighthouse to your own Cloudflare account — no Node, no tunnel, no domain.",
+      "summary": "Deploy Lighthouse to your own Cloudflare account \u2014 no Node, no tunnel, no domain.",
       "tags": []
     },
     {
@@ -23947,7 +24274,7 @@
       "path": "navig mcp info",
       "since": "",
       "status": "stable",
-      "summary": "Show one server's details — type, command, enabled state.",
+      "summary": "Show one server's details \u2014 type, command, enabled state.",
       "tags": []
     },
     {
@@ -24505,7 +24832,7 @@
       "path": "navig media download",
       "since": "",
       "status": "stable",
-      "summary": "Download a video (TikTok & friends) — same engine as `navig download`.",
+      "summary": "Download a video (TikTok & friends) \u2014 same engine as `navig download`.",
       "tags": []
     },
     {
@@ -24835,7 +25162,7 @@
       "path": "navig media process",
       "since": "",
       "status": "stable",
-      "summary": "LOCAL pixel pipeline → a game-ready sprite variant (Pillow).",
+      "summary": "LOCAL pixel pipeline \u2192 a game-ready sprite variant (Pillow).",
       "tags": []
     },
     {
@@ -24910,7 +25237,7 @@
       "path": "navig media rembg",
       "since": "",
       "status": "stable",
-      "summary": "Remove the background → transparent PNG (Recraft).",
+      "summary": "Remove the background \u2192 transparent PNG (Recraft).",
       "tags": []
     },
     {
@@ -24970,7 +25297,7 @@
       "path": "navig media tiktok download",
       "since": "",
       "status": "stable",
-      "summary": "Download TikTok posts (organized <out>/<creator>/<id>) — concurrent, resumable.",
+      "summary": "Download TikTok posts (organized <out>/<creator>/<id>) \u2014 concurrent, resumable.",
       "tags": []
     },
     {
@@ -25045,7 +25372,7 @@
       "path": "navig media tiktok post",
       "since": "",
       "status": "stable",
-      "summary": "Read a whole post via the browser in ONE pass — description + stats + comments.",
+      "summary": "Read a whole post via the browser in ONE pass \u2014 description + stats + comments.",
       "tags": []
     },
     {
@@ -25060,7 +25387,7 @@
       "path": "navig media tiktok profile",
       "since": "",
       "status": "stable",
-      "summary": "Download a creator's whole profile — videos, slideshows images, audio, or just metadata.",
+      "summary": "Download a creator's whole profile \u2014 videos, slideshows images, audio, or just metadata.",
       "tags": []
     },
     {
@@ -25239,7 +25566,7 @@
       "path": "navig memory export",
       "since": "",
       "status": "stable",
-      "summary": "Export your memory — portable, user-owned. JSON for re-import, Markdown to read.",
+      "summary": "Export your memory \u2014 portable, user-owned. JSON for re-import, Markdown to read.",
       "tags": []
     },
     {
@@ -25869,7 +26196,7 @@
       "path": "navig menu run",
       "since": "",
       "status": "stable",
-      "summary": "Run a canonical action (dev/build/test/…) or any script id.",
+      "summary": "Run a canonical action (dev/build/test/\u2026) or any script id.",
       "tags": []
     },
     {
@@ -25957,7 +26284,7 @@
       "path": "navig migrate addons",
       "since": "",
       "status": "stable",
-      "summary": "Migrate legacy addons/ → templates/ architecture.",
+      "summary": "Migrate legacy addons/ \u2192 templates/ architecture.",
       "tags": []
     },
     {
@@ -26013,7 +26340,7 @@
       "path": "navig migrate config",
       "since": "",
       "status": "stable",
-      "summary": "Migrate Documents\\.navig → ~/.navig config layout.",
+      "summary": "Migrate Documents\\.navig \u2192 ~/.navig config layout.",
       "tags": []
     },
     {
@@ -26263,7 +26590,7 @@
       "path": "navig mobile apps",
       "since": "",
       "status": "stable",
-      "summary": "Installed apps: list · install <ipa/apk> · uninstall <id> · info <id> · extract <id>.",
+      "summary": "Installed apps: list \u00b7 install <ipa/apk> \u00b7 uninstall <id> \u00b7 info <id> \u00b7 extract <id>.",
       "tags": []
     },
     {
@@ -26353,7 +26680,7 @@
       "path": "navig mobile dev",
       "since": "",
       "status": "stable",
-      "summary": "Developer tools — shell, enable dev-mode, frida (list/attach/spawn), objection.",
+      "summary": "Developer tools \u2014 shell, enable dev-mode, frida (list/attach/spawn), objection.",
       "tags": []
     },
     {
@@ -26383,7 +26710,7 @@
       "path": "navig mobile doctor",
       "since": "",
       "status": "stable",
-      "summary": "Toolchain health — what's installed for Android/iOS ops and how to get the rest.",
+      "summary": "Toolchain health \u2014 what's installed for Android/iOS ops and how to get the rest.",
       "tags": []
     },
     {
@@ -26413,7 +26740,7 @@
       "path": "navig mobile forensics",
       "since": "",
       "status": "stable",
-      "summary": "Consent-gated logical acquisition + artifact parsing (iLEAPP/ALEAPP) → case dir.",
+      "summary": "Consent-gated logical acquisition + artifact parsing (iLEAPP/ALEAPP) \u2192 case dir.",
       "tags": []
     },
     {
@@ -26428,7 +26755,7 @@
       "path": "navig mobile fs",
       "since": "",
       "status": "stable",
-      "summary": "Device filesystem: ls <remote> · pull <remote> <local> · push <local> <remote>.",
+      "summary": "Device filesystem: ls <remote> \u00b7 pull <remote> <local> \u00b7 push <local> <remote>.",
       "tags": []
     },
     {
@@ -26473,7 +26800,7 @@
       "path": "navig mobile ios dfu",
       "since": "",
       "status": "stable",
-      "summary": "Guide entering DFU mode (button timing is physical — can't be automated).",
+      "summary": "Guide entering DFU mode (button timing is physical \u2014 can't be automated).",
       "tags": []
     },
     {
@@ -26488,7 +26815,7 @@
       "path": "navig mobile ios instruments",
       "since": "",
       "status": "stable",
-      "summary": "Drive DVT instruments (proclist/applist/kill/signal/…) — passthrough to",
+      "summary": "Drive DVT instruments (proclist/applist/kill/signal/\u2026) \u2014 passthrough to",
       "tags": []
     },
     {
@@ -26548,7 +26875,7 @@
       "path": "navig mobile jailbreak",
       "since": "",
       "status": "stable",
-      "summary": "Jailbreak assist (iOS): status (checkm8 eligibility + dev-mode) · guide (palera1n/checkra1n).",
+      "summary": "Jailbreak assist (iOS): status (checkm8 eligibility + dev-mode) \u00b7 guide (palera1n/checkra1n).",
       "tags": []
     },
     {
@@ -26563,7 +26890,7 @@
       "path": "navig mobile logs",
       "since": "",
       "status": "stable",
-      "summary": "Device log — recent logcat (Android) or live syslog (iOS).",
+      "summary": "Device log \u2014 recent logcat (Android) or live syslog (iOS).",
       "tags": []
     },
     {
@@ -26608,7 +26935,7 @@
       "path": "navig mobile osint",
       "since": "",
       "status": "stable",
-      "summary": "Device-anchored OSINT: identity · app-privacy report · combined report.",
+      "summary": "Device-anchored OSINT: identity \u00b7 app-privacy report \u00b7 combined report.",
       "tags": []
     },
     {
@@ -26623,7 +26950,7 @@
       "path": "navig mobile pair",
       "since": "",
       "status": "stable",
-      "summary": "Pair a device — Android wireless (`adb pair host:port`), else guidance.",
+      "summary": "Pair a device \u2014 Android wireless (`adb pair host:port`), else guidance.",
       "tags": []
     },
     {
@@ -26638,7 +26965,7 @@
       "path": "navig mobile restore",
       "since": "",
       "status": "stable",
-      "summary": "Restore a backup — DESTRUCTIVE (overwrites device data). Consent + --yes required.",
+      "summary": "Restore a backup \u2014 DESTRUCTIVE (overwrites device data). Consent + --yes required.",
       "tags": []
     },
     {
@@ -26653,7 +26980,7 @@
       "path": "navig mobile root",
       "since": "",
       "status": "stable",
-      "summary": "Rooting assist (Android): status · guide · unlock · flash. Never one-click —",
+      "summary": "Rooting assist (Android): status \u00b7 guide \u00b7 unlock \u00b7 flash. Never one-click \u2014",
       "tags": []
     },
     {
@@ -26762,7 +27089,7 @@
       "path": "navig mode doctor",
       "since": "",
       "status": "stable",
-      "summary": "Probe each mode's provider:model with a 1-token call — catches DEAD/EOL",
+      "summary": "Probe each mode's provider:model with a 1-token call \u2014 catches DEAD/EOL",
       "tags": []
     },
     {
@@ -27718,7 +28045,7 @@
       "path": "navig pipeline reel",
       "since": "",
       "status": "stable",
-      "summary": "🎬 Build a vertical reel per language — capture, narrate, caption, score.",
+      "summary": "\ud83c\udfac Build a vertical reel per language \u2014 capture, narrate, caption, score.",
       "tags": []
     },
     {
@@ -27869,7 +28196,7 @@
       "path": "navig pipeline schedule",
       "since": "",
       "status": "stable",
-      "summary": "Autopilot — run + publish the assembly line on a recurring cadence.",
+      "summary": "Autopilot \u2014 run + publish the assembly line on a recurring cadence.",
       "tags": []
     },
     {
@@ -28216,7 +28543,7 @@
       "path": "navig plans run",
       "since": "",
       "status": "stable",
-      "summary": "Deprecated alias for `plans add` — add a goal to a plan.",
+      "summary": "Deprecated alias for `plans add` \u2014 add a goal to a plan.",
       "tags": []
     },
     {
@@ -29246,7 +29573,7 @@
       "path": "navig prompts list",
       "since": "",
       "status": "stable",
-      "summary": "List discovered prompts across all roots (user · package · space · claude).",
+      "summary": "List discovered prompts across all roots (user \u00b7 package \u00b7 space \u00b7 claude).",
       "tags": []
     },
     {
@@ -29905,7 +30232,7 @@
       "path": "navig repo remove",
       "since": "",
       "status": "stable",
-      "summary": "Reliably remove a .dev/worktrees/<slug> worktree — unregister + delete.",
+      "summary": "Reliably remove a .dev/worktrees/<slug> worktree \u2014 unregister + delete.",
       "tags": []
     },
     {
@@ -30979,7 +31306,7 @@
       "path": "navig signal add",
       "since": "",
       "status": "stable",
-      "summary": "Create a signed ingest source. Prints the secret ONCE — store it now.",
+      "summary": "Create a signed ingest source. Prints the secret ONCE \u2014 store it now.",
       "tags": []
     },
     {
@@ -31133,7 +31460,7 @@
       "path": "navig signals add",
       "since": "",
       "status": "stable",
-      "summary": "Create a signed ingest source. Prints the secret ONCE — store it now.",
+      "summary": "Create a signed ingest source. Prints the secret ONCE \u2014 store it now.",
       "tags": []
     },
     {
@@ -31317,7 +31644,7 @@
       "path": "navig skill benchmark",
       "since": "",
       "status": "stable",
-      "summary": "Run the behavioral eval N times across a skill library and gate on mean(with) ≥ mean(without).",
+      "summary": "Run the behavioral eval N times across a skill library and gate on mean(with) \u2265 mean(without).",
       "tags": []
     },
     {
@@ -31543,7 +31870,7 @@
       "path": "navig skill install",
       "since": "",
       "status": "stable",
-      "summary": "Install a skill — from another agent (Claude/Hermes/Codex/local) or the community registry.",
+      "summary": "Install a skill \u2014 from another agent (Claude/Hermes/Codex/local) or the community registry.",
       "tags": []
     },
     {
@@ -31962,7 +32289,7 @@
       "path": "navig skills benchmark",
       "since": "",
       "status": "stable",
-      "summary": "Run the behavioral eval N times across a skill library and gate on mean(with) ≥ mean(without).",
+      "summary": "Run the behavioral eval N times across a skill library and gate on mean(with) \u2265 mean(without).",
       "tags": []
     },
     {
@@ -32188,7 +32515,7 @@
       "path": "navig skills install",
       "since": "",
       "status": "stable",
-      "summary": "Install a skill — from another agent (Claude/Hermes/Codex/local) or the community registry.",
+      "summary": "Install a skill \u2014 from another agent (Claude/Hermes/Codex/local) or the community registry.",
       "tags": []
     },
     {
@@ -32709,7 +33036,7 @@
       "path": "navig social engagement",
       "since": "",
       "status": "stable",
-      "summary": "Record engagement for a campaign — the *measure* side of the loop.",
+      "summary": "Record engagement for a campaign \u2014 the *measure* side of the loop.",
       "tags": []
     },
     {
@@ -32724,7 +33051,7 @@
       "path": "navig social fan-out",
       "since": "",
       "status": "stable",
-      "summary": "Publish ONE brief to many networks (X · Facebook · Dev.to · Telegram) with UTM tags.",
+      "summary": "Publish ONE brief to many networks (X \u00b7 Facebook \u00b7 Dev.to \u00b7 Telegram) with UTM tags.",
       "tags": []
     },
     {
@@ -32739,7 +33066,7 @@
       "path": "navig social receipts",
       "since": "",
       "status": "stable",
-      "summary": "What we've published — a campaign-tagged ledger of every live fan-out.",
+      "summary": "What we've published \u2014 a campaign-tagged ledger of every live fan-out.",
       "tags": []
     },
     {
@@ -32784,7 +33111,7 @@
       "path": "navig social report",
       "since": "",
       "status": "stable",
-      "summary": "Campaign scorecard — how did it do? Joins what you published (receipts) with",
+      "summary": "Campaign scorecard \u2014 how did it do? Joins what you published (receipts) with",
       "tags": []
     },
     {
@@ -32799,7 +33126,7 @@
       "path": "navig social stats",
       "since": "",
       "status": "stable",
-      "summary": "Public follower / subscriber / view counts for ANY handle — no space, no linked account.",
+      "summary": "Public follower / subscriber / view counts for ANY handle \u2014 no space, no linked account.",
       "tags": []
     },
     {
@@ -32829,7 +33156,7 @@
       "path": "navig social sync",
       "since": "",
       "status": "stable",
-      "summary": "Pull live view/like counts from each network → the report's CTR goes real.",
+      "summary": "Pull live view/like counts from each network \u2192 the report's CTR goes real.",
       "tags": []
     },
     {
@@ -32983,7 +33310,7 @@
       "path": "navig space check",
       "since": "",
       "status": "stable",
-      "summary": "Check a space and report what's present vs missing — then let you pick the next step.",
+      "summary": "Check a space and report what's present vs missing \u2014 then let you pick the next step.",
       "tags": []
     },
     {
@@ -33149,7 +33476,7 @@
       "path": "navig space doctor",
       "since": "",
       "status": "stable",
-      "summary": "Check a space and report what's present vs missing — then let you pick the next step.",
+      "summary": "Check a space and report what's present vs missing \u2014 then let you pick the next step.",
       "tags": []
     },
     {
@@ -33407,7 +33734,7 @@
       "path": "navig space switch",
       "since": "",
       "status": "stable",
-      "summary": "Activate a space — binds the agent's working directory to the workshop.",
+      "summary": "Activate a space \u2014 binds the agent's working directory to the workshop.",
       "tags": []
     },
     {
@@ -33578,7 +33905,7 @@
       "path": "navig spaces check",
       "since": "",
       "status": "stable",
-      "summary": "Check a space and report what's present vs missing — then let you pick the next step.",
+      "summary": "Check a space and report what's present vs missing \u2014 then let you pick the next step.",
       "tags": []
     },
     {
@@ -33744,7 +34071,7 @@
       "path": "navig spaces doctor",
       "since": "",
       "status": "stable",
-      "summary": "Check a space and report what's present vs missing — then let you pick the next step.",
+      "summary": "Check a space and report what's present vs missing \u2014 then let you pick the next step.",
       "tags": []
     },
     {
@@ -34002,7 +34329,7 @@
       "path": "navig spaces switch",
       "since": "",
       "status": "stable",
-      "summary": "Activate a space — binds the agent's working directory to the workshop.",
+      "summary": "Activate a space \u2014 binds the agent's working directory to the workshop.",
       "tags": []
     },
     {
@@ -34501,7 +34828,7 @@
       "path": "navig store status",
       "since": "",
       "status": "stable",
-      "summary": "One-screen wiring summary — counts per kind/state, broken items first.",
+      "summary": "One-screen wiring summary \u2014 counts per kind/state, broken items first.",
       "tags": []
     },
     {
@@ -34678,7 +35005,7 @@
       "path": "navig task add",
       "since": "",
       "status": "stable",
-      "summary": "Create a new task from template (retired — use `navig block new`).",
+      "summary": "Create a new task from template (retired \u2014 use `navig block new`).",
       "tags": []
     },
     {
@@ -34729,7 +35056,7 @@
       "path": "navig task complete",
       "since": "",
       "status": "stable",
-      "summary": "Record a completed task — runs complete-task.sh (Unix) or complete-task.ps1 (Windows).",
+      "summary": "Record a completed task \u2014 runs complete-task.sh (Unix) or complete-task.ps1 (Windows).",
       "tags": []
     },
     {
@@ -34750,7 +35077,7 @@
       "path": "navig task edit",
       "since": "",
       "status": "stable",
-      "summary": "Open task in default editor (retired — edit the Block's BLOCK.md).",
+      "summary": "Open task in default editor (retired \u2014 edit the Block's BLOCK.md).",
       "tags": []
     },
     {
@@ -34765,7 +35092,7 @@
       "path": "navig task list",
       "since": "",
       "status": "stable",
-      "summary": "List all available tasks/workflows (retired — see `navig block list`).",
+      "summary": "List all available tasks/workflows (retired \u2014 see `navig block list`).",
       "tags": []
     },
     {
@@ -34865,7 +35192,7 @@
       "path": "navig task show",
       "since": "",
       "status": "stable",
-      "summary": "Display task definition (retired — redirects to `navig block show`).",
+      "summary": "Display task definition (retired \u2014 redirects to `navig block show`).",
       "tags": []
     },
     {
@@ -34886,7 +35213,7 @@
       "path": "navig task test",
       "since": "",
       "status": "stable",
-      "summary": "Validate task syntax (retired — redirects to `navig block verify`).",
+      "summary": "Validate task syntax (retired \u2014 redirects to `navig block verify`).",
       "tags": []
     },
     {
@@ -34948,7 +35275,7 @@
       "path": "navig telegram business emoji",
       "since": "",
       "status": "stable",
-      "summary": "List or remap reaction emojis, e.g. `navig telegram business emoji 🎯 tiktok`.",
+      "summary": "List or remap reaction emojis, e.g. `navig telegram business emoji \ud83c\udfaf tiktok`.",
       "tags": []
     },
     {
@@ -36622,7 +36949,7 @@
       "path": "navig tiktok download",
       "since": "",
       "status": "stable",
-      "summary": "Download TikTok posts (organized <out>/<creator>/<id>) — concurrent, resumable.",
+      "summary": "Download TikTok posts (organized <out>/<creator>/<id>) \u2014 concurrent, resumable.",
       "tags": []
     },
     {
@@ -36697,7 +37024,7 @@
       "path": "navig tiktok post",
       "since": "",
       "status": "stable",
-      "summary": "Read a whole post via the browser in ONE pass — description + stats + comments.",
+      "summary": "Read a whole post via the browser in ONE pass \u2014 description + stats + comments.",
       "tags": []
     },
     {
@@ -36712,7 +37039,7 @@
       "path": "navig tiktok profile",
       "since": "",
       "status": "stable",
-      "summary": "Download a creator's whole profile — videos, slideshows images, audio, or just metadata.",
+      "summary": "Download a creator's whole profile \u2014 videos, slideshows images, audio, or just metadata.",
       "tags": []
     },
     {
@@ -37212,7 +37539,7 @@
       "path": "navig tt download",
       "since": "",
       "status": "stable",
-      "summary": "Download TikTok posts (organized <out>/<creator>/<id>) — concurrent, resumable.",
+      "summary": "Download TikTok posts (organized <out>/<creator>/<id>) \u2014 concurrent, resumable.",
       "tags": []
     },
     {
@@ -37287,7 +37614,7 @@
       "path": "navig tt post",
       "since": "",
       "status": "stable",
-      "summary": "Read a whole post via the browser in ONE pass — description + stats + comments.",
+      "summary": "Read a whole post via the browser in ONE pass \u2014 description + stats + comments.",
       "tags": []
     },
     {
@@ -37302,7 +37629,7 @@
       "path": "navig tt profile",
       "since": "",
       "status": "stable",
-      "summary": "Download a creator's whole profile — videos, slideshows images, audio, or just metadata.",
+      "summary": "Download a creator's whole profile \u2014 videos, slideshows images, audio, or just metadata.",
       "tags": []
     },
     {
@@ -37432,7 +37759,7 @@
       "path": "navig undo",
       "since": "",
       "status": "stable",
-      "summary": "Undo the last green (undoable) operation — confirm-gated.",
+      "summary": "Undo the last green (undoable) operation \u2014 confirm-gated.",
       "tags": []
     },
     {
@@ -38528,7 +38855,7 @@
       "path": "navig vault show",
       "since": "",
       "status": "stable",
-      "summary": "Show details of a credential (legacy — prefer `vault info` for the rich view).",
+      "summary": "Show details of a credential (legacy \u2014 prefer `vault info` for the rich view).",
       "tags": []
     },
     {
@@ -40130,7 +40457,7 @@
       "tags": []
     }
   ],
-  "generated_at": "2026-09-05T11:15:32.925043+00:00",
+  "generated_at": "2026-09-05T18:27:22.134108+00:00",
   "schema_version": "1.0.0",
-  "total": 1372
+  "total": 1379
 }

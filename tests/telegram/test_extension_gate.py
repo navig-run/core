@@ -168,14 +168,38 @@ async def test_the_callback_gate_fails_open_when_the_registry_raises(monkeypatch
 # ── Autocomplete + the shared visibility predicate ───────────────────────────
 
 
-def test_switching_an_extension_off_removes_its_commands_from_autocomplete(habits_off):
+def _autocomplete() -> set[str]:
     from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
-    names = {c["command"] for c in TelegramCommandsMixin._build_command_list_for_registration()}
+    return {
+        c["command"] for c in TelegramCommandsMixin._build_command_list_for_registration()
+    }
+
+
+def test_switching_an_extension_off_removes_its_commands_from_autocomplete(habits_off):
+    names = _autocomplete()
     assert names, "the payload must not be empty"
-    assert names.isdisjoint({"habits", "health", "workout", "stats", "card"})
+    assert names.isdisjoint({"habits", "workout", "stats", "card"})
     # The escape hatch is never affected.
     assert {"start", "help", "status", "extensions"} <= names
+
+
+def test_habits_and_health_are_switched_independently(habits_off):
+    """`/health` moved from Habits to Health, where its name matches its content.
+
+    Switching Habits off must no longer take the body check-in with it — these
+    are two features and two switches.
+    """
+    assert {"health", "weigh", "body"} <= _autocomplete()
+
+
+def test_switching_health_off_removes_its_three_commands(monkeypatch):
+    real = tx.is_enabled
+    monkeypatch.setattr(tx, "is_enabled", lambda e: False if e == "health" else real(e))
+    names = _autocomplete()
+    assert names.isdisjoint({"health", "weigh", "body"})
+    # ...and leaves the habit commands alone, the other half of independence.
+    assert {"habits", "stats", "card"} <= names
 
 
 def test_locked_commands_ignore_both_switches(habits_off, monkeypatch):

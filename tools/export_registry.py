@@ -7,10 +7,21 @@ interpreter) with the first-party plugins installed — any other interpreter
 silently SHRINKS the catalog and the guard below will refuse the write.
 
 Usage:
+    # THE one that regenerates the committed artifacts. These flags are not a
+    # preference — they are the flags the freshness gate itself regenerates with
+    # (scripts/ci-local.mjs, `manifestFreshness`), and the committed files must
+    # match what the gate produces or it fails on a diff you did not cause.
+    python tools/export_registry.py --format both --deprecations-report --output-dir generated
+
     python tools/export_registry.py --validate --format both --deprecations-report
-    python tools/export_registry.py --include-hidden --output-dir generated
     # override the interpreter guard (must equal the running major.minor):
     python tools/export_registry.py --allow-interpreter 3.14 --format both
+
+⚠ Do NOT regenerate the committed manifest with ``--include-hidden``. It is for
+ad-hoc inspection of the full catalog, aliases and internal commands included:
+it emits ~1784 commands against the gate's ~1379, so committing its output adds
+~405 entries the gate's own regeneration would never produce and makes
+generated/commands.json diverge from the thing that checks it.
 """
 
 from __future__ import annotations
@@ -176,7 +187,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--include-hidden",
         action="store_true",
-        help="Include hidden/internal commands in exported registry.",
+        help=(
+            "Include hidden/internal commands and aliases — for INSPECTION only. "
+            "Never use it to regenerate the committed manifest: the freshness "
+            "gate regenerates without it, so the output will not match."
+        ),
     )
     parser.add_argument(
         "--output-dir",

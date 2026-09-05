@@ -123,13 +123,31 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
         label="Habits",
         description="Daily check-in cards, streaks and the evening close.",
         group="Life", icon="heart-pulse",
-        commands=frozenset({"habits", "health", "workout", "stats", "card"}),
+        # `health` used to live here and now belongs to the Health extension
+        # below, where the command's name matches what it reports. Every command
+        # maps to exactly ONE extension (test_telegram_extension_coverage), so
+        # the move has to happen on both sides in one edit.
+        commands=frozenset({"habits", "workout", "stats", "card"}),
         callback_prefixes=("hb:",),
         about=(
-            'those five commands stop working and leave /help and the "/" menu',
+            'those four commands stop working and leave /help and the "/" menu',
             "the check-in card's buttons stop answering",
             "the scheduled check-in reminders are not delivered",
             "the schedules and every logged row stay exactly as they are",
+        ),
+    ),
+    TelegramExtension(
+        id="health",
+        label="Health",
+        description="Weight, sleep and mood — the morning weigh-in and the weekly check-in.",
+        group="Life", icon="activity",
+        commands=frozenset({"health", "weigh", "body"}),
+        callback_prefixes=("bm:",),
+        about=(
+            'those three commands stop working and leave /help and the "/" menu',
+            "the morning weigh-in and the Sunday check-in are not delivered",
+            "the weekly card's buttons stop answering",
+            "every measurement already in metrics.csv stays exactly as it is",
         ),
     ),
     TelegramExtension(
@@ -341,6 +359,7 @@ CATEGORY_TO_EXTENSION: dict[str, str] = {
     "diagnostics": "diagnostics",
     "docker": "remote",
     "habits": "habits",
+    "health": "health",
     "media": "media",
     "mesh": "mesh",
     "messaging": "messaging",

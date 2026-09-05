@@ -34,6 +34,16 @@ dependencies = [
   "rich>=13.7.0",
   "pyyaml>=6.0",
   "requests>=2.32.3",
+  # NOTE (2026-09-05): this cap has a SECURITY cost. GHSA-cq5v-8q36-5273 (high, OOB heap
+  # read in the C response parser) is fixed only in aiohttp 3.14.3, and there is no
+  # backport below 3.13 -- the newest release inside this range is 3.12.15 (2025-07-29).
+  # So anyone running navig on their own CPython 3.14 is held below the fix. The default
+  # install is NOT affected: install.sh/ps1 provision PYTHON_SERIES="3.12", which takes
+  # the unconstrained branch below and resolves to a patched aiohttp.
+  # Lifting the cap needs a real reproduction of the deadlock first. A 12-thread
+  # concurrent-import probe on CPython 3.14.3 showed no deadlock with aiohttp 3.14.3 --
+  # but it also showed none with 3.13.0, the version this cap names, so the probe fails
+  # its own control and proves nothing. Do not lift this on that evidence.
   "aiohttp>=3.9.0,<3.13.0; python_version >= '3.14'",  # aiohttp 3.13+ deadlocks on CPython 3.14
   "aiohttp>=3.9.0; python_version < '3.14'",           # no restriction on 3.13 and below
   "paramiko>=3.4.0",

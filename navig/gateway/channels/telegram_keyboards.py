@@ -1294,6 +1294,21 @@ class CallbackHandler:
                 await self._answer(cb_id, toast)
                 return
 
+            # ── Body check-in card (bm:*) — mood, sleep, treatment ──
+            if cb_data.startswith("bm:"):
+                try:
+                    from navig.telegram import body_actions as _bm
+
+                    toast = await _bm.handle_callback(
+                        self.channel, cb_data, chat_id, message_id, user_id
+                    )
+                except Exception as _bm_exc:  # noqa: BLE001
+                    logger.warning("body check-in callback error: %s", _bm_exc)
+                    toast = "⚠️"
+                # Answered AFTER the write, for the same reason as hb: above.
+                await self._answer(cb_id, toast)
+                return
+
             # ── Help Encyclopedia navigation (help:*) ──
             if cb_data.startswith("help:"):
                 await self._answer(cb_id, "")

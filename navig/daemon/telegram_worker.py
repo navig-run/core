@@ -79,6 +79,28 @@ def _deck_config() -> dict:
         # (#532), but keep the builder dict honest too.
         "dev_mode": coerce_bool(deck_cfg.get("dev_mode", False), default=False),
         "auth_max_age": deck_cfg.get("auth_max_age", 3600),
+        # These two were MISSING, and this dict is a hand-written whitelist, so the
+        # consumer just saw defaults. `register_deck_routes` reads both:
+        #
+        #   api_key      — absent meant `resolve("")` reported the config as WIPED and
+        #                  "restored" the key from the vault mirror on every
+        #                  registration: a config write, a scary "the config was
+        #                  wiped, not freshly installed" warning, and a
+        #                  `deck_key_restored` incident each time (84 of them on the
+        #                  operator's machine, one every ~130s). Nothing was wiped —
+        #                  the reader never asked for the key. Worse, with no vault
+        #                  mirror that same path MINTS a new key, which moves the
+        #                  Lighthouse tenant and silently kills the bot and Mini App.
+        #   telegram_only — absent meant the remote lockdown defaulted to OFF on this
+        #                  surface, so `deck.telegram_only=true` was not honoured here
+        #                  even though the gateway-server path honoured it.
+        #
+        # Kept as an explicit list rather than passing the raw dict: the coercions
+        # above are load-bearing. tests/daemon/test_deck_config_parity.py derives the
+        # required set from what the consumer actually reads, so the next key added
+        # there fails the build instead of silently becoming a default.
+        "api_key": deck_cfg.get("api_key", ""),
+        "telegram_only": coerce_bool(deck_cfg.get("telegram_only", False), default=False),
     }
 
 
