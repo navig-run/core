@@ -1,4 +1,4 @@
-"""Compat shim -- the vault's dataclasses and enums (Credential, CredentialType, ...) now lives in ``navig_vault.types``.
+"""Compat shim -- the vault's dataclasses and enums (Credential, CredentialType, ...) now live in ``navig_vault.types``.
 
 The vault engine is being extracted into the standalone ``navig-vault`` package so the two
 cannot fork. This shim re-exports the ENTIRE module -- public and private names -- by

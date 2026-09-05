@@ -1,4 +1,4 @@
-"""Compat shim -- shared vault constants now lives in ``navig_vault._constants``.
+"""Compat shim -- shared vault constants now live in ``navig_vault._constants``.
 
 The vault engine is being extracted into the standalone ``navig-vault`` package so the two
 cannot fork. This shim re-exports the ENTIRE module -- public and private names -- by

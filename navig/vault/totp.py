@@ -1,4 +1,4 @@
-"""Compat shim -- TOTP code generation (RFC 6238) now live in ``navig_vault.totp``.
+"""Compat shim -- TOTP code generation (RFC 6238) now lives in ``navig_vault.totp``.
 
 The vault engine is being extracted into the standalone ``navig-vault`` package so the two
 cannot fork. This shim re-exports the ENTIRE module -- public and private names -- by

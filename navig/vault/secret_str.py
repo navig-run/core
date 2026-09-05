@@ -1,4 +1,4 @@
-"""Compat shim -- SecretStr, the value wrapper that keeps secrets out of logs and reprs now live in ``navig_vault.secret_str``.
+"""Compat shim -- SecretStr, the value wrapper that keeps secrets out of logs and reprs now lives in ``navig_vault.secret_str``.
 
 The vault engine is being extracted into the standalone ``navig-vault`` package so the two
 cannot fork. This shim re-exports the ENTIRE module -- public and private names -- by
