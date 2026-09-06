@@ -61,6 +61,8 @@ def _run_git(args: list[str], cwd: Path) -> tuple[bool, str]:
     what the repository actually contains. ``errors="replace"`` keeps a repository with a
     legacy non-UTF-8 commit encoding from turning a wrong answer into a crash.
     """
+    from navig.platform.process import spawn_kwargs  # noqa: PLC0415
+
     git_exe = shutil.which("git") or "git"
     cmd = [git_exe, *args]
     try:
@@ -72,6 +74,10 @@ def _run_git(args: list[str], cwd: Path) -> tuple[bool, str]:
             errors="replace",
             timeout=_GIT_TIMEOUT,
             cwd=str(cwd),
+            # Eight agent tools route through here, and the agent runs inside the
+            # windowless daemon — so an unsuppressed git was a console window per
+            # status/diff/log/add/commit/stash the model asked for.
+            **spawn_kwargs(),
         )
         if result.returncode == 0:
             return True, result.stdout

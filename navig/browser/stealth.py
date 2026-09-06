@@ -19,6 +19,7 @@ from typing import Any
 from navig.browser._paths import profile_dir
 from navig.browser._paths import screenshot_dir as _default_screenshot_dir
 from navig.browser.a11y import annotate_a11y_snapshot
+from navig.core.coerce import coerce_bool
 from navig.debug_logger import get_debug_logger
 
 logger = get_debug_logger()
@@ -113,7 +114,10 @@ class StealthConfig:
     def from_config(cls, config: dict) -> "StealthConfig":
         stealth_cfg = config.get("browser_stealth", config.get("browser", {}))
         return cls(
-            headless=stealth_cfg.get("headless", False),
+            # Coerced: `navig config set browser.headless true` stores the string "true",
+            # and this config falls back to the shared `browser` section (line above), so
+            # the documented toggle lands here too. bool() on a string is not a read.
+            headless=coerce_bool(stealth_cfg.get("headless", False), default=False),
             channel=stealth_cfg.get("channel", "chrome"),
             user_data_dir=stealth_cfg.get("user_data_dir") or profile_dir("stealth"),
             timeout_ms=stealth_cfg.get("timeout_seconds", 30) * 1000,

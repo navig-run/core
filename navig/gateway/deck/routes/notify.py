@@ -259,6 +259,7 @@ _MONITORS = [
     {"key": "connectivity",     "label": "Brain reachability", "desc": "Tell me when the Lighthouse uplink drops or returns."},
     {"key": "resources",        "label": "Resource alerts",    "desc": "Disk / memory / CPU threshold alerts."},
     {"key": "webcam",           "label": "Webcam (privacy)",   "desc": "Alert when an app starts using your camera."},
+    {"key": "browser_reaper",   "label": "Browser cleanup",    "desc": "Close automation browsers nobody is using any more. Named profiles and any browser with a visible window are never touched."},
 ]
 _MONITOR_KEYS = {m["key"] for m in _MONITORS}
 

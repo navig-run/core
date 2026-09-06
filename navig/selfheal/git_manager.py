@@ -82,12 +82,15 @@ def _run_git(
     work_dir = cwd or core_repo_dir()
     logger.debug("git {}", " ".join(args[: min(len(args), 4)]))
     try:
+        from navig.platform.process import spawn_kwargs  # noqa: PLC0415
+
         result = decode_console_result(subprocess.run(
             cmd,
             cwd=str(work_dir),
             capture_output=True,
-                        timeout=timeout,
+            timeout=timeout,
             check=True,
+            **spawn_kwargs(),
         ))
         return result.stdout.strip()
     except subprocess.CalledProcessError as exc:

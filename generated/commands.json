@@ -6576,6 +6576,12 @@
         },
         {
           "flags": [
+            "--headed"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
             "--window-size"
           ],
           "takes_value": true
@@ -6611,6 +6617,12 @@
         {
           "flags": [
             "--headless"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--headed"
           ],
           "takes_value": true
         },
@@ -6859,6 +6871,12 @@
         },
         {
           "flags": [
+            "--headed"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
             "--json"
           ],
           "takes_value": true
@@ -6907,6 +6925,47 @@
       "aliases": [],
       "arguments": [
         {
+          "name": "names",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig cdp profile prune"
+      ],
+      "handler": "profile_prune_cmd",
+      "module": "navig.commands.cdp",
+      "options": [
+        {
+          "flags": [
+            "--no-sessions"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--yes",
+            "-y"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig cdp profile prune",
+      "since": "",
+      "status": "stable",
+      "summary": "Reclaim disk from browser profiles (throwaway sessions, or a profile you name).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
           "name": "name",
           "required": true,
           "variadic": false
@@ -6935,6 +6994,28 @@
       "since": "",
       "status": "stable",
       "summary": "Remove a profile from the registry (closing it first).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cdp profile usage"
+      ],
+      "handler": "profile_usage_cmd",
+      "module": "navig.commands.cdp",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig cdp profile usage",
+      "since": "",
+      "status": "stable",
+      "summary": "Show how much disk each browser profile is using.",
       "tags": []
     },
     {
@@ -40658,7 +40739,7 @@
       "tags": []
     }
   ],
-  "generated_at": "2026-09-06T12:45:02.439736+00:00",
+  "generated_at": "2026-09-06T13:22:13.187389+00:00",
   "schema_version": "1.0.0",
-  "total": 1387
+  "total": 1389
 }

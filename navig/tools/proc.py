@@ -249,6 +249,14 @@ async def run_process(
         and args[0] in ("/c", "/s", "/d")
     )
 
+    # This module is the tool layer's canonical engine ("All subprocess I/O in the tool
+    # layer flows through run_process"), so it is the single highest-leverage place to
+    # stop console flashes: every agent shell/tool command lands here. stdout/stderr are
+    # PIPEs, so the child never needed a console of its own to be read.
+    from navig.platform.process import spawn_kwargs  # noqa: PLC0415
+
+    quiet = spawn_kwargs()
+
     if _is_win_shell:
         # args = ["/d", "/s", "/c", inner_command]  — take the last element
         inner_cmd = args[-1] if args else ""
@@ -259,6 +267,7 @@ async def run_process(
             stdin=stdin_mode,
             cwd=opts.cwd,
             env=env,
+            **quiet,
         )
     else:
         proc = await asyncio.create_subprocess_exec(
@@ -269,6 +278,7 @@ async def run_process(
             stdin=stdin_mode,
             cwd=opts.cwd,
             env=env,
+            **quiet,
         )
 
     pid = proc.pid

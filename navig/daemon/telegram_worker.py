@@ -462,6 +462,16 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
 
 
 def main() -> None:
+    # Runs as `pythonw.exe -m navig.daemon.telegram_worker` — no console, so every console
+    # child it spawns would otherwise get a brand-new window. See
+    # navig.platform.process.install_windowless_spawn_default; no-op when a console exists.
+    try:
+        from navig.platform.process import install_windowless_spawn_default
+
+        install_windowless_spawn_default()
+    except Exception:  # noqa: BLE001 — cosmetic; never block the worker
+        pass
+
     parser = argparse.ArgumentParser(description="Run NAVIG Telegram worker")
     parser.add_argument(
         "--port",

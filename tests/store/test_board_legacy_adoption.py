@@ -114,7 +114,10 @@ def test_legacy_rows_are_adopted(tmp_path: Path) -> None:
     assert len(titles) == 3, f"legacy cards were not adopted: {titles}"
     assert "Legacy task 0" in titles
     assert [g["title"] for g in store.list_goals()] == ["Pass the driver licence"]
-    assert store.get_schema_version() == 2
+    # Compared against the class constant, not a literal: this asserts "every
+    # migration step ran", which is what the adoption depends on. Pinning the
+    # number means a later, unrelated schema bump reads as a broken rescue.
+    assert store.get_schema_version() == BoardStore.SCHEMA_VERSION
 
 
 def test_the_renamed_history_column_is_mapped(tmp_path: Path) -> None:
@@ -204,7 +207,7 @@ def test_live_data_is_never_overwritten(tmp_path: Path) -> None:
 def test_a_fresh_database_needs_no_migration(tmp_path: Path) -> None:
     """The floor: a brand-new install must not depend on the rescue path."""
     store = BoardStore(tmp_path / "fresh.db")
-    assert store.get_schema_version() == 2
+    assert store.get_schema_version() == BoardStore.SCHEMA_VERSION
     assert store.list_cards() == []
 
     goal = store.create_goal(title="G")

@@ -20,6 +20,12 @@ _SAMPLES: dict[str, tuple[str, str, str, str]] = {
     "connectivity": ("connectivity", "[Test] Brain reachability", "A sample connectivity notification.", "normal"),
     "resources": ("system_alert", "[Test] Resource alert", "A sample disk/CPU/memory alert.", "normal"),
     "webcam": ("webcam_on", "[Test] Webcam in use", "A sample webcam-in-use notification.", "high"),
+    # Same type the reaper really dispatches (browser_reaper.NOTIFY_TYPE), so pressing Test
+    # exercises the real routing rather than a made-up type. Not `config_incident`: that one
+    # means the config/identity layer rescued itself, and a browser cleanup filed there
+    # would dilute the signal that the bot is about to go deaf.
+    "browser_reaper": ("system_alert", "[Test] Automation browser cleanup",
+                       "A sample notification for closing an idle automation browser.", "low"),
 }
 
 

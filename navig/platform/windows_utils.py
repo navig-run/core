@@ -117,8 +117,17 @@ def run_with_graceful_timeout(
         kwargs.setdefault("stdout", subprocess.PIPE)
         kwargs.setdefault("stderr", subprocess.PIPE)
 
-    # CREATE_NEW_PROCESS_GROUP is required so we can send CTRL_BREAK_EVENT.
-    creation_flags = kwargs.pop("creationflags", 0) | subprocess.CREATE_NEW_PROCESS_GROUP
+    # CREATE_NEW_PROCESS_GROUP is required so we can send CTRL_BREAK_EVENT. It says nothing
+    # about windows, though — so this shared wrapper used to flash a console for every
+    # caller, while the taskkill escalation below (which DOES pass CREATE_NO_WINDOW) did not.
+    # `creation_flags` respects a caller who already chose CREATE_NEW_CONSOLE/DETACHED.
+    from navig.platform.process import creation_flags as _flags  # noqa: PLC0415
+
+    creation_flags = _flags(
+        new_group=True,
+        base=kwargs.pop("creationflags", 0),
+        interactive=bool(kwargs.pop("interactive", False)),
+    )
 
     import signal  # noqa: PLC0415
 

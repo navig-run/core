@@ -225,7 +225,9 @@ navig cdp profile list
 navig cdp profile new
 navig cdp profile open
 navig cdp profile proxy
+navig cdp profile prune
 navig cdp profile remove
+navig cdp profile usage
 navig cdp profile use
 navig cdp record
 navig cdp screenshot

@@ -1362,6 +1362,29 @@ class CallbackHandler:
             # extension. It MUST stay above the `self.store.get(cb_data)` fallback
             # below -- that lookup is what swallowed every `fmt:` tap into
             # "Button expired" for the whole life of the /format settings card.
+            # Above the `self.store.get(cb_data)` fallback, like every other
+            # prefix branch: that lookup answers "Button expired" for anything it
+            # does not recognise, which is how a whole card can go dead silently.
+            if cb_data.startswith("td:"):
+                toast = ""
+                try:
+                    from navig.telegram import todo_actions
+
+                    toast = await todo_actions.handle_callback(
+                        self.channel, cb_data, chat_id, message_id, user_id
+                    )
+                except Exception as _td_err:
+                    logger.warning(
+                        "Todo callback error: chat_id=%s callback=%s err=%s",
+                        chat_id,
+                        cb_data,
+                        _td_err,
+                    )
+                    toast = "⚠️ Todo action error"
+                # Answered AFTER the write, so the toast confirms something landed.
+                await self._answer(cb_id, toast)
+                return
+
             if cb_data.startswith("fmt:"):
                 toast = ""
                 try:

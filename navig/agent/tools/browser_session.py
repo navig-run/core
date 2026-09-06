@@ -17,6 +17,7 @@ loop, so it needs no extra locking.
 from __future__ import annotations
 
 import asyncio
+import atexit
 import logging
 import threading
 import time
@@ -265,6 +266,29 @@ def close_all() -> None:
         run_on_browser_loop(_all(), timeout=30.0)
     except Exception as exc:  # noqa: BLE001
         logger.debug("[browser] close_all failed: %s", exc)
+
+
+def _close_all_at_exit() -> None:
+    """Last-chance teardown when the process ends normally.
+
+    Up to ``MAX_SESSIONS`` Chromiums can be live here, and every other teardown path needs
+    something to still be running: the 300 s GC, the LRU eviction and the explicit ``close``
+    verb all live on the browser loop. So an interpreter that exits with sessions open
+    orphaned all of them, and — unlike a `navig cdp` browser — these are launched by
+    Playwright, not recorded in ``cdp-launched.json``, so the idle reaper cannot reclaim
+    them either. They are simply gone.
+
+    ⚠ This does NOT cover a hard kill (`taskkill /F`, a power loss): `atexit` does not run
+    then, and nothing in-process can make it. It covers the normal exit, which is the case
+    that was silently leaking.
+    """
+    try:
+        close_all()
+    except Exception:  # noqa: BLE001 — never raise out of interpreter shutdown
+        pass
+
+
+atexit.register(_close_all_at_exit)
 
 
 def register_desktop_endpoint(key: str, cdp_url: str) -> None:

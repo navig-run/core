@@ -1865,11 +1865,15 @@ class NavigGateway:
         try:
             # Initialize browser controller (disabled by default)
             from navig.browser import BrowserConfig, BrowserController
+            from navig.core.coerce import coerce_bool
 
             browser_cfg = self.config_manager.global_config.get("browser", {})
             self.browser_controller = BrowserController(
                 BrowserConfig(
-                    headless=browser_cfg.get("headless", True),
+                    # `navig config set browser.headless false` stores the string "false",
+                    # which is truthy — so a raw read forced this daemon-side browser
+                    # headless even when the operator had explicitly asked to see it.
+                    headless=coerce_bool(browser_cfg.get("headless", True), default=True),
                     timeout_ms=browser_cfg.get("timeout", 30) * 1000,
                 )
             )
@@ -2724,7 +2728,8 @@ class NavigGateway:
     # ── Notification monitors / producers ──────────────────────────────────────
 
     #: Toggleable opt-in producers surfaced in the deck "Monitors" card.
-    MONITOR_KEYS = ("webcam", "resources", "self_errors", "connectivity", "config_incidents")
+    MONITOR_KEYS = ("webcam", "resources", "self_errors", "connectivity", "config_incidents",
+                    "browser_reaper")
 
     #: Monitors that default ON (started at boot unless explicitly disabled). The rest are
     #: opt-in. config_incidents is the one exception because a MISSED config-rescue event —
@@ -2783,6 +2788,10 @@ class NavigGateway:
 
             install_config_incident_reporter()
             self._monitor_tasks[name] = "installed"
+        elif name == "browser_reaper":
+            from navig.notify.monitors.browser_reaper import run_browser_reaper
+
+            self._spawn_monitor_task(name, run_browser_reaper())
         elif name == "connectivity":
             # Driven by the uplink listener + a live config check — nothing to spawn.
             self._monitor_tasks[name] = "live"

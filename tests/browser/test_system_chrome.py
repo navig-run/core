@@ -78,6 +78,47 @@ def test_terminate_proc_noop_when_nothing_launched():
     assert c._proc is None
 
 
+def test_terminate_proc_kills_the_real_browser_not_just_the_launcher(monkeypatch):
+    """On Windows the chrome.exe we Popen is a LAUNCHER that exits in ~100 ms.
+
+    So the recorded handle is a corpse by teardown, `terminate()` reaps nothing, and the
+    actual browser was left running on every stop — window, profile dir and all. Teardown
+    must resolve the processes genuinely serving OUR port with OUR profile dir, exactly as
+    targets.py already does.
+    """
+    from navig.browser import targets as t
+
+    resolved: list[tuple] = []
+    killed: list[int] = []
+    monkeypatch.setattr(t, "_debug_browser_pids",
+                        lambda port, udd, **kw: resolved.append((port, udd)) or [4242])
+    monkeypatch.setattr(t, "_terminate_pid", lambda pid: killed.append(pid) or True)
+
+    c = SystemChromeController()
+    c._live_port = 31337
+    c._live_user_data_dir = r"C:\Users\x\.navig\cdp-profiles\chrome"
+    c._terminate_proc()
+
+    assert resolved == [(31337, r"C:\Users\x\.navig\cdp-profiles\chrome")]
+    assert killed == [4242], "the real browser PID must be killed, not only the handle"
+
+
+def test_terminate_proc_does_not_sweep_when_it_cannot_attribute(monkeypatch):
+    """Both signals or nothing: a port with no profile dir could match someone else's
+    browser, and killing what you cannot attribute is how the operator loses their tabs."""
+    from navig.browser import targets as t
+
+    resolved: list[tuple] = []
+    monkeypatch.setattr(t, "_debug_browser_pids",
+                        lambda port, udd, **kw: resolved.append((port, udd)) or [])
+
+    c = SystemChromeController()
+    c._live_port = None  # nothing was launched (or the launch failed before recording)
+    c._live_user_data_dir = "/tmp/x"
+    c._terminate_proc()
+    assert resolved == [], "must not scan for PIDs it cannot attribute to itself"
+
+
 def test_router_selects_chrome_engine():
     from navig.browser.router import get_browser
 

@@ -9,6 +9,41 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Add entries here until the next release, then move them under a new version heading. -->
 <!-- Run: git log v3.25.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
+### Fixed
+- **NAVIG no longer opens blank browser windows or flashes console windows at you.** Two
+  independent causes of the same complaint.
+
+  *Blank browser windows.* Every launch path defaulted to a visible window — including the
+  MCP tool an agent calls, whose schema said `headless: false, "opt-in"`. An agent has no
+  screen and never opts in, so it opened a real Chrome window on every call. The window is
+  blank because content is rendered in a tab that is then closed, and it survives because
+  browsers are spawned `DETACHED_PROCESS` and outlive the CLI that started them.
+  Visibility is now decided by **who is launching**: agent and script launches are
+  windowless, while the flows where a human logs in (`navig cdp open`, `navig do`,
+  `navig gmail`, `navig games login`) keep their window. `--headless` still means what it
+  always did; `--headed` is new; `browser.headless` is a standing override.
+
+  A new `browser_reaper` monitor closes NAVIG-launched browsers nobody has touched for
+  `browser.reap_idle_minutes` (default 30, `0` disables). It refuses anything it cannot
+  prove is a leak: **named profiles and any browser with a visible window are never
+  reaped**, only NAVIG's own registry is considered, and the recorded PID must still be the
+  process NAVIG launched.
+
+  Also fixed the leak behind it: `navig games claim` is cron-scheduled, opened a visible
+  browser, and returned down three paths without closing it — so a blank window
+  accumulated on every scheduled run.
+
+  *Flashing console windows.* The daemon is correctly windowless (`pythonw.exe`), and that
+  is precisely why its children flashed: a process with no console cannot lend one, so
+  Windows allocates a **brand-new console** for each console child (`git`, `icacls`,
+  `taskkill`, `powershell`, `npx`, `ffmpeg`). Of 486 spawn sites, 30 suppressed it.
+  A windowless process now installs a default that suppresses the window for its children,
+  applied only when the process genuinely has no console and never overriding a caller that
+  chose otherwise — so an ordinary CLI run is untouched and the tray's deliberate "open a
+  terminal" items still open one. Set `NAVIG_SHOW_CONSOLES=1` to opt out while debugging.
+  The highest-frequency offender was `icacls`, which runs **three times per secured file**
+  on every credential write.
+
 ### Changed
 - **The vault's leaf modules AND its engine now live in the standalone `navig-vault`
   package, and `navig` depends on it.** `navig.vault.types`, `.secret_str`, `.totp` and `._constants` are now thin

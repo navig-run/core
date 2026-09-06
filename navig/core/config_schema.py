@@ -319,6 +319,39 @@ if PYDANTIC_AVAILABLE:
 
         model_config = ConfigDict(extra="allow")
 
+    class BrowserConfig(BaseModel):
+        """Browser / CDP automation configuration.
+
+        ``headless`` is the operator-level override for window visibility. It must be
+        declared HERE or it does not exist: ``_load_global_config(validate=True)``
+        returns ``GlobalConfig(...).model_dump()``, and ``GlobalConfig`` does not set
+        ``extra="allow"`` — so a top-level key the schema never declares is silently
+        dropped on the way out. Verified: a raw config carrying ``{"browser":
+        {"headless": True}}`` came back from validation with no ``browser`` key at all,
+        which would have made every read of it return the caller's default forever.
+        """
+
+        headless: bool | None = Field(
+            default=None,
+            description=(
+                "Force window visibility for every browser NAVIG launches. None (the "
+                "default) means 'decide per context' — agent/script launches are "
+                "windowless, human login flows keep a visible window. True forces "
+                "headless everywhere; False forces a visible window everywhere."
+            ),
+        )
+        reap_idle_minutes: int = Field(
+            default=30,
+            ge=0,
+            le=1440,
+            description=(
+                "Close NAVIG-launched debug browsers idle this long (0 disables). "
+                "Named profiles are never reaped — they hold real logins."
+            ),
+        )
+
+        model_config = ConfigDict(extra="allow")
+
     # =============================================================================
     # Main Config Models
     # =============================================================================
@@ -373,6 +406,9 @@ if PYDANTIC_AVAILABLE:
 
         # Tools (Tool Router & Registry)
         tools: ToolsConfig = Field(default_factory=ToolsConfig)
+
+        # Browser / CDP automation (window visibility, idle reaping)
+        browser: BrowserConfig = Field(default_factory=BrowserConfig)
 
         # Advanced
         debug_mode: bool = False

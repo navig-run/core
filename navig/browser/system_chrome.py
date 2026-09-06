@@ -69,6 +69,12 @@ class SystemChromeController:
         self.port = port
         self.engine_name = "chrome"
         self._proc: subprocess.Popen | None = None
+        # What was ACTUALLY launched, filled in by start(). Distinct from `self.port` /
+        # `self.user_data_dir`, which are the *requested* values: the port is usually
+        # auto-allocated, and the profile path in the argv is expanded. Teardown matches on
+        # the real command line, so it needs the real strings.
+        self._live_port: int | None = None
+        self._live_user_data_dir: str | None = None
         self._playwright = None
         self._browser = None
         self._context = None
@@ -138,6 +144,12 @@ class SystemChromeController:
         Path(self.user_data_dir).expanduser().mkdir(parents=True, exist_ok=True)
         args = self._build_args(exe, port)
         logger.info("[system_chrome] launching %s on CDP port %d", self.engine_name, port)
+        # Remember what we ACTUALLY launched. `self.port` is often None (the port is
+        # auto-allocated into this local), and `self.user_data_dir` may be unexpanded while
+        # the argv carries the expanded path — teardown matches on the command line, so it
+        # has to compare against the same strings that were put there.
+        self._live_port = port
+        self._live_user_data_dir = str(Path(self.user_data_dir).expanduser())
         self._proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if not _wait_for_port(port):
             self._terminate_proc()
@@ -179,18 +191,45 @@ class SystemChromeController:
             self._playwright = None
 
     def _terminate_proc(self) -> None:
-        # Kill ONLY the process we launched — never a name-based sweep (would close the user's Chrome).
-        if self._proc is not None:
+        """Kill ONLY the browser we launched — never a name-based sweep.
+
+        ⚠ On Windows the ``chrome.exe`` we ``Popen`` is a **launcher**: it starts the real
+        browser as a separate process and exits within ~100 ms. So ``self._proc`` is a
+        corpse by the time anyone calls this, ``terminate()`` reaps nothing, and the actual
+        browser — window, profile dir and all — was left running on every single stop.
+        ``targets.py`` learned this the hard way and re-resolves the real PID from the debug
+        port; this class never did.
+
+        So: resolve the processes genuinely serving OUR port with OUR profile dir (that
+        pairing is what makes it ours and not the operator's Chrome), kill those trees, and
+        only then fall back to the recorded handle.
+        """
+        port = getattr(self, "_live_port", None)
+        udd = getattr(self, "_live_user_data_dir", None)
+        proc = self._proc
+        self._proc = None
+        self._live_port = None
+        try:
+            from navig.browser import targets as t
+
+            # Both signals, as _debug_browser_pids requires: OUR port AND OUR profile dir.
+            # The pairing is what makes a process ours rather than the operator's Chrome,
+            # and that helper returns [] outright when it can attribute neither.
+            if port and udd:
+                for pid in t._debug_browser_pids(int(port), udd):
+                    t._terminate_pid(pid)
+        except Exception as exc:  # noqa: BLE001 — fall through to the handle below
+            logger.debug("[system_chrome] port-scoped teardown: %s", exc)
+
+        if proc is not None:
             try:
-                self._proc.terminate()
+                proc.terminate()
                 try:
-                    self._proc.wait(timeout=5)
+                    proc.wait(timeout=5)
                 except Exception:  # noqa: BLE001
-                    self._proc.kill()
+                    proc.kill()
             except Exception as exc:  # noqa: BLE001
                 logger.debug("[system_chrome] process teardown: %s", exc)
-            finally:
-                self._proc = None
 
 
 # ── capture an EXISTING logged-in session (no re-login) ────────────────────────────────

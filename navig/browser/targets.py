@@ -389,7 +389,22 @@ def is_running(app_id: str) -> bool:
 def terminate_app(app_id: str) -> bool:
     """Terminate a running instance of a known app so it can be relaunched.
 
-    Destructive-ish (closes the user's app) — callers MUST warn/confirm first.
+    ⚠ **This is an IMAGE-NAME kill — `taskkill /IM chrome.exe /F` — not a scoped one.** For
+    an Electron app (Discord, Notion, Slack) that is the point: the running instance holds a
+    single-instance lock, and it must go before the app can reopen with a debug port. For a
+    **browser** it means every window of that browser dies, including the operator's own
+    everyday session and all its tabs.
+
+    It is deliberately NOT scoped to NAVIG-launched PIDs. Scoping it would break the only
+    thing it does: by definition it targets an app NAVIG did not launch. So the safety lives
+    in the caller — ``force_restart`` is opt-in, the CLI confirms first, and the MCP
+    ``cdp_launch`` tool is classified ``dangerous``. Callers MUST warn/confirm, and the
+    warning must say that a browser loses ALL its windows, not "the current window".
+
+    For a browser you almost never need this: Chrome's single-instance lock is per
+    ``--user-data-dir``, so ``navig cdp new`` (its own profile) launches alongside the
+    operator's browser without touching it.
+
     Returns True if a terminate command was issued.
     """
     name = _APP_PROCESS_NAMES.get(app_id)
@@ -482,8 +497,13 @@ def launch_with_cdp(
         return None
 
     # Track what WE launched so `stop` can close exactly this browser (and only
-    # it) instead of every Chrome on the machine.
-    record_launched(port, proc.pid, app if not os.path.isabs(app) else exe, user_data_dir)
+    # it) instead of every Chrome on the machine. `headless` is read off the argv we are
+    # about to run rather than taken as a parameter, so it records what was actually
+    # launched and cannot drift from the command line. The idle reaper uses it: a browser
+    # with a VISIBLE window was asked for by a human, and is never reaped for idleness.
+    _headless = any(str(a).startswith("--headless") for a in args)
+    record_launched(port, proc.pid, app if not os.path.isabs(app) else exe, user_data_dir,
+                    headless=_headless)
 
     if not wait:
         return CDPTarget(port=port, browser="pending", endpoint=f"http://127.0.0.1:{port}",
@@ -506,7 +526,7 @@ def launch_with_cdp(
                 logger.debug("[cdp.targets] port %d: launcher pid %d → real browser pid %d",
                              port, proc.pid, real[0])
                 record_launched(port, real[0], app if not os.path.isabs(app) else exe,
-                                user_data_dir)
+                                user_data_dir, headless=_headless)
             logger.info("[cdp.targets] %s is up on port %d (%s)", app, port, target.browser)
             return target
         time.sleep(LAUNCH_POLL_INTERVAL_S)
@@ -552,11 +572,37 @@ def _write_launched(data: dict) -> None:
         logger.debug("[cdp.targets] Could not persist launched registry: %s", exc)
 
 
-def record_launched(port: int, pid: int, app: str, user_data_dir: str | None) -> None:
-    """Remember a browser NAVIG launched (keyed by debug port)."""
+def record_launched(port: int, pid: int, app: str, user_data_dir: str | None,
+                    *, headless: bool | None = None) -> None:
+    """Remember a browser NAVIG launched (keyed by debug port).
+
+    ``headless`` and ``last_used`` are ADDITIVE — an entry written by an older navig
+    carries neither, and every reader here treats their absence as "unknown" rather than
+    as a value. That matters because the reaper's decisions are all of the form "act only
+    on what I can prove", so an unknown must never read as a licence to close something.
+    """
     data = _read_launched()
-    data[str(port)] = {"pid": pid, "app": app, "user_data_dir": user_data_dir,
-                       "started": int(time.time())}
+    now = int(time.time())
+    entry = {"pid": pid, "app": app, "user_data_dir": user_data_dir,
+             "started": now, "last_used": now}
+    if headless is not None:
+        entry["headless"] = bool(headless)
+    data[str(port)] = entry
+    _write_launched(data)
+
+
+def touch_launched(port: int) -> None:
+    """Mark the browser on *port* as used just now (best-effort).
+
+    The registry file is shared by every navig process, so a CLI verb, an MCP tool call
+    and the daemon all keep the SAME entry warm. That is what makes "idle" mean "nobody
+    anywhere has touched this", rather than "this one process has not".
+    """
+    data = _read_launched()
+    entry = data.get(str(port))
+    if not isinstance(entry, dict):
+        return
+    entry["last_used"] = int(time.time())
     _write_launched(data)
 
 
@@ -569,6 +615,20 @@ def remove_launched(port: int) -> None:
     data = _read_launched()
     if data.pop(str(port), None) is not None:
         _write_launched(data)
+
+
+def _is_named_profile(user_data_dir: str | None) -> bool:
+    """Is this profile a PERSISTENT named one (``cdp-profiles/named/<name>``)?
+
+    Named profiles hold real logins the operator did by hand, which is exactly what they
+    are for — so they are never reaped for idleness. Compared on normalised path parts
+    rather than a substring, so a session profile that merely happens to contain the word
+    "named" somewhere is not misread.
+    """
+    if not user_data_dir:
+        return False
+    parts = os.path.normpath(user_data_dir).replace("\\", "/").lower().split("/")
+    return "named" in parts and "cdp-profiles" in parts
 
 
 # A genuine recorded process was created BEFORE record_launched() ran, so this only has to
@@ -960,6 +1020,89 @@ def stop_all_launched() -> dict:
         out["failed_ports"] = failed
         out["error"] = f"still serving CDP after stop: {failed}"
     return out
+
+
+def reap_idle_browsers(idle_seconds: float, *, now: float | None = None) -> dict:
+    """Close NAVIG-launched debug browsers nobody has touched for *idle_seconds*.
+
+    Teardown here used to be pure discipline — the docs said "run ``navig cdp stop --all``
+    when you're done" — and discipline is exactly what an unattended cron job does not
+    have. Browsers are spawned ``DETACHED_PROCESS`` so they outlive the process that
+    started them; nothing closed them, and ~24 once piled up unnoticed.
+
+    ``CDPSessionManager.sweep_idle`` looks like it already did this and does NOT: it evicts
+    the *WebSocket*, leaving "the remote app running". After it fires the browser is held
+    by no session at all — an untracked orphan with a window still on screen. This is the
+    missing layer underneath it.
+
+    **What it will not touch**, because closing someone's browser is not a recoverable
+    mistake and every rule below is "act only on what I can prove":
+
+    * anything not in NAVIG's own launched registry — a ``foreign`` browser (another
+      harness, Playwright, the operator's own debug session) is not ours;
+    * a **named profile** (``cdp-profiles/named/<name>``) — those exist to hold logins the
+      operator did by hand, so idleness there is the normal state, not a leak;
+    * a browser launched with a **visible window** — a human asked to see it (``navig do``,
+      ``cdp login``). After the visibility fix, agent and cron launches are headless, so
+      the leaking population is precisely the reapable one;
+    * an entry whose recorded PID fails :func:`_pid_is_still_the_recorded_process` — that
+      check is applied inside :func:`stop_launched`, which this delegates to rather than
+      re-implementing a second kill path;
+    * an entry with no usable timestamp at all. An unknown age is not "old".
+
+    Args:
+        idle_seconds: Idle threshold. ``<= 0`` disables the sweep entirely.
+        now: Injectable clock for tests (epoch seconds).
+
+    Returns:
+        ``{"reaped": [ports], "checked": n, "skipped": {reason: n}, "errors": [...]}``.
+    """
+    result: dict = {"reaped": [], "checked": 0, "skipped": {}, "errors": []}
+    if idle_seconds <= 0:
+        result["skipped"]["disabled"] = 1
+        return result
+
+    def _skip(reason: str) -> None:
+        result["skipped"][reason] = result["skipped"].get(reason, 0) + 1
+
+    stamp = time.time() if now is None else now
+    for port_str, entry in list(_read_launched().items()):
+        result["checked"] += 1
+        if not isinstance(entry, dict):
+            _skip("malformed")
+            continue
+        if _is_named_profile(entry.get("user_data_dir")):
+            _skip("named_profile")
+            continue
+        # `headless is False` and not `not headless`: an entry written before this field
+        # existed has no opinion, and "unknown" must not read as "the human wanted a
+        # window" any more than it reads as "safe to close". It falls through to the age
+        # check, where stop_launched's identity verification is still the final gate.
+        if entry.get("headless") is False:
+            _skip("visible_window")
+            continue
+        last = entry.get("last_used") or entry.get("started")
+        if not isinstance(last, (int, float)):
+            _skip("no_timestamp")
+            continue
+        if stamp - float(last) <= idle_seconds:
+            _skip("still_fresh")
+            continue
+        try:
+            port = int(port_str)
+        except (TypeError, ValueError):
+            _skip("malformed")
+            continue
+        try:
+            res = stop_launched(port)
+        except Exception as exc:  # noqa: BLE001 — a reaper must not take the daemon down
+            result["errors"].append(f"port {port}: {exc}")
+            continue
+        if res.get("ok"):
+            result["reaped"].append(port)
+        else:
+            result["errors"].append(f"port {port}: {res.get('error', 'stop failed')}")
+    return result
 
 
 def _os_assigned_port() -> int | None:

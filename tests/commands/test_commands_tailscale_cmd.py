@@ -148,26 +148,37 @@ class TestTsStatus:
     def test_json_flag_exits_0(self):
         cls, _ = _mock_ts()
         with patch("navig.integrations.tailscale.Tailscale", cls):
-            result = runner.invoke(tailscale_app, ["status", "--json-out"])
-        # either --json-out or --json — try both
-        if result.exit_code != 0 and "No such option" in (result.output or ""):
             result = runner.invoke(tailscale_app, ["status", "--json"])
-        # If no json flag exists at all, the test is informational
-        assert result.exit_code in (0, 2)
+        assert result.exit_code == 0, result.output
 
     def test_json_flag_outputs_json(self):
         cls, _ = _mock_ts()
         with patch("navig.integrations.tailscale.Tailscale", cls):
-            result = runner.invoke(tailscale_app, ["status", "--json-out"])
-        if result.exit_code == 0:
-            # output should be parseable JSON
-            try:
-                parsed = json.loads(result.output.strip())
-                assert isinstance(parsed, dict)
-                assert "available" in parsed
-            except json.JSONDecodeError:
-                pass  # output may include Rich formatting
+            result = runner.invoke(tailscale_app, ["status", "--json"])
+        assert result.exit_code == 0, result.output
+        # NO try/except here on purpose: a JSONDecodeError IS the failure this test
+        # exists to report, so swallowing it is the same as deleting the test.
+        parsed = json.loads(result.output.strip())
+        assert isinstance(parsed, dict)
+        assert "available" in parsed
 
+    def test_json_survives_a_narrow_piped_terminal(self):
+        """The real corruption condition, reproduced end to end."""
+        import os
+        import subprocess
+        import sys
+
+        env = {**os.environ, "COLUMNS": "40", "PYTHONIOENCODING": "utf-8"}
+        proc = subprocess.run(  # noqa: S603
+            [sys.executable, "-m", "navig", "tailscale", "status", "--json"],
+            capture_output=True, text=True, env=env, timeout=120,
+        )
+        assert proc.returncode == 0, proc.stderr
+        # Rich wraps at the console width once stdout is a pipe; at width 40 that used
+        # to break a line INSIDE a JSON string literal, so the failure is an
+        # "Invalid control character", not a missing key.
+        parsed = json.loads(proc.stdout)
+        assert "available" in parsed
     def test_not_available_outputs_error_info(self):
         cls, _ = _mock_ts(_status(available=False, running=False, error="not installed"))
         with patch("navig.integrations.tailscale.Tailscale", cls):

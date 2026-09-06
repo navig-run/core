@@ -26,6 +26,23 @@ logger = get_debug_logger()
 IDLE_TIMEOUT_S = 300.0
 
 
+def _touch_registry(port: int) -> None:
+    """Keep the on-disk launched registry's ``last_used`` warm for *port*.
+
+    ``_Session.last_used`` is ``time.monotonic()`` and lives in THIS process's memory, so
+    it can neither be compared across processes nor survive a restart. The browser-level
+    idle reaper runs in the daemon and must be able to tell "nobody anywhere has touched
+    this" from "this one process has not" — which needs the shared file, in wall-clock.
+    Best-effort: a bookkeeping write must never break an attach.
+    """
+    try:
+        from navig.browser.targets import touch_launched  # noqa: PLC0415 — avoids an import cycle
+
+        touch_launched(port)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[cdp.session] could not touch registry for port %s: %s", port, exc)
+
+
 @dataclass
 class _Session:
     bridge: CDPBridge
@@ -48,6 +65,7 @@ class CDPSessionManager:
             sess = self._sessions.get(port)
             if sess is not None and sess.bridge._page is not None:
                 sess.last_used = time.monotonic()
+                _touch_registry(port)
                 return sess.bridge
 
             # (Re)attach.
@@ -56,6 +74,7 @@ class CDPSessionManager:
             bridge = CDPBridge(debug_port=port, tab_index=tab_index)
             await bridge.start()
             self._sessions[port] = _Session(bridge=bridge)
+            _touch_registry(port)
             logger.info("[cdp.session] Attached session on port %d", port)
             return bridge
 

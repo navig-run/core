@@ -140,6 +140,20 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
         ),
     ),
     TelegramExtension(
+        id="todo",
+        label="Todo",
+        description="Your personal task list - capture, schedule, remind, tick off.",
+        group="Life", icon="check-square",
+        commands=frozenset({"todo", "t", "task"}),
+        callback_prefixes=("td:",),
+        about=(
+            "/todo, /t and /task stop working and leave /help and the \"/\" menu",
+            "the task card's buttons stop answering",
+            "due reminders are not delivered",
+            "every task, date and reminder stays exactly as it is",
+        ),
+    ),
+    TelegramExtension(
         id="health",
         label="Health",
         description="Weight, sleep and mood — the morning weigh-in and the weekly check-in.",
@@ -368,6 +382,7 @@ CATEGORY_TO_EXTENSION: dict[str, str] = {
     "messaging": "messaging",
     "monitoring": "monitoring",
     "social": "utilities",
+    "todo": "todo",
     "utilities": "utilities",
     "voice": "voice",
 }

@@ -39,6 +39,27 @@ def _run(coro):
     return _rt_run(coro)
 
 
+def _visibility_flag(*, headless: bool, headed: bool) -> bool | None:
+    """Fold the ``--headless`` / ``--headed`` pair into one tri-state.
+
+    ``None`` means "the caller did not say", which is what lets
+    :func:`~navig.browser.visibility.resolve_headless` fall through to the
+    ``browser.headless`` config and then the context default. Two booleans are used
+    rather than Typer's ``--flag/--no-flag`` because ``--headless`` predates this and
+    removing it would break the documented CLI contract.
+
+    Passing both is a contradiction, and guessing which one the operator meant is how a
+    "silent" run ends up on screen — so it is rejected rather than resolved.
+    """
+    if headless and headed:
+        raise typer.BadParameter("--headless and --headed are mutually exclusive; pass one.")
+    if headless:
+        return True
+    if headed:
+        return False
+    return None
+
+
 def _resolve_port(profile: str | None, port: int) -> int:
     """Resolve which debug port a `navig cdp` verb should act on.
 
@@ -264,10 +285,22 @@ def cdp_launch(
     from navig.browser import targets as t
 
     if force_restart and app in t.known_app_ids() and t.is_running(app) and not yes:
-        if not typer.confirm(
-            f"⚠️  {app} is running. Relaunching with a debug port will CLOSE the "
-            f"current window (it reopens with your logged-in profile). Continue?"
-        ):
+        # Be honest about the blast radius: this is an image-name kill, so for a BROWSER it
+        # takes every window and every open tab, not just "the current window". Saying
+        # otherwise is how someone loses a day's tabs to a prompt they read and accepted.
+        if app in t.BROWSER_APPS:
+            warning = (
+                f"⚠️  This force-quits EVERY {app} window — including your own browsing "
+                f"and all open tabs — then reopens it with a debug port.\n"
+                f"    You probably want `navig cdp new` instead: it starts a separate "
+                f"browser on its own profile and leaves yours alone. Continue?"
+            )
+        else:
+            warning = (
+                f"⚠️  {app} is running. Relaunching with a debug port will CLOSE the "
+                f"current window (it reopens with your logged-in profile). Continue?"
+            )
+        if not typer.confirm(warning):
             raise typer.Exit(1)
 
     result = cdp_actions.launch(app, port=port, force_restart=force_restart,
@@ -288,7 +321,11 @@ def cdp_new(
     ),
     headless: bool = typer.Option(
         False, "--headless",
-        help="Launch without a visible window (opt-in; unblocks display-less/CI runs)."
+        help="Force a windowless launch (now the default for this command)."
+    ),
+    headed: bool = typer.Option(
+        False, "--headed",
+        help="Force a VISIBLE window (opt in when you want to watch)."
     ),
     window_size: str | None = typer.Option(
         None, "--window-size",
@@ -299,13 +336,22 @@ def cdp_new(
     """Open a COMPLETELY FRESH, isolated browser (own profile + own debug port)."""
     from navig.browser import cdp_actions
 
+    try:
+        want = _visibility_flag(headless=headless, headed=headed)
+    except typer.BadParameter as exc:
+        ch.error(str(exc))
+        raise typer.Exit(2) from None
+
     result = cdp_actions.new(app=app, port=port, profile=profile, load_extension=load_extension,
-                             headless=headless, window_size=window_size)
+                             headless=want, window_size=window_size, context="script")
     if json_out:
         ch.console.print_json(_json.dumps(result))
         raise typer.Exit(0 if result.get("ok") else 1)
     if result.get("ok"):
-        mode = "headless" if headless else "windowed"
+        # Report what was RESOLVED, never the flag: with the default now decided by
+        # context + config, echoing the raw flag would print "windowed" for a browser
+        # that launched headless.
+        mode = "headless" if result.get("headless") else "windowed"
         size = f" · {result['window_size']}" if result.get("window_size") else ""
         ch.success(f"New {result['app']} session on port {result['port']} "
                    f"({result['profile_kind']} profile · {mode}{size})")
@@ -649,12 +695,23 @@ def cdp_tabs(port: int = typer.Option(9222, "--port", "-p"),
 @cdp_app.command("open")
 def cdp_open(name: str = typer.Argument(..., help="Profile name (create with: cdp profile new <name>)."),
              headless: bool = typer.Option(False, "--headless", help="Open without a visible window."),
+             headed: bool = typer.Option(False, "--headed", help="Force a visible window (the default here)."),
              json_out: bool = typer.Option(False, "--json")):
     """Open (or REUSE if already running) a named profile's browser on its stable port."""
     from navig.browser import cdp_actions
 
-    result = cdp_actions.profile_open(name, headless=headless)
-    if result.get("ok") and not headless:
+    try:
+        want = _visibility_flag(headless=headless, headed=headed)
+    except typer.BadParameter as exc:
+        ch.error(str(exc))
+        raise typer.Exit(2) from None
+
+    # Opening a NAMED profile is a person about to use it, so this stays `human` (visible).
+    result = cdp_actions.profile_open(name, headless=want, context="human")
+    # Raise the window based on what actually happened, not on the flag: `browser.headless`
+    # can force headless from config, and fronting a window that does not exist is a lie in
+    # the log even when it is harmless.
+    if result.get("ok") and not result.get("headless"):
         _bring_to_front(result.get("port"))  # raise the window so the user sees it
     _emit(result, json_out)  # single success line (the note) / error / json
     if not json_out and result.get("ok"):
@@ -725,9 +782,126 @@ def profile_new_cmd(name: str = typer.Argument(..., help="Profile name (e.g. cyb
 @profile_app.command("open")
 def profile_open_cmd(name: str = typer.Argument(...),
                      headless: bool = typer.Option(False, "--headless"),
+                     headed: bool = typer.Option(False, "--headed"),
                      json_out: bool = typer.Option(False, "--json")):
     """Open (or reuse) a profile — same as `navig cdp open <name>`."""
-    cdp_open(name, headless=headless, json_out=json_out)
+    cdp_open(name, headless=headless, headed=headed, json_out=json_out)
+
+
+def _fmt_bytes(n: int) -> str:
+    """Human size. Profiles reach gigabytes, so MB/GB is the useful range."""
+    if n >= 1024 ** 3:
+        return f"{n / 1024 ** 3:.1f} GB"
+    if n >= 1024 ** 2:
+        return f"{n / 1024 ** 2:.0f} MB"
+    return f"{n / 1024:.0f} KB"
+
+
+def _fmt_age(epoch: int) -> str:
+    import time as _time
+
+    if not epoch:
+        return "never"
+    days = int((_time.time() - epoch) / 86400)
+    if days <= 0:
+        return "today"
+    return f"{days}d ago"
+
+
+@profile_app.command("usage")
+def profile_usage_cmd(json_out: bool = typer.Option(False, "--json")):
+    """Show how much disk each browser profile is using."""
+    from navig.browser import cdp_actions
+    from navig.console_helper import Table
+
+    result = cdp_actions.profile_usage()
+    if json_out:
+        ch.console.print_json(_json.dumps(result))
+        return
+
+    named = result["named"]
+    sessions = result["sessions"]
+    orphans = result.get("orphans", [])
+    if not named and not sessions and not orphans:
+        ch.info("No browser profiles on disk yet.")
+        return
+
+    table = Table(box=None, show_header=True, padding=(0, 2))
+    table.add_column("Profile", no_wrap=True)
+    table.add_column("Size", no_wrap=True, justify="right")
+    table.add_column("Last used", no_wrap=True)
+    table.add_column("State", no_wrap=True)
+    table.add_column("Directory")  # the one free-text column, so narrow terminals degrade here
+    for rec in named:
+        if rec["real"]:
+            state = "[yellow]REAL Chrome[/yellow]"
+        elif rec["running"]:
+            state = "[green]● running[/green]"
+        else:
+            state = "[dim]○ idle[/dim]"
+        table.add_row(rec["name"], _fmt_bytes(rec["bytes"]), _fmt_age(rec["last_used"]),
+                      state, rec["user_data_dir"])
+    for rec in orphans:
+        # No registry entry points at this dir, so nothing knows what it was for — but the
+        # gigabytes are real, which is exactly why it is listed rather than quietly omitted.
+        table.add_row(rec["name"], _fmt_bytes(rec["bytes"]), _fmt_age(rec["mtime"]),
+                      "[yellow]orphaned[/yellow]", rec["path"])
+    if sessions:
+        total = sum(r["bytes"] for r in sessions)
+        table.add_row(f"[dim]{len(sessions)} throwaway session(s)[/dim]", _fmt_bytes(total),
+                      "—", "[dim]disposable[/dim]", f"[dim]{result['root']}\\sessions[/dim]")
+    ch.console.print(table)
+    ch.dim(f"total {_fmt_bytes(result['total_bytes'])} in {result['root']}")
+    ch.dim("reclaim: navig cdp profile prune            (throwaway sessions only)")
+    ch.dim("         navig cdp profile prune <name>     (a named profile you no longer need)")
+
+
+@profile_app.command("prune")
+def profile_prune_cmd(
+    names: list[str] = typer.Argument(None, help="Named profile(s) to DELETE. Omit to sweep throwaway sessions only."),
+    no_sessions: bool = typer.Option(False, "--no-sessions", help="Don't sweep throwaway session dirs."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation."),
+    json_out: bool = typer.Option(False, "--json"),
+):
+    """Reclaim disk from browser profiles (throwaway sessions, or a profile you name).
+
+    A named profile is only ever deleted when you name it — "looks unused" is not consent,
+    and a profile holds real logins. A profile pointing at your REAL Chrome data is refused
+    outright, and so is one that is currently running.
+    """
+    from navig.browser import cdp_actions
+
+    plan = cdp_actions.profile_prune(list(names or []), sessions=not no_sessions, dry_run=True)
+    if json_out and not yes:
+        ch.console.print_json(_json.dumps(plan))
+        return
+
+    for ref in plan["refused"]:
+        ch.warning(f"skipped {ref.get('name') or ref.get('path')}: {ref['why']}")
+    if not plan["planned"]:
+        ch.info("Nothing to prune.")
+        return
+
+    total = sum(item["bytes"] for item in plan["planned"])
+    for item in plan["planned"]:
+        label = item.get("name") or item["path"]
+        ch.info(f"  {_fmt_bytes(item['bytes']):>9}  {item['kind']:<8} {label}")
+    ch.info(f"would free {_fmt_bytes(total)}")
+
+    if not yes and not typer.confirm("Delete these permanently?", default=False):
+        ch.dim("nothing deleted")
+        raise typer.Exit(1)
+
+    result = cdp_actions.profile_prune(list(names or []), sessions=not no_sessions, dry_run=False)
+    if json_out:
+        ch.console.print_json(_json.dumps(result))
+        raise typer.Exit(0 if result.get("ok") else 1)
+    for err in result["errors"]:
+        ch.error(err)
+    ch.success(f"Freed {_fmt_bytes(result['freed_bytes'])} "
+               f"({len(result['deleted'])} director{'y' if len(result['deleted']) == 1 else 'ies'})")
+    if result["errors"]:
+        raise typer.Exit(1)
 
 
 @profile_app.command("use")

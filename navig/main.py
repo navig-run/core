@@ -704,6 +704,19 @@ def main() -> None:
         if _maybe_handle_fast_path(sys.argv):
             return
 
+        # `navig gateway start` is launched as `pythonw.exe -m navig gateway start` — a
+        # GUI-subsystem process with NO console. A console child spawned from there cannot
+        # inherit one, so Windows gives it a brand-new console that flashes on screen.
+        # This is a no-op for an ordinary CLI run (the process HAS a console, children
+        # inherit the operator's terminal), so one guarded call covers every launcher.
+        # Placed after the fast path so `navig help` / `--version` stay on the <50ms route.
+        try:
+            from navig.platform.process import install_windowless_spawn_default
+
+            install_windowless_spawn_default()
+        except Exception:  # noqa: BLE001 — cosmetic; never block a command
+            pass
+
         # Past the fast-path this is a real command, so now pull in config +
         # crash handling. Deferred on purpose: everything below is the heaviest
         # thing on the help/version path, and the fast-path above needs none of

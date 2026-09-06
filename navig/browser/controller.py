@@ -60,7 +60,10 @@ class BrowserConfig:
 
         return cls(
             enabled=coerce_bool(browser_cfg.get("enabled", True), default=True),
-            headless=browser_cfg.get("headless", True),
+            # `navig config set browser.headless false` stores the STRING "false", and
+            # bool("false") is True — so a raw read turned the operator's "show me the
+            # window" into "hide it". Its two neighbours here were already coerced.
+            headless=coerce_bool(browser_cfg.get("headless", True), default=True),
             timeout_ms=browser_cfg.get("timeout_seconds", 30) * 1000,
             viewport_width=viewport.get("width", 1280),
             viewport_height=viewport.get("height", 720),

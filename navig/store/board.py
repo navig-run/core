@@ -31,6 +31,8 @@ import json
 import logging
 import sqlite3
 import uuid
+from collections.abc import Sequence
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +46,24 @@ VALID_AI_MODES = ("inherit", "draft", "approval", "auto")
 CONCRETE_AI_MODES = ("draft", "approval", "auto")  # what resolve_ai_mode returns
 VALID_AGENT_STATUS = ("idle", "running", "awaiting_approval", "done", "failed")
 VALID_PRIORITY = ("low", "normal", "high", "urgent")
+
+# `kind` separates the two populations that share this table. The Kanban's Goals and
+# Tasks apps show `card`; the PIM (`/todo`, `navig todo`) shows `todo`. Without it a
+# personal errand lands in the desktop board's Backlog column, which is exactly the
+# reason people end up with a second task app.
+KIND_CARD = "card"
+KIND_TODO = "todo"
+VALID_KINDS = (KIND_CARD, KIND_TODO)
+
+# Seeded categories. FREE-FORM on purpose: the column is plain TEXT, so a category the
+# operator invents works immediately and needs no migration. These are what the picker
+# offers before they have any of their own.
+SEED_CATEGORIES: tuple[str, ...] = ("life", "business", "project", "rendezvous")
+
+# Where a todo came from. An AI guess must never be indistinguishable from something
+# the operator typed — that is the difference between a suggestion they can dismiss
+# and a task they think they wrote.
+VALID_ORIGINS = ("manual", "ai", "agent")
 
 DEFAULT_STAGES: list[dict[str, Any]] = [
     {"key": "backlog", "label": "Backlog"},
@@ -64,10 +84,55 @@ _CARD_WRITABLE = {
     "title", "notes", "stage", "priority", "due_at", "reminder_id",
     "ai_mode", "auto_advance", "mission_id", "agent_status", "agent_result",
     "goal_id", "sort_order",
+    # PIM fields. `kind` is DELIBERATELY absent: a card must never be able to mutate
+    # into a todo (or back) through a generic PATCH. That is the one invariant the
+    # two populations rely on, and a writable `kind` would let any client break it
+    # with a field name typo.
+    "category", "space", "recur", "remind_before", "origin", "origin_ref",
 }
 _SUBTASK_WRITABLE = {"title", "done", "sort_order"}
 _CARD_BOOL_COLS = {"auto_advance"}
 _SUBTASK_BOOL_COLS = {"done"}
+
+
+def _row_get(row: Any, key: str, default: Any) -> Any:
+    """Read a column that may not exist yet.
+
+    A v2 database that has not been migrated in THIS process still answers reads, and
+    ``sqlite3.Row`` raises IndexError for an unknown key rather than returning None. A
+    missing PIM column means "this row predates the PIM", which is a default, not an
+    error.
+    """
+    try:
+        value = row[key]
+    except (IndexError, KeyError):
+        return default
+    return default if value is None and default is not None else value
+
+
+def _encode_leads(leads: Any) -> str:
+    """Lead times as JSON. Anything unparseable becomes "no reminders" rather than
+    a stored value that later blows up the scheduler."""
+    if not leads:
+        return ""
+    if isinstance(leads, str):
+        return leads
+    try:
+        return json.dumps([str(x) for x in leads])
+    except (TypeError, ValueError):
+        return ""
+
+
+def _decode_leads(raw: Any) -> list[str]:
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        return [str(x) for x in raw]
+    try:
+        parsed = json.loads(str(raw))
+    except (TypeError, ValueError):
+        return []
+    return [str(x) for x in parsed] if isinstance(parsed, list) else []
 
 
 def _new_id() -> str:
@@ -75,7 +140,7 @@ def _new_id() -> str:
 
 
 class BoardStore(BaseStore):
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
     PRAGMAS = {"cache_size": -4000}
 
     def __init__(self, db_path: Path | None = None) -> None:
@@ -117,10 +182,19 @@ class BoardStore(BaseStore):
                 sort_order    INTEGER NOT NULL DEFAULT 0,
                 created_at    TEXT NOT NULL,
                 updated_at    TEXT NOT NULL,
-                completed_at  TEXT
+                completed_at  TEXT,
+                -- v3: the PIM. See KIND_CARD / KIND_TODO above.
+                kind          TEXT NOT NULL DEFAULT 'card',
+                category      TEXT NOT NULL DEFAULT '',
+                space         TEXT,
+                recur         TEXT,
+                remind_before TEXT NOT NULL DEFAULT '',
+                origin        TEXT NOT NULL DEFAULT 'manual',
+                origin_ref    TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_card_goal ON board_card(goal_id);
             CREATE INDEX IF NOT EXISTS idx_card_stage ON board_card(stage);
+            -- v3 indexes are created by _create_kind_indexes(); see it for why.
 
             -- card depends_on depends_on_id  (card must wait for depends_on_id)
             CREATE TABLE IF NOT EXISTS board_dep (
@@ -148,11 +222,54 @@ class BoardStore(BaseStore):
                 created_at  TEXT NOT NULL
             );
 
+            -- One row per scheduled reminder for a todo. A todo has SEVERAL (one per
+            -- lead time), which is why `board_card.reminder_id` -- a single INTEGER --
+            -- cannot carry them. Rows are deleted when the todo is edited, completed
+            -- or removed; leaving one behind is a ghost ping for a task that is gone,
+            -- and the reminder table has no idea what a todo is.
+            CREATE TABLE IF NOT EXISTS board_todo_reminder (
+                reminder_id  INTEGER PRIMARY KEY,
+                card_id      TEXT NOT NULL REFERENCES board_card(id) ON DELETE CASCADE,
+                lead         TEXT NOT NULL DEFAULT '',
+                fire_at      TEXT NOT NULL,
+                created_at   TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_todo_reminder_card ON board_todo_reminder(card_id);
+
             -- single-row KV; settings are a JSON blob keyed 'settings'
             CREATE TABLE IF NOT EXISTS board_settings (
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+            """
+        )
+        self._create_kind_indexes(conn)
+
+    @staticmethod
+    def _create_kind_indexes(conn: sqlite3.Connection) -> None:
+        """Index the v3 columns, but ONLY once they exist.
+
+        ⚠ These cannot live in the CREATE script above. ``BaseStore._init_schema``
+        runs ``_create_schema`` BEFORE reading the stored version, so on an existing v2
+        database the CREATE TABLE statements are no-ops (IF NOT EXISTS) and the table
+        still has no ``kind`` column -- at which point
+        ``CREATE INDEX ... ON board_card(kind)`` raises ``no such column: kind`` and
+        takes the whole open down. ``IF NOT EXISTS`` does not save it: the index does
+        not exist either, so SQLite goes ahead and evaluates the column.
+
+        Called twice on purpose -- from ``_create_schema`` (where a FRESH database
+        already has the columns) and from ``_migrate_v2_to_v3`` (right after the ALTERs
+        put them there). Both are guarded, both are idempotent.
+        """
+        if "kind" not in BoardStore._column_names(conn, "board_card"):
+            return
+        conn.executescript(
+            """
+            CREATE INDEX IF NOT EXISTS idx_card_kind ON board_card(kind);
+            -- Every PIM read is "todos in this category" or "todos in this space".
+            CREATE INDEX IF NOT EXISTS idx_card_kind_category ON board_card(kind, category);
+            -- An AI suggestion must never be proposed twice; this is the dedup key.
+            CREATE INDEX IF NOT EXISTS idx_card_origin_ref ON board_card(origin_ref);
             """
         )
 
@@ -209,6 +326,49 @@ class BoardStore(BaseStore):
     def _migrate_v1_to_v2(self, conn: sqlite3.Connection) -> None:
         """Adopt the orphaned pre-rename tables, if this database has them."""
         self._adopt_legacy_tables(conn)
+
+    #: v3 columns, in the order they are added. Every one has a DEFAULT so existing
+    #: rows are valid the instant the column appears -- an added NOT NULL column with
+    #: no default is rejected by SQLite outright.
+    _V3_CARD_COLUMNS: tuple[str, ...] = (
+        "kind TEXT NOT NULL DEFAULT 'card'",
+        "category TEXT NOT NULL DEFAULT ''",
+        "space TEXT",
+        "recur TEXT",
+        "remind_before TEXT NOT NULL DEFAULT ''",
+        "origin TEXT NOT NULL DEFAULT 'manual'",
+        "origin_ref TEXT",
+    )
+
+    def _migrate_v2_to_v3(self, conn: sqlite3.Connection) -> None:
+        """Add the PIM columns and the reminder link table.
+
+        ⚠ Every ALTER is wrapped INDIVIDUALLY. ``BaseStore._init_schema`` calls
+        ``_create_schema`` BEFORE it reads the stored version, so on a database that
+        is merely being *opened* the columns already exist by the time this runs, and
+        an unguarded ``ADD COLUMN`` dies with ``duplicate column name`` -- taking the
+        whole migration with it and leaving the version stamped at 2 forever.
+        `RuntimeStore._migrate_v1_to_v2` has the same shape for the same reason.
+        """
+        for column in self._V3_CARD_COLUMNS:
+            try:
+                conn.execute(f"ALTER TABLE board_card ADD COLUMN {column}")  # noqa: S608 — literal
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS board_todo_reminder (
+                reminder_id  INTEGER PRIMARY KEY,
+                card_id      TEXT NOT NULL REFERENCES board_card(id) ON DELETE CASCADE,
+                lead         TEXT NOT NULL DEFAULT '',
+                fire_at      TEXT NOT NULL,
+                created_at   TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_todo_reminder_card ON board_todo_reminder(card_id);
+            """
+        )
+        self._create_kind_indexes(conn)
 
     def _adopt_legacy_tables(self, conn: sqlite3.Connection) -> None:
         """Copy rows out of the pre-rename tables into the canonical ones.
@@ -390,6 +550,13 @@ class BoardStore(BaseStore):
             "agent_result": row["agent_result"], "sort_order": row["sort_order"],
             "created_at": row["created_at"], "updated_at": row["updated_at"],
             "completed_at": row["completed_at"], "deps": deps, "gate": gate,
+            "kind": _row_get(row, "kind", KIND_CARD),
+            "category": _row_get(row, "category", ""),
+            "space": _row_get(row, "space", None),
+            "recur": _row_get(row, "recur", None),
+            "remind_before": _decode_leads(_row_get(row, "remind_before", "")),
+            "origin": _row_get(row, "origin", "manual"),
+            "origin_ref": _row_get(row, "origin_ref", None),
         }
 
     # ── Goals ────────────────────────────────────────────────────────────────
@@ -426,7 +593,16 @@ class BoardStore(BaseStore):
     # ── Cards ────────────────────────────────────────────────────────────────
 
     def list_cards(self) -> list[dict[str, Any]]:
-        rows = self._read_all("SELECT * FROM board_card ORDER BY sort_order, created_at")
+        """Board cards only.
+
+        The `kind` filter is what keeps "Buy milk" out of the desktop Kanban's Backlog
+        column. Without it the PIM would flood the board the first time it is used,
+        which is precisely why people end up running two task apps.
+        """
+        rows = self._read_all(
+            "SELECT * FROM board_card WHERE kind = ? ORDER BY sort_order, created_at",
+            (KIND_CARD,),
+        )
         terminal = self._terminal_stages()
         # Fetch all edges once, group by card — avoids an N+1 per-card query.
         edges: dict[str, list[str]] = {}
@@ -514,6 +690,277 @@ class BoardStore(BaseStore):
                 (card_id, from_stage, stage, actor if actor in ("user", "agent") else "user", now),
             )
         return self.get_card(card_id)
+
+    # ── Todos (the PIM) ──────────────────────────────────────────────────────
+    #
+    # A todo is a card with `kind='todo'` and, normally, no goal. Its lifecycle is
+    # DERIVED, never a stage:
+    #
+    #     done       completed_at is not null
+    #     overdue    due_at < now
+    #     scheduled  due_at is not null
+    #     inbox      due_at is null
+    #
+    # Deriving it is not a shortcut. `stage` values are user-editable through
+    # `board_settings`, so renaming the "done" column in the Deck would silently stop
+    # todos completing; `completed_at` cannot be renamed by anyone. It is also exactly
+    # the flow the operator described -- capture into the inbox, give it a date, and
+    # it becomes scheduled -- with no column to drag anything between.
+
+    def create_todo(
+        self,
+        title: str,
+        *,
+        category: str = "",
+        due_at: str | None = None,
+        notes: str = "",
+        priority: str = "normal",
+        recur: str | None = None,
+        remind_before: Sequence[str] = (),
+        space: str | None = None,
+        goal_id: str | None = None,
+        origin: str = "manual",
+        origin_ref: str | None = None,
+    ) -> dict[str, Any]:
+        """Capture one task. Everything but the title is optional — that is the point.
+
+        A todo with no date is not an incomplete todo; it is an INBOX item, which is
+        the state most tasks are captured in and the one a capture flow must not
+        demand you resolve up front.
+        """
+        cid, now = _new_id(), _utcnow()
+        nxt = self._read_one(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM board_card WHERE kind = ?",
+            (KIND_TODO,),
+        )
+        self._write(
+            "INSERT INTO board_card(id, goal_id, title, notes, stage, priority, due_at,"
+            " reminder_id, ai_mode, auto_advance, mission_id, agent_status, agent_result,"
+            " sort_order, created_at, updated_at, completed_at,"
+            " kind, category, space, recur, remind_before, origin, origin_ref)"
+            " VALUES(?, ?, ?, ?, 'inbox', ?, ?, NULL, 'inherit', 0, NULL, 'idle', '',"
+            " ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                cid, goal_id, title, notes or "",
+                priority if priority in VALID_PRIORITY else "normal",
+                due_at,
+                int(nxt["n"]) if nxt else 0, now, now,
+                KIND_TODO,
+                (category or "").strip().lower(),
+                space,
+                recur,
+                _encode_leads(remind_before),
+                origin if origin in VALID_ORIGINS else "manual",
+                origin_ref,
+            ),
+        )
+        return self.get_todo(cid)  # type: ignore[return-value]
+
+    def get_todo(self, card_id: str) -> dict[str, Any] | None:
+        row = self._read_one(
+            "SELECT * FROM board_card WHERE id = ? AND kind = ?", (card_id, KIND_TODO)
+        )
+        return self._card_to_dict(row) if row else None
+
+    def list_todos(
+        self,
+        *,
+        category: str | None = None,
+        space: str | None = None,
+        origin: str | None = None,
+        include_done: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Open todos, soonest first, undated last.
+
+        The ordering IS the view: overdue and today rise to the top, and the inbox
+        settles at the bottom where it reads as a to-sort pile rather than a backlog.
+        `NULLS LAST` is spelled with a CASE because SQLite only learned the keyword in
+        3.30 and this has to run on whatever Python the operator installed.
+        """
+        clauses = ["kind = ?"]
+        params: list[Any] = [KIND_TODO]
+        if not include_done:
+            clauses.append("completed_at IS NULL")
+        if category is not None:
+            clauses.append("category = ?")
+            params.append(category.strip().lower())
+        if space is not None:
+            clauses.append("space = ?")
+            params.append(space)
+        if origin is not None:
+            clauses.append("origin = ?")
+            params.append(origin)
+        rows = self._read_all(
+            f"SELECT * FROM board_card WHERE {' AND '.join(clauses)}"  # noqa: S608 — clauses are literals
+            " ORDER BY CASE WHEN due_at IS NULL THEN 1 ELSE 0 END, due_at, created_at",
+            tuple(params),
+        )
+        terminal = self._terminal_stages()
+        return [self._card_to_dict(r, deps=[], terminal=terminal) for r in rows]
+
+    def update_todo(self, card_id: str, fields: dict[str, Any]) -> dict[str, Any] | None:
+        if not self.get_todo(card_id):
+            return None
+        patch = dict(fields)
+        if "remind_before" in patch:
+            patch["remind_before"] = _encode_leads(patch["remind_before"])
+        if "category" in patch and isinstance(patch["category"], str):
+            patch["category"] = patch["category"].strip().lower()
+        sets, params = self._build_update(patch, _CARD_WRITABLE, _CARD_BOOL_COLS)
+        if sets:
+            self._write(
+                f"UPDATE board_card SET {sets}, updated_at = ? WHERE id = ? AND kind = ?",  # noqa: S608
+                (*params, _utcnow(), card_id, KIND_TODO),
+            )
+        return self.get_todo(card_id)
+
+    def complete_todo(self, card_id: str) -> dict[str, Any] | None:
+        """Tick it off — or, for a recurring task, roll it to the next occurrence.
+
+        A recurring todo is never "completed": completing it would take it off the
+        list forever, which is the opposite of what a recurrence is for. Its due date
+        advances and it stays open. The caller re-schedules the reminders, because
+        this store deliberately knows nothing about the reminder table's contents.
+
+        Returns the updated todo. A recurring one comes back with a NEW `due_at` and
+        `completed_at` still null, which is how the caller tells the two apart.
+        """
+        todo = self.get_todo(card_id)
+        if todo is None:
+            return None
+        now = _utcnow()
+        recur = todo.get("recur")
+        if recur and todo.get("due_at"):
+            nxt = self._next_occurrence(str(todo["due_at"]), str(recur))
+            if nxt is not None:
+                self._write(
+                    "UPDATE board_card SET due_at = ?, updated_at = ? WHERE id = ?",
+                    (nxt, now, card_id),
+                )
+                self._log_history(card_id, todo.get("stage"), "recurred")
+                return self.get_todo(card_id)
+        self._write(
+            "UPDATE board_card SET completed_at = ?, stage = 'done', updated_at = ? WHERE id = ?",
+            (now, now, card_id),
+        )
+        self._log_history(card_id, todo.get("stage"), "done")
+        return self.get_todo(card_id)
+
+    def reopen_todo(self, card_id: str) -> dict[str, Any] | None:
+        """Undo a completion. Ticking the wrong row is the most common slip on a
+        phone keyboard, and a list you cannot un-tick is one you stop trusting."""
+        if not self.get_todo(card_id):
+            return None
+        stage = "scheduled" if (self.get_todo(card_id) or {}).get("due_at") else "inbox"
+        self._write(
+            "UPDATE board_card SET completed_at = NULL, stage = ?, updated_at = ? WHERE id = ?",
+            (stage, _utcnow(), card_id),
+        )
+        self._log_history(card_id, "done", stage)
+        return self.get_todo(card_id)
+
+    def delete_todo(self, card_id: str) -> bool:
+        """Remove a todo. Returns whether it existed.
+
+        Scoped by `kind` so a stray id can never delete a BOARD card through the PIM's
+        surfaces — the two populations share a table and a mis-scoped delete here
+        would take out a real project task with no confirmation.
+        """
+        cursor = self._write(
+            "DELETE FROM board_card WHERE id = ? AND kind = ?", (card_id, KIND_TODO)
+        )
+        return cursor.rowcount > 0
+
+    def todo_categories(self) -> list[dict[str, Any]]:
+        """Every category with an open todo, plus the seeds, with counts.
+
+        Seeds are always present so the picker is never empty on a fresh install; a
+        seed with nothing in it shows a zero rather than being hidden, because an
+        empty category the operator can file into is more useful than one that only
+        appears once it already has something in it.
+        """
+        rows = self._read_all(
+            "SELECT category, COUNT(*) AS n FROM board_card"
+            " WHERE kind = ? AND completed_at IS NULL GROUP BY category",
+            (KIND_TODO,),
+        )
+        counts = {str(r["category"] or ""): int(r["n"]) for r in rows}
+        names = list(SEED_CATEGORIES)
+        names += sorted(c for c in counts if c and c not in SEED_CATEGORIES)
+        out = [{"name": n, "open": counts.get(n, 0)} for n in names]
+        if counts.get(""):
+            out.append({"name": "", "open": counts[""]})
+        return out
+
+    def todo_exists_for_source(self, origin_ref: str) -> bool:
+        """Has this source line already become a todo — accepted OR dismissed?
+
+        The dedup key for AI suggestions. It must match a DISMISSED suggestion too,
+        or the same checkbox is proposed again the next time the scan runs, which is
+        how a helpful assistant turns into a nag.
+        """
+        row = self._read_one(
+            "SELECT 1 AS hit FROM board_card WHERE origin_ref = ? LIMIT 1", (origin_ref,)
+        )
+        return row is not None
+
+    # ── Todo reminders ───────────────────────────────────────────────────────
+
+    def link_reminder(self, card_id: str, reminder_id: int, *, lead: str, fire_at: str) -> None:
+        """Record that `reminder_id` belongs to this todo."""
+        self._write(
+            "INSERT OR REPLACE INTO board_todo_reminder(reminder_id, card_id, lead, fire_at, created_at)"
+            " VALUES(?, ?, ?, ?, ?)",
+            (int(reminder_id), card_id, lead, fire_at, _utcnow()),
+        )
+
+    def todo_reminder_ids(self, card_id: str) -> list[int]:
+        return [
+            int(r["reminder_id"])
+            for r in self._read_all(
+                "SELECT reminder_id FROM board_todo_reminder WHERE card_id = ? ORDER BY fire_at",
+                (card_id,),
+            )
+        ]
+
+    def unlink_reminders(self, card_id: str) -> list[int]:
+        """Forget this todo's reminders and return their ids, so the caller can cancel
+        them in the reminder table.
+
+        Returning the ids rather than cancelling here is deliberate: this store must
+        not import the reminder store. But it means the CALLER owns the cancellation —
+        drop it and you get ghost pings for a task that no longer exists, which is the
+        single most likely live bug in this feature.
+        """
+        ids = self.todo_reminder_ids(card_id)
+        self._write("DELETE FROM board_todo_reminder WHERE card_id = ?", (card_id,))
+        return ids
+
+    @staticmethod
+    def _next_occurrence(due_at: str, recur: str) -> str | None:
+        """Advance an ISO due date by one period, staying in UTC.
+
+        Returns None rather than raising for an unparseable stored value: a corrupt
+        `due_at` must not make a task impossible to tick off.
+        """
+        from datetime import datetime as _dt  # noqa: PLC0415 — keeps `navig help` fast
+
+        try:
+            from navig.pim.dates import advance  # noqa: PLC0415
+
+            base = _dt.fromisoformat(due_at.replace("Z", "+00:00"))
+            nxt = advance(base, recur)
+        except Exception:  # noqa: BLE001 — a bad stored value must not block completion
+            logger.warning("todo recurrence %r could not advance %r", recur, due_at)
+            return None
+        return nxt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+    def _log_history(self, card_id: str, from_stage: Any, to_stage: str) -> None:
+        self._write(
+            "INSERT INTO board_history(card_id, from_stage, to_stage, actor, created_at)"
+            " VALUES(?, ?, ?, 'user', ?)",
+            (card_id, from_stage, to_stage, _utcnow()),
+        )
 
     # ── Dependencies (DAG, cycle-checked) ────────────────────────────────────
 
@@ -609,6 +1056,9 @@ class BoardStore(BaseStore):
     # ── Snapshot (the board GET) ─────────────────────────────────────────────
 
     def snapshot(self) -> dict[str, Any]:
+        # Built from list_cards()/list_goals(), both of which are kind-scoped, so the
+        # desktop board never receives a personal errand. Asserted by
+        # tests/store/test_board_todos.py::test_the_kanban_never_sees_a_todo.
         return {
             "goals": self.list_goals(),
             "cards": self.list_cards(),

@@ -34,25 +34,34 @@ def _tool_cdp_targets(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
 def _tool_cdp_launch(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
     from navig.browser import cdp_actions
 
+    requested = args.get("headless")
     return cdp_actions.launch(
         args["app"],
         port=int(args.get("port", 9222)),
         force_restart=bool(args.get("force_restart", False)),
         user_data_dir=args.get("user_data_dir"),
         load_extension=args.get("load_extension"),
+        headless=None if requested is None else bool(requested),
+        context="agent",
     )
 
 
 def _tool_cdp_new(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
     from navig.browser import cdp_actions
 
+    # `headless` stays tri-state on the way through: absent -> None -> the "agent" context
+    # default (headless). Coercing an absent argument to False here is exactly how an agent,
+    # which has no eyes and never opts in, used to open a real window on the operator's
+    # screen every time it called this tool.
+    requested = args.get("headless")
     return cdp_actions.new(
         app=args.get("app", "chrome"),
         port=int(args["port"]) if args.get("port") is not None else None,
         profile=args.get("profile"),
         load_extension=args.get("load_extension"),
-        headless=bool(args.get("headless", False)),
+        headless=None if requested is None else bool(requested),
         window_size=args.get("window_size"),
+        context="agent",
     )
 
 
@@ -245,6 +254,7 @@ def register(server: Any) -> None:
                                        "description": "Quit a running instance first (destructive)."},
                     "user_data_dir": {"type": "string", "description": "Optional profile dir (browsers)."},
                     "load_extension": {"type": "string", "description": "Unpacked extension folder(s) to load in isolation (path, or comma-separated list)."},
+                    "headless": {"type": "boolean", "default": True, "description": "Launch without a visible window (browsers only; ignored for Electron apps). Defaults to TRUE for agent calls. Set false ONLY when a human has asked to watch."},
                 },
                 "required": ["app"],
             },
@@ -409,7 +419,7 @@ def register(server: Any) -> None:
                     "port": {"type": "integer", "description": "Debug port (auto if omitted)."},
                     "profile": {"type": "string", "description": "Named persistent profile."},
                     "load_extension": {"type": "string", "description": "Unpacked extension folder(s) to load in isolation (path, or comma-separated list)."},
-                    "headless": {"type": "boolean", "default": False, "description": "Launch without a visible window (opt-in; unblocks display-less/CI runs)."},
+                    "headless": {"type": "boolean", "default": True, "description": "Launch without a visible window. Defaults to TRUE for agent calls — you have no screen, and a visible window renders blank and piles up on the operator's desktop. Set false ONLY when a human has asked to watch the browser."},
                     "window_size": {"type": "string", "description": "Pin the window/viewport to WxH, e.g. 1440x900 (deterministic, portable shots)."},
                 },
                 "required": [],

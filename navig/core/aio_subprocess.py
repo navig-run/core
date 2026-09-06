@@ -55,6 +55,8 @@ async def kill_descendants(pid: int) -> None:
     if sys.platform == "win32":
         # taskkill /T walks the process tree in the kernel — the reliable way to reach
         # grandchildren on Windows (the daemon supervisor uses the same pattern).
+        from navig.platform.process import spawn_kwargs  # noqa: PLC0415
+
         try:
             tk = await asyncio.create_subprocess_exec(
                 "taskkill",
@@ -64,6 +66,9 @@ async def kill_descendants(pid: int) -> None:
                 "/F",
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
+                # This runs on EVERY bounded subprocess that has to be reaped, so an
+                # unsuppressed taskkill is a console window per timeout/cancel.
+                **spawn_kwargs(),
             )
         except OSError:
             return  # taskkill unavailable — the caller's proc.kill() still gets the direct child

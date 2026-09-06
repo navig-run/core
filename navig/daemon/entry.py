@@ -134,6 +134,20 @@ def save_default_config() -> Path:
 
 
 def main() -> None:
+    # This entry point runs under pythonw.exe (see service_manager._pythonw_exe) and from
+    # a Task Scheduler action, so it has NO console. A console child spawned from here —
+    # git, icacls, taskkill, powershell, npx, ffmpeg — cannot inherit one, so Windows
+    # allocates it a brand-new console that appears and vanishes on the operator's screen.
+    # Suppress that once, here, rather than at 456 unsuppressed call sites (108 of them in
+    # plugins, plus any third-party library that shells out). No-ops when this process DOES
+    # have a console, i.e. every ordinary CLI run.
+    try:
+        from navig.platform.process import install_windowless_spawn_default
+
+        install_windowless_spawn_default()
+    except Exception:  # noqa: BLE001 — cosmetic; must never block daemon boot
+        pass
+
     # Respect stop-intent flag written by `navig service stop`.
     # Any external watcher (tray app, startup script, RestartOnFailure) that
     # tries to spawn the daemon after a deliberate stop will hit this guard

@@ -8799,10 +8799,17 @@ navig cdp stop --all             # disable: close every debug browser NAVIG star
 ### Fresh, isolated browser
 
 ```bash
-navig cdp new                    # throwaway profile, auto-allocated port
+navig cdp new                    # throwaway profile, auto-allocated port — WINDOWLESS
 navig cdp new --profile research # reusable named profile (logins persist)
-navig cdp new --headless --window-size 1440x900  # windowless + fixed viewport (CI / deterministic shots)
+navig cdp new --headed           # opt in to a visible window (when you want to watch)
+navig cdp new --window-size 1440x900  # fixed viewport (CI / deterministic shots)
 ```
+
+**Windows are opt-in.** A browser launched by an agent or a script is windowless; the flows
+where a person signs in (`navig cdp open <profile>`, `navig do`, `navig gmail`) keep their
+window. `--headless`/`--headed` override per call, `browser.headless` overrides globally.
+Idle automation browsers are closed by the `browser_reaper` monitor — never a named profile,
+and never one with a visible window. See `docs/automation/cdp-connector.md`.
 
 ### Commands
 
@@ -8810,8 +8817,10 @@ navig cdp new --headless --window-size 1440x900  # windowless + fixed viewport (
 |---------|-------------|
 | `navig cdp status` / `targets` | Show launchable apps + live CDP targets (`kind: browser/node`) |
 | `navig cdp launch <app>` | Start an app with a debug port (`--force-restart`, `--user-data-dir`) |
-| `navig cdp new` | Fresh isolated browser — own profile + auto port (`--app`, `--profile`, `--headless`, `--window-size WxH`) |
+| `navig cdp new` | Fresh isolated browser — own profile + auto port, **windowless by default** (`--app`, `--profile`, `--headed`, `--headless`, `--window-size WxH`) |
 | `navig cdp launched` | List browsers NAVIG started and whether each is live |
+| `navig cdp profile usage` | Disk used by each browser profile (named, orphaned, throwaway) |
+| `navig cdp profile prune [name…]` | Reclaim disk — throwaway sessions, plus any profile you name |
 | `navig cdp stop` / `detach` | Close (`--port`/`--all`) or just disconnect a debug browser |
 | `navig cdp tabs` / `switch` | List every open page / make one the active target |
 | `navig cdp snapshot` / `screenshot` | a11y tree with refs / capture the page |
@@ -8832,7 +8841,9 @@ after the first login NAVIG restores the saved session instead of retyping.
 navig vault login add github.com -u you@example.com          # prompts for the password
 navig vault login add github.com -u you@example.com --totp JBSWY3DPEHPK3PXP  # + 2FA
 navig vault login list                                        # no passwords shown
-navig cdp new                                                 # a visible browser
+navig cdp new --headed                                        # a VISIBLE browser (--headed:
+                                                              # you may have to solve a 2FA
+                                                              # prompt or a captcha yourself)
 navig cdp login github.com --open https://github.com/login   # navigate + sign in
 ```
 
@@ -8860,9 +8871,18 @@ navig cdp open cybesis                                 # open (or REUSE if alrea
 navig cdp profile use cybesis                          # make it the active profile
 navig cdp profile new client-acme --note "Acme"        # a second, isolated identity
 navig cdp profile close cybesis  ·  navig cdp profile remove cybesis
+navig cdp profile usage                                # disk used by each profile
+navig cdp profile prune                                # reclaim throwaway session dirs
+navig cdp profile prune gaze-books                     # delete a named profile you're done with
 ```
 
 - **Reuse, no reopen**: `open` attaches to the already-running profile on its stable port.
+- **Disk**: an automation profile is a full Chrome user-data dir (caches, service workers,
+  IndexedDB) and grows without bound — `usage` shows where the gigabytes went, including
+  *orphaned* dirs no profile points at any more. `prune` only ever deletes what you name
+  plus throwaway sessions; it refuses a profile that is **running**, one another session's
+  browser is using, and — always — a `--real` profile, since that directory is your actual
+  Chrome data.
 - **Active profile**: after `profile use`, `navig do` and `navig gmail` default to it (no `--port`).
 - **Your real Chrome** (advanced): `navig cdp profile list --real` shows your actual Chrome
   profiles; `navig cdp profile new mine --real "Profile 3"` registers one. Opening it relaunches

@@ -823,6 +823,25 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "card", "Send today's check-in card now",
         handler="_handle_habit_card", category="habits",
     ),
+    # --- Todo (the PIM) -------------------------------------------------------
+    # `/todo` with no argument opens the card; with one it CAPTURES. One command for
+    # both because capture has to be the shortest possible path -- a task you have to
+    # navigate to before typing is a task you do not write down.
+    SlashCommandEntry(
+        "todo", "Your task list \u2014 or capture one: /todo Dentist tomorrow 10:30",
+        handler="_handle_todo", category="todo", usage="/todo [task] [when]",
+    ),
+    # Aliases, hidden from /help and the "/" menu so one feature does not take three
+    # slots in a list the operator scrolls. They still route, and they are still owned
+    # by the `todo` extension, so switching it off takes all three.
+    SlashCommandEntry(
+        "t", "Capture a task (short for /todo)",
+        handler="_handle_todo", category="todo", visible=False,
+    ),
+    SlashCommandEntry(
+        "task", "Capture a task (short for /todo)",
+        handler="_handle_todo", category="todo", visible=False,
+    ),
     # --- Bot Identity ---
     SlashCommandEntry("about", "Learn about NAVIG", handler="_handle_about", category="core"),
     SlashCommandEntry(
@@ -2145,6 +2164,54 @@ class TelegramCommandsMixin:
         await self.send_message(chat_id, "🏓 <b>pong</b> — NAVIG is live", parse_mode="HTML")
 
     # ── Habits: the tracker, reachable from the phone it already lives on ──────
+
+    async def _handle_todo(self, chat_id: int, text: str = "", **_: Any) -> None:
+        """`/todo` \u2014 open the list, or capture a task when given one.
+
+        One command for both because capture must be the shortest possible path: a
+        task you have to navigate to before you can type is a task you do not write
+        down. `/todo Dentist tomorrow 10:30` is one message from lock screen to list.
+        """
+        from navig.telegram import todo_actions
+
+        argument = (text or "").split(" ", 1)[1].strip() if " " in (text or "") else ""
+
+        if argument:
+            created = todo_actions.capture(argument)
+            if created is None:
+                await self._api_call(
+                    "sendMessage",
+                    {"chat_id": chat_id, "text": "Nothing to add \u2014 send /todo <task> [when]"},
+                )
+                return
+
+        body, keyboard = todo_actions.build_view("all")
+        sent = await self._api_call(
+            "sendMessage",
+            {
+                "chat_id": chat_id,
+                "text": body,
+                "parse_mode": "HTML",
+                "reply_markup": keyboard,
+            },
+        )
+        # A freshly captured task with a date needs its reminders scheduling, and the
+        # chat we just answered in is where they should arrive. Doing it here rather
+        # than inside `capture()` keeps that function usable from the CLI and the agent
+        # tools, which have no chat to deliver to.
+        if argument and created is not None and created.get("due_at"):
+            from navig.pim.clock import local_now
+            from navig.pim.reminders import reschedule
+            from navig.store.board import get_board_store
+
+            try:
+                reschedule(
+                    get_board_store(), created,
+                    user_id=int(chat_id), chat_id=int(chat_id), now=local_now(),
+                )
+            except Exception:  # noqa: BLE001 - the task is saved; a reminder is not worth losing it
+                logger.exception("todo: could not schedule reminders for %s", created.get("id"))
+        return sent
 
     async def _handle_habit_stats(self, chat_id: int, text: str = "", **_: Any) -> None:
         """Habit progress in chat (/stats [7|14|all])."""

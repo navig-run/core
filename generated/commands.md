@@ -1,6 +1,6 @@
 # NAVIG Command Reference
 
-_Generated 2026-09-06T12:45:02.439736+00:00_
+_Generated 2026-09-06T13:22:13.187389+00:00_
 
 ## `navig action add`
 **Status:** `stable` · **Since:** 
@@ -1818,12 +1818,28 @@ Assign a per-profile proxy (overrides the shared browser.proxies pool).
 navig cdp profile proxy
 ```
 
+## `navig cdp profile prune`
+**Status:** `stable` · **Since:** 
+Reclaim disk from browser profiles (throwaway sessions, or a profile you name).
+**Examples:**
+```sh
+navig cdp profile prune
+```
+
 ## `navig cdp profile remove`
 **Status:** `stable` · **Since:** 
 Remove a profile from the registry (closing it first).
 **Examples:**
 ```sh
 navig cdp profile remove
+```
+
+## `navig cdp profile usage`
+**Status:** `stable` · **Since:** 
+Show how much disk each browser profile is using.
+**Examples:**
+```sh
+navig cdp profile usage
 ```
 
 ## `navig cdp profile use`

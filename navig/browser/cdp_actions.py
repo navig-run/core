@@ -150,20 +150,33 @@ def _window_size_args(window_size: str | None) -> list[str]:
 
 
 def launch(app: str, port: int = 9222, *, force_restart: bool = False,
-           user_data_dir: str | None = None, load_extension: str | None = None) -> dict:
+           user_data_dir: str | None = None, load_extension: str | None = None,
+           headless: bool | None = None, context: str = "human") -> dict:
     """Launch a known app (or explicit path) with a debug port.
 
     When *force_restart* is True and a running instance holds the single-instance
     lock, the existing instance is terminated first (caller must have confirmed).
     *load_extension* loads unpacked Chrome extension(s) in isolation (a folder path,
     or a comma-separated list) — for testing an extension end-to-end over CDP.
+
+    *headless* / *context* work as in :func:`new`. This function had **no** visibility
+    control at all, so the MCP ``cdp_launch`` tool could only ever open a window; the
+    default *context* is ``"human"`` because `launch` targets an app the operator names
+    (and may already be using), while MCP passes ``"agent"``. Note that a headless switch
+    is meaningless for the non-browser apps in the known-app table (Discord, Slack,
+    VS Code), so it is applied only to actual browsers.
     """
     from navig.browser import targets as t
+    from navig.browser.visibility import resolve_headless
 
     try:
         extra = _extension_args(load_extension)
+        headless = resolve_headless(headless, context=context)
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}
+
+    if headless and app in t.BROWSER_APPS:
+        extra = [*extra, "--headless=new"]
 
     already = t.probe_port(port)
     if already is not None:
@@ -189,8 +202,8 @@ def launch(app: str, port: int = 9222, *, force_restart: bool = False,
 
 
 def new(app: str = "chrome", port: int | None = None, profile: str | None = None,
-        load_extension: str | None = None, headless: bool = False,
-        window_size: str | None = None) -> dict:
+        load_extension: str | None = None, headless: bool | None = None,
+        window_size: str | None = None, context: str = "script") -> dict:
     """Open a **completely fresh, isolated** browser session.
 
     Always uses its own profile dir and its own debug port, so it never touches
@@ -203,19 +216,25 @@ def new(app: str = "chrome", port: int | None = None, profile: str | None = None
             session profile that is unique each time.
         load_extension: Unpacked extension folder(s) to load in isolation (a path,
             or a comma-separated list) — for end-to-end testing an extension over CDP.
-        headless: Launch without a visible window (``--headless=new``). Opt-in —
-            the default (False) keeps the historical behaviour of a visible window.
-            Unblocks display-less/CI environments. Mirrors ``profile_open``.
+        headless: Launch without a visible window (``--headless=new``). ``None``
+            (default) means "not specified" — :func:`~navig.browser.visibility.resolve_headless`
+            decides from *context* and the ``browser.headless`` config. Pass ``True``/``False``
+            to force it; an explicit value always wins.
         window_size: Pin the window (and, headless, the rendering viewport) to
             ``"WxH"`` (e.g. ``"1440x900"``) via Chrome ``--window-size=W,H``. None
             (default) keeps Chrome's own default sizing. Malformed input is rejected
             before launch (see :func:`_window_size_args`).
+        context: Who is launching — ``"agent"`` (MCP/LLM), ``"script"`` (CLI, cron,
+            harness; the default, since a fresh isolated session is an automation
+            primitive) or ``"human"``. Only consulted when *headless* is ``None``.
     """
     from navig.browser import targets as t
+    from navig.browser.visibility import resolve_headless
 
     try:
         ext_args = _extension_args(load_extension)
         size_args = _window_size_args(window_size)
+        headless = resolve_headless(headless, context=context)
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}
 
@@ -428,10 +447,23 @@ def profile_new(name: str, *, app: str = "chrome", note: str = "",
             "note": f"profile '{name}' created on port {prof.port} · open it: navig cdp open {name}"}
 
 
-def profile_open(name: str, *, headless: bool = False) -> dict:
-    """Open (or REUSE if already running) a named profile's visible browser on its stable port."""
+def profile_open(name: str, *, headless: bool | None = None,
+                 context: str = "human") -> dict:
+    """Open (or REUSE if already running) a named profile's browser on its stable port.
+
+    *context* defaults to ``"human"`` because opening a named profile is overwhelmingly a
+    person about to log into something — that is the one flow where a window is the point.
+    Unattended callers (cron, batch claim jobs) must say ``context="script"``; the Epic
+    claim ran on a timer through this function and left a visible browser behind every time.
+    """
     from navig.browser import profiles as p
     from navig.browser import targets as t
+    from navig.browser.visibility import resolve_headless
+
+    try:
+        headless = resolve_headless(headless, context=context)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
 
     prof = p.get_profile(name)
     if prof is None:
@@ -442,7 +474,11 @@ def profile_open(name: str, *, headless: bool = False) -> dict:
     if t.probe_port(prof.port, timeout=0.4) is not None:
         p.touch_profile(name)
         p.set_active(name)  # opening a profile makes it the one navig do / gmail use
+        # `headless` here describes THIS call's resolution, not the running browser — we
+        # did not launch it and cannot retro-fit a window onto it. Callers use it only to
+        # decide whether to raise the window, which is correct either way.
         return {"ok": True, "reused": True, "name": name, "port": prof.port, "app": prof.app,
+                "headless": headless,
                 "note": f"profile '{name}' already open on port {prof.port}"}
 
     # Real profile → preflight: refuse while the real browser holds the profile lock.
@@ -463,8 +499,196 @@ def profile_open(name: str, *, headless: bool = False) -> dict:
     p.touch_profile(name)
     p.set_active(name)  # opening a profile makes it the one navig do / gmail use
     return {"ok": True, "reused": False, "name": name, "port": prof.port, "app": prof.app,
-            "real": prof.real, "target": target.to_dict(),
+            "real": prof.real, "target": target.to_dict(), "headless": headless,
             "note": f"profile '{name}' open on port {prof.port}"}
+
+
+def _dir_size_bytes(path: str) -> int:
+    """Total size of *path*, ignoring files that vanish or refuse to be stat'd."""
+    total = 0
+    for root, _dirs, files in os.walk(path, onerror=lambda _e: None):
+        for name in files:
+            try:
+                total += os.path.getsize(os.path.join(root, name))
+            except OSError:
+                continue  # a file being written, a permission wall — not worth failing over
+    return total
+
+
+def profile_usage() -> dict:
+    """Disk used by browser profiles, newest-used first.
+
+    Reports rather than deletes. Automation profiles are full Chrome user-data dirs — caches,
+    service workers, IndexedDB — so they grow without bound and silently: on the machine this
+    was written for, ``~/.navig/cdp-profiles`` had reached **12.0 GB**, of which 11.9 GB was
+    two named profiles nobody had opened in weeks.
+    """
+    from navig.browser import profiles as p
+    from navig.platform.paths import config_dir
+
+    root = config_dir() / "cdp-profiles"
+    named: list[dict] = []
+    for prof in p.list_profiles():
+        udd = prof.user_data_dir or ""
+        if not udd or not os.path.isdir(udd):
+            continue
+        named.append({
+            "name": prof.name,
+            "user_data_dir": udd,
+            "bytes": _dir_size_bytes(udd),
+            "last_used": prof.last_used,
+            # A "real" profile points at the operator's ACTUAL Chrome data directory, not a
+            # NAVIG-made one. It is reported so the size is honest, and refused everywhere
+            # deletion happens — see profile_prune.
+            "real": bool(prof.real),
+            "running": t_probe_is_live(prof.port),
+        })
+    named.sort(key=lambda r: r["last_used"] or 0, reverse=True)
+
+    # Directories under named/ that NO registry entry points at. They exist because a
+    # profile can be removed from the registry (or the registry rebuilt) without the
+    # gigabytes on disk going anywhere. Reporting only registry-backed profiles made the
+    # total read ~11.4 GB against 12.0 GB actually on disk — a number that is quietly wrong
+    # is worse than no number, because it is the one the operator would act on.
+    known_dirs = {os.path.normcase(os.path.normpath(r["user_data_dir"])) for r in named}
+    orphans: list[dict] = []
+    named_root = root / "named"
+    if named_root.is_dir():
+        for child in named_root.iterdir():
+            if not child.is_dir():
+                continue
+            if os.path.normcase(os.path.normpath(str(child))) in known_dirs:
+                continue
+            orphans.append({"name": child.name, "path": str(child),
+                            "bytes": _dir_size_bytes(str(child)),
+                            "mtime": int(child.stat().st_mtime)})
+    orphans.sort(key=lambda r: r["bytes"], reverse=True)
+
+    sessions_dir = root / "sessions"
+    sessions: list[dict] = []
+    if sessions_dir.is_dir():
+        for child in sessions_dir.iterdir():
+            if child.is_dir():
+                sessions.append({"path": str(child), "bytes": _dir_size_bytes(str(child)),
+                                 "mtime": int(child.stat().st_mtime)})
+    sessions.sort(key=lambda r: r["mtime"], reverse=True)
+
+    return {
+        "ok": True,
+        "root": str(root),
+        "named": named,
+        "orphans": orphans,
+        "sessions": sessions,
+        "total_bytes": (sum(r["bytes"] for r in named)
+                        + sum(r["bytes"] for r in orphans)
+                        + sum(r["bytes"] for r in sessions)),
+    }
+
+
+def t_probe_is_live(port: int) -> bool:
+    """Is a browser currently serving CDP on *port*? Never raises."""
+    from navig.browser import targets as t
+
+    try:
+        return t.probe_port(int(port), timeout=0.3) is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def profile_prune(names: list[str] | None = None, *, sessions: bool = True,
+                  dry_run: bool = True) -> dict:
+    """Delete throwaway session profiles, and named profiles the caller NAMES explicitly.
+
+    Deleting a browser profile destroys logins, so nothing is inferred:
+
+    * **Named profiles are never selected automatically** — only the exact names passed in.
+      "Looks unused" is not consent; a research profile untouched for two months may hold
+      the one session the operator cannot easily recreate.
+    * **A ``real`` profile is refused outright.** Its ``user_data_dir`` points at the
+      operator's ACTUAL Chrome data — deleting it would take their real browser's history,
+      cookies and passwords with it. There is no flag to override this.
+    * **A running profile is refused** — closing and deleting underneath a live browser
+      corrupts what is left.
+    * Session (throwaway) dirs are swept only when no live browser is using them.
+
+    ``dry_run=True`` (the default) reports exactly what would go, and is what the CLI shows
+    before asking.
+    """
+    import shutil
+
+    from navig.browser import profiles as p
+    from navig.platform.paths import config_dir
+
+    usage = profile_usage()
+    by_name = {r["name"]: r for r in usage["named"]}
+    planned: list[dict] = []
+    refused: list[dict] = []
+
+    for name in names or []:
+        rec = by_name.get(name)
+        if rec is None:
+            refused.append({"name": name, "why": "no such profile (or its dir is gone)"})
+            continue
+        if rec["real"]:
+            refused.append({"name": name, "why": "points at your REAL Chrome data — refused"})
+            continue
+        if rec["running"]:
+            refused.append({"name": name, "why": "currently running — close it first "
+                                                 f"(navig cdp profile close {name})"})
+            continue
+        planned.append({"kind": "named", "name": name, "path": rec["user_data_dir"],
+                        "bytes": rec["bytes"]})
+
+    # An orphan dir may also be named explicitly. It has no registry entry, so there is no
+    # `real` flag to consult — but a real profile is always registry-backed by construction
+    # (the flag only exists there), so an orphan under cdp-profiles/named is NAVIG-made.
+    by_orphan = {r["name"]: r for r in usage.get("orphans", [])}
+    for name in names or []:
+        if name in by_name or name not in by_orphan:
+            continue
+        rec = by_orphan[name]
+        refused[:] = [r for r in refused if r.get("name") != name]  # it does exist after all
+        planned.append({"kind": "orphan", "name": name, "path": rec["path"],
+                        "bytes": rec["bytes"]})
+
+    if sessions:
+        live_dirs = {
+            str(e.get("user_data_dir") or "").lower()
+            for e in _launched_entries()
+        }
+        for rec in usage["sessions"]:
+            if rec["path"].lower() in live_dirs:
+                refused.append({"path": rec["path"], "why": "a launched browser is using it"})
+                continue
+            planned.append({"kind": "session", "path": rec["path"], "bytes": rec["bytes"]})
+
+    freed = 0
+    deleted: list[str] = []
+    errors: list[str] = []
+    if not dry_run:
+        for item in planned:
+            try:
+                shutil.rmtree(item["path"])
+            except OSError as exc:
+                errors.append(f"{item['path']}: {exc}")
+                continue
+            freed += item["bytes"]
+            deleted.append(item["path"])
+            if item["kind"] == "named":
+                try:
+                    p.remove_profile(item["name"])
+                except Exception as exc:  # noqa: BLE001 — the bytes are already gone
+                    errors.append(f"registry entry for {item['name']}: {exc}")
+
+    return {"ok": not errors, "dry_run": dry_run, "planned": planned, "refused": refused,
+            "deleted": deleted, "freed_bytes": freed, "errors": errors,
+            "root": str(config_dir() / "cdp-profiles")}
+
+
+def _launched_entries() -> list[dict]:
+    from navig.browser import targets as t
+
+    return [e for e in t.get_launched().values() if isinstance(e, dict)]
 
 
 def profile_use(name: str) -> dict:

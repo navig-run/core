@@ -32,6 +32,20 @@ def set_owner_only_file_permissions(path: str | Path) -> None:
         _logger.debug("Windows ACL setup skipped because required modules are unavailable")
         return
 
+    # Three icacls calls per secured file, and this runs on every credential/token write
+    # (vault store/storage/encryption/crypto/core, providers/auth, messaging/secrets,
+    # _db_utils, the wizard, onboarding, the telegram installer). From the windowless
+    # daemon that was three console windows flashing each time a secret was saved — the
+    # single highest-frequency source of the flicker the operator reported.
+    #
+    # The flag is read off `subprocess` rather than imported from navig.platform.process
+    # ON PURPOSE: navig-vault vendors a byte-for-byte copy of this function so the vault
+    # can run WITHOUT navig installed (tests/quality/test_vault_compat_parity.py compares
+    # the two ASTs), and a navig import here would break the standalone copy. Everything
+    # below is unconditionally Windows — the non-nt branch returned above — so the
+    # attribute always exists and `creationflags` is always legal.
+    no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
     try:
         username = getpass.getuser()
         # No text mode: the output is captured only to keep it off the console and is never
@@ -45,16 +59,19 @@ def set_owner_only_file_permissions(path: str | Path) -> None:
             ["icacls", target, "/inheritance:r"],
             capture_output=True,
             check=False,
+            creationflags=no_window,
         )
         subprocess.run(
             ["icacls", target, "/grant:r", f"{username}:(R,W)"],
             capture_output=True,
             check=False,
+            creationflags=no_window,
         )
         subprocess.run(
             ["icacls", target, "/remove:g", "Users", "Authenticated Users", "Everyone"],
             capture_output=True,
             check=False,
+            creationflags=no_window,
         )
     except (OSError, PermissionError, subprocess.SubprocessError):
         _logger.debug("Windows ACL setup failed for %s", target, exc_info=True)

@@ -33,9 +33,12 @@ def repo_root() -> Path:
 
 
 def _git_rc(args: list[str], cwd: Path | str) -> tuple[int, str]:
+    from navig.platform.process import spawn_kwargs  # noqa: PLC0415
+
     try:
         res = subprocess.run(
-            ["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=10, encoding="utf-8", errors="replace"
+            ["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=10,
+            encoding="utf-8", errors="replace", **spawn_kwargs()
         )
     except (OSError, subprocess.SubprocessError):
         return -1, ""
