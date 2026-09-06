@@ -1,0 +1,147 @@
+{
+  "boot.messages": [
+    "Réveillé. Tous les systèmes respirent. Prêt quand tu veux.",
+    "De retour en ligne. Capteurs actifs, mémoire nette, horloges synchronisées. En attente.",
+    "Bonjour, navigateur. Systèmes chauds, cap non défini. Allons quelque part.",
+    "Initialisation terminée. Aucune anomalie. La route est à toi.",
+    "En ligne. Horizon verrouillé. J'attends ton premier geste.",
+    "Diagnostics passés. Signal net. Je t'attendais.",
+    "Systèmes actifs. Position acquise. Il est temps d'avancer.",
+    "Redémarré. Tout est à sa place. Prêt à naviguer.",
+    "Uptime : 0 s. Confiance : totale. À toi.",
+    "Revenu propre. Ni erreurs, ni fantômes. En ligne et affûté."
+  ],
+  "boot.position": "Position : {value}.",
+  "boot.last_session": "Session précédente : {value} s.",
+  "boot.signal": "Signal : {value} %.",
+  "habit.workout": "C'est l'heure de s'entraîner ! 💪 La régularité bat l'intensité.",
+  "habit.standup": "Lève-toi et étire-toi ! Tu es assis depuis trop longtemps. 🧘",
+  "habit.water": "Bois de l'eau ! Reste hydraté. 💧",
+  "habit.sleep": "Commence à ralentir. Le sommeil, c'est la récupération. 🌙",
+  "habit.wake": "Debout. Les pieds au sol, 10 minutes de lumière du jour, de l'eau. Ne touche pas au téléphone. ⚓",
+  "habit.ship": "Bloc de 90 minutes. Téléphone dans une autre pièce. Écris une ligne : ce qui sera FAIT. 🚀",
+  "habit.out": "Sors de chez toi 30 minutes. Pas une course. Sors, c'est tout. 🚶",
+  "habit.out_weekend": "Dehors, 30 minutes — maintenant, tant que la journée est encore à toi. C'est la même Marche ; seule l'heure a changé. 🥾",
+  "habit.ship_weekend": "45 minutes sur schema. Court exprès — un bloc de week-end que tu fais vraiment vaut mieux qu'un de 90 minutes que tu sautes. 🛠",
+  "habit.nightclose": "LA NUIT EST FERMÉE. Le travail ne commence pas — surtout si ça coule. Téléphone hors de la chambre. 🔒",
+  "habit.checkin": "Point du soir, 60 secondes : une ligne de suivi + trois lignes de journal. Le seul vrai échec, c'est d'arrêter de noter. ✍️",
+  "habit.people": "Les gens : passe voir ta mère + envoie à un ami une invitation PRÉCISE. C'est l'envoi qui compte — la réponse n'est pas ton travail. 👥",
+  "habit.review": "Revue hebdomadaire, 10 minutes. Séries, corps, argent, ce qui a cassé, une décision. 📊",
+  "month.1": "janvier",
+  "month.2": "février",
+  "month.3": "mars",
+  "month.4": "avril",
+  "month.5": "mai",
+  "month.6": "juin",
+  "month.7": "juillet",
+  "month.8": "août",
+  "month.9": "septembre",
+  "month.10": "octobre",
+  "month.11": "novembre",
+  "month.12": "décembre",
+  "habit.label.wake": "Lever",
+  "habit.label.out": "Marche",
+  "habit.label.ship": "Livrer",
+  "habit.label.train": "Sport",
+  "habit.label.caffeine_cutoff": "Sans café",
+  "habit.label.glow": "Soin de soi",
+  "habit.label.deep": "Travail profond",
+  "habit.label.steps": "Pas",
+  "habit.label.eat_window": "Fenêtre de repas",
+  "habit.label.protein": "Protéines",
+  "habit.label.friend": "Ami",
+  "habit.label.mom": "Mère",
+  "habit.label.outside_work": "Travail dehors",
+  "habit.label.screens_off": "Écrans coupés",
+  "habit.label.sleep_time": "Coucher",
+  "habit.label.nightclose": "Nuit fermée",
+  "habit.label.mobility": "Mobilité",
+  "habit.label.score": "Note du jour",
+  "habit.label.checkin": "Carte du soir",
+  "habit.label.close": "Clôture du jour",
+  "habit.label.review": "Revue hebdo",
+  "habit.label.people": "Les gens",
+  "habit.label.out_weekend": "Marche du week-end",
+  "habit.label.ship_weekend": "Bloc du week-end",
+  "habit.card.evening_title": "Point du soir",
+  "habit.card.morning_title": "Matin",
+  "habit.card.morning_line": "Les pieds au sol, 10 minutes de lumière du jour, de l'eau.",
+  "habit.card.morning_tap": "Appuie sur <b>{wake}</b> maintenant — le reste au fil de la journée.",
+  "habit.card.floor_title": "Les 3 qui décident la journée",
+  "habit.card.all_three": "Les trois sont faits. La journée compte.",
+  "habit.card.tap_hint": "Marque ce que tu as fait — {open} devient {done}.",
+  "habit.card.streaks": "Séries : {value}",
+  "habit.card.close_button": "🌙 Clôturer la journée",
+  "habit.card.days_counted": "{done} jours sur {total} comptés",
+  "engagement.greeting.early_morning": [
+    "Départ matinal. Prêt quand tu veux.",
+    "Bonjour. Le café est virtuel, l'aide est réelle."
+  ],
+  "engagement.greeting.morning": [
+    "Bonjour. Tous les systèmes au vert — au programme aujourd'hui ?",
+    "Matin. Prêt pour la formation du jour."
+  ],
+  "engagement.greeting.afternoon": [
+    "Bon après-midi. Comment se présente la journée ?",
+    "Après-midi. Quelque chose à faire avancer ?"
+  ],
+  "engagement.greeting.evening": [
+    "Bonsoir. Toujours d'attaque ?",
+    "Bonsoir. Besoin de quelque chose avant de couper ?"
+  ],
+  "engagement.greeting.night": [
+    "Tu travailles tard. Dis-moi si je peux aider à conclure."
+  ],
+  "engagement.greeting.late_night": [
+    "Séance nocturne. Je suis là."
+  ],
+  "engagement.greeting.default": [
+    "Bonjour. Prêt quand tu veux."
+  ],
+  "engagement.greeting.returning": [
+    "Bon retour. On reprend où on s'est arrêtés.",
+    "De retour. J'ai veillé — rien à signaler.",
+    "Content de te revoir. Prêt à continuer."
+  ],
+  "engagement.wrapup": [
+    "On conclut ? Tu as lancé {total} commandes aujourd'hui. Un résumé ?",
+    "Point du soir — quelque chose à terminer avant de partir ?",
+    "Offre de fin de journée : je peux résumer ce qu'on a fait."
+  ],
+  "engagement.checkin": [
+    "Petit point — besoin d'aide ?",
+    "Toujours là. Appelle si besoin.",
+    "Je fais signe. Tout est nominal de mon côté."
+  ],
+  "engagement.idle_nudge": [
+    "Moment calme — je lance une vérification pendant ton absence ?",
+    "Je suis inactif aussi. Je vérifie quelque chose en arrière-plan ?",
+    "Je reste dispo. Je peux lancer un diagnostic en attendant."
+  ],
+  "engagement.nudge_yes": "Oui, vas-y",
+  "engagement.feedback_ask": [
+    "Petite question : qu'est-ce que je pourrais mieux faire ? Toujours preneur.",
+    "Point d'amélioration : des commandes ou des flux qui semblent lourds ? Dis-moi.",
+    "Retour d'expérience : quelle seule chose rendrait le travail plus fluide ?"
+  ],
+  "engagement.tip.db": "Tu as utilisé <code>db</code> {count} fois. Tu savais qu'on peut chaîner les requêtes avec <code>--plain</code> pour les scripts ?",
+  "engagement.tip.run": "Astuce : pour les commandes complexes, <code>navig run -i</code> ouvre un éditeur — fini l'échappement de guillemets.",
+  "engagement.tip.file": "Conseil : <code>navig file list --tree --depth 2</code> donne un aperçu rapide du répertoire.",
+  "engagement.tip.host": "Rappel : <code>navig host monitor show</code> donne un état de santé complet.",
+  "engagement.tip.docker": "Gain rapide : <code>navig docker stats</code> montre les ressources en temps réel sur tous les conteneurs.",
+  "engagement.tip.backup": "Pense à planifier des sauvegardes régulières avec <code>navig flow run backup-daily</code>.",
+  "notify.reminder.header": "⏰ <b>Rappel</b>",
+  "notify.reminder.missed": "⏰ <b>Rappel manqué</b> <i>(était prévu à {due})</i>",
+  "engagement.title.greeting": "NAVIG — Salutation",
+  "engagement.title.checkin": "NAVIG — Point",
+  "engagement.title.capability_promo": "NAVIG — Le savais-tu",
+  "engagement.title.contextual_tip": "NAVIG — Astuce",
+  "engagement.title.evening_wrapup": "NAVIG — Bilan",
+  "engagement.title.feedback_ask": "NAVIG — Retour",
+  "engagement.title.idle_nudge": "NAVIG — Rappel",
+  "engagement.title.celebration": "NAVIG — Jalon",
+  "engagement.title.heartbeat_report": "NAVIG — Pouls",
+  "habit.card.streak_day": "{n}j",
+  "habit.card.day_score": "Note du jour : {value}/10",
+  "habit.card.still_open": "Il reste : <b>{names}</b> — les trois, sinon la journée ne compte pas."
+}

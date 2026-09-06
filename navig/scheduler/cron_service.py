@@ -1209,6 +1209,15 @@ class CronService:
                 chat_id = int(chat_id_str)
                 message = _b64.b64decode(b64_msg).decode("utf-8")
 
+                # The text was frozen into this command when the habit was added,
+                # so `user.language` could never reach it afterwards. Resolve it
+                # HERE, from the job's own name — and only when it is still the
+                # built-in default, so a message the operator wrote themselves is
+                # never overwritten by a translation.
+                from navig.spaces.health import localized_reminder
+
+                message = localized_reminder(job.name, message)
+
                 from navig.store.runtime import get_runtime_store
 
                 store = get_runtime_store()

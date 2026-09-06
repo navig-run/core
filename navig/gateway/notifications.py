@@ -895,12 +895,50 @@ class TelegramNotifier(ChannelNotifier):
             else:
                 priority = NotificationPriority.LOW
 
+            # The card's HEADER follows the global language too. It used to be
+            # built by title-casing the action name, which is always English —
+            # so a Russian body arrived under "NAVIG — Greeting".
+            from navig.core import i18n
+
+            action = result.action.value
+            title_key = f"engagement.title.{action}"
+            title = i18n.t(title_key)
+            if title == title_key:  # no locale entry — fall back to the old shape
+                title = f"NAVIG — {action.replace('_', ' ').title()}"
+
+            # A nudge that ASKS something must ship the way to answer it.
+            # These go out as one-way push Notifications: nothing anywhere records
+            # a pending question, so a plain "yes" lands in the ordinary chat
+            # handler, which has no idea anything was asked and answers "OK, how
+            # can I help?" — measured on the operator's bot. It is also why 50
+            # "Remediate health issues" approvals expired unanswered.
+            #
+            # `Notification.keyboard` already exists and the `slash:` callback
+            # prefix already dispatches a bot command, so answering is a button
+            # rather than a new intent-parsing layer. Only nudges that declare a
+            # `suggested_command` get one; the rest stay plain statements.
+            keyboard = None
+            suggested = (result.metadata or {}).get("suggested_command")
+            if suggested:
+                # i18n.t takes **fields for formatting, not a default — a missing
+                # key comes back AS the key, which is the fallback shape used for
+                # the title above.
+                label_key = "engagement.nudge_yes"
+                label = i18n.t(label_key)
+                if label == label_key:
+                    label = "Yes, go ahead"
+                keyboard = [[{
+                    "text": label,
+                    "callback_data": f"slash:{suggested}",
+                }]]
+
             return Notification(
-                type=type_map.get(result.action.value, "routine"),
-                title=f"NAVIG — {result.action.value.replace('_', ' ').title()}",
+                type=type_map.get(action, "routine"),
+                title=title,
                 message=result.message,
                 priority=priority,
                 metadata=result.metadata,
+                keyboard=keyboard,
             )
         except Exception as e:
             logger.error("Engagement tick failed: %s", e)

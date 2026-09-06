@@ -347,7 +347,18 @@ class EngagementCoordinator:
                             action=EngagementAction.IDLE_NUDGE,
                             message=self._build_idle_nudge(),
                             priority=2,
-                            metadata={"idle_hours": hours_idle},
+                            # The nudge ASKS something ("want me to run a check?"),
+                            # so it has to carry the command that answers it.
+                            # Delivery turns this into an inline button — see
+                            # gateway/notifications._engagement_tick.
+                            #
+                            # Without it the message is a question nobody can
+                            # answer: it ships as a plain push Notification with no
+                            # pending state anywhere, so a reply of "yes" reaches
+                            # the ordinary chat handler, which knows of no
+                            # outstanding question and answers "OK, how can I
+                            # help?". Measured on the operator's bot.
+                            metadata={"idle_hours": hours_idle, "suggested_command": "status"},
                         )
         return None
 
@@ -372,97 +383,73 @@ class EngagementCoordinator:
 
     # ─── Message Builders ───────────────────────────────────────────
 
+    #: Which locale pool each part of the day draws from. The English text now
+    #: lives in navig/locales/*.json — it was hardcoded here, which is why an
+    #: operator with user.language=Russian was greeted in English.
+    _GREETING_POOLS = {
+        TimeOfDay.EARLY_MORNING: "engagement.greeting.early_morning",
+        TimeOfDay.MORNING: "engagement.greeting.morning",
+        TimeOfDay.AFTERNOON: "engagement.greeting.afternoon",
+        TimeOfDay.EVENING: "engagement.greeting.evening",
+        TimeOfDay.NIGHT: "engagement.greeting.night",
+        TimeOfDay.LATE_NIGHT: "engagement.greeting.late_night",
+    }
+
     def _build_greeting(self, tod: TimeOfDay, returning: bool) -> str:
-        """Build a greeting message."""
-        greetings = {
-            TimeOfDay.EARLY_MORNING: [
-                "Early start today. I'm ready when you are.",
-                "Morning. Coffee's virtual but the help is real.",
-            ],
-            TimeOfDay.MORNING: [
-                "Good morning. All systems green — what's on the agenda?",
-                "Morning. Ready for today's formation.",
-            ],
-            TimeOfDay.AFTERNOON: [
-                "Good afternoon. How's the day shaping up?",
-                "Afternoon. Anything I can help move forward?",
-            ],
-            TimeOfDay.EVENING: [
-                "Evening. Still going strong?",
-                "Good evening. Need anything before wind-down?",
-            ],
-            TimeOfDay.NIGHT: [
-                "Working late. Let me know if I can help wrap things up.",
-            ],
-            TimeOfDay.LATE_NIGHT: [
-                "Night owl session. I'm here.",
-            ],
-        }
+        """Build a greeting message, in the operator's global language."""
+        from navig.core import i18n
 
         if returning:
-            return random.choice(
-                [
-                    "Welcome back. Picking up where we left off.",
-                    "Back in action. I've been keeping watch — all clear.",
-                    "Good to see you. Ready to continue.",
-                ]
-            )
-
-        options = greetings.get(tod, ["Hello. Ready when you are."])
-        return random.choice(options)
+            return i18n.pick("engagement.greeting.returning")
+        key = self._GREETING_POOLS.get(tod, "engagement.greeting.default")
+        return i18n.pick(key) or i18n.pick("engagement.greeting.default")
 
     def _build_wrapup(self) -> str:
         """Build an evening wrap-up message."""
-        total = self.state.stats.total_commands
-        return random.choice(
-            [
-                f"Wrapping up? Today you ran {total} commands. Want a summary?",
-                "Evening check — anything to finish before signing off?",
-                "End-of-day offer: I can summarize what we worked on today.",
-            ]
-        )
+        from navig.core import i18n
+
+        # `{total}` is substituted AFTER the variant is chosen: only one of the
+        # three mentions it, and pre-formatting the pool would break the others.
+        chosen = i18n.pick("engagement.wrapup")
+        try:
+            return chosen.format(total=self.state.stats.total_commands)
+        except (KeyError, IndexError, ValueError):
+            return chosen
 
     def _build_checkin(self) -> str:
         """Build a periodic check-in message."""
-        return random.choice(
-            [
-                "Quick check — anything you need help with?",
-                "Still here. Shout if you need anything.",
-                "Checking in. All systems nominal on my end.",
-            ]
-        )
+        from navig.core import i18n
+
+        return i18n.pick("engagement.checkin")
+
+    #: Commands that have a usage tip. The text lives in the locale files.
+    _TIP_COMMANDS = ("db", "run", "file", "host", "docker", "backup")
 
     def _build_contextual_tip(self, command: str, count: int) -> str | None:
-        """Build a contextual usage tip based on command patterns."""
-        tips = {
-            "db": f"You've used <code>db</code> {count} times. Did you know you can pipe queries with <code>--plain</code> for scripting?",
-            "run": "Tip: for complex commands, <code>navig run -i</code> opens an editor — no more escaping quotes.",
-            "file": "Pro tip: <code>navig file list --tree --depth 2</code> gives a quick directory overview.",
-            "host": "Remember: <code>navig host monitor show</code> gives you a full health snapshot.",
-            "docker": "Quick win: <code>navig docker stats</code> shows real-time resource usage across all containers.",
-            "backup": "Consider scheduling regular backups with <code>navig flow run backup-daily</code>.",
-        }
-        return tips.get(command)
+        """Build a contextual usage tip, in the operator's global language."""
+        if command not in self._TIP_COMMANDS:
+            return None
+
+        from navig.core import i18n
+
+        key = f"engagement.tip.{command}"
+        text = i18n.t(key, count=count)
+        # `t` echoes the key back when nothing resolves — that means the locale
+        # has no entry for this command, not that the tip is the string
+        # "engagement.tip.db".
+        return None if text == key else text
 
     def _build_idle_nudge(self) -> str:
         """Build a gentle idle nudge."""
-        return random.choice(
-            [
-                "Quiet moment — need me to run a health check while you're away?",
-                "I'm idle too. Want me to check on anything in the background?",
-                "Still here if you need me. I could run diagnostics while we wait.",
-            ]
-        )
+        from navig.core import i18n
+
+        return i18n.pick("engagement.idle_nudge")
 
     def _build_feedback_ask(self) -> str:
         """Build a self-improvement feedback request."""
-        return random.choice(
-            [
-                "Quick question: is there anything I could do better? Always looking to improve.",
-                "Self-improvement check: any commands or flows that feel clunky? I'd like to know.",
-                "Feedback time: what's one thing that would make working with me smoother?",
-            ]
-        )
+        from navig.core import i18n
+
+        return i18n.pick("engagement.feedback_ask")
 
     # ─── Internal Helpers ───────────────────────────────────────────
 

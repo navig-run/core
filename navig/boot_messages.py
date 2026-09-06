@@ -19,8 +19,6 @@ Usage::
 
 from __future__ import annotations
 
-import random
-
 __all__ = ["NAVIG_BOOT_MESSAGES", "get_boot_message"]
 
 NAVIG_BOOT_MESSAGES: list[str] = [
@@ -57,14 +55,22 @@ def get_boot_message(
         Formatted boot string, e.g.
         ``"Diagnostics passed. Signal clean. I've been expecting you."``
     """
-    base = NAVIG_BOOT_MESSAGES[random.randrange(len(NAVIG_BOOT_MESSAGES))]
+    # Localized pool, with the English list above as the fallback — so a locale
+    # file that has not been written yet degrades to English rather than to
+    # silence. This used to read NAVIG_BOOT_MESSAGES directly, which is why the
+    # operator saw "Systems live. Position acquired." with user.language=Russian.
+    from navig.core import i18n  # noqa: PLC0415
+
+    base = i18n.pick("boot.messages", fallback=NAVIG_BOOT_MESSAGES)
 
     extras: list[str] = [
         x
         for x in [
-            f"Position: {location}." if location else None,
-            f"Last session: {uptime}s." if uptime is not None else None,
-            f"Signal: {signal_strength}%." if signal_strength is not None else None,
+            i18n.t("boot.position", value=location) if location else None,
+            i18n.t("boot.last_session", value=uptime) if uptime is not None else None,
+            i18n.t("boot.signal", value=signal_strength)
+            if signal_strength is not None
+            else None,
         ]
         if x is not None
     ]

@@ -287,6 +287,8 @@ navig continuation pause
 navig continuation skip
 navig continuation start
 navig continuation status
+navig contribute scan
+navig contribute status
 navig copilot ask
 navig copilot explain
 navig copilot review
@@ -1185,6 +1187,9 @@ navig sync instructions
 navig sync status
 navig system clean
 navig system info
+navig tailscale ip
+navig tailscale ping
+navig tailscale status
 navig task add
 navig task complete
 navig task edit
@@ -1258,6 +1263,9 @@ navig tiktok logout
 navig tiktok music-links
 navig tiktok post
 navig tiktok profile
+navig tools list
+navig tools schema
+navig tools show
 navig tray install
 navig tray start
 navig tray status

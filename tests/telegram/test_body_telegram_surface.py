@@ -240,3 +240,104 @@ async def test_a_failure_BEFORE_the_prompt_matches_lets_the_message_through(monk
         ch, chat_id=CHAT, text="hello", reply_to_message_id=99
     )
     assert handled is False
+
+
+# ── settling the prompt in place ──────────────────────────────────────────────
+
+
+class _Editable(_Chan):
+    """Records edits separately from sends, and can be made to refuse edits."""
+
+    def __init__(self, edit_ok: bool = True):
+        super().__init__()
+        self.edit_ok = edit_ok
+        self.edits: list[dict] = []
+
+    async def _api_call(self, method, payload):
+        if method == "editMessageText":
+            if not self.edit_ok:
+                raise RuntimeError("message to edit not found")
+            self.edits.append(payload)
+            return {"result": {"message_id": payload["message_id"]}}
+        return await super()._api_call(method, payload)
+
+
+async def test_answering_rewrites_the_prompt_instead_of_posting_a_second_message(metrics):
+    """The prompt is force_reply, and clients re-arm that box after a restart —
+    quoting the original text. While it reads as a question, an answered
+    check-in looks like it is being asked again."""
+    bm.set_prompt(CHAT, "weigh", date.today().isoformat(), 99)
+    ch = _Editable()
+
+    handled = await TelegramChannel._handle_pending_body_input(
+        ch, chat_id=CHAT, text="87.4", reply_to_message_id=99
+    )
+
+    assert handled is True
+    assert len(ch.edits) == 1
+    assert ch.edits[0]["message_id"] == 99
+    assert "87.4" in ch.edits[0]["text"]
+    # and NOT a separate confirmation message
+    assert not [s for s in ch.sent if s.get("text", "").startswith("✅")]
+
+
+async def test_the_settled_prompt_no_longer_reads_as_a_question(metrics):
+    bm.set_prompt(CHAT, "weigh", date.today().isoformat(), 99)
+    ch = _Editable()
+    await TelegramChannel._handle_pending_body_input(
+        ch, chat_id=CHAT, text="87.4", reply_to_message_id=99
+    )
+    assert "?" not in ch.edits[0]["text"]
+
+
+async def test_the_settled_prompt_clears_any_keyboard(metrics):
+    """Omitting reply_markup leaves stale buttons live on a settled message."""
+    bm.set_prompt(CHAT, "weigh", date.today().isoformat(), 99)
+    ch = _Editable()
+    await TelegramChannel._handle_pending_body_input(
+        ch, chat_id=CHAT, text="87.4", reply_to_message_id=99
+    )
+    assert ch.edits[0]["reply_markup"] == {"inline_keyboard": []}
+
+
+async def test_a_failed_edit_still_confirms_by_message(metrics):
+    """An answer that produces no visible acknowledgement is the exact failure
+    the disk-backed prompt exists to prevent."""
+    bm.set_prompt(CHAT, "weigh", date.today().isoformat(), 99)
+    ch = _Editable(edit_ok=False)
+
+    handled = await TelegramChannel._handle_pending_body_input(
+        ch, chat_id=CHAT, text="87.4", reply_to_message_id=99
+    )
+
+    assert handled is True
+    assert ch.edits == []
+    assert any("87.4" in s.get("text", "") for s in ch.sent)
+    # and the weight still landed despite the edit failing
+    row = next(r for r in bm.read_metrics(metrics)[1] if r["date"] == date.today().isoformat())
+    assert row["weight_kg"] == "87.4"
+
+
+async def test_the_settled_text_carries_the_seven_day_average(metrics):
+    from datetime import timedelta
+
+    end = date.today()
+    for i in range(6):
+        bm.upsert(metrics, (end - timedelta(days=6 - i)).isoformat(), {"weight_kg": "88"})
+    bm.set_prompt(CHAT, "weigh", end.isoformat(), 99)
+    ch = _Editable()
+    await TelegramChannel._handle_pending_body_input(
+        ch, chat_id=CHAT, text="88", reply_to_message_id=99
+    )
+    assert "average" in ch.edits[0]["text"].lower()
+
+
+async def test_a_skip_does_not_rewrite_the_prompt_with_a_weight(metrics):
+    """Nothing was recorded, so there is no value to settle it with."""
+    bm.set_prompt(CHAT, "weigh", date.today().isoformat(), 99)
+    ch = _Editable()
+    await TelegramChannel._handle_pending_body_input(
+        ch, chat_id=CHAT, text="skip", reply_to_message_id=99
+    )
+    assert ch.edits == []
+    assert ch.sent, "the operator still gets an acknowledgement"

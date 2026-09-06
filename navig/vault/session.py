@@ -1,120 +1,34 @@
-"""NAVIG Vault Session — in-memory master key with TTL eviction.
+"""Compat shim -- the unlock-session TTL bookkeeping now lives in ``navig_vault.session``.
 
-The vault operates in two modes:
-  - Machine-fingerprint mode (always available, no unlock needed)
-  - Passphrase mode (explicit unlock required; session stored here)
+Aliases itself to the implementation rather than re-exporting it, so the module object is
+IDENTICAL. That is required, not stylistic: ``core/tests/conftest.py`` assigns vault module
+globals to close SQLite handles between test modules (Windows leaks ``vault.db`` handles
+otherwise), and ~87 tests patch dotted paths into this package. A star-import copy would take
+those assignments and patches while the real module kept its own values, and the symptom
+would be a file lock or an unpatched call somewhere else entirely.
 
-Session is process-memory-only.  Daemon restart requires re-unlock.
-Thread-safe via a module-level lock.
+See ``core/tests/vault/test_vault_shim_identity.py``, which fails the build if this is ever
+"simplified".
 """
-
 from __future__ import annotations
 
-import threading
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+import sys as _sys
+from typing import TYPE_CHECKING
 
-__all__ = ["VaultSession", "SessionStore"]
+if TYPE_CHECKING:  # pragma: no cover - never executed; exists for static analysis only
+    # Static analysers cannot follow ``sys.modules[__name__] = _impl``: after the alias the
+    # module IS the implementation at runtime, but on disk this file declares only `_impl`
+    # and `_sys`. So every attribute access through the old path -- e.g. core.py doing
+    # `_validators_mod.get_validator(...)` -- reads as "module has no attribute", and the
+    # module-attr guard reports a call that actually works. Re-exporting here gives the
+    # analyser the real names while runtime still gets the identity alias below.
+    from navig_vault.session import *  # noqa: F401,F403
 
-from navig.vault._constants import _DEFAULT_TTL  # noqa: E402
+try:
+    from navig_vault import session as _impl
+except ImportError as exc:  # pragma: no cover - exercised only on a bare install
+    raise ImportError(
+        "NAVIG's vault requires the navig-vault engine. Install it with: pip install navig-vault"
+    ) from exc
 
-
-@dataclass(slots=True)
-class VaultSession:
-    """Active vault session.  Created by ``navig vault unlock``."""
-
-    master_key: bytes
-    unlocked_at: datetime
-    ttl_seconds: int = _DEFAULT_TTL
-    last_used: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-
-    def is_expired(self) -> bool:
-        """True if the session has been idle at least as long as its TTL (R9-21).
-
-        Uses ``>=`` so a ``ttl_seconds == 0`` session is treated as already
-        expired (no live session) and expiry triggers exactly *at* the TTL
-        boundary rather than one tick after — the security-safe interpretation.
-        """
-        idle = (datetime.now(timezone.utc) - self.last_used).total_seconds()
-        return idle >= self.ttl_seconds
-
-    def touch(self) -> None:
-        """Reset idle timer on use."""
-        self.last_used = datetime.now(timezone.utc)
-
-    def remaining_seconds(self) -> int:
-        """Seconds until this session expires (0 if already expired)."""
-        idle = (datetime.now(timezone.utc) - self.last_used).total_seconds()
-        remaining = self.ttl_seconds - idle
-        return max(0, int(remaining))
-
-    def ttl_display(self) -> str:
-        """Human-readable remaining TTL."""
-        rem = self.remaining_seconds()
-        if rem == 0:
-            return "expired"
-        m, s = divmod(rem, 60)
-        return f"{m}m {s:02d}s" if m else f"{s}s"
-
-
-class SessionStore:
-    """Thread-safe singleton holding the active :class:`VaultSession`.
-
-    Only one session is active at a time.  Expired sessions are cleared
-    automatically on ``get()``.
-
-    Usage
-    -----
-    session = SessionStore.get()        # None if locked / expired
-    SessionStore.set(session)           # call after unlock
-    SessionStore.clear()                # explicit lock
-    SessionStore.is_unlocked() → bool
-    """
-
-    _lock: threading.Lock = threading.Lock()
-    _session: VaultSession | None = None
-
-    @classmethod
-    def set(cls, session: VaultSession) -> None:
-        """Activate a new session."""
-        with cls._lock:
-            cls._session = session
-
-    @classmethod
-    def get(cls) -> VaultSession | None:
-        """Return the active session, or ``None`` if locked or expired."""
-        with cls._lock:
-            if cls._session is None:
-                return None
-            if cls._session.is_expired():
-                cls._session = None
-                return None
-            cls._session.touch()
-            return cls._session
-
-    @classmethod
-    def clear(cls) -> None:
-        """Explicitly lock the vault (discard session key from memory)."""
-        with cls._lock:
-            cls._session = None
-
-    @classmethod
-    def is_unlocked(cls) -> bool:
-        """True if a valid non-expired session exists."""
-        return cls.get() is not None
-
-    @classmethod
-    def status(cls) -> dict:
-        """Return a status dict for ``navig vault doctor`` / ``navig vault unlock``."""
-        with cls._lock:
-            if cls._session is None:
-                return {"locked": True, "ttl": None, "unlocked_at": None}
-            if cls._session.is_expired():
-                cls._session = None
-                return {"locked": True, "ttl": None, "unlocked_at": None}
-            return {
-                "locked": False,
-                "ttl": cls._session.ttl_display(),
-                "remaining_seconds": cls._session.remaining_seconds(),
-                "unlocked_at": cls._session.unlocked_at.isoformat(),
-            }
+_sys.modules[__name__] = _impl

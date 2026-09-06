@@ -10,8 +10,8 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Run: git log v3.25.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
 ### Changed
-- **The vault's leaf modules now live in the standalone `navig-vault` package, and `navig`
-  depends on it.** `navig.vault.types`, `.secret_str`, `.totp` and `._constants` are now thin
+- **The vault's leaf modules AND its engine now live in the standalone `navig-vault`
+  package, and `navig` depends on it.** `navig.vault.types`, `.secret_str`, `.totp` and `._constants` are now thin
   shims that ALIAS themselves to `navig_vault.<module>` (`sys.modules[__name__] = _impl`), so
   there is one source of truth rather than two copies that drift. Every existing import keeps
   working unchanged — the module objects are identical, private names included, and a guard
@@ -27,6 +27,15 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `navig-vault` 0.2.0 is a library release: it deliberately installs **no** `nv` binary yet
   (the commands arrive with the engine), and its `python -m navig_vault` placeholder exits
   non-zero when asked to do something rather than reporting success for work it cannot do.
+
+  `navig-vault` 0.3.0 adds the engine itself — `crypto` (key derivation + AES-GCM),
+  `encryption` (master key + envelope encryption), `storage` (the credential store's SQLite
+  layer), `store` and `session`. `navig.vault.<module>` keeps working for all of them by the
+  same aliasing. The on-disk format is unchanged, and that is enforced rather than asserted:
+  `tests/vault/test_vault_ondisk_schema.py` pins the table/column layout and index set and
+  passes unchanged across the move. What stays in navig is the orchestration above the
+  engine — `core`, `resolver`, `sessions`, `manager`, `provider`, `migrate`, `logins`,
+  `validators`.
 
 ## [3.25.0] — 2026-09-03
 

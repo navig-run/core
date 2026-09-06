@@ -69,7 +69,7 @@ dependencies = [
   # now shims that alias themselves to it, so without it `import navig.vault.types` raises
   # and the vault -- which the agent, the gateway and 7 plugins all read secrets through --
   # does not work at all. An extra is for something the product is complete without.
-  "navig-vault>=0.2.0",
+  "navig-vault>=0.6.0",
   # First-party plugins (Deck UI, navig-github, navig-social/download/generate) are intentionally
   # NOT default deps — this keeps a bare `pip install navig` lean and always
   # resolvable (no unpublished packages in the base). They ship as optional

@@ -46,6 +46,19 @@ EXTRACTED = [
     ("navig.vault.secret_str", "navig_vault.secret_str"),
     ("navig.vault.totp", "navig_vault.totp"),
     ("navig.vault._constants", "navig_vault._constants"),
+    ("navig.vault.crypto", "navig_vault.crypto"),
+    ("navig.vault.encryption", "navig_vault.encryption"),
+    ("navig.vault.storage", "navig_vault.storage"),
+    ("navig.vault.store", "navig_vault.store"),
+    ("navig.vault.session", "navig_vault.session"),
+    ("navig.vault.provider", "navig_vault.provider"),
+    ("navig.vault.validators", "navig_vault.validators"),
+    ("navig.vault.core", "navig_vault.core"),
+    ("navig.vault.migrate", "navig_vault.migrate"),
+    ("navig.vault.logins", "navig_vault.logins"),
+    ("navig.vault.resolver", "navig_vault.resolver"),
+    ("navig.vault.sessions", "navig_vault.sessions"),
+    ("navig.vault.manager", "navig_vault.manager"),
 ]
 
 

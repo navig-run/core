@@ -155,3 +155,43 @@ def get_habit_template(key: str) -> HabitTemplate | None:
 def list_habit_templates() -> list[HabitTemplate]:
     """Return all built-in habit templates."""
     return list(BUILTIN_HABITS.values())
+
+
+# ── Localising a reminder that was frozen at creation time ────────────────────
+#
+# `navig habit add <key>` copies `reminder_message` into the cron command as
+# base64, ONCE. The text is then frozen: changing `user.language` afterwards is
+# structurally incapable of reaching it, which is why an operator whose language
+# is Russian kept receiving "Out of the house, 30 minutes" every weekend.
+#
+# Rather than rewrite every stored job on a language change — which would fight
+# `navig habit pause` for ownership of those rows, and lose a customised message
+# — the message is resolved at SEND time from the job's own name.
+
+
+def localized_reminder(job_name: str, baked_message: str) -> str:
+    """The reminder to actually send for ``habit:<key>``.
+
+    Returns the localized built-in text when *baked_message* is still the
+    built-in English default — i.e. the operator never customised it. A message
+    they wrote themselves (``habit add --message``, or the Russian text someone
+    typed into ``habit:review``) is returned untouched, because translating
+    somebody's own words is worse than leaving them.
+
+    Never raises: an unresolvable language or a missing locale entry yields the
+    baked text. A reminder in the wrong language is a blemish; a reminder that
+    does not arrive is a broken feature.
+    """
+    key = job_name.split(":", 1)[1] if ":" in job_name else job_name
+    template = BUILTIN_HABITS.get(key)
+    if template is None or baked_message != template.reminder_message:
+        return baked_message
+    try:
+        from navig.core import i18n  # noqa: PLC0415
+
+        translated = i18n.t(f"habit.{key}")
+        # `t` returns the KEY itself when nothing resolves — that is the signal
+        # that this habit has no locale entry, not a string to send.
+        return baked_message if translated == f"habit.{key}" else translated
+    except Exception:  # noqa: BLE001
+        return baked_message

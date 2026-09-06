@@ -8722,6 +8722,50 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig contribute scan"
+      ],
+      "handler": "scan_cmd",
+      "module": "navig.commands.contribute",
+      "options": [
+        {
+          "flags": [
+            "--path",
+            "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig contribute scan",
+      "since": "",
+      "status": "stable",
+      "summary": "Scan local NAVIG source, review findings, and (optionally) submit a PR.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig contribute status"
+      ],
+      "handler": "status_cmd",
+      "module": "navig.commands.contribute",
+      "options": [],
+      "path": "navig contribute status",
+      "since": "",
+      "status": "stable",
+      "summary": "Show Contribution Mode configuration and fork status.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "question",
@@ -34983,6 +35027,70 @@
       "aliases": [],
       "arguments": [
         {
+          "name": "peer",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig tailscale ip"
+      ],
+      "handler": "ts_ip",
+      "module": "navig.commands.tailscale_cmd",
+      "options": [],
+      "path": "navig tailscale ip",
+      "since": "",
+      "status": "stable",
+      "summary": "Show Tailscale IP of self or a peer.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "peer",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig tailscale ping"
+      ],
+      "handler": "ts_ping",
+      "module": "navig.commands.tailscale_cmd",
+      "options": [],
+      "path": "navig tailscale ping",
+      "since": "",
+      "status": "stable",
+      "summary": "Ping a Tailscale peer.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig tailscale status"
+      ],
+      "handler": "ts_status",
+      "module": "navig.commands.tailscale_cmd",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig tailscale status",
+      "since": "",
+      "status": "stable",
+      "summary": "Show Tailscale status and peer list.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
           "name": "name",
           "required": true,
           "variadic": false
@@ -37040,6 +37148,99 @@
       "since": "",
       "status": "stable",
       "summary": "Download a creator's whole profile \u2014 videos, slideshows images, audio, or just metadata.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig tools list"
+      ],
+      "handler": "tools_list",
+      "module": "navig.commands.tools",
+      "options": [
+        {
+          "flags": [
+            "--domain",
+            "-d"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--detailed",
+            "-D"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--available/--all"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--format",
+            "-f"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig tools list",
+      "since": "",
+      "status": "stable",
+      "summary": "List all registered tools.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig tools schema"
+      ],
+      "handler": "tools_schema",
+      "module": "navig.commands.tools",
+      "options": [
+        {
+          "flags": [
+            "--output",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--available/--all"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig tools schema",
+      "since": "",
+      "status": "stable",
+      "summary": "Dump the OpenAPI schema for all registered tools.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "name",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig tools show"
+      ],
+      "handler": "tools_show",
+      "module": "navig.commands.tools",
+      "options": [],
+      "path": "navig tools show",
+      "since": "",
+      "status": "stable",
+      "summary": "Show full metadata for a single tool.",
       "tags": []
     },
     {
@@ -40457,7 +40658,7 @@
       "tags": []
     }
   ],
-  "generated_at": "2026-09-05T18:27:22.134108+00:00",
+  "generated_at": "2026-09-06T12:45:02.439736+00:00",
   "schema_version": "1.0.0",
-  "total": 1379
+  "total": 1387
 }

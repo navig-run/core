@@ -40,6 +40,14 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "blackbox": ("navig.commands.blackbox", "blackbox_app"),
     "bb": ("navig.commands.blackbox", "blackbox_app"),
     "copilot": ("navig.commands.ask", "copilot_app"),
+    # contribute / tools / tailscale: three command groups that defined a Typer app,
+    # decorated commands onto it and (for contribute) shipped tests — but that nothing
+    # ever mounted, so `navig contribute|tools|tailscale` all answered "No such command".
+    # Same shape and same remedy as `blackbox` above. Each verb was driven before wiring:
+    # contribute scan/status, tools list/schema/show, tailscale status/ping/ip.
+    "contribute": ("navig.commands.contribute", "contribute_app"),
+    "tools": ("navig.commands.tools", "tools_app"),
+    "tailscale": ("navig.commands.tailscale_cmd", "tailscale_app"),
     # generate: analyse (video→briefing) + AI generate (image/video/audio). Canonical
     # name; `media` is a DEPRECATED alias — both invoke media_app and the app callback
     # warns when run as `media`. The navig-download plugin adds top-level `download`/

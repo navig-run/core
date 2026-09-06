@@ -26,5 +26,7 @@
   "clinician": "Down {delta} kg in a week — a fast rate. Worth mentioning at your next appointment.",
   "ext.off": "⚠️ <b>The Health extension is off</b> — these check-ins are scheduled but not delivered.\nTurn it on: /extensions",
   "unit.kg": "kg",
-  "unit.h": "h"
+  "unit.h": "h",
+  "weigh.settled": "✅ Recorded {value} kg",
+  "weigh.settled_avg": "✅ Recorded {value} kg · 7-day average {avg} kg"
 }

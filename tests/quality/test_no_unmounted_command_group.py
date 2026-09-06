@@ -7,12 +7,10 @@ Typer itself, and a reader scanning the file sees a finished command group.
 
 Measured 2026-09-05 across every ``commands/`` module in core and every plugin:
 
-    navig contribute      `contribute_app`, 2 commands — "Self-Heal & Hive Mind Protocol:
-                          scan, review, and contribute fixes to navig-run/core"
-    navig tools           `tools_app`, 3 commands
-    navig tailscale       `tailscale_app`, 3 commands — "Tailscale network integration"
-    navig space context   `spaces_context_app`, 2 commands — "Switch between personal,
-                          workspace, and studio contexts"
+    navig contribute      `contribute_app`, 2 commands   -> MOUNTED
+    navig tools           `tools_app`, 3 commands        -> MOUNTED
+    navig tailscale       `tailscale_app`, 3 commands    -> MOUNTED
+    navig space context   `spaces_context_app`, 2 cmds   -> DELETED, see below
 
 **Ten commands no user can invoke.** All four were confirmed at runtime: every one of
 `navig contribute|tools|tailscale|space context --help` answers "No such command".
@@ -20,6 +18,29 @@ Measured 2026-09-05 across every ``commands/`` module in core and every plugin:
 was written, and TWO test files exercise it. Written, tested, and never wired: the shape a
 passing suite cannot see, because the tests import the module directly and never ask
 whether the CLI mounts it.
+
+**The fourth was DELETED, and it is the one that pays for this guard.** `spaces.py` was
+not an unwired feature — it was a *removed* module still on disk. Three independent
+signals agreed, and no single one of them was visible from the file itself:
+
+  * `migrations/workspace_to_spaces.ensure_no_stale_spaces_registration` **aborts
+    startup** if any command routes to `navig.commands.spaces`, calling it the "removed
+    module" and saying to route to `navig.commands.space` instead;
+  * `registration.py` **already does** — `"spaces": ("navig.commands.space", "space_app")`
+    — so `navig spaces` has been reaching the canonical app all along;
+  * every verb was already superseded: `space switch` (the canonical writer, via
+    `set_active_working_dir`), `space use` ("compatibility alias for switch"), `space list`.
+
+So mounting it — the fix applied to the other three — would have **bricked the CLI on
+boot**. Its own code showed the same story: `use` wrote `spaces.active`, the legacy key
+`space switch` actively REMOVES; the callback read that dead key back with a default of
+`"personal"`; and its help promised "personal, workspace, and studio" while validating
+against `CANONICAL_SPACES`, which contains **none of those three** — so all three
+advertised values would have been rejected by the command advertising them.
+
+⚠ The lesson for the next entry: **an unmounted group is not automatically an unwired
+feature.** Ask what the tree says about the module before deciding, because "mount it"
+and "delete it" are opposite fixes and the file alone cannot tell you which applies.
 
 ⚠ The detector took FIVE measured corrections, and each one matters if you edit it:
 
@@ -62,27 +83,7 @@ SEARCH_ROOTS = ("core", "plugins", "private")
 # a PRODUCT decision left open (wire it, or delete it) — not a suppression, and not a place
 # to park a group someone forgot about. `test_allowlist_entries_are_still_unmounted` deletes
 # any entry that becomes reachable, so wiring one of these fails until the entry goes too.
-NOT_MOUNTED_ON_PURPOSE: dict[str, str] = {
-    "core/navig/commands/contribute.py:contribute_app": (
-        "Self-Heal & Hive Mind Protocol (scan/status). Maintained across 4 commits and "
-        "covered by 2 test files, but `navig contribute` has never existed. Mounting it "
-        "adds a user-visible verb, which is the owner's call — as is deleting work that "
-        "is still being maintained."
-    ),
-    "core/navig/commands/tools.py:tools_app": (
-        "3 commands, `navig tools` has never existed. Same decision as contribute: wire "
-        "it or delete it; a guard cannot choose."
-    ),
-    "core/navig/commands/tailscale_cmd.py:tailscale_app": (
-        "\"Tailscale network integration\", 3 commands, `navig tailscale` has never "
-        "existed. Declares name= and no_args_is_help= like a mounted group, which is "
-        "exactly why nobody noticed."
-    ),
-    "core/navig/commands/spaces.py:spaces_context_app": (
-        "\"Switch between personal, workspace, and studio contexts\", 2 commands. Neither "
-        "`navig space context` nor `navig spaces context` exists."
-    ),
-}
+NOT_MOUNTED_ON_PURPOSE: dict[str, str] = {}
 
 # Vacuity floors. Measured today: 197 command apps, 71 distinct add_typer targets,
 # 16 plugin pyprojects declaring navig.commands entry points.

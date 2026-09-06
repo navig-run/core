@@ -1,0 +1,147 @@
+{
+  "boot.messages": [
+    "Awake. All systems breathing. Ready when you are.",
+    "Back online. Sensors up, memory clear, clocks synced. Standing by.",
+    "Good morning, navigator. Systems warm, heading null. Let's go somewhere.",
+    "Initialization complete. No anomalies. The road is yours.",
+    "Online. Horizon locked. Waiting on your first move.",
+    "Diagnostics passed. Signal clean. I've been expecting you.",
+    "Systems live. Position acquired. Time to move.",
+    "Rebooted. Everything where it should be. Ready to navigate.",
+    "Uptime: 0s. Confidence: full. Your turn.",
+    "Came back clean. No errors, no ghosts. Online and sharp."
+  ],
+  "boot.position": "Position: {value}.",
+  "boot.last_session": "Last session: {value}s.",
+  "boot.signal": "Signal: {value}%.",
+  "habit.workout": "Time to work out! 💪 Consistency beats intensity.",
+  "habit.standup": "Stand up and stretch! You've been sitting too long. 🧘",
+  "habit.water": "Drink water! Stay hydrated. 💧",
+  "habit.sleep": "Start winding down. Sleep is recovery. 🌙",
+  "habit.wake": "Up. Feet on the floor, 10 minutes of daylight, water. Do not touch the phone. ⚓",
+  "habit.ship": "90-minute block. Phone in another room. Write one line: what will be DONE. 🚀",
+  "habit.out": "Leave the house for 30 minutes. Not an errand. Just get out. 🚶",
+  "habit.out_weekend": "Out of the house, 30 minutes — now, while the day is still yours. It is the same Walk; only the hour changed. 🥾",
+  "habit.ship_weekend": "45 minutes on schema. Short on purpose — a weekend block you actually do beats a 90-minute one you skip. 🛠",
+  "habit.nightclose": "NIGHT IS CLOSED. Work does not start — especially if it is flowing. Phone out of the bedroom. 🔒",
+  "habit.checkin": "Check-in, 60 seconds: one tracker row + three journal lines. The only real failure is to stop recording. ✍️",
+  "habit.people": "People: visit your mother + send one friend a SPECIFIC invitation. Sent counts — a reply is not your job. 👥",
+  "habit.review": "Weekly review, 10 minutes. Streaks, body, money, what broke, one decision. 📊",
+  "month.1": "January",
+  "month.2": "February",
+  "month.3": "March",
+  "month.4": "April",
+  "month.5": "May",
+  "month.6": "June",
+  "month.7": "July",
+  "month.8": "August",
+  "month.9": "September",
+  "month.10": "October",
+  "month.11": "November",
+  "month.12": "December",
+  "habit.label.wake": "Wake",
+  "habit.label.out": "Walk",
+  "habit.label.ship": "Ship",
+  "habit.label.train": "Train",
+  "habit.label.caffeine_cutoff": "No coffee",
+  "habit.label.glow": "Self-care",
+  "habit.label.deep": "Deep work",
+  "habit.label.steps": "Steps",
+  "habit.label.eat_window": "Eating window",
+  "habit.label.protein": "Protein",
+  "habit.label.friend": "Friend",
+  "habit.label.mom": "Mother",
+  "habit.label.outside_work": "Worked outside",
+  "habit.label.screens_off": "Screens off",
+  "habit.label.sleep_time": "Bedtime",
+  "habit.label.nightclose": "Night closed",
+  "habit.label.mobility": "Mobility",
+  "habit.label.score": "Day score",
+  "habit.label.checkin": "Evening card",
+  "habit.label.close": "Day close",
+  "habit.label.review": "Weekly review",
+  "habit.label.people": "People",
+  "habit.label.out_weekend": "Weekend walk",
+  "habit.label.ship_weekend": "Weekend block",
+  "habit.card.evening_title": "Check-in",
+  "habit.card.morning_title": "Morning",
+  "habit.card.morning_line": "Feet on the floor, 10 minutes of daylight, water.",
+  "habit.card.morning_tap": "Tap <b>{wake}</b> now — the rest as the day goes.",
+  "habit.card.floor_title": "The 3 that decide the day",
+  "habit.card.all_three": "All three done. The day counts.",
+  "habit.card.tap_hint": "Tap what you did — {open} becomes {done}.",
+  "habit.card.streaks": "Streaks: {value}",
+  "habit.card.close_button": "🌙 Close the day",
+  "habit.card.days_counted": "{done} of {total} days counted",
+  "engagement.greeting.early_morning": [
+    "Early start today. I'm ready when you are.",
+    "Morning. Coffee's virtual but the help is real."
+  ],
+  "engagement.greeting.morning": [
+    "Good morning. All systems green — what's on the agenda?",
+    "Morning. Ready for today's formation."
+  ],
+  "engagement.greeting.afternoon": [
+    "Good afternoon. How's the day shaping up?",
+    "Afternoon. Anything I can help move forward?"
+  ],
+  "engagement.greeting.evening": [
+    "Evening. Still going strong?",
+    "Good evening. Need anything before wind-down?"
+  ],
+  "engagement.greeting.night": [
+    "Working late. Let me know if I can help wrap things up."
+  ],
+  "engagement.greeting.late_night": [
+    "Night owl session. I'm here."
+  ],
+  "engagement.greeting.default": [
+    "Hello. Ready when you are."
+  ],
+  "engagement.greeting.returning": [
+    "Welcome back. Picking up where we left off.",
+    "Back in action. I've been keeping watch — all clear.",
+    "Good to see you. Ready to continue."
+  ],
+  "engagement.wrapup": [
+    "Wrapping up? Today you ran {total} commands. Want a summary?",
+    "Evening check — anything to finish before signing off?",
+    "End-of-day offer: I can summarize what we worked on today."
+  ],
+  "engagement.checkin": [
+    "Quick check — anything you need help with?",
+    "Still here. Shout if you need anything.",
+    "Checking in. All systems nominal on my end."
+  ],
+  "engagement.idle_nudge": [
+    "Quiet moment — need me to run a health check while you're away?",
+    "I'm idle too. Want me to check on anything in the background?",
+    "Still here if you need me. I could run diagnostics while we wait."
+  ],
+  "engagement.nudge_yes": "Yes, go ahead",
+  "engagement.feedback_ask": [
+    "Quick question: is there anything I could do better? Always looking to improve.",
+    "Self-improvement check: any commands or flows that feel clunky? I'd like to know.",
+    "Feedback time: what's one thing that would make working with me smoother?"
+  ],
+  "engagement.tip.db": "You've used <code>db</code> {count} times. Did you know you can pipe queries with <code>--plain</code> for scripting?",
+  "engagement.tip.run": "Tip: for complex commands, <code>navig run -i</code> opens an editor — no more escaping quotes.",
+  "engagement.tip.file": "Pro tip: <code>navig file list --tree --depth 2</code> gives a quick directory overview.",
+  "engagement.tip.host": "Remember: <code>navig host monitor show</code> gives you a full health snapshot.",
+  "engagement.tip.docker": "Quick win: <code>navig docker stats</code> shows real-time resource usage across all containers.",
+  "engagement.tip.backup": "Consider scheduling regular backups with <code>navig flow run backup-daily</code>.",
+  "notify.reminder.header": "⏰ <b>Reminder</b>",
+  "notify.reminder.missed": "⏰ <b>Missed reminder</b> <i>(was due {due})</i>",
+  "engagement.title.greeting": "NAVIG — Greeting",
+  "engagement.title.checkin": "NAVIG — Check-in",
+  "engagement.title.capability_promo": "NAVIG — Did you know",
+  "engagement.title.contextual_tip": "NAVIG — Tip",
+  "engagement.title.evening_wrapup": "NAVIG — Wrap-up",
+  "engagement.title.feedback_ask": "NAVIG — Feedback",
+  "engagement.title.idle_nudge": "NAVIG — Nudge",
+  "engagement.title.celebration": "NAVIG — Milestone",
+  "engagement.title.heartbeat_report": "NAVIG — Heartbeat",
+  "habit.card.streak_day": "{n}d",
+  "habit.card.day_score": "Day score: {value}/10",
+  "habit.card.still_open": "Still open: <b>{names}</b> — all three, or the day does not count."
+}

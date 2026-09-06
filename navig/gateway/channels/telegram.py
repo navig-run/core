@@ -1009,7 +1009,11 @@ class TelegramChannel:
             return
 
         # Add a "missed" notice when first delivering an overdue reminder
-        _header = "⏰ <b>Reminder</b>"
+        # The header follows the global language — it used to be an English
+        # literal above a reminder body that had been translated.
+        from navig.core import i18n as _i18n
+
+        _header = _i18n.t("notify.reminder.header")
         if _overdue_hours > 1 and retry_count == 0:
             # Show the due time in server-local timezone so it matches the time the user
             # originally entered (e.g. "23:30" not UTC)
@@ -1022,7 +1026,7 @@ class TelegramChannel:
                 _due_label = _due_local.strftime("%Y-%m-%d %H:%M")
             except Exception:
                 _due_label = remind_at_str.replace("T", " ")[:16]
-            _header = f"⏰ <b>Missed reminder</b> <i>(was due {_due_label})</i>"
+            _header = _i18n.t("notify.reminder.missed", due=_due_label)
 
         # Resolve the reminder's channels once (the matrix decides whether Telegram fires and
         # which other channels — deck feed / email / sms / … — also receive it). Telegram can
@@ -1499,6 +1503,46 @@ class TelegramChannel:
                     )
                 except Exception as _ref_exc:  # noqa: BLE001
                     logger.error("host_use: refresh hosts card failed: %s", _ref_exc)
+                return
+
+            # The sibling of host_use: above. It was emitted by the /apps card and
+            # routed by NOTHING, so every tap answered "Button expired" -- flagged in
+            # the extensions catalog as a pre-existing defect, and fixed here.
+            if cb_data.startswith("app_use:"):
+                app_name_cb = cb_data[len("app_use:"):]
+                try:
+                    await self._api_call(
+                        "answerCallbackQuery",
+                        {
+                            "callback_query_id": callback_query["id"],
+                            "text": f"✓ Switched to {app_name_cb}",
+                            "show_alert": False,
+                        },
+                    )
+                except Exception:
+                    pass
+                try:
+                    from navig.config import get_config_manager
+
+                    # set_active_app takes (app_name, local=False) -- no host.
+                    get_config_manager().set_active_app(app_name_cb)
+                except Exception as _app_exc:  # noqa: BLE001
+                    logger.warning("app_use: switch failed for %r: %s", app_name_cb, _app_exc)
+                # Refresh the apps card in place. The switch already landed, so a
+                # failed refresh must not read as a failed switch.
+                try:
+                    import functools as _ft
+
+                    from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+                    await _ft.partial(TelegramCommandsMixin._handle_apps_cmd, self)(
+                        chat_id=cb_chat_id_cq,
+                        user_id=cb_user_id,
+                        metadata={},
+                        message_id=cb_message_id,
+                    )
+                except Exception as _refresh_exc:  # noqa: BLE001
+                    logger.error("app_use: refresh apps card failed: %s", _refresh_exc)
                 return
             if self._cb_handler:
                 try:
@@ -5138,7 +5182,33 @@ class TelegramChannel:
 
         if confirmation is None:
             return False
-        await self.send_message(chat_id, f"✅ {confirmation}")
+
+        # Rewrite the prompt itself rather than posting a second message. The
+        # prompt was sent with force_reply, and Telegram clients re-arm that
+        # reply box after a restart — quoting the original text. While that text
+        # is still a question, an already-answered check-in looks like it is
+        # being asked again. Settling it in place removes the ambiguity.
+        settled = False
+        try:
+            from navig.spaces import body_metrics as _bm  # noqa: PLC0415
+            from navig.telegram import body_actions as _ba  # noqa: PLC0415
+
+            latest = _bm.latest(_bm.resolve_target(chat_id))
+            if _kind == "weigh" and latest is not None:
+                settled = await _ba.settle_prompt(
+                    self,
+                    chat_id,
+                    prompt_id,
+                    _ba.settled_text(_bm.resolve_target(chat_id), _day, latest[1]),
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("settling the weigh-in prompt failed: %s", exc)
+
+        # Falls through to a normal message whenever the edit did not land — an
+        # answer that produces no visible acknowledgement is the failure this
+        # whole disk-backed prompt exists to prevent.
+        if not settled:
+            await self.send_message(chat_id, f"✅ {confirmation}")
         return True
 
     async def _handle_eve_pending_reply(

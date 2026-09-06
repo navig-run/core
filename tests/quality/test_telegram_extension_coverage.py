@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from navig.gateway.channels import extension_gate as gate
 from navig.gateway.channels import telegram_extensions as tx
 from navig.gateway.channels.telegram_commands import LOCKED_COMMANDS
 
@@ -311,8 +312,11 @@ def test_a_legacy_key_still_decides_until_the_new_toggle_is_touched(monkeypatch)
     """Precedence: operator override > legacy key > default. Nothing is migrated."""
     ext = next(e for e in tx.EXTENSIONS if e.legacy_key)
     store: dict[str, object] = {}
+    # The config read lives in `extension_gate` now; `tx.is_enabled` still delegates
+    # to it, so patching there exercises the whole Telegram chain rather than the
+    # resolver in isolation -- deleting the delegation fails this test.
     monkeypatch.setattr(
-        tx, "_config_value", lambda k: store.get(k, tx._MISSING)
+        gate, "config_value", lambda k: store.get(k, gate.MISSING)
     )
 
     # 1. Untouched config -> the extension's own default.
@@ -332,9 +336,9 @@ def test_a_legacy_key_still_decides_until_the_new_toggle_is_touched(monkeypatch)
 
 def test_absent_is_distinguishable_from_present_and_false(monkeypatch) -> None:
     """"Not set" must not be collapsed into "set to false" — that is the whole
-    reason `_config_value` returns a sentinel rather than None."""
+    reason `config_value` returns a sentinel rather than None."""
     ext = next(e for e in tx.EXTENSIONS if e.legacy_key and e.default_enabled)
-    monkeypatch.setattr(tx, "_config_value", lambda _k: tx._MISSING)
+    monkeypatch.setattr(gate, "config_value", lambda _k: gate.MISSING)
     assert tx.is_enabled(ext.id) is True, "an absent key must fall through to the default"
 
 

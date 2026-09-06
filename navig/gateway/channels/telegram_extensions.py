@@ -43,15 +43,18 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-logger = logging.getLogger(__name__)
+# The resolver itself is not about Telegram, so it lives in `extension_gate` and a
+# second channel can reuse it rather than copy it. Importing it at module scope
+# costs nothing beyond the module object: it is stdlib-only at import time, and
+# this file already lives inside `navig.gateway.channels`, so the package it would
+# otherwise pull in has been executed before this line is reached.
+from navig.gateway.channels.extension_gate import resolve_enabled, warn_unknown
 
-# Sentinel for "the dotted key is absent" as distinct from "present and falsey".
-_MISSING: Any = object()
+logger = logging.getLogger(__name__)
 
 _MODULE_PREFIX = "tg:"
 
-# Extension ids already reported as unmapped, so the warning is once-per-process.
-_WARNED: set[str] = set()
+_CHANNEL = "Telegram"
 
 
 @dataclass(frozen=True)
@@ -197,8 +200,8 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
             "docker", "logs", "exec", "db", "tables", "query",
         }),
         # Switching the active host is a Remote action, not a Core one.
-        # "app_use:" is emitted by the /apps card; like "fmt:" it is currently
-        # routed by nothing (a pre-existing defect), but it belongs here.
+        # "app_use:" is emitted by the /apps card and routed in telegram.py beside
+        # "host_use:". Both switch the active target and re-render the card.
         callback_prefixes=("host_use:", "app_use:"),
         about=(
             'those commands stop working and leave /help and the "/" menu',
@@ -298,10 +301,10 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
         description="Rewrite, summarise, explain and refine - commands and reply keywords.",
         group="Knowledge", icon="pen-line",
         commands=frozenset({"format", "fmt", "think", "refine", "explain_ai"}),
-        # "fmt:" is the /format settings card (telegram_formatter.py). NOTE: as of
-        # this change nothing ROUTES that prefix, so those buttons are inert — a
-        # pre-existing defect, not one this gate introduces. Claiming it here means
-        # the surface is gated correctly the day someone wires it up.
+        # "fmt:" is the /format settings card (telegram_formatter.py), routed by
+        # CallbackHandler.handle -> telegram_formatter.handle_fmt_callback. It was
+        # claimed here while still inert, so the surface was gated correctly before
+        # it was live; test_every_emitted_prefix_is_actually_routed now keeps it live.
         callback_prefixes=("card:", "rfn:", "fmt:"),
         reply_actions=frozenset({
             "actions", "casual", "context", "debug", "expand", "explain", "fix",
@@ -418,20 +421,6 @@ def all_extensions(*, include_locked: bool = False) -> list[TelegramExtension]:
     )
 
 
-def _config_value(dotted: str) -> Any:
-    """Read a dotted config key, returning ``_MISSING`` when it is absent.
-
-    "Absent" and "present but falsey" must stay distinguishable: the legacy rule
-    only applies when the operator actually set the old key.
-    """
-    try:
-        from navig.core import Config  # noqa: PLC0415
-
-        return Config().get(dotted, _MISSING)
-    except Exception:  # noqa: BLE001
-        return _MISSING
-
-
 def is_enabled(ext_id: str) -> bool:
     """Resolve one extension's on/off state.  Pure read.  Never raises.
 
@@ -457,28 +446,14 @@ def is_enabled(ext_id: str) -> bool:
     """
     ext = get(ext_id)
     if ext is None:
-        if ext_id not in _WARNED:
-            _WARNED.add(ext_id)
-            logger.warning(
-                "unknown Telegram extension %r - treating as enabled (fail open)", ext_id
-            )
+        warn_unknown(_CHANNEL, ext_id)
         return True
-    if ext.locked:
-        return True
-    try:
-        from navig.core.coerce import coerce_bool  # noqa: PLC0415
-
-        override = _config_value(f"modules.overrides.{ext.module_id}")
-        if override is not _MISSING:
-            return coerce_bool(override, default=ext.default_enabled)
-        if ext.legacy_key:
-            legacy = _config_value(ext.legacy_key)
-            if legacy is not _MISSING:
-                return coerce_bool(legacy, default=ext.default_enabled)
-        return ext.default_enabled
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("extension gate for %r raised %r; allowing through", ext_id, exc)
-        return True
+    return resolve_enabled(
+        module_id=ext.module_id,
+        default_enabled=ext.default_enabled,
+        locked=ext.locked,
+        legacy_key=ext.legacy_key,
+    )
 
 
 def enabled_ids() -> frozenset[str]:

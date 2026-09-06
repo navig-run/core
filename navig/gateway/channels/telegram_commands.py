@@ -7885,7 +7885,11 @@ class TelegramCommandsMixin:
             cfg = get_config_manager()
             host_name = cfg.get_active_host() or "localhost"
             apps = cfg.list_apps(host_name) if hasattr(cfg, "list_apps") else []
-            active_app = cfg.get_active_app(host_name) if hasattr(cfg, "get_active_app") else ""
+            # NOT get_active_app(host_name): the parameter is `return_source: bool`,
+            # so a host name is truthy and the call returns a TUPLE (app, source).
+            # `app == active_app` was then never true and the "active" marker on
+            # this card had never rendered. Resolution is already host-aware inside.
+            active_app = cfg.get_active_app() if hasattr(cfg, "get_active_app") else ""
         except Exception:
             apps, active_app, host_name = [], "", "localhost"
 

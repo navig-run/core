@@ -157,6 +157,24 @@ def _pre(rows: list[str]) -> str:
 #: reads it. Every surface now spells the three out with their marks.
 FLOOR_TITLE = "The 3 that decide the day"
 
+
+def _t(key: str, **fields: object) -> str:
+    """A shared-locale string. Separate from this module's own ``t`` (body/habit
+    strings live in different roots) but resolved against the same language."""
+    from navig.core import i18n  # noqa: PLC0415
+
+    return i18n.t(key, **fields)
+
+
+def _floor_title() -> str:
+    """FLOOR_TITLE, localized. The constant stays as the English fallback and is
+    still exported — other modules import it."""
+    return _t("habit.card.floor_title") if _t(
+        "habit.card.floor_title"
+    ) != "habit.card.floor_title" else FLOOR_TITLE
+
+
+
 _MONTHS = (
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December",
@@ -172,17 +190,43 @@ def _expand(compact: str) -> str:
     return f"{compact[0:4]}-{compact[4:6]}-{compact[6:8]}"
 
 
+def _month_name(month: int) -> str:
+    """The month, in the operator's language. `_MONTHS` is the English fallback."""
+    try:
+        from navig.core import i18n  # noqa: PLC0415
+
+        key = f"month.{month}"
+        translated = i18n.t(key)
+        return _MONTHS[month - 1] if translated == key else translated
+    except Exception:  # noqa: BLE001
+        return _MONTHS[month - 1]
+
+
 def _human_day(day: str) -> str:
     try:
         d = date.fromisoformat(day)
-        return f"{d.day} {_MONTHS[d.month - 1]}"
+        return f"{d.day} {_month_name(d.month)}"
     except (ValueError, IndexError):
         return day
 
 
 def word(label: str) -> str:
-    """The human word for a tracker label; the label itself if it has no word yet."""
-    return LABEL_WORDS.get(label, label)
+    """The human word for a tracker label, in the operator's global language.
+
+    Every card, button, stats grid and pause-menu row renders labels through
+    here, so localizing this one function localizes all of them. LABEL_WORDS
+    stays as the English fallback: a label with no locale entry reads as an
+    English word rather than as a raw `caffeine_cutoff`.
+    """
+    fallback = LABEL_WORDS.get(label, label)
+    try:
+        from navig.core import i18n  # noqa: PLC0415
+
+        key = f"habit.label.{label}"
+        translated = i18n.t(key)
+        return fallback if translated == key else translated
+    except Exception:  # noqa: BLE001 — a label is never worth an exception
+        return fallback
 
 
 _word = word  # internal shorthand
@@ -217,39 +261,57 @@ def build_card(path: Path, day: str, morning: bool = False) -> tuple[str, dict[s
     open_floor = [_word(h) for h in habit_tracker.NON_NEGOTIABLES if not done(h)]
 
     if morning:
-        lines = [f"☀️ <b>Morning</b> · {html.escape(_human_day(day))}", ""]
-        lines.append("Feet on the floor, 10 minutes of daylight, water.")
-        lines.append("Tap <b>Wake</b> now — the rest as the day goes.")
+        lines = [
+            f"☀️ <b>{html.escape(_t('habit.card.morning_title'))}</b>"
+            f" · {html.escape(_human_day(day))}",
+            "",
+        ]
+        lines.append(html.escape(_t("habit.card.morning_line")))
+        # `{wake}` is the localized label, so the sentence names the button the
+        # operator can actually see rather than the English word "Wake".
+        lines.append(_t("habit.card.morning_tap", wake=html.escape(word("wake"))))
     else:
-        lines = [f"✍️ <b>Check-in</b> · {html.escape(_human_day(day))}"]
+        lines = [
+            f"✍️ <b>{html.escape(_t('habit.card.evening_title'))}</b>"
+            f" · {html.escape(_human_day(day))}"
+        ]
 
-    lines += ["", f"<b>{FLOOR_TITLE}</b>", floor_line(logged)]
+    lines += ["", f"<b>{html.escape(_floor_title())}</b>", floor_line(logged)]
 
     if not morning:
         if open_floor:
             lines.append(
-                "Still open: <b>"
-                + html.escape(", ".join(open_floor))
-                + "</b> — all three, or the day does not count."
+                _t(
+                    "habit.card.still_open",
+                    names=html.escape(", ".join(open_floor)),
+                )
             )
         else:
-            lines.append("✅ <b>All three done. The day counts.</b>")
+            lines.append(f"✅ <b>{html.escape(_t('habit.card.all_three'))}</b>")
 
-    lines += ["", f"<i>Tap what you did — {MARK_OPEN} becomes {MARK_DONE}.</i>"]
+    lines += [
+        "",
+        "<i>"
+        + html.escape(_t("habit.card.tap_hint", open=MARK_OPEN, done=MARK_DONE))
+        + "</i>",
+    ]
 
     try:
         today = date.fromisoformat(day)
         streaks = " · ".join(
-            f"{_word(h)} {habit_tracker.streak_for(rows, h, today)}d"
+            f"{_word(h)} "
+            + _t("habit.card.streak_day", n=habit_tracker.streak_for(rows, h, today))
             for h in habit_tracker.NON_NEGOTIABLES
         )
-        lines.append(f"<i>Streaks: {html.escape(streaks)}</i>")
+        lines.append(
+            f"<i>{html.escape(_t('habit.card.streaks', value=streaks))}</i>"
+        )
     except ValueError:
         pass
 
     score = logged.get("score", "")
     if score and habit_tracker.is_done(score):
-        lines.append(f"<i>Day score: {html.escape(score)}/10</i>")
+        lines.append(f"<i>{html.escape(_t('habit.card.day_score', value=score))}</i>")
 
     keyboard: list[list[dict[str, str]]] = []
     stamp = _compact(day)
@@ -257,10 +319,15 @@ def build_card(path: Path, day: str, morning: bool = False) -> tuple[str, dict[s
         keyboard.append(
             [
                 {
-                    "text": f"{MARK_DONE if done(label) else MARK_OPEN} {word}",
+                    # `_word(label)`, NOT the tuple's second element: that is the
+                    # English word baked into CHECKIN_ROWS, and binding it to the
+                    # name `word` also shadowed the word() function right here —
+                    # which is why the card text localized and the buttons under
+                    # it stayed in English.
+                    "text": f"{MARK_DONE if done(label) else MARK_OPEN} {_word(label)}",
                     "callback_data": f"{CALLBACK_PREFIX}t:{label}:{stamp}",
                 }
-                for label, word in row
+                for label, _english in row
             ]
         )
     keyboard.append(
@@ -273,7 +340,10 @@ def build_card(path: Path, day: str, morning: bool = False) -> tuple[str, dict[s
         ]
     )
     keyboard.append(
-        [{"text": "🌙 Close the day", "callback_data": f"{CALLBACK_PREFIX}x:{stamp}"}]
+        [{
+            "text": _t("habit.card.close_button"),
+            "callback_data": f"{CALLBACK_PREFIX}x:{stamp}",
+        }]
     )
 
     return "\n".join(lines), {"inline_keyboard": keyboard}
@@ -294,7 +364,7 @@ def build_closing_text(path: Path, day: str) -> str:
     lines = [
         f"🌙 <b>{html.escape(_human_day(day))} closed</b>",
         "",
-        f"<b>{FLOOR_TITLE}</b>",
+        f"<b>{html.escape(_floor_title())}</b>",
         floor_line(logged),
         "",
     ]
@@ -307,7 +377,7 @@ def build_closing_text(path: Path, day: str) -> str:
             f"tomorrow <b>{names}</b> is not optional. NEVER MISS TWICE."
         )
     else:
-        lines.append("✅ <b>All three done. The day counts.</b>")
+        lines.append(f"✅ <b>{html.escape(_t('habit.card.all_three'))}</b>")
 
     # Everything outside the three, minus the score — which gets its own line
     # rather than sitting in a list of habits as if "score" were something you do.
@@ -321,7 +391,7 @@ def build_closing_text(path: Path, day: str) -> str:
 
     score = logged.get("score", "")
     if score and habit_tracker.is_done(score):
-        lines.append(f"<i>Day score: {html.escape(score)}/10</i>")
+        lines.append(f"<i>{html.escape(_t('habit.card.day_score', value=score))}</i>")
 
     lines += ["", "Three lines in the journal and you're done."]
     return "\n".join(lines)
@@ -360,7 +430,8 @@ def build_stats(path: Path, today: date, days: int = 7) -> tuple[str, dict[str, 
         f"📊 <b>Progress</b> · day {s['days']}"
         f"  <i>{_human_day(s['start'].isoformat())} → {_human_day(s['end'].isoformat())}</i>",
         "",
-        f"<b>{s['complete']} of {s['days']} days counted</b>  ({pct}%)",
+        f"<b>{html.escape(_t('habit.card.days_counted', done=s['complete'], total=s['days']))}</b>"
+        f"  ({pct}%)",
         "",
     ]
 

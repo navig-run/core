@@ -26,5 +26,7 @@
   "clinician": "−{delta} kg en une semaine — un rythme rapide. À mentionner lors du prochain rendez-vous.",
   "ext.off": "⚠️ <b>L'extension Health est désactivée</b> — ces points sont planifiés mais non envoyés.\nActiver : /extensions",
   "unit.kg": "kg",
-  "unit.h": "h"
+  "unit.h": "h",
+  "weigh.settled": "✅ Enregistré : {value} kg",
+  "weigh.settled_avg": "✅ Enregistré : {value} kg · moyenne sur 7 jours {avg} kg"
 }

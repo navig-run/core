@@ -13,6 +13,16 @@ flaky Windows file locks in unrelated tests rather than a clean failure.
 from __future__ import annotations
 
 import sys as _sys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - never executed; exists for static analysis only
+    # Static analysers cannot follow ``sys.modules[__name__] = _impl``: after the alias the
+    # module IS the implementation at runtime, but on disk this file declares only `_impl`
+    # and `_sys`. So every attribute access through the old path -- e.g. core.py doing
+    # `_validators_mod.get_validator(...)` -- reads as "module has no attribute", and the
+    # module-attr guard reports a call that actually works. Re-exporting here gives the
+    # analyser the real names while runtime still gets the identity alias below.
+    from navig_vault.totp import *  # noqa: F401,F403
 
 try:
     from navig_vault import totp as _impl

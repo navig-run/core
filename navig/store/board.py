@@ -28,11 +28,15 @@ DB: ``~/.navig/data/store/board.db`` (``paths.store_dir()``), a ``BaseStore``.
 from __future__ import annotations
 
 import json
+import logging
+import sqlite3
 import uuid
 from pathlib import Path
 from typing import Any
 
 from navig.store.base import BaseStore, _utcnow
+
+logger = logging.getLogger(__name__)
 
 # ── Vocabulary (kept in lock-step with apps/os/.../deck-types.ts) ─────────────
 
@@ -71,7 +75,7 @@ def _new_id() -> str:
 
 
 class BoardStore(BaseStore):
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
     PRAGMAS = {"cache_size": -4000}
 
     def __init__(self, db_path: Path | None = None) -> None:
@@ -151,6 +155,151 @@ class BoardStore(BaseStore):
             );
             """
         )
+
+    # ── Migrations ───────────────────────────────────────────────────────────
+
+    #: Legacy table name -> canonical name. An earlier board implementation wrote
+    #: these unprefixed tables; the current store was REWRITTEN with prefixed names
+    #: (cc6a4da03 "write the missing BoardStore") and no migration was ever added,
+    #: so that data became unreachable in place. Column sets are IDENTICAL between
+    #: each pair -- verified against a real 2026-06 database -- which is what makes
+    #: adoption a plain copy rather than a mapping.
+    #: (legacy table, canonical table, {canonical_column: legacy_column}).
+    #: An earlier board implementation wrote these unprefixed tables; the current
+    #: store was REWRITTEN with prefixed names (cc6a4da03 "write the missing
+    #: BoardStore") and no migration was ever added, so that data became unreachable
+    #: in place.
+    #:
+    #: Measured against a real 2026-06 database: four of the five pairs have
+    #: IDENTICAL column sets, and `card_history` differs by exactly one renamed
+    #: column. That rename is why this carries an explicit map rather than an
+    #: intersection -- a "shared columns only" copy silently omitted `created_at`
+    #: and hit `NOT NULL constraint failed`, aborting the whole migration.
+    _LEGACY_TABLES: tuple[tuple[str, str, dict[str, str]], ...] = (
+        ("goals", "board_goal", {}),
+        ("cards", "board_card", {}),
+        ("subtasks", "board_subtask", {}),
+        ("card_deps", "board_dep", {}),
+        ("card_history", "board_history", {"created_at": "ts"}),
+    )
+
+    def _migrate(
+        self, conn: sqlite3.Connection, from_version: int, to_version: int
+    ) -> None:
+        """Dispatch incremental steps, failing fast on a missing one.
+
+        Mirrors ``RuntimeStore._migrate``. The fail-fast matters more here than the
+        dispatch does: ``BaseStore._migrate`` is a silent ``pass``, so bumping
+        SCHEMA_VERSION without this would stamp the new version having applied
+        NOTHING -- the store would then read columns that do not exist, and the
+        version number would swear everything was fine.
+        """
+        if from_version >= to_version:
+            return
+        for version in range(from_version, to_version):
+            step_name = f"_migrate_v{version}_to_v{version + 1}"
+            step = getattr(self, step_name, None)
+            if not callable(step):
+                raise RuntimeError(
+                    f"BoardStore migration path missing: {version} -> {version + 1}. "
+                    f"Implement {step_name}() before upgrading schema version."
+                )
+            step(conn)
+
+    def _migrate_v1_to_v2(self, conn: sqlite3.Connection) -> None:
+        """Adopt the orphaned pre-rename tables, if this database has them."""
+        self._adopt_legacy_tables(conn)
+
+    def _adopt_legacy_tables(self, conn: sqlite3.Connection) -> None:
+        """Copy rows out of the pre-rename tables into the canonical ones.
+
+        ⚠ ``BaseStore._init_schema`` calls ``_create_schema`` BEFORE it reads the
+        schema version, so by the time this runs the canonical tables ALWAYS exist
+        -- freshly created and empty. The condition is therefore "the canonical
+        table is EMPTY", never "the canonical table is missing"; the latter is never
+        true and would make this a silent no-op on exactly the databases it exists
+        to rescue.
+
+        Copies only into an empty table, and RENAMES rather than drops the legacy
+        one: this is the only copy of that data. Re-running is a no-op.
+
+        Each table is attempted independently. One awkward table must never abort
+        the others, and must never prevent the version bump -- otherwise a single
+        malformed history row keeps the operator's goals and cards invisible
+        forever, which is the failure this whole method exists to end.
+        """
+        for legacy, canonical, renames in self._LEGACY_TABLES:
+            try:
+                if not self._table_exists(conn, legacy):
+                    continue
+                if self._row_count(conn, canonical) > 0:
+                    continue  # never overwrite live data with an older snapshot
+
+                legacy_cols = set(self._column_names(conn, legacy))
+                pairs: list[tuple[str, str]] = []
+                for canon_col in self._column_names(conn, canonical):
+                    source = renames.get(canon_col, canon_col)
+                    if source in legacy_cols:
+                        pairs.append((canon_col, source))
+                if not pairs:
+                    continue
+
+                missing = self._unsatisfied_not_null(
+                    conn, canonical, {c for c, _ in pairs}
+                )
+                if missing:
+                    # Copying would violate NOT NULL. Skipping loses nothing: the
+                    # legacy table is left intact and named, so the rows remain
+                    # recoverable by hand instead of being half-written.
+                    logger.warning(
+                        "board: not adopting %s -> %s, no source for required "
+                        "column(s) %s; legacy table left in place",
+                        legacy, canonical, sorted(missing),
+                    )
+                    continue
+
+                cols = ", ".join(f'"{c}"' for c, _ in pairs)
+                srcs = ", ".join(f'"{sql}"' for _, sql in pairs)
+                conn.execute(
+                    f"INSERT INTO {canonical} ({cols}) SELECT {srcs} FROM {legacy}"  # noqa: S608
+                )
+                conn.execute(f"ALTER TABLE {legacy} RENAME TO {legacy}_migrated_v1")
+            except sqlite3.Error as exc:
+                # sqlite3.Error, not OperationalError: the first real run raised
+                # IntegrityError, which a narrower clause let escape and abort the
+                # entire migration.
+                logger.warning("board: adopting %s failed: %s", legacy, exc)
+                continue
+
+    @staticmethod
+    def _unsatisfied_not_null(
+        conn: sqlite3.Connection, table: str, provided: set[str]
+    ) -> set[str]:
+        """NOT NULL columns with no default that the copy would not fill."""
+        missing: set[str] = set()
+        for row in conn.execute(f"PRAGMA table_info({table})"):
+            name, notnull, default, pk = row[1], row[3], row[4], row[5]
+            if notnull and default is None and not pk and name not in provided:
+                missing.add(name)
+        return missing
+
+    @staticmethod
+    def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+        ).fetchone()
+        return row is not None
+
+    @staticmethod
+    def _row_count(conn: sqlite3.Connection, table: str) -> int:
+        try:
+            return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])  # noqa: S608
+        except sqlite3.OperationalError:
+            return 0
+
+    @staticmethod
+    def _column_names(conn: sqlite3.Connection, table: str) -> list[str]:
+        return [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
 
     # ── Settings ─────────────────────────────────────────────────────────────
 

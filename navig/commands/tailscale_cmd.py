@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 
 import typer
 from rich.table import Table
@@ -31,7 +30,13 @@ def ts_status(
 
     status = asyncio.run(Tailscale().status())
     if json_out:
-        console.print(json.dumps(status.to_dict(), indent=2))
+        # NOT console.print(json.dumps(...)) — Rich hard-wraps at the console width once
+        # the output is piped, which corrupts the JSON for the scripts that ask for it.
+        # This was unreachable until `navig tailscale` was mounted; mounting is what
+        # exposed it.
+        from navig.console_helper import emit_json
+
+        emit_json(status.to_dict())
         return
     if not status.available:
         console.print(f"[red]Tailscale not available:[/red] {status.error}")

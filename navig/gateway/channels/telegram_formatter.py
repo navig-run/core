@@ -28,6 +28,7 @@ import re
 import threading
 import time
 from dataclasses import asdict, dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -486,3 +487,153 @@ def build_outfmt_picker_keyboard(current: str) -> list[list[dict]]:
         for val, label in options
     ]
     return [row, [{"text": "⬅ Back", "callback_data": "fmt:back"}]]
+
+
+# ─────────────────────────────────────────────────────────────────
+# Callback routing for the /format settings card
+# ─────────────────────────────────────────────────────────────────
+
+CALLBACK_PREFIX = "fmt:"
+
+#: Heading level -> the FormatterPrefs field it writes. An explicit table, NEVER
+#: `setattr(prefs, f"{level}_symbol", …)`: `level` arrives from a callback payload,
+#: and building an attribute name out of remote input is how a dataclass grows a
+#: field nothing reads.
+_LEVEL_FIELD: dict[str, str] = {
+    "h1": "h1_symbol",
+    "h2": "h2_symbol",
+    "h3": "h3_symbol",
+    "h4": "h4_symbol",
+}
+
+#: The bullet options `build_bullet_picker_keyboard` actually offers. Kept beside it
+#: so a value that is not on the keyboard cannot be written by a hand-made payload.
+BULLET_OPTIONS: tuple[str, ...] = ("•", "▪", "◾", "🔹", "▸", "›", "—")
+
+SETTINGS_TEXT = (
+    "<b>Markdown Formatter Settings</b>\n\n"
+    "Send <code>/format &lt;text&gt;</code> to convert, or adjust preferences below."
+)
+
+
+async def handle_fmt_callback(
+    channel: Any,
+    cb_data: str,
+    chat_id: int,
+    message_id: int,
+    user_id: int | None,
+) -> str:
+    """Handle one `fmt:` tap. Returns the toast; the caller answers it.
+
+    These buttons were emitted by five builders and routed by NOTHING -- every tap
+    fell through `CallbackHandler.handle` to `self.store.get(cb_data)`, missed, and
+    answered "Button expired". `FormatterStore.save` had never been called from
+    anywhere, so a preference could not persist even if the buttons had worked.
+
+    Answering AFTER the write (the caller's job) is deliberate: the toast is the only
+    confirmation the operator gets that the change landed.
+    """
+    if user_id is None:
+        # Prefs are keyed by user. Writing under a synthetic 0 would silently mix
+        # two people's settings together.
+        return "Can't save preferences here"
+
+    store = get_formatter_store()
+    prefs = store.get(user_id)
+    rest = cb_data[len(CALLBACK_PREFIX):]
+
+    async def _edit(keyboard: list[list[dict]]) -> None:
+        await channel._api_call(
+            "editMessageText",
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": SETTINGS_TEXT,
+                "parse_mode": "HTML",
+                "reply_markup": {"inline_keyboard": keyboard},
+            },
+        )
+
+    async def _picker(keyboard: list[list[dict]]) -> None:
+        await channel._api_call(
+            "editMessageReplyMarkup",
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "reply_markup": {"inline_keyboard": keyboard},
+            },
+        )
+
+    # ── open a picker ────────────────────────────────────────────────────────
+    if rest in _LEVEL_FIELD:
+        await _picker(build_symbol_picker_keyboard(rest, getattr(prefs, _LEVEL_FIELD[rest])))
+        return ""
+    if rest == "bullet":
+        await _picker(build_bullet_picker_keyboard(prefs.bullet_style))
+        return ""
+    if rest == "nums":
+        await _picker(build_numbered_picker_keyboard(prefs.numbered_style))
+        return ""
+    if rest == "outfmt":
+        await _picker(build_outfmt_picker_keyboard(prefs.output_format))
+        return ""
+
+    # ── set a value, persist, return to the card ─────────────────────────────
+    if rest.startswith("sym:"):
+        _, _, tail = rest.partition("sym:")
+        level, _, symbol = tail.partition(":")
+        field = _LEVEL_FIELD.get(level)
+        if field is None or symbol not in SYMBOL_POOL:
+            return "Unknown symbol"
+        setattr(prefs, field, symbol)
+        store.save(user_id, prefs)
+        await _edit(build_formatter_settings_keyboard(prefs))
+        return f"{level.upper()} → {symbol}"
+
+    if rest.startswith("bul:"):
+        value = rest[len("bul:"):]
+        if value not in BULLET_OPTIONS:
+            return "Unknown bullet"
+        prefs.bullet_style = value
+        store.save(user_id, prefs)
+        await _edit(build_formatter_settings_keyboard(prefs))
+        return f"Bullet → {value}"
+
+    if rest.startswith("numstyle:"):
+        value = rest[len("numstyle:"):]
+        if value not in (NUMBERED_STYLE_EMOJI, NUMBERED_STYLE_PLAIN, NUMBERED_STYLE_ROMAN):
+            return "Unknown numbering"
+        prefs.numbered_style = value
+        store.save(user_id, prefs)
+        await _edit(build_formatter_settings_keyboard(prefs))
+        return f"Numbering → {value}"
+
+    if rest.startswith("of:"):
+        value = rest[len("of:"):]
+        if value not in (OUTPUT_FORMAT_PLAIN, OUTPUT_FORMAT_MDV2, OUTPUT_FORMAT_HTML):
+            return "Unknown output format"
+        prefs.output_format = value
+        store.save(user_id, prefs)
+        await _edit(build_formatter_settings_keyboard(prefs))
+        return f"Output → {value}"
+
+    # ── navigation ───────────────────────────────────────────────────────────
+    if rest == "back":
+        await _edit(build_formatter_settings_keyboard(prefs))
+        return ""
+    if rest == "done":
+        await channel._api_call(
+            "editMessageText",
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": "<b>Formatter settings saved.</b>",
+                "parse_mode": "HTML",
+                "reply_markup": {"inline_keyboard": []},
+            },
+        )
+        return "Saved"
+
+    # An unrecognised payload is inert, never a crash: an old card from a previous
+    # release must not raise inside the callback router.
+    return ""

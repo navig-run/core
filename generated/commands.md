@@ -1,6 +1,6 @@
 # NAVIG Command Reference
 
-_Generated 2026-09-05T18:27:22.134108+00:00_
+_Generated 2026-09-06T12:45:02.439736+00:00_
 
 ## `navig action add`
 **Status:** `stable` · **Since:** 
@@ -2312,6 +2312,22 @@ Show continuation policy for local runtime state.
 **Examples:**
 ```sh
 navig continuation status
+```
+
+## `navig contribute scan`
+**Status:** `stable` · **Since:** 
+Scan local NAVIG source, review findings, and (optionally) submit a PR.
+**Examples:**
+```sh
+navig contribute scan
+```
+
+## `navig contribute status`
+**Status:** `stable` · **Since:** 
+Show Contribution Mode configuration and fork status.
+**Examples:**
+```sh
+navig contribute status
 ```
 
 ## `navig copilot ask`
@@ -9507,6 +9523,30 @@ Show detailed system information.
 navig system info
 ```
 
+## `navig tailscale ip`
+**Status:** `stable` · **Since:** 
+Show Tailscale IP of self or a peer.
+**Examples:**
+```sh
+navig tailscale ip
+```
+
+## `navig tailscale ping`
+**Status:** `stable` · **Since:** 
+Ping a Tailscale peer.
+**Examples:**
+```sh
+navig tailscale ping
+```
+
+## `navig tailscale status`
+**Status:** `stable` · **Since:** 
+Show Tailscale status and peer list.
+**Examples:**
+```sh
+navig tailscale status
+```
+
 ## `navig task add`
 **Status:** `stable` · **Since:** 
 Create a new task from template (retired — use `navig block new`).
@@ -10089,6 +10129,30 @@ Download a creator's whole profile — videos, slideshows images, audio, or just
 **Examples:**
 ```sh
 navig tiktok profile
+```
+
+## `navig tools list`
+**Status:** `stable` · **Since:** 
+List all registered tools.
+**Examples:**
+```sh
+navig tools list
+```
+
+## `navig tools schema`
+**Status:** `stable` · **Since:** 
+Dump the OpenAPI schema for all registered tools.
+**Examples:**
+```sh
+navig tools schema
+```
+
+## `navig tools show`
+**Status:** `stable` · **Since:** 
+Show full metadata for a single tool.
+**Examples:**
+```sh
+navig tools show
 ```
 
 ## `navig tray install`

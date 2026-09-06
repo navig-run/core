@@ -405,3 +405,48 @@ def next_weekly_day(today: date | None = None) -> date:
     """The next Sunday on or after *today* — the weekly card's natural anchor."""
     day = today or date.today()
     return day + timedelta(days=(6 - day.weekday()) % 7)
+
+
+# ── Settling the prompt in place ──────────────────────────────────────────────
+
+
+def settled_text(path: Path, day: str, value: float) -> str:
+    """What the weigh-in prompt becomes once it has been answered."""
+    average = bm.moving_average(path, days=7, ending=date.fromisoformat(day))
+    if average is None:
+        return t("weigh.settled", value=f"{value:g}")
+    return t("weigh.settled_avg", value=f"{value:g}", avg=f"{average:g}")
+
+
+async def settle_prompt(channel: Any, chat_id: int, message_id: int, text: str) -> bool:
+    """Rewrite the answered prompt in place. True when the edit landed.
+
+    The prompt is sent with ``force_reply``, and Telegram clients keep that reply
+    box armed — after an app restart it reappears QUOTING the original message.
+    While that message still reads "⚖️ Вес сегодня утром?", the operator sees
+    what looks like the same question being asked again, hours after they
+    answered it. Rewriting the message to state the recorded value removes the
+    ambiguity at its source: the quote becomes an answer, not a question.
+
+    It also collapses two messages into one — the question and its separate ✅
+    confirmation were always the same event.
+    """
+    try:
+        await channel._api_call(
+            "editMessageText",
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": text,
+                "parse_mode": "HTML",
+                # Explicit empty markup: omitting it leaves any old buttons live
+                # on a message that now says the day is settled.
+                "reply_markup": {"inline_keyboard": []},
+            },
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        # A message too old to edit, or deleted. The caller falls back to sending
+        # — the operator must never be left without confirmation that it landed.
+        logger.debug("could not settle the weigh-in prompt: %s", exc)
+        return False

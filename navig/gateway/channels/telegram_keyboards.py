@@ -1358,6 +1358,33 @@ class CallbackHandler:
                     await self._answer(cb_id, "⚠️ Refine action error")
                 return
 
+            # Placed beside `card:`/`rfn:` because all three belong to the `writing`
+            # extension. It MUST stay above the `self.store.get(cb_data)` fallback
+            # below -- that lookup is what swallowed every `fmt:` tap into
+            # "Button expired" for the whole life of the /format settings card.
+            if cb_data.startswith("fmt:"):
+                toast = ""
+                try:
+                    from navig.gateway.channels.telegram_formatter import (
+                        handle_fmt_callback,
+                    )
+
+                    toast = await handle_fmt_callback(
+                        self.channel, cb_data, chat_id, message_id, user_id
+                    )
+                except Exception as _fmt_err:
+                    logger.warning(
+                        "Formatter callback error: chat_id=%s callback=%s err=%s",
+                        chat_id,
+                        cb_data,
+                        _fmt_err,
+                    )
+                    toast = "⚠️ Formatter action error"
+                # Answered AFTER the write: the toast is the only confirmation the
+                # operator gets that a preference actually landed.
+                await self._answer(cb_id, toast)
+                return
+
             if cb_data.startswith("ms_"):
                 await self._handle_model_switch(cb_id, cb_data, chat_id, message_id, user_id)
                 return
