@@ -1,6 +1,6 @@
 # NAVIG Command Reference
 
-_Generated 2026-09-06T13:59:46.722718+00:00_
+_Generated 2026-09-07T14:38:05.854606+00:00_
 
 ## `navig action add`
 **Status:** `stable` · **Since:** 
@@ -7707,6 +7707,14 @@ Activate an output style by name.
 navig output-style use
 ```
 
+## `navig pipeline clip`
+**Status:** `stable` · **Since:** 
+🎵 Build a vertical clip cut to a track you already have — no narration.
+**Examples:**
+```sh
+navig pipeline clip
+```
+
 ## `navig pipeline reel`
 **Status:** `stable` · **Since:** 
 🎬 Build a vertical reel per language — capture, narrate, caption, score.
@@ -8309,7 +8317,7 @@ navig repo guard uninstall
 
 ## `navig repo lock release`
 **Status:** `stable` · **Since:** 
-Release the agent lock (stale locks always; fresh locks need --force).
+Release the agent lock.
 **Examples:**
 ```sh
 navig repo lock release
@@ -9139,6 +9147,14 @@ Make a space visible in the deck/switcher and available to activate.
 navig space enable
 ```
 
+## `navig space fold`
+**Status:** `stable` · **Since:** 
+Demote a sub-space: keep it working, hide it from discovery and the registry.
+**Examples:**
+```sh
+navig space fold
+```
+
 ## `navig space forget`
 **Status:** `stable` · **Since:** 
 Remove a space from the registry (does not delete the folder).
@@ -9201,6 +9217,14 @@ Activate a space — binds the agent's working directory to the workshop.
 **Examples:**
 ```sh
 navig space switch
+```
+
+## `navig space unfold`
+**Status:** `stable` · **Since:** 
+Undo `space fold` — the folder becomes a discoverable space again.
+**Examples:**
+```sh
+navig space unfold
 ```
 
 ## `navig space use`
@@ -9291,6 +9315,14 @@ Make a space visible in the deck/switcher and available to activate.
 navig spaces enable
 ```
 
+## `navig spaces fold`
+**Status:** `stable` · **Since:** 
+Demote a sub-space: keep it working, hide it from discovery and the registry.
+**Examples:**
+```sh
+navig spaces fold
+```
+
 ## `navig spaces forget`
 **Status:** `stable` · **Since:** 
 Remove a space from the registry (does not delete the folder).
@@ -9353,6 +9385,14 @@ Activate a space — binds the agent's working directory to the workshop.
 **Examples:**
 ```sh
 navig spaces switch
+```
+
+## `navig spaces unfold`
+**Status:** `stable` · **Since:** 
+Undo `space fold` — the folder becomes a discoverable space again.
+**Examples:**
+```sh
+navig spaces unfold
 ```
 
 ## `navig spaces use`

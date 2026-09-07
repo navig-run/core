@@ -409,3 +409,60 @@ def test_a_filter_chain_actually_changes_the_picture(tmp_path: Path) -> None:
     apply_filter(src, out, "eq=saturation=0")
     assert out.read_bytes() != src.read_bytes()
     assert probe(out)["width"] == probe(src)["width"]
+
+
+# ── motion: names that actually mean different things ─────────────────────────
+
+
+def test_every_motion_produces_a_different_move() -> None:
+    """The bug this pins: "kenburns", "zoom" and "drift" were three names for ONE filter.
+
+    A shotlist that carefully alternated them rendered a reel where every single shot
+    pushed in identically — which is exactly what "the images always look the same" means.
+    """
+    from navig.media.video_edit import MOTIONS, _zoompan
+
+    built = {
+        motion: _zoompan(motion, frames=90, zoom=1.12, width=1080, height=1920, fps=30)
+        for motion in MOTIONS - {"none"}
+    }
+    assert len(set(built.values())) == len(built), "two motions render the same filter"
+
+
+def test_the_old_motion_names_still_work_and_now_differ() -> None:
+    from navig.media.video_edit import MOTION_ALIASES, MOTIONS, _zoompan
+
+    assert MOTION_ALIASES["zoom"] == "zoom-in"
+    assert MOTION_ALIASES["drift"] == "pan-right"
+    for alias, real in MOTION_ALIASES.items():
+        assert real in MOTIONS, alias
+    push = _zoompan("zoom-in", frames=60, zoom=1.12, width=1080, height=1920, fps=30)
+    drift = _zoompan("pan-right", frames=60, zoom=1.12, width=1080, height=1920, fps=30)
+    assert push != drift
+
+
+def test_a_pan_is_given_room_to_travel() -> None:
+    """At zoom 1.0 the visible region IS the frame, so a pan has nowhere to go."""
+    from navig.media.video_edit import PAN_ZOOM, _zoompan
+
+    tight = _zoompan("pan-left", frames=60, zoom=1.0, width=1080, height=1920, fps=30)
+    assert f"z='{PAN_ZOOM:g}'" in tight
+
+
+def test_a_zoom_out_starts_wide_and_a_zoom_in_starts_tight() -> None:
+    from navig.media.video_edit import _zoompan
+
+    assert _zoompan("zoom-in", frames=60, zoom=1.2, width=1080, height=1920, fps=30).startswith(
+        "zoompan=z='1+"
+    )
+    assert "z='1.2-" in _zoompan("zoom-out", frames=60, zoom=1.2, width=1080, height=1920, fps=30)
+
+
+def test_an_unknown_motion_is_refused_rather_than_silently_static(tmp_path) -> None:
+    # Silently falling back to a still is how a typo becomes "why is this shot dead?".
+    from navig.media.video_edit import still
+
+    art = tmp_path / "a.png"
+    art.write_bytes(b"\x89PNG")
+    with pytest.raises(ValueError, match="unknown motion"):
+        still(art, tmp_path / "o.mp4", secs=1.0, motion="ken-burns")

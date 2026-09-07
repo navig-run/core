@@ -300,11 +300,13 @@ def test_format_local_does_not_claim_midnight_as_a_time() -> None:
 
 
 def test_format_local_works_on_this_platform() -> None:
-    """`%-d` is glibc-only; Windows raises ValueError on it.
+    """The date is assembled, never strftime'd, so no platform directive can break it.
 
-    A platform check inside a render function is the kind of thing that is only ever
-    exercised on one OS, so it is asserted rather than assumed — this failing takes
-    down the whole card, not one row.
+    This used to guard `%-d`, which is glibc-only and raises `ValueError` on Windows —
+    the day number went through a runtime probe. The day is now `when.day` and the
+    month a locale lookup, so the class is gone; what remains worth asserting is that
+    a readable date comes out on whichever OS is running, because this failing takes
+    down the whole card rather than one row.
     """
     assert format_local(datetime(2026, 9, 5, 9, 0, tzinfo=TZ), NOW).startswith("Sat 5 Sep")
 

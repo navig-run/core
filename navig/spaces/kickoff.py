@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from navig.spaces.progress import _parse_frontmatter_map, _safe_read
+from navig.spaces.progress import _parse_frontmatter_map
 
 _PENDING_CHECKBOX_RE = re.compile(r"^\s*-\s*\[\s\]\s*(.+)$", re.MULTILINE)
 _BULLET_RE = re.compile(r"^\s*[-*]\s+(.+)$", re.MULTILINE)
@@ -52,8 +52,10 @@ def build_space_kickoff(
     cwd: Path | None = None,
     max_items: int = 3,
 ) -> SpaceKickoff:
-    vision_text = _safe_read(space_path / "VISION.md")
-    phase_text = _safe_read(space_path / "CURRENT_PHASE.md")
+    from navig.spaces.plan_files import read_plan  # noqa: PLC0415
+
+    vision_text = read_plan(space_path, "VISION.md")
+    phase_text = read_plan(space_path, "CURRENT_PHASE.md")
 
     goal = _vision_goal(vision_text, f"{space_name} priorities")
 
@@ -73,10 +75,13 @@ def build_space_kickoff(
 
     _append(_extract_pending_actions(phase_text))
 
-    current_dir = (cwd or Path.cwd()).resolve()
-    plans_dir = current_dir / ".navig" / "plans"
+    # ⚠ These used to be read from ``cwd / ".navig" / "plans"`` — the PROCESS's
+    # directory, not this space's. A briefing built for space X by a daemon sitting
+    # anywhere else read whatever that folder happened to hold, or nothing at all.
+    # `cwd` is kept in the signature because callers pass it; it no longer decides
+    # which space's plans are read.
     for name in ("DEV_PLAN.md", "ROADMAP.md", "CURRENT_PHASE.md"):
-        _append(_extract_pending_actions(_safe_read(plans_dir / name)))
+        _append(_extract_pending_actions(read_plan(space_path, name)))
 
     return SpaceKickoff(
         space=space_name,

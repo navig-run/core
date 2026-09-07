@@ -18,6 +18,24 @@ Schema supported:
 
 No required keys — every field is optional and has a safe default.
 Never raises on missing or malformed YAML — logs a warning and returns None.
+
+Legacy shapes are accepted and normalised onto the schema above. They were written by
+space scaffolding that predates this loader, and on a real install they are the MAJORITY
+of routes.yaml files — read literally, 13 of 16 loaded as an empty config, so every one
+of those spaces routed nothing while appearing configured. Accepted aliases:
+
+  routes:                      ->  channels:
+    - channel: "#lyrics"       ->      id:
+      owner:    lyricist       ->      agents:   (also `handler:`, `handlers:`,
+      handlers: [lyricist]                        `multi_agent:`)
+      triggers: [{keyword: [...]}]  ->  keywords:  (also `tags:`, and `pattern:`
+      pattern:  "a|b|c"                            split on `|`)
+      default:  true           ->  defaults.unrouted_fallback (that channel's first agent)
+  fallback:
+    channel: "#ideas"          ->  defaults.unrouted_fallback
+
+`formation:` is deliberately NOT mapped to `agents:` — a formation is a group, not a
+handler, and conflating them would dispatch to a name no agent answers to.
 """
 
 from __future__ import annotations
@@ -113,25 +131,34 @@ def load(space_root: Path) -> RoutesConfig | None:
         if parent != space_root:
             config.spaces_root = parent
 
-    # channels
-    for ch in raw.get("channels", []) or []:
+    # channels (accepting the legacy `routes:` spelling and field aliases)
+    fallback_agent = ""
+    for ch in raw.get("channels", raw.get("routes", [])) or []:
         if not isinstance(ch, dict):
             continue
-        cid = ch.get("id", "")
+        cid = ch.get("id") or ch.get("channel") or ""
         cname = ch.get("name") or cid
         if not cid:
             continue
+        agents = _channel_agents(ch)
         config.channels.append(
             ChannelConfig(
                 id=cid,
                 name=cname,
-                agents=_coerce_list(ch.get("agents")),
+                agents=agents,
                 priority=str(ch.get("priority", "normal")),
                 sla=ch.get("sla"),
-                keywords=_coerce_list(ch.get("keywords")),
+                keywords=_channel_keywords(ch),
                 description=str(ch.get("description", "")),
             )
         )
+        # `default: true` marks the channel unrouted content falls back to.
+        if ch.get("default") and not fallback_agent and agents:
+            fallback_agent = agents[0]
+
+    # `fallback: {channel: ...}` — the other legacy spelling of the same idea.
+    if not fallback_agent and isinstance(raw.get("fallback"), dict):
+        fallback_agent = str(raw["fallback"].get("channel") or "")
 
     # exclude
     for rule in raw.get("exclude", []) or []:
@@ -148,13 +175,15 @@ def load(space_root: Path) -> RoutesConfig | None:
             )
         )
 
-    # defaults
+    # defaults — an explicit `defaults:` block always wins over an inferred fallback.
     if isinstance(raw.get("defaults"), dict):
         d = raw["defaults"]
         config.defaults = RoutesDefaults(
             sla_hours=int(d.get("sla_hours", 48)),
-            unrouted_fallback=str(d.get("unrouted_fallback", "")),
+            unrouted_fallback=str(d.get("unrouted_fallback", "") or fallback_agent),
         )
+    elif fallback_agent:
+        config.defaults = RoutesDefaults(unrouted_fallback=fallback_agent)
 
     return config
 
@@ -191,3 +220,51 @@ def _coerce_list(val: Any) -> list[str]:
     if isinstance(val, list):
         return [str(v) for v in val]
     return [str(val)]
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    """Order-preserving de-duplication of non-empty strings."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for v in values:
+        v = v.strip()
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
+def _channel_agents(ch: dict[str, Any]) -> list[str]:
+    """Agents for a channel, across every spelling seen in the wild.
+
+    `formation:` is intentionally excluded — see the module docstring.
+    """
+    agents: list[str] = []
+    for key in ("agents", "handlers", "handler", "owner", "multi_agent"):
+        agents.extend(_coerce_list(ch.get(key)))
+    return _dedupe(agents)
+
+
+def _channel_keywords(ch: dict[str, Any]) -> list[str]:
+    """Match terms for a channel, across every spelling seen in the wild.
+
+    Handles `triggers: [{keyword: [...]}, {formation: ...}]` (only the `keyword`
+    entries are terms) and `pattern: "a|b|c"` (a regex alternation, not a list).
+    """
+    words: list[str] = []
+    words.extend(_coerce_list(ch.get("keywords")))
+    words.extend(_coerce_list(ch.get("tags")))
+
+    triggers = ch.get("triggers")
+    if isinstance(triggers, list):
+        for trig in triggers:
+            if isinstance(trig, dict):
+                words.extend(_coerce_list(trig.get("keyword")))
+            elif trig is not None:
+                words.append(str(trig))
+
+    pattern = ch.get("pattern")
+    if isinstance(pattern, str) and pattern:
+        words.extend(pattern.split("|"))
+
+    return _dedupe(words)

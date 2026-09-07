@@ -1270,33 +1270,20 @@ def check_ai_providers() -> list[tuple[str, bool, str]]:
 
 
 def _invocation_repo_root() -> Path | None:
-    """Repo root of the directory the CLI was invoked from.
+    """Repo root for doctor's repo-scoped sections.
 
-    `navig` chdir's to the ACTIVE SPACE during startup (``main.py``), so a bare
-    ``repo_root()`` here resolves the space rather than the folder the operator is
-    standing in. That is not hypothetical: with the active space set to
-    ``~/.navig-os/workspaces/my-workspace`` — not a git repo — every repo-scoped
-    section evaluated to empty, so the documented `navig doctor` Repo Guard row
-    silently never ran. And when a space IS a repo the failure is worse: the row
-    would describe that repo while claiming to describe yours.
-
-    ``main.py`` records the pre-chdir directory in ``NAVIG_INVOCATION_CWD`` for
-    exactly this reason. Every repo-scoped check must resolve through here.
+    Delegates to ``resolve_repo_root`` so there is ONE precedence rule in the tree,
+    not a second copy that can drift from it. What matters here is step 2 of that
+    rule: the CLI chdir's to the ACTIVE SPACE during startup, so a bare
+    ``repo_root()`` asks about the space. With the default space
+    (``~/.navig-os/workspaces/my-workspace``, not a git repo) every repo-scoped
+    section evaluated to empty, so the documented Repo Guard row silently never
+    ran; with a space that IS a repo the row would describe that repo while
+    claiming to describe yours.
     """
-    from navig.commands.repo import repo_root  # noqa: PLC0415
+    from navig.commands.repo import resolve_repo_root  # noqa: PLC0415
 
-    invoked = os.environ.get("NAVIG_INVOCATION_CWD")
-    if invoked:
-        try:
-            origin = Path(invoked)
-            if origin.is_dir():
-                root = repo_root(origin)
-                if root is not None:
-                    return root
-        except OSError:
-            pass
-    return repo_root()
-
+    return resolve_repo_root()
 
 def _is_plugin_source_tree(origin: Path, source_dir_name: str) -> bool:
     """Does ``origin`` live inside a ``plugins/<source_dir_name>/`` checkout?

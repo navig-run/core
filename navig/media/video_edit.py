@@ -163,6 +163,59 @@ def to_vertical(
     return RenderResult(dst, int(info["width"]), int(info["height"]), float(info["duration"]), vf)
 
 
+# Every motion a still can have. They used to be three names for ONE filter: "kenburns",
+# "zoom" and "drift" all produced the identical slow push-in, so a shotlist that carefully
+# alternated them rendered a reel where every shot moved exactly the same way. The names
+# are kept and now mean what they say.
+MOTIONS = frozenset({
+    "none", "zoom-in", "zoom-out",
+    "pan-left", "pan-right", "pan-up", "pan-down",
+    "kenburns", "kenburns-out",
+})
+MOTION_ALIASES = {"zoom": "zoom-in", "drift": "pan-right", "": "none"}
+# A pan needs somewhere to go: at zoom 1.0 the visible region IS the frame and the move has
+# zero travel. Pans therefore get their own floor regardless of the zoom asked for.
+PAN_ZOOM = 1.22
+
+
+def _zoompan(motion: str, *, frames: int, zoom: float, width: int, height: int,
+             fps: int) -> str:
+    """The zoompan fragment for one motion.
+
+    zoompan counts in OUTPUT FRAMES (``on``), so progress is ``on/frames``. Inside its own
+    expressions ``zoom`` is the CURRENT zoom, which is what makes the pan extents correct
+    while a zoom is also running: the travel is ``iw-iw/zoom``, recomputed per frame.
+    """
+    progress = f"(on/{max(1, frames)})"
+    centre_x, centre_y = "iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"
+    span_x, span_y = "(iw-iw/zoom)", "(ih-ih/zoom)"
+    pan = f"{max(zoom, PAN_ZOOM):g}"
+
+    if motion == "zoom-in":
+        z, x, y = f"1+{zoom - 1:.6f}*{progress}", centre_x, centre_y
+    elif motion == "zoom-out":
+        z, x, y = f"{zoom:g}-{zoom - 1:.6f}*{progress}", centre_x, centre_y
+    elif motion == "pan-right":
+        z, x, y = pan, f"{span_x}*{progress}", centre_y
+    elif motion == "pan-left":
+        z, x, y = pan, f"{span_x}*(1-{progress})", centre_y
+    elif motion == "pan-down":
+        z, x, y = pan, centre_x, f"{span_y}*{progress}"
+    elif motion == "pan-up":
+        z, x, y = pan, centre_x, f"{span_y}*(1-{progress})"
+    elif motion == "kenburns":
+        z = f"1+{zoom - 1:.6f}*{progress}"
+        x, y = f"{span_x}*(0.25+0.5*{progress})", f"{span_y}*(0.75-0.5*{progress})"
+    else:  # kenburns-out
+        z = f"{zoom:g}-{zoom - 1:.6f}*{progress}"
+        x, y = f"{span_x}*(0.75-0.5*{progress})", f"{span_y}*(0.25+0.5*{progress})"
+
+    return (
+        f"zoompan=z='{z}':x='{x}':y='{y}'"
+        f":d={frames}:s={width}x{height}:fps={fps}"
+    )
+
+
 def still(
     image: Path, dst: Path, *, secs: float, width: int = VERTICAL_W,
     height: int = VERTICAL_H, fps: int = DEFAULT_FPS, motion: str = "none",
@@ -178,18 +231,20 @@ def still(
         raise ValueError(f"secs must be positive, got {secs}")
     exe = _require("ffmpeg")
     frames = max(1, int(round(secs * fps)))
-    if motion in {"kenburns", "zoom", "drift"}:
-        step = (zoom - 1.0) / frames
+    move = MOTION_ALIASES.get(motion, motion)
+    if move not in MOTIONS:
+        raise ValueError(
+            f"unknown motion {motion!r} — use one of: {', '.join(sorted(MOTIONS))}"
+        )
+    if move == "none":
+        vf = f"{vertical_filter(width, height)},format={_PIX_FMT}"
+    else:
         vf = (
             f"scale={width * 2}:{height * 2}:force_original_aspect_ratio=increase,"
             f"crop={width * 2}:{height * 2},"
-            f"zoompan=z='min(1+{step:.6f}*on,{zoom:g})'"
-            f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-            f":d={frames}:s={width}x{height}:fps={fps},"
+            f"{_zoompan(move, frames=frames, zoom=zoom, width=width, height=height, fps=fps)},"
             f"setsar=1,format={_PIX_FMT}"
         )
-    else:
-        vf = f"{vertical_filter(width, height)},format={_PIX_FMT}"
     _exec(
         [exe, "-nostdin", "-y", "-loop", "1", "-i", str(image), "-t", f"{secs:g}",
          "-vf", vf, "-r", str(fps), "-c:v", "libx264", "-preset", "medium",

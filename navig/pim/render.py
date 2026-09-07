@@ -34,7 +34,9 @@ from navig.pim.dates import format_local, humanize_delta
 
 __all__ = [
     "BUCKETS",
+    "bucket_label",
     "bucket_of",
+    "category_label",
     "group_by_bucket",
     "render_agenda",
     "render_category_summary",
@@ -45,12 +47,15 @@ __all__ = [
 # Ordered as they render. The order IS the priority: what is late first, what is
 # happening today next, and the unscheduled pile last, where it reads as something to
 # sort rather than a backlog to feel bad about.
+#: (bucket key, emoji). The WORDS come from the locale files at render time — a
+#: constant here would freeze them in English the way `navig habit add` froze its
+#: reminder text into a cron command.
 BUCKETS: tuple[tuple[str, str], ...] = (
-    ("overdue", "⏰ OVERDUE"),
-    ("today", "📅 TODAY"),
-    ("soon", "🔜 NEXT 7 DAYS"),
-    ("later", "🗓 LATER"),
-    ("inbox", "📥 INBOX"),
+    ("overdue", "⏰"),
+    ("today", "📅"),
+    ("soon", "🔜"),
+    ("later", "🗓"),
+    ("inbox", "📥"),
 )
 
 _MARK_OPEN = "○"
@@ -59,6 +64,50 @@ _MARK_DONE = "●"
 
 def _esc(text: Any) -> str:
     return html.escape(str(text or ""))
+
+
+def _t(key: str, **fields: Any) -> str:
+    """One localized string, or "" when the key is absent so a caller can test it."""
+    try:
+        from navig.core import i18n  # noqa: PLC0415
+
+        text = i18n.t(key, **fields)
+    except Exception:  # noqa: BLE001 — a render must never fail on a locale read
+        return ""
+    return "" if text == key else text
+
+
+def _proposed_origins() -> tuple[str, ...]:
+    """Which origins mean "proposed". Imported lazily: `render` is pure display and
+    must not pull the store in at import time."""
+    try:
+        from navig.store.board import PROPOSED_ORIGINS  # noqa: PLC0415
+
+        return PROPOSED_ORIGINS
+    except Exception:  # noqa: BLE001 — a render must never fail on an import
+        return ("ai", "agent")
+
+
+def category_label(name: str) -> str:
+    """How a category READS. The stored value is unchanged.
+
+    Only the four SEEDS are translated — they are words we ship, so on a fresh install
+    they are the whole picker. A category the operator invented is their own word and
+    is returned untouched; translating it would be rewriting their data.
+
+    The stored value stays the English key on purpose: translating it would break
+    `--category life` after a `/lang` and orphan every row written before the change.
+    """
+    if not name:
+        return _t("pim.category.uncategorised") or "uncategorised"
+    return _t(f"pim.category.{name}") or name
+
+
+def bucket_label(key: str) -> str:
+    """The heading for one bucket, emoji plus the localized word."""
+    emoji = dict(BUCKETS).get(key, "")
+    word = _t(f"pim.bucket.{key}") or key.upper()
+    return f"{emoji} {word}".strip()
 
 
 def bucket_of(todo: dict[str, Any], now: datetime) -> str:
@@ -103,7 +152,7 @@ def todo_line(todo: dict[str, Any], now: datetime, *, show_date: bool = True) ->
 
     category = str(todo.get("category") or "")
     if category:
-        parts.append(f"🗂 {_esc(category)}")
+        parts.append(f"🗂 {_esc(category_label(category))}")
 
     due = to_local(from_utc_iso(todo.get("due_at")))
     if due is not None and show_date:
@@ -111,8 +160,9 @@ def todo_line(todo: dict[str, Any], now: datetime, *, show_date: bool = True) ->
         parts.append(f"{_esc(stamp)} · <i>{_esc(humanize_delta(due, now))}</i>")
 
     if todo.get("recur"):
-        parts.append(f"🔁 {_esc(todo['recur'])}")
-    if todo.get("origin") == "ai":
+        recur = todo["recur"]
+        parts.append(f"🔁 {_esc(_t(f'pim.recur.{recur}') or recur)}")
+    if todo.get("origin") in _proposed_origins():
         # An AI guess must be visibly a guess. Without this the operator cannot tell
         # what they wrote from what was proposed, which is the difference between a
         # suggestion they can dismiss and a task they think they made a commitment to.
@@ -124,27 +174,39 @@ def render_agenda(
     todos: list[dict[str, Any]],
     now: datetime,
     *,
-    title: str = "📋 TODO",
-    empty_hint: str = "Nothing here. Send /todo &lt;something&gt; to capture one.",
+    title: str | None = None,
+    empty_hint: str | None = None,
 ) -> str:
-    """The default view: everything open, grouped, soonest first."""
+    """The default view: everything open, grouped, soonest first.
+
+    `title` and `empty_hint` default to None rather than to an English literal: a
+    default ARGUMENT is evaluated once at import and cannot follow `/lang`, which is
+    exactly how a localized function keeps rendering English.
+    """
     open_todos = [t for t in todos if not t.get("completed_at")]
-    header = f"<b>{_esc(title)}</b> · {len(open_todos)} open"
+    heading = title or f"📋 {_t('pim.title.todo') or 'TODO'}"
+    count = _t("pim.count.open", n=len(open_todos)) or f"{len(open_todos)} open"
+    header = f"<b>{_esc(heading)}</b> · {count}"
     if not open_todos:
-        return f"{header}\n\n<i>{empty_hint}</i>"
+        hint = empty_hint or _t("pim.empty.default") or (
+            "Nothing here. Send /todo &lt;something&gt; to capture one."
+        )
+        return f"{header}\n\n<i>{hint}</i>"
 
     lines = [header]
     grouped = group_by_bucket(open_todos, now)
-    for key, label in BUCKETS:
+    for key, _emoji in BUCKETS:
         rows = grouped.get(key)
         if not rows:
             continue
         suffix = ""
         if key == "today":
-            suffix = f" · {now:%a %d %b}".replace(" 0", " ")
+            # Built from the locale files, never strftime: `%a`/`%b` are the C
+            # locale's names, so this printed "Fri 05 Sep" in every language.
+            suffix = f" · {format_local(now.replace(hour=0, minute=0), now)}"
         elif key == "inbox":
-            suffix = " · no date yet"
-        lines.append(f"\n<b>{label}</b> ({len(rows)}){suffix}")
+            suffix = f" · {_t('pim.inbox.no_date') or 'no date yet'}"
+        lines.append(f"\n<b>{bucket_label(key)}</b> ({len(rows)}){suffix}")
         lines.extend(todo_line(t, now, show_date=key != "inbox") for t in rows)
     return "\n".join(lines)
 
@@ -157,13 +219,19 @@ def render_category_summary(categories: list[dict[str, Any]], now: datetime) -> 
     that is empty exactly when you first need it.
     """
     del now  # signature parity with the other renderers; nothing here is time-dependent
-    lines = ["<b>🗂 BY CATEGORY</b>"]
+    title = f"<b>🗂 {_esc(_t('pim.title.categories') or 'BY CATEGORY')}</b>"
     if not categories:
-        return "<b>🗂 BY CATEGORY</b>\n\n<i>No categories yet.</i>"
+        empty = _t("pim.empty.categories") or "No categories yet."
+        return f"{title}\n\n<i>{_esc(empty)}</i>"
+    lines = [title]
     for row in categories:
-        name = str(row.get("name") or "") or "uncategorised"
+        name = category_label(str(row.get("name") or ""))
         count = int(row.get("open") or 0)
-        marker = f"{count} open" if count else "<i>empty</i>"
+        marker = (
+            (_t("pim.count.open", n=count) or f"{count} open")
+            if count
+            else f"<i>{_esc(_t('pim.category.empty') or 'empty')}</i>"
+        )
         lines.append(f"  🗂 <b>{_esc(name)}</b> — {marker}")
     return "\n".join(lines)
 
@@ -181,12 +249,14 @@ def render_detail(todo: dict[str, Any], now: datetime) -> str:
     if due is not None:
         lines.append(f"📅 {_esc(format_local(due, now))} · <i>{_esc(humanize_delta(due, now))}</i>")
     else:
-        lines.append("📥 <i>in the inbox — no date yet</i>")
+        lines.append(f"📥 <i>{_esc(_t('pim.detail.inbox') or 'in the inbox — no date yet')}</i>")
 
     if todo.get("category"):
-        lines.append(f"🗂 {_esc(todo['category'])}")
+        lines.append(f"🗂 {_esc(category_label(str(todo['category'])))}")
     if todo.get("recur"):
-        lines.append(f"🔁 repeats {_esc(todo['recur'])}")
+        recur = todo["recur"]
+        word = _t(f"pim.recur.{recur}") or recur
+        lines.append(f"🔁 {_esc(_t('pim.detail.repeats', recur=word) or f'repeats {word}')}")
 
     leads = todo.get("remind_before") or []
     if leads:
@@ -194,14 +264,16 @@ def render_detail(todo: dict[str, Any], now: datetime) -> str:
 
         lines.append("🔔 " + _esc(", ".join(describe_lead(x) for x in leads)))
     elif due is not None:
-        lines.append("🔔 <i>no reminder set</i>")
+        lines.append(f"🔔 <i>{_esc(_t('pim.detail.no_reminder') or 'no reminder set')}</i>")
 
     if todo.get("space"):
-        lines.append(f"🧩 space: {_esc(todo['space'])}")
-    if todo.get("origin") == "ai":
-        lines.append("✨ <i>suggested from your spaces</i>")
+        space = _t("pim.detail.space", space=todo["space"]) or f"space: {todo['space']}"
+        lines.append(f"🧩 {_esc(space)}")
+    if todo.get("origin") in _proposed_origins():
+        suggested = _t("pim.detail.suggested") or "suggested from your spaces"
+        lines.append(f"✨ <i>{_esc(suggested)}</i>")
     if todo.get("notes"):
         lines.append(f"\n{_esc(todo['notes'])}")
     if todo.get("completed_at"):
-        lines.append("\n✅ <i>done</i>")
+        lines.append(f"\n✅ <i>{_esc(_t('pim.detail.done') or 'done')}</i>")
     return "\n".join(lines)

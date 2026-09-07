@@ -414,6 +414,49 @@ _COMMAND_OWNER: dict[str, str] = {c: e.id for e in EXTENSIONS for c in e.command
 _ACTION_OWNER: dict[str, str] = {a: e.id for e in EXTENSIONS for a in e.reply_actions}
 
 
+def _localized(key: str, fallback: str) -> str:
+    """One catalog string in the operator's language, or the English one it ships with.
+
+    The dataclass keeps the English text as the fallback rather than a key, so an
+    extension added without locale entries still renders a real sentence instead of
+    `tgext.whatever.description`.
+    """
+    try:
+        from navig.core import i18n  # noqa: PLC0415
+
+        text = i18n.t(key)
+    except Exception:  # noqa: BLE001 — a card must never fail on a locale read
+        return fallback
+    return fallback if text == key else text
+
+
+def ext_label(ext: TelegramExtension) -> str:
+    """The extension's name, as the operator reads it."""
+    return _localized(f"tgext.{ext.id}.label", ext.label)
+
+
+def ext_description(ext: TelegramExtension) -> str:
+    """The one-line description — what the operator reads to decide."""
+    return _localized(f"tgext.{ext.id}.description", ext.description)
+
+
+def ext_about(ext: TelegramExtension) -> list[str]:
+    """The "switching it off" bullets, positionally keyed.
+
+    Keyed by INDEX rather than by content: the bullets are ordered prose and the
+    order is the meaning ("nothing is deleted" always comes last). An index that
+    outruns the catalog falls back to the English bullet.
+    """
+    return [
+        _localized(f"tgext.{ext.id}.about.{i}", line) for i, line in enumerate(ext.about)
+    ]
+
+
+def group_label(group: str) -> str:
+    """A group heading — Life / Systems / Comms / Create / Knowledge."""
+    return _localized(f"tgext.group.{group}", group)
+
+
 def get(ext_id: str) -> TelegramExtension | None:
     """Return the extension with this id (with or without the ``tg:`` prefix)."""
     key = ext_id[len(_MODULE_PREFIX):] if ext_id.startswith(_MODULE_PREFIX) else ext_id
@@ -692,9 +735,12 @@ def list_extensions() -> dict[str, Any]:
         rows.append({
             "id": e.module_id,
             "key": e.id,
-            "label": e.label,
-            "description": e.description,
+            # Localized HERE so the bot card, the CLI table and the Deck cannot
+            # disagree — that is the whole reason this producer is shared.
+            "label": ext_label(e),
+            "description": ext_description(e),
             "group": e.group,
+            "group_label": group_label(e.group),
             "icon": e.icon,
             "enabled": enabled,
             "default_enabled": e.default_enabled,
@@ -708,10 +754,13 @@ def list_extensions() -> dict[str, Any]:
             "callbacks": list(e.callback_prefixes),
             "reply_actions": sorted(e.reply_actions),
             "legacy_key": e.legacy_key,
-            "about": list(e.about),
+            "about": ext_about(e),
         })
     return {
         "extensions": rows,
         "counts": {"total": len(rows), "on": on, "off": len(rows) - on},
         "group_order": list(GROUP_ORDER),
+        # The keys stay English — the Deck groups rows by `group` and a localized
+        # key would stop matching. `group_labels` is the display side.
+        "group_labels": {g: group_label(g) for g in GROUP_ORDER},
     }

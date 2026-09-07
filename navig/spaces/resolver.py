@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -34,6 +35,30 @@ def _find_project_navig_root(cwd: Path) -> Path | None:
     return None
 
 
+logger = logging.getLogger(__name__)
+
+
+def _registered_path(canonical: str) -> Path | None:
+    """The registry's path for a canonical id, when it still exists on disk.
+
+    A cheap file read instead of a discovery walk — worth ~0.33s per miss. Returns None
+    for an id the registry does not know or whose directory has since been deleted, so
+    a stale row can never resolve to a path that is not there.
+    """
+    try:
+        from navig.spaces import registry as _registry  # noqa: PLC0415
+
+        for entry in _registry.load_registry().get("spaces", []):
+            if entry.get("id") != canonical:
+                continue
+            candidate = Path(str(entry.get("path", "")))
+            if candidate.is_dir():
+                return candidate
+    except Exception:  # noqa: BLE001 — an unreadable registry must not break resolution
+        logger.debug("registry lookup failed for %r", canonical)
+    return None
+
+
 def resolve_space(name: str, cwd: Path | None = None) -> SpaceConfig:
     current_dir = (cwd or Path.cwd()).resolve()
     canonical = normalize_space_name(name)
@@ -50,6 +75,45 @@ def resolve_space(name: str, cwd: Path | None = None) -> SpaceConfig:
             )
 
     global_space = paths.spaces_dir() / canonical
+    if global_space.exists():
+        return SpaceConfig(
+            requested_name=name,
+            canonical_name=canonical,
+            path=global_space,
+            scope="global",
+        )
+
+    # A space's canonical id comes from its MANIFEST, not its folder name:
+    # `dev-android-space` is `android`, `research-space` is `company-research`. Without
+    # this lookup the two paths above miss every such space and the conventional path
+    # below is returned for a directory that does not exist — measured at 18 of 19 on a
+    # real install, which made `space next`, progress and kickoff answer "nothing here"
+    # for all of them. Only reached when neither exact path is on disk.
+    registered = _registered_path(canonical)
+    if registered is not None:
+        return SpaceConfig(
+            requested_name=name,
+            canonical_name=canonical,
+            path=registered,
+            scope="global",
+        )
+
+    try:
+        found = discover_space_paths(cwd=current_dir).get(canonical)
+    except Exception:  # noqa: BLE001 — resolution must not fail on a bad space dir
+        logger.debug("space discovery failed while resolving %r", name)
+        found = None
+    if found is not None:
+        return SpaceConfig(
+            requested_name=name,
+            canonical_name=canonical,
+            path=found.path,
+            scope=found.scope,
+        )
+
+    # Nothing on disk under that name. Return the conventional location anyway so
+    # `space init` has somewhere to create it — callers that need an existing space
+    # already check `.exists()`.
     return SpaceConfig(
         requested_name=name,
         canonical_name=canonical,
@@ -97,6 +161,37 @@ def _is_space(entry: Path) -> bool:
     return any((entry / f).exists() for f in ("VISION.md", "index.md", "CURRENT_PHASE.md"))
 
 
+FOLD_MARKER = ".folded"
+FOLDED_DIR = ".navig.folded"
+
+
+def is_folded(entry: Path) -> bool:
+    """True when *entry* is a deliberately demoted sub-space.
+
+    A *folded* space belongs to a larger one: it is never discovered, never listed, and
+    never written to ``spaces.json``. Without this, a nested space claims a top-level id
+    the moment anyone cds into it — permanently, because :func:`discover_space_paths`
+    registers *before* it filters on enabled, so ``space disable`` cannot take it back.
+
+    Two spellings, because both exist in the wild:
+
+    * ``.navig/.folded`` — the marker written by ``navig space fold``. A *soft* fold: the
+      folder still resolves as a capability root when your cwd is inside it, so its
+      agents, wiki and inbox keep working. This is the one to prefer.
+    * ``.navig.folded/`` — the whole dir renamed, done by hand before this verb existed.
+      A *hard* fold: nothing inside is reachable by navig at all, since
+      :func:`_find_project_navig_root` matches ``.navig`` exactly and walks straight past
+      it to the parent space. Recognised so audit and ``unfold`` understand it.
+
+    Cheap and total: this runs on every discovery hit, and an unreadable path is simply
+    "not folded" rather than an error.
+    """
+    try:
+        return (entry / ".navig" / FOLD_MARKER).is_file() or (entry / FOLDED_DIR).is_dir()
+    except OSError:
+        return False
+
+
 def _project_has_content(entry: Path) -> bool:
     """The opened folder counts as a listable space only if it has real content
     (a manifest or plans) — a bare, empty ``.navig/`` is a workshop for cwd/
@@ -132,6 +227,11 @@ def discover_space_paths(
         except Exception:  # noqa: BLE001
             rp = str(entry)
         if rp in seen:
+            return
+        # A folded sub-space is invisible to discovery. Guarding here — the single
+        # chokepoint every source funnels through — is what keeps it out of
+        # `spaces.json`, since `ensure_registered` below writes before any filtering.
+        if is_folded(entry):
             return
         man = load_space_manifest(entry)
         sid = man.resolved_id or entry.name

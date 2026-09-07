@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from navig.spaces.progress import _safe_read, collect_spaces_progress, read_space_progress
+from navig.spaces.progress import collect_spaces_progress, read_space_progress
 from navig.spaces.resolver import resolve_space
 
 _PENDING_RE = re.compile(r"^\s*-\s*\[\s\]\s*(.+)$", re.MULTILINE)
@@ -34,8 +34,9 @@ def get_space_next_action(
     if not cfg.path.exists():
         return None
 
-    current_phase = cfg.path / "CURRENT_PHASE.md"
-    task = first_pending_task(_safe_read(current_phase))
+    from navig.spaces.plan_files import read_plan  # noqa: PLC0415
+
+    task = first_pending_task(read_plan(cfg.path, "CURRENT_PHASE.md"))
     progress = read_space_progress(cfg.canonical_name, cfg.path, cfg.scope)
 
     return SpaceNextAction(
@@ -48,13 +49,15 @@ def get_space_next_action(
 
 
 def select_best_next_action(cwd: Path | None = None) -> SpaceNextAction | None:
+    from navig.spaces.plan_files import read_plan  # noqa: PLC0415
+
     rows = collect_spaces_progress(cwd=cwd)
     if not rows:
         return None
 
     candidates: list[SpaceNextAction] = []
     for row in rows:
-        task = first_pending_task(_safe_read(row.path / "CURRENT_PHASE.md"))
+        task = first_pending_task(read_plan(row.path, "CURRENT_PHASE.md"))
         candidates.append(
             SpaceNextAction(
                 space=row.name,

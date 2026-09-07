@@ -28093,6 +28093,96 @@
       "aliases": [],
       "arguments": [
         {
+          "name": "shotlist",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig pipeline clip"
+      ],
+      "handler": "pipeline_clip",
+      "module": "navig_pipeline.commands.pipeline",
+      "options": [
+        {
+          "flags": [
+            "--audio",
+            "-a"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--look"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--size"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--fps"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--captions"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--model"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--bpm"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--port"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig pipeline clip",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83c\udfb5 Build a vertical clip cut to a track you already have \u2014 no narration.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
           "name": "scenario",
           "required": true,
           "variadic": false
@@ -30207,7 +30297,7 @@
       "path": "navig repo lock release",
       "since": "",
       "status": "stable",
-      "summary": "Release the agent lock (stale locks always; fresh locks need --force).",
+      "summary": "Release the agent lock.",
       "tags": []
     },
     {
@@ -33629,6 +33719,27 @@
       "aliases": [],
       "arguments": [
         {
+          "name": "path",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig space fold"
+      ],
+      "handler": "space_fold",
+      "module": "navig.commands.space",
+      "options": [],
+      "path": "navig space fold",
+      "since": "",
+      "status": "stable",
+      "summary": "Demote a sub-space: keep it working, hide it from discovery and the registry.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
           "name": "name",
           "required": true,
           "variadic": false
@@ -33860,6 +33971,27 @@
       "since": "",
       "status": "stable",
       "summary": "Activate a space \u2014 binds the agent's working directory to the workshop.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "path",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig space unfold"
+      ],
+      "handler": "space_unfold",
+      "module": "navig.commands.space",
+      "options": [],
+      "path": "navig space unfold",
+      "since": "",
+      "status": "stable",
+      "summary": "Undo `space fold` \u2014 the folder becomes a discoverable space again.",
       "tags": []
     },
     {
@@ -34224,6 +34356,27 @@
       "aliases": [],
       "arguments": [
         {
+          "name": "path",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig spaces fold"
+      ],
+      "handler": "space_fold",
+      "module": "navig.commands.space",
+      "options": [],
+      "path": "navig spaces fold",
+      "since": "",
+      "status": "stable",
+      "summary": "Demote a sub-space: keep it working, hide it from discovery and the registry.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
           "name": "name",
           "required": true,
           "variadic": false
@@ -34455,6 +34608,27 @@
       "since": "",
       "status": "stable",
       "summary": "Activate a space \u2014 binds the agent's working directory to the workshop.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "path",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig spaces unfold"
+      ],
+      "handler": "space_unfold",
+      "module": "navig.commands.space",
+      "options": [],
+      "path": "navig spaces unfold",
+      "since": "",
+      "status": "stable",
+      "summary": "Undo `space fold` \u2014 the folder becomes a discoverable space again.",
       "tags": []
     },
     {
@@ -40970,7 +41144,7 @@
       "tags": []
     }
   ],
-  "generated_at": "2026-09-06T13:59:46.722718+00:00",
+  "generated_at": "2026-09-07T14:38:05.854606+00:00",
   "schema_version": "1.0.0",
-  "total": 1396
+  "total": 1401
 }

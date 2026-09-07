@@ -29,6 +29,17 @@ from . import permissions
 
 logger = logging.getLogger(__name__)
 
+
+def _t(key: str, **fields: object) -> str:
+    """A shared-locale string, resolved against the operator's ONE language.
+
+    Imported lazily like the rest of this module's heavy dependencies: `navig help`
+    must stay under 50ms and this module is only reached from a TikTok link.
+    """
+    from navig.core import i18n  # noqa: PLC0415
+
+    return i18n.t(key, **fields)
+
 # Reaction emojis that trigger a TikTok analysis (owner-remappable via config
 # telegram.business.emoji.<emoji> = tiktok). Kept separate from the canned/AI
 # reaction tables so each concern stays independent.
@@ -102,11 +113,17 @@ _UNREADABLE = _engine_error("TikTokUnreadableResponse")
 #: post and then failed on it repeatedly with nothing changed), so this names the
 #: likely one FIRST and the other as the fallback. Asserting "your downloader is
 #: out of date" would be confidently wrong most of the time.
+#: The English fallback. A module constant is evaluated at IMPORT and cannot follow
+#: a later `/lang`, so the card reads it through `_unreadable_hint()` instead.
 _UNREADABLE_HINT = (
     "🔧 TikTok returned something the downloader could not read. This is "
     "usually temporary — try again in a few minutes. If it keeps happening, update "
     "the downloader: `pip install -U yt-dlp`."
 )
+
+
+def _unreadable_hint() -> str:
+    return _t("tiktok.hint.unreadable")
 
 #: What to say when TikTok will only serve a post to a logged-in session. ONE
 #: string: five workers and the card all report this.
@@ -131,6 +148,10 @@ _LOGIN_HINT = (
     "or private). Sign in once with `navig tt login`, then try again — if you have "
     "already signed in, your saved session has expired, so run it again."
 )
+
+
+def _login_hint() -> str:
+    return _t("tiktok.hint.login")
 
 #: (chat_id, action, url) tuples currently being worked on, so a second tap on a
 #: button that is still running is answered instead of starting a duplicate
@@ -307,23 +328,23 @@ async def offer_card(channel, chat_id: int, message_id: int, text: str, *,
         # Append, never return: `offer_card` OWNS the message, so returning here
         # would send no card and no buttons at all — the agent has already been
         # skipped, and the user would get silence instead of a degraded card.
-        card += "\n\n" + _html.escape(_UNREADABLE_HINT)
+        card += "\n\n" + _html.escape(_unreadable_hint())
     except _LOGIN:
         # A bare "TikTok link" card with no title, stats or picture is what an
         # age-gated post produced, and it looks identical to a slow lookup — so the
         # operator taps every button in turn and each one fails differently. Say it
         # once, on the card, where the emptiness is.
-        card += "\n\n" + _html.escape(_LOGIN_HINT)
+        card += "\n\n" + _html.escape(_login_hint())
     except Exception as exc:  # noqa: BLE001
         logger.debug("tiktok card metadata failed: %s", exc)
     keyboard = [
         [
-            {"text": "⬇️ Download", "callback_data": f"tk:dl:{chat_id}:{message_id}"},
-            {"text": "🔍 Analyse", "callback_data": f"tk:an:{chat_id}:{message_id}"},
+            {"text": _t("tiktok.btn.download"), "callback_data": f"tk:dl:{chat_id}:{message_id}"},
+            {"text": _t("tiktok.btn.analyse"), "callback_data": f"tk:an:{chat_id}:{message_id}"},
         ],
         [
-            {"text": "📝 Transcript", "callback_data": f"tk:tr:{chat_id}:{message_id}"},
-            {"text": "🎧 Audio", "callback_data": f"tk:au:{chat_id}:{message_id}"},
+            {"text": _t("tiktok.btn.transcript"), "callback_data": f"tk:tr:{chat_id}:{message_id}"},
+            {"text": _t("tiktok.btn.audio"), "callback_data": f"tk:au:{chat_id}:{message_id}"},
         ],
     ]
     # A caption too long for one Telegram message gets a way to read the rest.
@@ -331,7 +352,7 @@ async def offer_card(channel, chat_id: int, message_id: int, text: str, *,
     # teaches the operator to ignore it, and most captions fit whole.
     if _card_overflows(meta):
         keyboard.append(
-            [{"text": "📄 Full text", "callback_data": f"tk:tx:{chat_id}:{message_id}"}]
+            [{"text": _t("tiktok.btn.fulltext"), "callback_data": f"tk:tx:{chat_id}:{message_id}"}]
         )
     # The picture first, then the card. A photo post whose card showed no image at
     # all was the operator's report; see _send_cover for why it cannot be one
@@ -394,11 +415,11 @@ async def handle_callback(channel, cb_data: str, chat_id: int, message_id: int,
         return
     action, src_chat, src_msg = parts[1], parts[2], parts[3]
     if not permissions.can_use("download", is_owner=_is_owner(channel, user_id)):
-        await channel.send_message(chat_id, "⛔ Not permitted.", parse_mode=None)
+        await channel.send_message(chat_id, _t("tiktok.err.not_permitted"), parse_mode=None)
         return
     url = engine.extract_url(source_text or "") or _url_from_ref(src_chat, src_msg)
     if not url:
-        await channel.send_message(chat_id, "Couldn't find the TikTok link.", parse_mode=None)
+        await channel.send_message(chat_id, _t("tiktok.err.no_link"), parse_mode=None)
         return
     worker = _worker_for(action)
     if worker is None:
@@ -424,7 +445,7 @@ async def run_action(channel, chat_id: int, action: str, url: str, worker) -> No
     key = (int(chat_id), action, url)
     if key in _IN_FLIGHT:
         await channel.send_message(
-            chat_id, "⏳ Already working on that one — hang on.", parse_mode=None)
+            chat_id, _t("tiktok.busy"), parse_mode=None)
         return
     _IN_FLIGHT.add(key)
     try:
@@ -752,7 +773,7 @@ async def _spoken_text(url: str, *, channel=None, chat_id: int | None = None) ->
         try:
             await channel.send_message(
                 chat_id,
-                "🎧 No caption to work from — listening to the audio first…",
+                _t("tiktok.analyse.no_caption_audio"),
                 parse_mode=None,
             )
         except Exception as exc:  # noqa: BLE001 — a progress note is not worth failing over
@@ -804,7 +825,7 @@ async def _post_text(url: str, *, channel=None, chat_id: int | None = None) -> _
         try:
             await channel.send_message(
                 chat_id,
-                "🖼 No caption to work from — reading the slides first…",
+                _t("tiktok.analyse.no_caption_slides"),
                 parse_mode=None,
             )
         except Exception as exc:  # noqa: BLE001 — a progress note is not worth failing over
@@ -860,7 +881,7 @@ async def _do_analyse(channel, chat_id: int, url: str) -> None:
             get_transcript=_enrich,
         )
     except _UNAVAILABLE:
-        await channel.send_message(chat_id, "TikTok engine unavailable — reinstall navig-download.", parse_mode=None)
+        await channel.send_message(chat_id, _t("tiktok.err.engine_missing"), parse_mode=None)
         return
     except _UNREADABLE:
         await channel.send_message(chat_id, _UNREADABLE_HINT, parse_mode=None)
@@ -872,21 +893,22 @@ async def _do_analyse(channel, chat_id: int, url: str) -> None:
         # Honesty: a bot-wall is NOT "couldn't analyse" — say so and how to escalate.
         await channel.send_message(
             chat_id,
-            "🚧 TikTok blocked this request (bot-wall). Try again shortly, or configure a "
-            "proxy / cookies for the scraper.",
+            _t("tiktok.err.botwall_analyse"),
             parse_mode=None)
         return
     except Exception as exc:  # noqa: BLE001
         logger.warning("tiktok analyse failed: %s", exc)
-        await channel.send_message(chat_id, "Couldn't analyse that video.", parse_mode=None)
+        await channel.send_message(chat_id, _t("tiktok.err.analyse"), parse_mode=None)
         return
     meta = result["meta"]
     if meta.get("comments_blocked"):
         # Distinguish "no comments" from "comments gated" so the brief isn't misread.
         await channel.send_message(
             chat_id,
-            f"ℹ️ Comments were gated (TikTok reported {meta.get('comment_count') or 0:,} but "
-            "served none) — the briefing below uses the description only.",
+            _t(
+                "tiktok.comments_gated",
+                count=f"{meta.get('comment_count') or 0:,}",
+            ),
             parse_mode=None)
     brief = result["brief"] or _fallback_brief(meta)
     # The brief is markdown (headings/bullets/quotes) — send it as a RICH message so
@@ -928,14 +950,17 @@ async def _do_download(channel, chat_id: int, url: str) -> None:
                 saved = clip.keep("videos")
                 await channel.send_message(
                     chat_id,
-                    f"⬇️ Downloaded ({size // 1_000_000} MB) — too large to upload here. "
-                    f"Saved to <code>{_html.escape(saved)}</code>.",
+                    _t(
+                        "tiktok.download.too_large",
+                        mb=size // 1_000_000,
+                        path=_html.escape(saved),
+                    ),
                     parse_mode="HTML",
                 )
                 return
             with open(clip.path, "rb") as fh:
                 data = fh.read()
-            sent = await channel.send_video(chat_id, data, caption="⬇️ via NAVIG")
+            sent = await channel.send_video(chat_id, data, caption=_t("tiktok.download.caption"))
             # send_video returns None on a REJECTED send without raising, so the
             # except below never fires. Treating that as success discarded the only
             # copy of a video the user never received — total silent loss.
@@ -943,8 +968,7 @@ async def _do_download(channel, chat_id: int, url: str) -> None:
                 saved = clip.keep("videos")
                 await channel.send_message(
                     chat_id,
-                    "⬇️ Downloaded, but Telegram rejected the upload. Saved to "
-                    f"<code>{_html.escape(saved)}</code>.",
+                    _t("tiktok.download.rejected", path=_html.escape(saved)),
                     parse_mode="HTML",
                 )
     except _NO_VIDEO:
@@ -952,7 +976,7 @@ async def _do_download(channel, chat_id: int, url: str) -> None:
         # only the format list gave it away. Same destination as the check above.
         await _do_download_images(channel, chat_id, url)
     except _UNAVAILABLE:
-        await channel.send_message(chat_id, "Downloader unavailable — reinstall navig-download.", parse_mode=None)
+        await channel.send_message(chat_id, _t("tiktok.err.downloader_missing"), parse_mode=None)
     except _UNREADABLE:
         await channel.send_message(chat_id, _UNREADABLE_HINT, parse_mode=None)
         return
@@ -964,12 +988,11 @@ async def _do_download(channel, chat_id: int, url: str) -> None:
         # said so for a while and this one silently called it a generic failure.
         await channel.send_message(
             chat_id,
-            "🚧 TikTok blocked the download (bot-wall). Try again shortly, or configure a "
-            "proxy / cookies for the downloader.",
+            _t("tiktok.err.botwall_download"),
             parse_mode=None)
     except Exception as exc:  # noqa: BLE001
         logger.warning("tiktok download failed: %s", exc)
-        await channel.send_message(chat_id, "Couldn't download that video.", parse_mode=None)
+        await channel.send_message(chat_id, _t("tiktok.err.download"), parse_mode=None)
 
 
 async def _do_download_images(channel, chat_id: int, url: str) -> None:
@@ -983,8 +1006,11 @@ async def _do_download_images(channel, chat_id: int, url: str) -> None:
                 # download failure for a post that has no video to download.
                 await channel.send_message(
                     chat_id,
-                    "🖼 This is a photo post and its images couldn't be read — TikTok may "
-                    "have gated the page. 🔍 Analyse and 🎧 Audio still work.",
+                    _t(
+                        "tiktok.photo.unreadable",
+                        analyse=_t("tiktok.btn.analyse"),
+                        audio=_t("tiktok.btn.audio"),
+                    ),
                     parse_mode=None)
                 return
             blobs = [Path(p).read_bytes() for p in paths]
@@ -1012,17 +1038,17 @@ async def _do_download_images(channel, chat_id: int, url: str) -> None:
             if sent < len(paths):
                 await channel.send_message(
                     chat_id,
-                    f"🖼 Sent {sent} of {len(paths)} slides — Telegram rejected the rest.",
+                    _t("tiktok.photo.partial", sent=sent, total=len(paths)),
                     parse_mode=None)
             if total > len(paths):
                 # A cap that says nothing presents part of a post as the whole.
                 await channel.send_message(
-                    chat_id, f"🖼 Showing the first {len(paths)} of {total} slides.",
+                    chat_id, _t("tiktok.photo.capped", shown=len(paths), total=total),
                     parse_mode=None)
     except Exception as exc:  # noqa: BLE001
         logger.warning("tiktok photo download failed: %s", exc)
         await channel.send_message(
-            chat_id, "Couldn't download that photo post.", parse_mode=None)
+            chat_id, _t("tiktok.err.photo_download"), parse_mode=None)
 
 
 def _fallback_brief(meta: dict) -> str:
@@ -1052,8 +1078,11 @@ async def _do_audio(channel, chat_id: int, url: str) -> None:
                 saved = clip.keep("audio")
                 await channel.send_message(
                     chat_id,
-                    f"🎧 Extracted ({size // 1_000_000} MB) — too large to upload here. "
-                    f"Saved to <code>{_html.escape(saved)}</code>.",
+                    _t(
+                        "tiktok.audio.too_large",
+                        mb=size // 1_000_000,
+                        path=_html.escape(saved),
+                    ),
                     parse_mode="HTML",
                 )
                 return
@@ -1067,13 +1096,12 @@ async def _do_audio(channel, chat_id: int, url: str) -> None:
                 saved = clip.keep("audio")
                 await channel.send_message(
                     chat_id,
-                    "🎧 Extracted, but Telegram rejected the upload. Saved to "
-                    f"<code>{_html.escape(saved)}</code>.",
+                    _t("tiktok.audio.rejected", path=_html.escape(saved)),
                     parse_mode="HTML",
                 )
     except _UNAVAILABLE:
         await channel.send_message(
-            chat_id, "Downloader unavailable — reinstall navig-download.", parse_mode=None)
+            chat_id, _t("tiktok.err.downloader_missing"), parse_mode=None)
     except _UNREADABLE:
         await channel.send_message(chat_id, _UNREADABLE_HINT, parse_mode=None)
         return
@@ -1082,11 +1110,11 @@ async def _do_audio(channel, chat_id: int, url: str) -> None:
         return
     except _BLOCKED:
         await channel.send_message(
-            chat_id, "🚧 TikTok blocked the audio fetch (bot-wall). Try again shortly.",
+            chat_id, _t("tiktok.err.botwall_audio"),
             parse_mode=None)
     except Exception as exc:  # noqa: BLE001
         logger.warning("tiktok audio failed: %s", exc)
-        await channel.send_message(chat_id, "Couldn't extract the audio.", parse_mode=None)
+        await channel.send_message(chat_id, _t("tiktok.err.audio"), parse_mode=None)
 
 
 async def _do_full_text(channel, chat_id: int, url: str) -> None:
@@ -1100,7 +1128,7 @@ async def _do_full_text(channel, chat_id: int, url: str) -> None:
             asyncio.to_thread(engine.info, url), timeout=_INFO_TIMEOUT)
     except TimeoutError:
         await channel.send_message(
-            chat_id, "📄 TikTok took too long to answer — try again in a moment.",
+            chat_id, _t("tiktok.err.timeout"),
             parse_mode=None)
         return
     except _UNREADABLE:
@@ -1111,23 +1139,23 @@ async def _do_full_text(channel, chat_id: int, url: str) -> None:
         return
     except _BLOCKED:
         await channel.send_message(
-            chat_id, "🚧 TikTok blocked the request (bot-wall). Try again shortly.",
+            chat_id, _t("tiktok.err.botwall_caption"),
             parse_mode=None)
         return
     except _UNAVAILABLE:
         await channel.send_message(
-            chat_id, "Downloader unavailable — reinstall navig-download.", parse_mode=None)
+            chat_id, _t("tiktok.err.downloader_missing"), parse_mode=None)
         return
     except Exception as exc:  # noqa: BLE001
         logger.warning("tiktok full text failed: %s", exc)
-        await channel.send_message(chat_id, "Couldn't read that caption.", parse_mode=None)
+        await channel.send_message(chat_id, _t("tiktok.err.caption"), parse_mode=None)
         return
 
     desc = (meta.get("description") or "").strip()
     if not desc:
         # An empty caption is a real answer, and a different one from "I failed".
         await channel.send_message(
-            chat_id, "📄 This post has no caption text.", parse_mode=None)
+            chat_id, _t("tiktok.caption.empty"), parse_mode=None)
         return
     body = f"📄 <b>Full caption</b>\n\n{_html.escape(desc)}"
     if link := meta.get("url"):
@@ -1234,7 +1262,7 @@ async def _do_transcript(channel, chat_id: int, url: str) -> None:
         await _do_transcript_photo(channel, chat_id, url)
         return
     try:
-        await channel.send_message(chat_id, "📝 Reading the video…", parse_mode=None)
+        await channel.send_message(chat_id, _t("tiktok.read.video"), parse_mode=None)
         async with _fetched(url) as clip:
             from navig.gateway.channels.telegram_catalog_analyzer import analyze_video_file
 
@@ -1247,7 +1275,7 @@ async def _do_transcript(channel, chat_id: int, url: str) -> None:
         return
     except _UNAVAILABLE:
         await channel.send_message(
-            chat_id, "Downloader unavailable — reinstall navig-download.", parse_mode=None)
+            chat_id, _t("tiktok.err.downloader_missing"), parse_mode=None)
         return
     except _UNREADABLE:
         await channel.send_message(chat_id, _UNREADABLE_HINT, parse_mode=None)
@@ -1257,12 +1285,12 @@ async def _do_transcript(channel, chat_id: int, url: str) -> None:
         return
     except _BLOCKED:
         await channel.send_message(
-            chat_id, "🚧 TikTok blocked the fetch (bot-wall). Try again shortly.",
+            chat_id, _t("tiktok.err.botwall_read"),
             parse_mode=None)
         return
     except Exception as exc:  # noqa: BLE001
         logger.warning("tiktok transcript failed: %s", exc)
-        await channel.send_message(chat_id, "Couldn't read that video.", parse_mode=None)
+        await channel.send_message(chat_id, _t("tiktok.err.read"), parse_mode=None)
         return
 
     # Name the missing dependency instead of reporting an empty result: "nothing
@@ -1270,8 +1298,7 @@ async def _do_transcript(channel, chat_id: int, url: str) -> None:
     if note == "ffmpeg_unavailable":
         await channel.send_message(
             chat_id,
-            "📝 Can't read this video — ffmpeg isn't installed, so the audio and "
-            "frames can't be extracted. Install ffmpeg and try again.",
+            _t("tiktok.err.no_ffmpeg"),
             parse_mode=None)
         return
 
@@ -1296,12 +1323,12 @@ async def _do_transcript(channel, chat_id: int, url: str) -> None:
     if note == "ocr_unavailable":
         if sections:
             await channel.send_rich_message(
-                chat_id, markdown="📝 **Transcript**\n\n" + "\n\n".join(sections)
+                chat_id, markdown=_t("tiktok.transcript.title") + "\n\n" + "\n\n".join(sections)
             )
             await channel.send_message(chat_id, caveat, parse_mode=None)
         else:
             await channel.send_message(
-                chat_id, "📝 No speech in this clip.\n\n" + caveat, parse_mode=None)
+                chat_id, _t("tiktok.transcript.no_speech") + "\n\n" + caveat, parse_mode=None)
         return
 
     if not sections:
@@ -1310,12 +1337,12 @@ async def _do_transcript(channel, chat_id: int, url: str) -> None:
         # reading the wrong language, in which case "nothing there" is a guess.
         await channel.send_message(
             chat_id,
-            "📝 Nothing to read — no speech and no on-screen text detected in this clip."
+            _t("tiktok.transcript.nothing_video")
             + (f"\n\n{caveat}" if caveat else ""),
             parse_mode=None)
         return
     await channel.send_rich_message(
-        chat_id, markdown="📝 **Transcript**\n\n" + "\n\n".join(sections)
+        chat_id, markdown=_t("tiktok.transcript.title") + "\n\n" + "\n\n".join(sections)
     )
     if caveat:
         # Text WAS read — and may be noise. Saying so beats presenting garbage
@@ -1409,7 +1436,7 @@ async def _do_transcript_photo(channel, chat_id: int, url: str) -> None:
     slideshow has none, so pointing it here would return an empty result for a
     post that is mostly words.
     """
-    await channel.send_message(chat_id, "📝 Reading the photo post…", parse_mode=None)
+    await channel.send_message(chat_id, _t("tiktok.read.photo"), parse_mode=None)
     spoken = await _spoken_text(url)
     on_screen = await _ocr_slides(url)
 
@@ -1432,14 +1459,14 @@ async def _do_transcript_photo(channel, chat_id: int, url: str) -> None:
     )
     if sections:
         await channel.send_rich_message(
-            chat_id, markdown="📝 **Transcript**\n\n" + "\n\n".join(sections))
+            chat_id, markdown=_t("tiktok.transcript.title") + "\n\n" + "\n\n".join(sections))
         if caveat:
             await channel.send_message(chat_id, caveat, parse_mode=None)
         return
 
     await channel.send_message(
         chat_id,
-        "📝 Nothing to read — no speech and no text detected in the slides."
+        _t("tiktok.transcript.nothing_slides")
         + (f"\n\n{caveat}" if caveat else ""),
         parse_mode=None)
 

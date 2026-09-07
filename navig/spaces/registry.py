@@ -133,12 +133,28 @@ def register(
 def ensure_registered(
     path: str | Path, *, id: str | None = None, name: str | None = None, source: str = "root"
 ) -> None:
-    """Register *path* only if unknown — idempotent, writes at most once per space."""
+    """Register *path*, and correct a drifted id. Writes only when something changed.
+
+    ⚠ This used to return the moment the PATH was known, so an entry written before the
+    space had a manifest kept its FOLDER name as its id forever — `company-space` for a
+    space canonically called `company`. All 19 entries on a real install were like that,
+    which made a lookup by canonical id miss precisely the spaces that needed one.
+
+    The id is a derived LABEL, not a key held anywhere else: `_find` matches by id or
+    path, `is_enabled`/`is_trusted` take a path, and `enabled`/`trusted` live on the row
+    — so correcting it preserves every stored state.
+    """
     reg = _load_for_mutation()
     if reg is None:
         return  # registry locked — skip; a corrupt/locked read must not wipe it
     rp = _norm(path)
-    if any(_norm(e.get("path", "")) == rp for e in reg["spaces"]):
+    existing = next((e for e in reg["spaces"] if _norm(e.get("path", "")) == rp), None)
+    if existing is not None:
+        if id and existing.get("id") != id:
+            existing["id"] = id
+            if name:
+                existing["name"] = name
+            save_registry(reg)
         return
     reg["spaces"].append({
         "id": id or Path(rp).name, "name": name or Path(rp).name,

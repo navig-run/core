@@ -68,6 +68,10 @@ _WEEKDAYS: dict[str, int] = {
     "sunday": 6, "sun": 6,
 }
 
+#: English fallbacks for the weekday abbreviations, matching `_MONTHS` below. The
+#: locale files carry `weekday.0` … `weekday.6`; these are what renders if one is gone.
+_WEEKDAYS_SHORT: tuple[str, ...] = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
 _MONTHS: dict[str, int] = {
     "january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3,
     "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
@@ -95,6 +99,44 @@ _LEADERS = frozenset({"at", "on", "by", "@"})
 # night and forget by morning.
 _DEFAULT_HOUR = 9
 _DEFAULT_MINUTE = 0
+
+
+def _t(key: str, **fields: object) -> str:
+    """One localized string. Returns "" when the key is absent, so a caller can test
+    it — the locale files ship every key this module reads, and a missing one means a
+    file was edited, not that English should be silently substituted."""
+    try:
+        from navig.core import i18n  # noqa: PLC0415
+
+        text = i18n.t(key, **fields)
+    except Exception:  # noqa: BLE001 — a render must never fail on a locale read
+        return ""
+    return "" if text == key else text
+
+
+#: English fallbacks for the abbreviated month names.
+_MONTHS_SHORT: tuple[str, ...] = (
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+)
+
+
+def _localized_month(month: int, *, short: bool = False) -> str:
+    """The month name, in the operator's language.
+
+    Two forms, because they do two jobs. A card TITLE says "6 сентября" — the full
+    genitive is how a person reads a date. A task ROW already carries a mark, a title,
+    a category, a time and a countdown, so it takes the short form or the title falls
+    off a phone screen.
+    """
+    if short:
+        return _t(f"month_short.{month}") or _MONTHS_SHORT[month - 1]
+    return _t(f"month.{month}") or _MONTHS_SHORT[month - 1]
+
+
+def _localized_weekday(index: int) -> str:
+    """The weekday abbreviation, in the operator's language."""
+    return _t(f"weekday.{index}") or _WEEKDAYS_SHORT[index]
 
 
 def _norm(text: str) -> str:
@@ -488,14 +530,25 @@ def parse_lead(token: str) -> timedelta | None:
 
 def describe_lead(token: str) -> str:
     """``3d`` → "3 days before". Falls back to the raw token so an unknown lead is
-    still readable rather than blank."""
+    still readable rather than blank.
+
+    The DETAIL card has room for words, so this one is spelled out rather than using
+    the compact units the row countdown uses.
+    """
     delta = parse_lead(token)
     if delta is None:
         return token
-    return f"{_plain_delta(delta)} before"
+    amount = _plain_delta(delta)
+    return _t("pim.lead.before", amount=amount) or f"{amount} before"
 
 
 def _plain_delta(delta: timedelta) -> str:
+    """"3 days" / "1 hour", in the operator's language.
+
+    English is the only locale here that needs a singular form — the Russian and
+    French abbreviations read correctly at every count — so the `_one` keys exist
+    rather than a plural framework nothing else would use.
+    """
     seconds = int(abs(delta).total_seconds())
     for unit, size, label in (
         ("w", 604800, "week"),
@@ -503,9 +556,11 @@ def _plain_delta(delta: timedelta) -> str:
         ("h", 3600, "hour"),
         ("m", 60, "minute"),
     ):
-        if seconds >= size:
-            count = seconds // size
-            return f"{count} {label}{'s' if count != 1 else ''}"
+        if seconds < size:
+            continue
+        count = seconds // size
+        key = f"pim.lead.{unit}_one" if count == 1 else f"pim.lead.{unit}"
+        return _t(key, n=count) or f"{count} {label}{'s' if count != 1 else ''}"
     return "moments"
 
 
@@ -519,14 +574,22 @@ def humanize_delta(when: datetime, now: datetime) -> str:
     """
     seconds = int((when - now).total_seconds())
     if -60 < seconds < 60:
-        return "now"
+        return _t("pim.delta.now") or "now"
     ahead = seconds > 0
     seconds = abs(seconds)
-    for size, suffix in ((604800, "w"), (86400, "d"), (3600, "h"), (60, "m")):
-        if seconds >= size:
-            count = seconds // size
-            return f"in {count}{suffix}" if ahead else f"{count}{suffix} ago"
-    return "now"
+    for size, unit in ((604800, "w"), (86400, "d"), (3600, "h"), (60, "m")):
+        if seconds < size:
+            continue
+        count = seconds // size
+        # SHORT units in every language: Russian inflects a counted noun three ways
+        # (1 день · 2 дня · 5 дней) and a task row has no room for a plural rule.
+        amount = _t(f"pim.unit.{unit}", n=count) or f"{count}{unit}"
+        key = "pim.delta.in" if ahead else "pim.delta.ago"
+        rendered = _t(key, amount=amount)
+        if rendered:
+            return rendered
+        return f"in {amount}" if ahead else f"{amount} ago"
+    return _t("pim.delta.now") or "now"
 
 
 def format_local(when: datetime, now: datetime) -> str:
@@ -535,22 +598,12 @@ def format_local(when: datetime, now: datetime) -> str:
     ``Fri 5 Sep · 19:00`` · ``Mon 3 Feb 2027 · 09:00``. Midnight prints without a
     time, because a task due "on Friday" should not claim to be due at 00:00.
     """
-    day = when.strftime("%a %-d %b") if _supports_dash(when) else when.strftime("%a %d %b").replace(" 0", " ")
+    # Built from the locale files rather than strftime: `%a` and `%b` are the C
+    # locale's names, so this rendered "Fri 11 Sep" inside an otherwise-Russian card.
+    day = f"{_localized_weekday(when.weekday())} {when.day} {_localized_month(when.month, short=True)}"
     if when.year != now.year:
         day = f"{day} {when.year}"
     if when.hour == 0 and when.minute == 0:
         return day
     return f"{day} · {when:%H:%M}"
 
-
-def _supports_dash(when: datetime) -> bool:
-    """``%-d`` is glibc; Windows uses ``%#d`` and raises on ``%-d``.
-
-    Detected rather than assumed: this runs on the operator's Windows box and on a
-    Linux server, and a ValueError here would take down the whole card render.
-    """
-    try:
-        when.strftime("%-d")
-    except ValueError:
-        return False
-    return True

@@ -10,6 +10,38 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Run: git log v3.25.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
 ### Fixed
+- **A debug port with nothing listening is not necessarily a port anything can USE, and
+  three places assumed it was.** Windows reserves port ranges for Hyper-V/WSL/Docker; inside
+  one, `bind()` fails with `PermissionError(13)` while nothing owns the port, nothing is
+  listening, and `netstat` shows it free. Only
+  `netsh interface ipv4 show excludedportrange protocol=tcp` reveals it — and the
+  reservations **move across reboots**, so a port that worked yesterday can be dead today.
+
+  `targets.find_free_port` already knew this. The other two did not:
+
+  - **`profiles.allocate_port` handed out reserved ports.** It checked "already assigned"
+    and "already serving CDP", never "bindable". On a machine whose reservation covered
+    9181–9280 — and `PROFILE_PORT_BASE` is **9280** — the *first* profile ever created got
+    a permanently unusable port. `navig cdp profile open` on it could only ever time out,
+    reporting a generic failure with no hint at the real cause.
+  - **`apps/os` gave its dev window `9222`**, which is both inside that reservation *and*
+    the head of `navig cdp`'s own `DEFAULT_SCAN_PORTS`. So the desktop app's "attach to the
+    live app over CDP" feature never came up at all, and where it *did* bind, a bare
+    `navig cdp screenshot` drove the desktop window instead of a browser. The default is now
+    **9400**, clear of every band NAVIG allocates from (all of which grow upward).
+
+  Both allocators now share one `targets.port_is_bindable()`, and **an existing profile
+  whose port has gone reserved repairs itself**: `profile_open` reallocates and persists a
+  usable port, keeping `user_data_dir` — so the login survives, which recreating the profile
+  would not. The repair is recorded as a `PROFILE_PORT_REALLOCATED` incident rather than
+  done silently. A cross-language guard (TypeScript literal · Rust pane const · Python
+  bands) fails the build if the ports ever overlap again.
+
+  Known and deliberately not changed: named profiles (9280–9339) overlap the in-app panes
+  (9333–9340). Narrowing either band moves a *stable* port that existing profiles hold, so
+  it is a migration rather than a lint fix; its exact shape is pinned by a test so it cannot
+  drift unnoticed.
+
 - **NAVIG no longer opens blank browser windows or flashes console windows at you.** Two
   independent causes of the same complaint.
 

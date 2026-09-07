@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import html
 import logging
+from collections.abc import Iterable
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -56,10 +57,7 @@ def extension_banner(*, as_html: bool = True) -> str:
     if not extension_is_off():
         return ""
     if as_html:
-        return (
-            "⚠️ <b>The Habits extension is off</b> — these reminders are scheduled "
-            "but not delivered.\nTurn it on: /extensions\n"
-        )
+        return _t("habit.ext.off_html")
     return "\n".join(extension_banner_cli() or ())
 
 
@@ -72,10 +70,7 @@ def extension_banner_cli() -> tuple[str, str] | None:
     """
     if not extension_is_off():
         return None
-    return (
-        "The Habits extension is off - these reminders are scheduled but not delivered.",
-        "Turn it on: navig telegram extensions enable habits",
-    )
+    return (_t("habit.ext.off_cli"), _t("habit.ext.off_cli_detail"))
 
 #: Button state markers. An empty checkbox plus an icon read as "white square and
 #: icon" — no word, no state, nothing to act on. A word and an unmistakable mark
@@ -200,6 +195,33 @@ def _month_name(month: int) -> str:
         return _MONTHS[month - 1] if translated == key else translated
     except Exception:  # noqa: BLE001
         return _MONTHS[month - 1]
+
+
+def _weekday_name(index: int) -> str:
+    """Mon/Tue/… in the operator's language. `_WEEKDAY_NAMES` is the fallback."""
+    try:
+        from navig.core import i18n  # noqa: PLC0415
+
+        key = f"weekday.{index}"
+        translated = i18n.t(key)
+        return _WEEKDAY_NAMES[index] if translated == key else translated
+    except Exception:  # noqa: BLE001
+        return _WEEKDAY_NAMES[index]
+
+
+def _col_width(header: str, cells: Iterable[str]) -> int:
+    """How wide a `<pre>` column has to be: the widest thing in it, plus a space.
+
+    The +1 is the separator. Without it a header exactly as wide as its column
+    touches the next one — which is how the translated totals header rendered as
+    `готовосейчасрекорд` while every data row underneath stayed correctly aligned.
+    """
+    return max([len(header), *(len(c) for c in cells)]) + 1
+
+
+def _range_label(days: int) -> str:
+    """The stats range buttons. 0 means the whole cycle."""
+    return _t("habit.stats.range_all") if days <= 0 else _t("habit.stats.range_days", n=days)
 
 
 def _human_day(day: str) -> str:
@@ -362,7 +384,7 @@ def build_closing_text(path: Path, day: str) -> str:
     ]
 
     lines = [
-        f"🌙 <b>{html.escape(_human_day(day))} closed</b>",
+        f"🌙 <b>{html.escape(_t('habit.card.closed', day=_human_day(day)))}</b>",
         "",
         f"<b>{html.escape(_floor_title())}</b>",
         floor_line(logged),
@@ -370,12 +392,11 @@ def build_closing_text(path: Path, day: str) -> str:
     ]
 
     if missed:
+        # Escaped BEFORE it reaches the locale string, because the translation
+        # itself carries <b> markup that must survive.
         names = html.escape(", ".join(missed))
-        lines.append(f"⚠️ <b>Missed: {names}.</b>")
-        lines.append(
-            "One miss is noise. Two in a row is a new habit — "
-            f"tomorrow <b>{names}</b> is not optional. NEVER MISS TWICE."
-        )
+        lines.append(f"⚠️ <b>{_t('habit.card.missed', names=names)}</b>")
+        lines.append(_t("habit.card.never_miss_twice", names=names))
     else:
         lines.append(f"✅ <b>{html.escape(_t('habit.card.all_three'))}</b>")
 
@@ -387,13 +408,14 @@ def build_closing_text(path: Path, day: str) -> str:
         if habit_tracker.is_done(v) and k not in habit_tracker.NON_NEGOTIABLES and k != "score"
     )
     if extra:
-        lines += ["", f"<i>Also done: {html.escape(', '.join(extra))}</i>"]
+        done_names = html.escape(", ".join(extra))
+        lines += ["", f"<i>{_t('habit.card.also_done', names=done_names)}</i>"]
 
     score = logged.get("score", "")
     if score and habit_tracker.is_done(score):
         lines.append(f"<i>{html.escape(_t('habit.card.day_score', value=score))}</i>")
 
-    lines += ["", "Three lines in the journal and you're done."]
+    lines += ["", _t("habit.card.journal_nudge")]
     return "\n".join(lines)
 
 
@@ -419,7 +441,7 @@ def build_stats(path: Path, today: date, days: int = 7) -> tuple[str, dict[str, 
     rows = habit_tracker.read_tracker(path)
     if not rows:
         return (
-            "📊 <b>Progress</b>\n\nNothing logged yet — tap a card and this fills in.",
+            f"📊 <b>{_t('habit.stats.title')}</b>\n\n{_t('habit.stats.empty')}",
             {"inline_keyboard": []},
         )
 
@@ -427,7 +449,7 @@ def build_stats(path: Path, today: date, days: int = 7) -> tuple[str, dict[str, 
     pct = round(100 * s["complete"] / s["days"]) if s["days"] else 0
 
     lines = [
-        f"📊 <b>Progress</b> · day {s['days']}"
+        f"📊 <b>{_t('habit.stats.title')}</b> · {_t('habit.stats.day_n', n=s['days'])}"
         f"  <i>{_human_day(s['start'].isoformat())} → {_human_day(s['end'].isoformat())}</i>",
         "",
         f"<b>{html.escape(_t('habit.card.days_counted', done=s['complete'], total=s['days']))}</b>"
@@ -440,26 +462,54 @@ def build_stats(path: Path, today: date, days: int = 7) -> tuple[str, dict[str, 
     # every column drift. The marks are TEXT (✓ ·), never emoji: an emoji is
     # double-width and rendered oversized, which is what turned the previous
     # version into a ragged wall.
-    table = [f"{'':<6}{'done':>7}{'now':>6}{'best':>6}"]
-    for label in habit_tracker.NON_NEGOTIABLES:
-        st = s["habits"][label]
-        done = f"{st['done']}/{s['days']}"
-        now = f"{st['streak']}d"
-        best = f"{st['best']}d"
-        table.append(f"{_word(label):<6}{done:>7}{now:>6}{best:>6}")
+    col_done, col_now, col_best = (
+        _t("habit.stats.col_done"),
+        _t("habit.stats.col_now"),
+        _t("habit.stats.col_best"),
+    )
+    # `<pre>` is the only alignment Telegram has, so every width is measured from
+    # the strings that actually go in the column — header AND cells — plus one for
+    # the separator. Numbers chosen against English words collapse the moment a
+    # translation is as long as its column: "готовосейчасрекорд".
+    cells = [
+        (
+            _word(label),
+            f"{s['habits'][label]['done']}/{s['days']}",
+            _t("habit.card.streak_day", n=s["habits"][label]["streak"]),
+            _t("habit.card.streak_day", n=s["habits"][label]["best"]),
+        )
+        for label in habit_tracker.NON_NEGOTIABLES
+    ]
+    name_w = max(len(row[0]) for row in cells)
+    done_w = _col_width(col_done, (row[1] for row in cells))
+    now_w = _col_width(col_now, (row[2] for row in cells))
+    best_w = _col_width(col_best, (row[3] for row in cells))
+    table = [f"{'':<{name_w}}{col_done:>{done_w}}{col_now:>{now_w}}{col_best:>{best_w}}"]
+    for name, done, now, best in cells:
+        table.append(
+            f"{name:<{name_w}}{done:>{done_w}}{now:>{now_w}}{best:>{best_w}}"
+        )
     lines += [_pre(table), ""]
 
     # Table 2 — the weekday column, the part actually worth reading. A total says
     # "some days were missed"; this says which day of the week you lose.
-    week = [f"{'':<5}{'counted':>9}"]
-    for i, name in enumerate(_WEEKDAY_NAMES):
-        bucket = s["by_weekday"].get(i, {"days": 0, "complete": 0})
-        if not bucket["days"]:
-            continue
+    col_counted = _t("habit.stats.col_counted")
+    day_names = [_weekday_name(i) for i in range(7)]
+    present = [
+        (day_names[i], s["by_weekday"].get(i, {"days": 0, "complete": 0}))
+        for i in range(7)
+        if s["by_weekday"].get(i, {"days": 0})["days"]
+    ]
+    weekday_w = max((len(name) for name, _ in present), default=3)
+    counted_w = _col_width(
+        col_counted, (f"{b['complete']}/{b['days']}" for _, b in present)
+    )
+    week = [f"{'':<{weekday_w}}{col_counted:>{counted_w}}"]
+    for name, bucket in present:
         hit, total = bucket["complete"], bucket["days"]
         bar = MARK_ON * hit + MARK_OFF * (total - hit)
-        week.append(f"{name:<5}{f'{hit}/{total}':>5}  {bar}")
-    lines += ["<b>By day of week</b>", _pre(week), ""]
+        week.append(f"{name:<{weekday_w}}{f'{hit}/{total}':>{counted_w}}  {bar}")
+    lines += [f"<b>{_t('habit.stats.by_weekday')}</b>", _pre(week), ""]
 
     # Table 3 — the day list, blanks included. A day with no row at all is the
     # failure a list of only-logged-days renders invisible.
@@ -467,16 +517,22 @@ def build_stats(path: Path, today: date, days: int = 7) -> tuple[str, dict[str, 
     # Full words in the header, not truncations: "Wake" and "Walk" both cut to "Wa".
     # The month goes in its own separator row instead of a column on every line —
     # it changes twice a cycle and costs four characters of width every day.
-    head = "".join(f"{_word(h):>5}" for h in habit_tracker.NON_NEGOTIABLES)
-    grid = [f"{'':<7}{head}"]
+    # One width per habit column, sized to its own label: a single shared width
+    # would be set by the longest word and waste that many characters on every
+    # other column, on a screen that has none to spare.
+    habit_w = {h: len(_word(h)) + 1 for h in habit_tracker.NON_NEGOTIABLES}
+    stamp_w = max(len(f"{_weekday_name(i)} 00") for i in range(7)) + 1
+    head = "".join(f"{_word(h):>{habit_w[h]}}" for h in habit_tracker.NON_NEGOTIABLES)
+    grid = [f"{'':<{stamp_w}}{head}"]
     month: int | None = None
     blanks = full = 0
     for day, marks in habit_tracker.day_rows(rows, start, today):
         if day.month != month:
             month = day.month
-            grid.append(f"{_MONTHS[month - 1]}")
+            grid.append(_month_name(month))
         cells = "".join(
-            f"{MARK_ON if marks[h] else MARK_OFF:>5}" for h in habit_tracker.NON_NEGOTIABLES
+            f"{MARK_ON if marks[h] else MARK_OFF:>{habit_w[h]}}"
+            for h in habit_tracker.NON_NEGOTIABLES
         )
         hit = sum(marks.values())
         tail = ""
@@ -484,26 +540,27 @@ def build_stats(path: Path, today: date, days: int = 7) -> tuple[str, dict[str, 
             tail, blanks = "  ←", blanks + 1
         elif hit == 3:
             tail, full = "  ★", full + 1
-        grid.append(f"{day.strftime('%a %d'):<7}{cells}{tail}")
-    lines += ["<b>Day by day</b>", _pre(grid)]
+        stamp = f"{_weekday_name(day.weekday())} {day.day:02d}"
+        grid.append(f"{stamp:<{stamp_w}}{cells}{tail}")
+    lines += [f"<b>{_t('habit.stats.day_by_day')}</b>", _pre(grid)]
 
     # A bare symbol is a symbol you have to ask about — the same defect as a
     # button reading "Groom". The legend only appears when the symbol does.
     legend = []
     if full:
-        legend.append("★ all three")
+        legend.append(_t("habit.stats.legend_all"))
     if blanks:
-        legend.append("← nothing logged")
+        legend.append(_t("habit.stats.legend_none"))
     if legend:
         lines.append(f"<i>{' · '.join(legend)}</i>")
 
     keyboard = [
         [
             {
-                "text": f"{'▶ ' if n == days else ''}{label}",
+                "text": f"{'▶ ' if n == days else ''}{_range_label(n)}",
                 "callback_data": f"{CALLBACK_PREFIX}st:{n}",
             }
-            for n, label in STATS_RANGES
+            for n, _ in STATS_RANGES
         ]
     ]
     return "\n".join(lines), {"inline_keyboard": keyboard}
@@ -528,9 +585,13 @@ def _next_run(job: dict) -> str:
     from datetime import datetime  # noqa: PLC0415
 
     try:
-        return datetime.fromisoformat(str(job.get("next_run") or "")).strftime("%a %H:%M")
+        when = datetime.fromisoformat(str(job.get("next_run") or ""))
     except ValueError:
         return "—"
+    # `%a` is the C locale's weekday, so this column printed "Sat 07:00" inside an
+    # otherwise-Russian menu. The weekday comes from the locale files like every
+    # other one on the card.
+    return f"{_weekday_name(when.weekday())} {when:%H:%M}"
 
 
 def build_pause_menu() -> tuple[str, dict[str, Any]]:
@@ -548,28 +609,28 @@ def build_pause_menu() -> tuple[str, dict[str, Any]]:
     banner = extension_banner()
     if not jobs:
         return (
-            banner + "⏰ <b>Reminders</b>\n\nNo habit reminders are configured.",
+            banner + f"⏰ <b>{_t('habit.pause.title')}</b>\n\n{_t('habit.pause.none')}",
             {"inline_keyboard": []},
         )
 
     on = [j for j in jobs if j.get("enabled", True)]
     lines = ([banner] if banner else []) + [
-        f"⏰ <b>Reminders</b> — {len(on)} of {len(jobs)} on",
+        f"⏰ <b>{_t('habit.pause.title')}</b> — "
+        f"{_t('habit.pause.count', on=len(on), total=len(jobs))}",
         "",
     ]
     for j in jobs:
         mark = "🔔" if j.get("enabled", True) else "🔕"
-        when = _next_run(j) if j.get("enabled", True) else "paused"
+        when = _next_run(j) if j.get("enabled", True) else _t("habit.pause.paused")
         lines.append(
             f"{mark} <b>{html.escape(_word(_job_key(j)))}</b> — "
             f"<code>{html.escape(str(j.get('schedule', '—')))}</code> · {when}"
         )
     lines += [
         "",
-        "<i>Nothing is deleted when you pause — the schedule and every logged row",
-        "stay exactly as they are, and resuming picks up where you left off.</i>",
+        f"<i>{_t('habit.pause.explain')}</i>",
         "",
-        "<i>Tap one to flip it.</i>",
+        f"<i>{_t('habit.pause.tap_hint')}</i>",
     ]
 
     keyboard = [
@@ -585,8 +646,14 @@ def build_pause_menu() -> tuple[str, dict[str, Any]]:
     ]
     keyboard.append(
         [
-            {"text": "🔕 Pause all", "callback_data": f"{CALLBACK_PREFIX}p:*"},
-            {"text": "🔔 Resume all", "callback_data": f"{CALLBACK_PREFIX}r:*"},
+            {
+                "text": f"🔕 {_t('habit.pause.pause_all')}",
+                "callback_data": f"{CALLBACK_PREFIX}p:*",
+            },
+            {
+                "text": f"🔔 {_t('habit.pause.resume_all')}",
+                "callback_data": f"{CALLBACK_PREFIX}r:*",
+            },
         ]
     )
     return "\n".join(lines), {"inline_keyboard": keyboard}
@@ -622,20 +689,24 @@ async def handle_callback(
         elif action == "s" and len(parts) >= 3:
             value, day = parts[1], _expand(parts[2])
             habit_tracker.upsert(path, day, "score", value)
-            toast = f"Day score {value}/10"
+            toast = _t("habit.card.day_score", value=value)
 
         elif action == "x" and len(parts) >= 2:
             day = _expand(parts[1])
             await _edit(channel, chat_id, message_id, build_closing_text(path, day), None)
             habit_tracker.mark_day_closed(chat_id, day)
             await ask_for_journal(channel, chat_id, day)
-            return "Day closed"
+            return _t("habit.toast.day_closed")
 
         elif action == "st" and len(parts) >= 2:
             days = int(parts[1]) if parts[1].lstrip("-").isdigit() else 7
             text, keyboard = build_stats(path, date.today(), days)
             await _edit(channel, chat_id, message_id, text, keyboard)
-            return "All days" if days <= 0 else f"Last {days} days"
+            return (
+                _t("habit.toast.all_days")
+                if days <= 0
+                else _t("habit.toast.last_days", n=days)
+            )
 
         elif action in ("p", "r") and len(parts) >= 2:
             enabled = action == "r"
@@ -644,15 +715,16 @@ async def handle_callback(
             text, keyboard = build_pause_menu()
             await _edit(channel, chat_id, message_id, text, keyboard)
             if not changed:
-                return "⚠️ Nothing changed"
+                return f"⚠️ {_t('habit.toast.nothing_changed')}"
             names = ", ".join(sorted(_word(k) for k in changed))
-            return f"{'🔔 On' if enabled else '🔕 Paused'}: {names}"[:200]
+            key = "habit.pause.on_toast" if enabled else "habit.pause.paused_toast"
+            return f"{'🔔' if enabled else '🔕'} {_t(key, names=names)}"[:200]
 
         else:
-            return "⚠️ Unknown button"
+            return f"⚠️ {_t('habit.toast.unknown_button')}"
     except OSError as exc:
         logger.warning("habit check-in write failed (chat=%s): %s", chat_id, exc)
-        return "⚠️ Could not save"
+        return f"⚠️ {_t('habit.toast.save_failed')}"
 
     text, keyboard = build_card(path, day)
     await _edit(channel, chat_id, message_id, text, keyboard)
@@ -666,18 +738,22 @@ def journal_prompt_text(day: str) -> str:
     the point is that the answer is short and always the same shape, so it can be
     given at 22:15 without composing anything.
     """
+    title = _t("habit.journal.title", day=_human_day(day))
+    # `skip` is a COMMAND, so it is substituted rather than translated: a locale
+    # that rendered it as "пропустить" would document a word the bot does not
+    # accept. The <code> markup travels with it for the same reason.
+    where = _t("habit.journal.where", day=html.escape(day), skip="</i><code>skip</code><i>")
     return "\n".join(
         [
-            f"✍️ <b>Three lines · {html.escape(_human_day(day))}</b>",
+            f"✍️ <b>{html.escape(title)}</b>",
             "",
-            "1. What I did today, what I'm proud of.",
-            "2. What specifically knocked me off.",
-            "3. The number-one task for tomorrow.",
+            _t("habit.journal.q1"),
+            _t("habit.journal.q2"),
+            _t("habit.journal.q3"),
             "",
-            "<i>Reply to this message — three lines, one per line.</i>",
-            "<i>A voice note works too: reply with one and it is written down for you.</i>",
-            f"<i>They land in journal/{html.escape(day)}.md. Send</i> <code>skip</code> "
-            "<i>to leave the day without them.</i>",
+            f"<i>{_t('habit.journal.reply_hint')}</i>",
+            f"<i>{_t('habit.journal.voice_hint')}</i>",
+            f"<i>{where}</i>",
         ]
     )
 

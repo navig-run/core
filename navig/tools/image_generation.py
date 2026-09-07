@@ -141,6 +141,38 @@ def _resolve_default_provider(keys: dict[str, str | None]) -> ImageProvider:
     return ImageProvider.OPENAI
 
 
+# The sizes Recraft's API actually accepts, verified against the live endpoint. The old
+# allowlist here was DALL-E's ("1024x1792", "1792x1024"), which Recraft has never
+# supported: it answers 400 "Image size is not supported". Worse, anything outside the
+# list fell back to 1024x1024 — so a caller asking for a vertical frame silently got a
+# SQUARE one, and only found out when the video came back cropped.
+RECRAFT_SIZES = (
+    "1024x1024", "1365x1024", "1024x1365", "1536x1024", "1024x1536",
+    "1820x1024", "1024x1820", "1024x2048", "2048x1024", "1434x1024",
+    "1024x1434", "1024x1280", "1280x1024", "1024x1707", "1707x1024",
+)
+
+
+def nearest_recraft_size(requested: str) -> str:
+    """The supported Recraft size closest in ASPECT to what was asked for.
+
+    Aspect, not area: the caller cares that a portrait stays a portrait. 1024x1792 (9:15.75)
+    maps to 1024x1820, which is 9:16 to three decimal places — exactly what vertical video
+    wants, and nothing like the square it used to become.
+    """
+    if requested in RECRAFT_SIZES:
+        return requested
+    try:
+        width, height = (int(part) for part in requested.lower().split("x", 1))
+        wanted = width / height
+    except (ValueError, ZeroDivisionError):
+        return "1024x1024"
+    return min(
+        RECRAFT_SIZES,
+        key=lambda s: abs((int(s.split("x")[0]) / int(s.split("x")[1])) - wanted),
+    )
+
+
 class ImageSize(Enum):
     """Standard image sizes."""
 
@@ -554,10 +586,7 @@ class ImageGenerator:
             raise ValueError("Recraft API key not configured")
 
         client = await self._get_client()
-        # Recraft accepts 1024x1024, 1365x1024, 1024x1365, 1536x1024, etc.
-        recraft_size = size.value if size.value in {
-            "1024x1024", "1024x1792", "1792x1024",
-        } else "1024x1024"
+        recraft_size = nearest_recraft_size(size.value)
 
         start_time = datetime.now()
         response = await client.post(

@@ -146,3 +146,115 @@ def test_cline_mirror_is_wrapped(tmp_path):
     assert cline.startswith("# NAVIG — Agent Memory")
     assert "Last synced:" in cline
     assert cline.rstrip().endswith("body")
+
+
+# ── the repo it must find is the one you are STANDING in (2026-09-06) ────────
+#
+# `navig sync instructions --check`, run from inside the repo that holds MASTER,
+# answered "Could not find MASTER instructions. Run inside a repo containing
+# .github/instructions/MASTER.instructions.md" — advising the operator to do the
+# thing they had just done. Cause: main.py chdirs the process into the ACTIVE
+# SPACE before any command runs, so `_resolve_root` measured the space.
+#
+# Same class as the `navig repo --repo .` failure fixed alongside this, and
+# doctor.py had already written the rule down: "main.py records the pre-chdir
+# directory in NAVIG_INVOCATION_CWD for exactly this reason. Every repo-scoped
+# check must resolve through here."
+#
+# ⚠ These build a REAL git repo under tmp_path. pytest's tmp_path lives inside
+# the navig checkout's own .dev/ tree, so a plain directory would make
+# `git rev-parse` climb out and resolve to the real repo — which HAS MASTER, so
+# every assertion would pass against the wrong root (it did, first run).
+
+import subprocess as _sp
+
+
+def _make_repo(root: Path, *, master: bool = True) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    _sp.run(["git", "init", "-q"], cwd=str(root), capture_output=True, check=True)
+    if master:
+        (root / s.MASTER_REL).parent.mkdir(parents=True, exist_ok=True)
+        (root / s.MASTER_REL).write_text("# M\nbody\n", encoding="utf-8")
+    return root
+
+
+def test_resolve_root_finds_the_repo_you_invoked_from(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from navig.commands.sync import _resolve_root
+
+    repo = _make_repo(tmp_path / "repo")
+    space = tmp_path / "active-space"
+    space.mkdir()
+
+    monkeypatch.chdir(space)  # where main.py's chdir leaves us
+    monkeypatch.setenv("NAVIG_INVOCATION_CWD", str(repo))
+
+    assert _resolve_root(None) == repo
+
+
+def test_resolve_root_walks_up_from_the_invocation_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from navig.commands.sync import _resolve_root
+
+    repo = _make_repo(tmp_path / "repo")
+    nested = repo / "core" / "navig"
+    nested.mkdir(parents=True)
+    space = tmp_path / "active-space"
+    space.mkdir()
+
+    monkeypatch.chdir(space)
+    monkeypatch.setenv("NAVIG_INVOCATION_CWD", str(nested))
+
+    assert _resolve_root(None) == repo
+
+
+def test_resolve_root_still_uses_cwd_without_the_env_var(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No NAVIG_INVOCATION_CWD (a direct call, an embedding caller) — unchanged."""
+    from navig.commands.sync import _resolve_root
+
+    repo = _make_repo(tmp_path / "repo")
+    monkeypatch.delenv("NAVIG_INVOCATION_CWD", raising=False)
+    monkeypatch.chdir(repo)
+
+    assert _resolve_root(None) == repo
+
+
+def test_resolve_root_returns_none_when_neither_holds_master(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A genuine miss must stay a miss — the fix must not invent a root.
+
+    Uses the SYSTEM temp dir, not tmp_path: the filesystem walk-up has no
+    equivalent of GIT_CEILING_DIRECTORIES, so from inside the navig checkout it
+    would legitimately climb to the real MASTER and this could never fail.
+    """
+    import tempfile
+
+    from navig.commands.sync import _resolve_root
+
+    # ignore_cleanup_errors: git can still hold a handle in the temp repo on
+    # Windows, and a flaky teardown would discredit a test that is not flaky.
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        base = Path(td)
+        a = _make_repo(base / "a", master=False)
+        b = _make_repo(base / "b", master=False)
+        monkeypatch.chdir(a)
+        monkeypatch.setenv("NAVIG_INVOCATION_CWD", str(b))
+
+        result = _resolve_root(None)
+        monkeypatch.undo()  # leave the temp dir before it is removed (Windows)
+
+    assert result is None
+
+
+def test_explicit_repo_still_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from navig.commands.sync import _resolve_root
+
+    repo = _make_repo(tmp_path / "repo")
+    monkeypatch.setenv("NAVIG_INVOCATION_CWD", str(tmp_path / "elsewhere"))
+
+    assert _resolve_root(str(repo)) == repo

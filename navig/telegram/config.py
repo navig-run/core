@@ -28,6 +28,25 @@ def _vault():
     return get_vault()
 
 
+def vault_unavailable_reason() -> str | None:
+    """Why the vault cannot be read *at all*, or None when it can.
+
+    A missing engine is not a missing secret. ``_vault_get`` deliberately
+    swallows read errors so callers can ask "is this set?" without handling a
+    locked vault — but that makes an uninstalled ``navig-vault`` look exactly
+    like "you never configured Telegram", and the advertised repair (re-run
+    ``navig telegram setup``) is then wrong: it asks you to re-authenticate
+    over credentials that were there the whole time.
+    """
+    try:
+        _vault()
+    except ImportError as exc:
+        return str(exc)
+    except Exception:  # noqa: BLE001 — locked/other: per-label handling covers it
+        return None
+    return None
+
+
 def _vault_get(label: str) -> str | None:
     try:
         return _vault().get_bytes(label).decode("utf-8")

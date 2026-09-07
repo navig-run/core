@@ -20,6 +20,33 @@ def test_powershell_executor_raises_on_non_windows():
         PowerShellExecutor()
 
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _clear_powershell_caches():
+    """Both resolvers are ``@lru_cache``d, so a fake LEAKS to the next test.
+
+    The detection tests below patch ``shutil.which`` to return a fake pwsh.exe path
+    and call ``cache_clear()`` BEFORE patching — which protects them from a poisoned
+    cache but leaves the fake cached for whoever runs next. Serial ordering happened
+    to put the real spawn test first, so this never showed; under
+    ``-n 8 --dist loadgroup`` the order changes and
+    ``test_execute_command_still_reads_powershell_utf8_output`` tried to spawn
+    that fake path and got ``FileNotFoundError: [WinError 2]``, which reads as a
+    missing PowerShell rather than a leaked stub.
+
+    Clearing on the way OUT as well as in is what makes that impossible.
+    """
+    from navig.adapters.automation.powershell import _build_child_env, _detect_powershell
+
+    _detect_powershell.cache_clear()
+    _build_child_env.cache_clear()
+    yield
+    _detect_powershell.cache_clear()
+    _build_child_env.cache_clear()
+
+
 # ─── _detect_powershell ───────────────────────────────────────────────────────
 
 

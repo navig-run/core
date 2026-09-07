@@ -101,10 +101,11 @@ class TestSelectBestNextAction:
             SpaceProgress(name="low", scope="global", path=space_dir,
                           goal="goal2", completion_pct=10.0, last_updated=""),
         ]
-        with (
-            patch("navig.spaces.next_action.collect_spaces_progress", return_value=rows),
-            patch("navig.spaces.next_action._safe_read", return_value="- [ ] next step"),
-        ):
+        # The fixture above writes a REAL CURRENT_PHASE.md, so the pending task is
+        # read from disk. This used to ALSO patch `next_action._safe_read` to return
+        # the same string -- belt-and-braces that hid which of the two the assertion
+        # depended on, and named a helper the module no longer has.
+        with patch("navig.spaces.next_action.collect_spaces_progress", return_value=rows):
             result = select_best_next_action()
 
         assert result is not None

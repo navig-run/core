@@ -6,9 +6,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from navig.plans.frontmatter import (
-    _safe_read,
-)
-from navig.plans.frontmatter import (
     first_h1 as _first_h1,
 )
 from navig.plans.frontmatter import (
@@ -38,11 +35,14 @@ def _completion_from_markdown(text: str) -> float:
 
 
 def read_space_progress(space_name: str, space_path: Path, scope: str) -> SpaceProgress:
-    vision = space_path / "VISION.md"
-    current_phase = space_path / "CURRENT_PHASE.md"
+    from navig.spaces.plan_files import plan_file, read_plan  # noqa: PLC0415
 
-    vision_text = _safe_read(vision)
-    phase_text = _safe_read(current_phase)
+    # The PATH as well as the text: "last updated" falls back to the file's mtime when
+    # the frontmatter does not carry a date, and that needs the file it actually read
+    # rather than a guess at where it might be.
+    current_phase = plan_file(space_path, "CURRENT_PHASE.md")
+    vision_text = read_plan(space_path, "VISION.md")
+    phase_text = read_plan(space_path, "CURRENT_PHASE.md")
 
     vision_fm = _parse_frontmatter_map(vision_text)
     phase_fm = _parse_frontmatter_map(phase_text)
@@ -63,6 +63,8 @@ def read_space_progress(space_name: str, space_path: Path, scope: str) -> SpaceP
     last_updated = phase_fm.get("last_updated", "").strip()
     if not last_updated:
         try:
+            if current_phase is None:
+                raise OSError("no CURRENT_PHASE.md in this space")
             ts = current_phase.stat().st_mtime
             last_updated = datetime.fromtimestamp(ts, timezone.utc).strftime(
                 "%Y-%m-%d"

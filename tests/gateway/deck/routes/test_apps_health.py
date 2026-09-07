@@ -110,6 +110,40 @@ async def test_todays_sleep_and_mood_are_surfaced(record, no_habits):
     assert data["mood_1_10"] == 8.0
 
 
+async def test_today_follows_the_LOCAL_calendar_the_writer_used(record, no_habits, monkeypatch):
+    """The reader's "today" must be the same calendar the writer stamped.
+
+    `navig body` and `navig habit` stamp rows with `date.today()` -- the LOCAL date --
+    and cron's `last_run` is a naive `datetime.now()`. This route used
+    `datetime.now(timezone.utc)`, so on any machine not on UTC there is a window each
+    day where the two disagree and today's row is simply not found: the user records
+    sleep and the Health tab reports nothing. On UTC+2 that window is 00:00-02:00 local.
+
+    The three existing tests DO catch it -- but only while running inside that window,
+    which reads as flake. This one forces the disagreement instead of waiting for it:
+    UTC-now is pinned a day behind the local date, so a UTC-based reader looks up the
+    wrong day whatever time the suite runs.
+    """
+    from datetime import datetime as _dt
+    from datetime import timedelta as _td
+
+    from navig.gateway.deck.routes import apps as apps_mod
+    from navig.spaces import body_metrics as bm
+
+    class _SkewedClock(_dt):
+        @classmethod
+        def now(cls, tz=None):
+            return _dt.now(tz) - _td(days=1)
+
+    monkeypatch.setattr(apps_mod, "datetime", _SkewedClock)
+
+    bm.upsert(record, date.today().isoformat(), {"sleep_hours": "7.5"})
+    assert (await _get())["sleep_hours"] == 7.5, (
+        "the row was written with the LOCAL date the CLI uses; a reader on a different "
+        "calendar reports today as empty"
+    )
+
+
 async def test_a_comma_decimal_in_the_file_still_parses(record, no_habits):
     """A row typed by hand in a fr/ru locale must not read as null."""
     from navig.spaces import body_metrics as bm

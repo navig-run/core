@@ -138,22 +138,58 @@ def repo_root(cwd: Path | None = None) -> Path | None:
 _REPO_ENV_HINTS = ("NAVIG_REPO", "CLAUDE_PROJECT_DIR")
 
 
+def invocation_cwd() -> Path:
+    """The directory the operator actually ran ``navig`` from.
+
+    ``main.py`` chdir's into the active space before any command runs, stashing
+    the real invocation directory in ``NAVIG_INVOCATION_CWD`` first. Falls back
+    to the process cwd when the variable is absent (a direct ``repo_app`` call
+    in tests, or an embedding caller).
+    """
+    raw = os.environ.get("NAVIG_INVOCATION_CWD")
+    if raw:
+        origin = Path(raw)
+        if origin.is_dir():
+            return origin
+    return Path.cwd()
+
+
 def resolve_repo_root(repo: str | None = None) -> Path | None:
     """Resolve the target repo root, robust to an unreliable process cwd.
 
     Precedence:
 
     1. an explicit ``--repo`` path (the operator said so — if it is not a repo
-       that is an error, never a reason to guess elsewhere);
-    2. the process cwd, when it is inside a git repo (so an operator standing in
-       repo B is never overridden by an env hint pointing at repo A);
-    3. the ``NAVIG_REPO`` / ``CLAUDE_PROJECT_DIR`` env hints, in that order.
+       that is an error, never a reason to guess elsewhere). A RELATIVE one is
+       resolved against the invocation dir, for the same reason as step 2;
+    2. the directory the CLI was INVOKED from, when it is inside a git repo;
+    3. the process cwd, when it is inside a git repo;
+    4. the ``NAVIG_REPO`` / ``CLAUDE_PROJECT_DIR`` env hints, in that order.
 
     Returns None only when none of these lands inside a git repo.
+
+    ⚠ Step 2 is not redundant with step 3, and leaving it out was a live bug.
+    ``main.py`` chdir's to the ACTIVE SPACE during startup, so by the time a
+    command runs, "the process cwd" is the space — not where the operator is
+    standing. With a space that is not a repo (the default
+    ``~/.navig-os/workspaces/my-workspace``), every ``navig repo`` command
+    answered "Not inside a git repository" while the operator stood in one, and
+    named the space as what it tried. With a space that IS a repo it is worse:
+    the command silently operates on the SPACE's repo — precisely the
+    "operator standing in repo B" case this precedence exists to prevent.
+    ``main.py`` records the pre-chdir directory in ``NAVIG_INVOCATION_CWD``.
     """
     if repo:
-        return repo_root(Path(repo))
-    root = repo_root()  # process cwd
+        given = Path(repo)
+        # A relative --repo means "relative to where I am typing" — the
+        # invocation dir, not the space. Resolving it against the process cwd
+        # was the same trap one line down, left behind when that was fixed:
+        # `navig repo lock --repo .` still answered "Not inside a git
+        # repository. tried ." to an operator standing in the repo.
+        return repo_root(given if given.is_absolute() else invocation_cwd() / given)
+    if (root := repo_root(invocation_cwd())) is not None:
+        return root
+    root = repo_root()  # process cwd (the active space, once main.py has chdir'd)
     if root is not None:
         return root
     for name in _REPO_ENV_HINTS:
@@ -449,6 +485,33 @@ def read_lock(root: Path) -> dict | None:
         return None
 
 
+def current_session_id() -> str | None:
+    """This Claude Code session's id, as the lock file records it.
+
+    The agent-lock hook takes ``session_id`` from Claude Code's hook payload;
+    the CLI has no payload, but the same id is exported into the tool
+    environment. Any other caller — a human shell, CI, cron — has no session and
+    gets None, which keeps them on the strict ``--force`` path.
+    """
+    return os.environ.get("CLAUDE_CODE_SESSION_ID") or None
+
+
+def lock_is_ours(lock: dict | None) -> bool:
+    """True when *lock* was claimed by THIS session.
+
+    Releasing your own lock must not require ``--force``. Keying only on
+    freshness meant the commonest release — you claimed it, you finished, the
+    protocol asks you to leave nothing held — pushed the operator to ``--force``,
+    the one flag whose entire purpose is overriding ANOTHER agent's live claim.
+    Making the dangerous flag part of the routine path is how a foreign lock
+    eventually gets destroyed, which is the failure the guard exists to prevent.
+    """
+    if not lock:
+        return False
+    ours = current_session_id()
+    return bool(ours) and str(lock.get("session_id") or "") == ours
+
+
 def lock_state(lock: dict | None, now: datetime | None = None) -> dict:
     """Classify a lock: ``{"state": "free"|"held"|"stale", "age_minutes": float|None, ...}``."""
     if not lock:
@@ -475,17 +538,34 @@ def _lock_meta(lock: dict) -> dict:
 # ── CLI commands ─────────────────────────────────────────────────────────────
 
 
+def _resolution_hint(repo: str | None) -> str:
+    """Name the path actually tried — never echo the flag back at the operator.
+
+    "tried . — pass --repo <path>" was the whole message for someone who had
+    just passed --repo, and a bare "." tells them nothing about where it went.
+    """
+    here = invocation_cwd()
+    if repo:
+        given = Path(repo)
+        if given.is_absolute():
+            return f"tried {given} — not a git repository (nor inside one)."
+        return (
+            f"tried {repo!r} → {here / given} (relative to where you ran navig) "
+            "— not a git repository. Pass an absolute path, or set NAVIG_REPO / "
+            "CLAUDE_PROJECT_DIR."
+        )
+    return (
+        f"tried {here}, then {Path.cwd()} — neither is inside a git repository. "
+        "Pass --repo <path>, or set NAVIG_REPO / CLAUDE_PROJECT_DIR."
+    )
+
+
 def _require_root(repo: str | None = None) -> Path:
     root = resolve_repo_root(repo)
     if root is None:
         from navig import console_helper as ch
 
-        ch.error(
-            "Not inside a git repository.",
-            f"tried {repo or Path.cwd()} — pass --repo <path>, or set "
-            "NAVIG_REPO / CLAUDE_PROJECT_DIR (a launched navig.exe may not "
-            "inherit your shell's directory).",
-        )
+        ch.error("Not inside a git repository.", _resolution_hint(repo))
         raise typer.Exit(1)
     return root
 
@@ -1062,18 +1142,26 @@ def lock_release_cmd(
     ctx: typer.Context,
     repo: str = typer.Option(None, "--repo", help="Target repo (default: current directory)"),
     force: bool = typer.Option(
-        False, "--force", help="Release even when the lock is fresh (another agent may be live!)"
+        False,
+        "--force",
+        help="Release a fresh lock held by ANOTHER session (that agent may be live!)",
     ),
 ) -> None:
-    """Release the agent lock (stale locks always; fresh locks need --force)."""
+    """Release the agent lock.
+
+    Stale locks and this session's own lock release freely; a fresh lock held by
+    a DIFFERENT session needs ``--force``.
+    """
     root = _require_root(repo or _ctx_repo(ctx))
     from navig import console_helper as ch
 
-    st = lock_state(read_lock(root))
+    lock = read_lock(root)
+    st = lock_state(lock)
     if st["state"] == "free":
         ch.info("Lock already free.")
         return
-    if st["state"] == "held" and not force:
+    ours = lock_is_ours(lock)
+    if st["state"] == "held" and not force and not ours:
         ch.warning(
             f"Lock is fresh (age {st.get('age_minutes', '?')}m) — another agent may be live.",
             "Re-run with --force only if you are sure that session is gone.",
@@ -1081,7 +1169,9 @@ def lock_release_cmd(
         raise typer.Exit(1)
     try:
         lock_path(root).unlink()
-        ch.success("Lock released.")
+        ch.success(
+            "Lock released (it was this session's own)." if ours else "Lock released."
+        )
     except OSError as exc:
         ch.error("Could not remove lock file.", str(exc))
         raise typer.Exit(1) from exc

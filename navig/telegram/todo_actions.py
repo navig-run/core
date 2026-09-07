@@ -28,7 +28,13 @@ from typing import Any
 
 from navig.pim.clock import local_now, to_utc_iso
 from navig.pim.dates import LEAD_TIMES, RECURRENCES, describe_lead, split_due, split_recurrence
-from navig.pim.render import render_agenda, render_category_summary, render_detail
+from navig.pim.render import (
+    _proposed_origins,
+    category_label,
+    render_agenda,
+    render_category_summary,
+    render_detail,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,19 +43,42 @@ CALLBACK_PREFIX = "td:"
 #: Quick-date buttons on the detail card, as (payload slot, label, resolver).
 #: Deliberately relative rather than a calendar picker: a calendar is five taps and a
 #: scroll on a phone, and "tomorrow" covers most of what a person actually schedules.
+#: (payload slot, emoji prefix). The WORDS are looked up per render — a label
+#: frozen in a module constant is evaluated once at import and can never follow
+#: `/lang`, which is how a localized card keeps showing English buttons.
 _QUICK_SLOTS: tuple[tuple[str, str], ...] = (
-    ("today", "Today"),
-    ("tmrw", "Tomorrow"),
-    ("wknd", "Weekend"),
-    ("nextwk", "Next week"),
-    ("clear", "↩ To inbox"),
+    ("today", ""),
+    ("tmrw", ""),
+    ("wknd", ""),
+    ("nextwk", ""),
+    ("clear", "↩ "),
 )
+
+
+def _quick_label(slot: str, prefix: str) -> str:
+    fallback = {
+        "today": "Today", "tmrw": "Tomorrow", "wknd": "Weekend",
+        "nextwk": "Next week", "clear": "To inbox",
+    }[slot]
+    return f"{prefix}{_t(f'pim.quick.{slot}') or fallback}"
 
 _VIEWS = ("all", "inbox", "today", "cats")
 
-#: Origins that mean "proposed, not yet agreed to". Rows with these get
-#: keep/no buttons instead of done, and render with a sparkle.
-_PROPOSED = ("ai", "agent")
+#: Origins that mean "proposed, not yet agreed to". Rows with these get keep/no
+#: buttons instead of done, and render with a sparkle. Read from the store rather
+#: than restated: this used to be a third independent copy, and the other two
+#: disagreed with it.
+
+
+def _t(key: str, **fields: Any) -> str:
+    """One localized string, or "" when the key is absent so a caller can test it."""
+    try:
+        from navig.core import i18n  # noqa: PLC0415
+
+        text = i18n.t(key, **fields)
+    except Exception:  # noqa: BLE001 — a card must never fail on a locale read
+        return ""
+    return "" if text == key else text
 
 
 def extension_is_off() -> bool:
@@ -74,11 +103,14 @@ def extension_banner(*, as_html: bool = True) -> str:
     if not extension_is_off():
         return ""
     if as_html:
-        return (
+        return _t("pim.ext.off_html") or (
             "⚠️ <b>The Todo extension is off</b> — your tasks are still here, but "
             "reminders are not delivered.\nTurn it on: /extensions\n"
         )
-    return "The Todo extension is off - tasks are kept, reminders are not delivered. Turn it on: /extensions"
+    return _t("pim.ext.off_cli") or (
+        "The Todo extension is off - tasks are kept, reminders are not delivered. "
+        "Turn it on: /extensions"
+    )
 
 
 # ── the store ────────────────────────────────────────────────────────────────
@@ -94,14 +126,26 @@ def _store() -> Any:
 def _nav_row(active: str) -> list[dict[str, str]]:
     """The view switcher. The active view is marked rather than removed — a button
     that disappears when you are on its view makes the row jump under your thumb."""
-    labels = (("all", "📋 All"), ("inbox", "📥 Inbox"), ("today", "📅 Today"), ("cats", "🗂 Category"))
-    return [
-        {
-            "text": f"• {label} •" if key == active else label,
-            "callback_data": f"td:v:{key}",
-        }
-        for key, label in labels
-    ]
+    rows = (
+        ("all", "📋", "All"),
+        ("inbox", "📥", "Inbox"),
+        ("today", "📅", "Today"),
+        ("cats", "🗂", "Category"),
+    )
+    out: list[dict[str, str]] = []
+    for key, emoji, fallback in rows:
+        # `cats` is the view name; the locale key reads `category`, which is what the
+        # button says. Keeping them separate means renaming one cannot silently
+        # repoint the other.
+        word = _t(f"pim.nav.{'category' if key == 'cats' else key}") or fallback
+        label = f"{emoji} {word}"
+        out.append(
+            {
+                "text": f"• {label} •" if key == active else label,
+                "callback_data": f"td:v:{key}",
+            }
+        )
+    return out
 
 
 def build_list_keyboard(
@@ -117,11 +161,12 @@ def build_list_keyboard(
     for todo in todos[:limit]:
         title = str(todo.get("title") or "")
         short = title if len(title) <= 22 else title[:21] + "…"
-        if todo.get("origin") in _PROPOSED:
+        if todo.get("origin") in _proposed_origins():
             # A suggestion is not a task yet, so "done" would be a lie: it would mark
             # work the operator never agreed to as finished. Keep or no, one tap each.
+            keep = _t("pim.button.keep") or "keep"
             rows.append([
-                {"text": f"✓ keep {short}", "callback_data": f"td:ok:{todo['id']}"},
+                {"text": f"✓ {keep} {short}", "callback_data": f"td:ok:{todo['id']}"},
                 {"text": "✕", "callback_data": f"td:no:{todo['id']}"},
             ])
             continue
@@ -130,9 +175,12 @@ def build_list_keyboard(
             {"text": "⋯", "callback_data": f"td:o:{todo['id']}"},
         ])
     if len(todos) > limit:
-        rows.append([{"text": f"… and {len(todos) - limit} more", "callback_data": "td:v:all"}])
+        extra = len(todos) - limit
+        more = _t("pim.button.more", n=extra) or f"… and {extra} more"
+        rows.append([{"text": more, "callback_data": "td:v:all"}])
     rows.append(_nav_row(view))
-    rows.append([{"text": "＋ Add a task", "callback_data": "td:add"}])
+    add = _t("pim.button.add") or "Add a task"
+    rows.append([{"text": f"＋ {add}", "callback_data": "td:add"}])
     return {"inline_keyboard": rows}
 
 
@@ -146,7 +194,7 @@ def build_category_keyboard(categories: list[dict[str, Any]]) -> dict[str, Any]:
     rows: list[list[dict[str, str]]] = []
     pair: list[dict[str, str]] = []
     for index, row in enumerate(categories):
-        name = str(row.get("name") or "") or "uncategorised"
+        name = category_label(str(row.get("name") or ""))
         count = int(row.get("open") or 0)
         pair.append({
             "text": f"🗂 {name}" + (f" ({count})" if count else ""),
@@ -167,14 +215,19 @@ def build_detail_keyboard(todo: dict[str, Any]) -> dict[str, Any]:
     done = bool(todo.get("completed_at"))
     rows: list[list[dict[str, str]]] = []
 
+    primary = (
+        f"↩ {_t('pim.button.reopen') or 'Reopen'}"
+        if done
+        else f"✓ {_t('pim.button.done') or 'Done'}"
+    )
     rows.append([
-        {"text": "↩ Reopen" if done else "✓ Done", "callback_data": f"td:{'u' if done else 'd'}:{tid}"},
-        {"text": "🗑 Delete", "callback_data": f"td:x:{tid}"},
+        {"text": primary, "callback_data": f"td:{'u' if done else 'd'}:{tid}"},
+        {"text": f"🗑 {_t('pim.button.delete') or 'Delete'}", "callback_data": f"td:x:{tid}"},
     ])
 
     quick = [
-        {"text": label, "callback_data": f"td:s:{tid}:{slot}"}
-        for slot, label in _QUICK_SLOTS
+        {"text": _quick_label(slot, prefix), "callback_data": f"td:s:{tid}:{slot}"}
+        for slot, prefix in _QUICK_SLOTS
     ]
     rows.extend([quick[:3], quick[3:]])
 
@@ -190,13 +243,14 @@ def build_detail_keyboard(todo: dict[str, Any]) -> dict[str, Any]:
     current = todo.get("recur")
     rows.append([
         {
-            "text": ("🔁 " if current == name else "") + name,
+            "text": ("🔁 " if current == name else "") + (_t(f"pim.recur.{name}") or name),
             "callback_data": f"td:p:{tid}:{'off' if current == name else name}",
         }
         for name in RECURRENCES
     ])
 
-    rows.append([{"text": "‹ Back to the list", "callback_data": "td:v:all"}])
+    back = _t("pim.button.back") or "Back to the list"
+    rows.append([{"text": f"‹ {back}", "callback_data": "td:v:all"}])
     return {"inline_keyboard": rows}
 
 
@@ -215,16 +269,19 @@ def build_view(view: str, *, now: datetime | None = None) -> tuple[str, dict[str
     if view == "inbox":
         todos = [t for t in todos if not t.get("due_at")]
         text = render_agenda(
-            todos, now, title="📥 INBOX",
-            empty_hint="The inbox is empty. Send /todo &lt;something&gt; to capture one.",
+            todos, now,
+            title=f"📥 {_t('pim.title.inbox') or 'INBOX'}",
+            empty_hint=_t("pim.empty.inbox")
+            or "The inbox is empty. Send /todo &lt;something&gt; to capture one.",
         )
     elif view == "today":
         from navig.pim.render import bucket_of  # noqa: PLC0415
 
         todos = [t for t in todos if bucket_of(t, now) in ("overdue", "today")]
         text = render_agenda(
-            todos, now, title="📅 TODAY",
-            empty_hint="Nothing due today. 🎉",
+            todos, now,
+            title=f"📅 {_t('pim.title.today') or 'TODAY'}",
+            empty_hint=_t("pim.empty.today") or "Nothing due today. 🎉",
         )
     else:
         view = "all"
@@ -243,10 +300,10 @@ def build_category_view(index: int, *, now: datetime | None = None) -> tuple[str
 
     name = str(categories[index].get("name") or "")
     todos = store.list_todos(category=name)
-    label = name or "uncategorised"
+    label = category_label(name)
     text = render_agenda(
         todos, now, title=f"🗂 {label.upper()}",
-        empty_hint=f"Nothing in {label} yet.",
+        empty_hint=_t("pim.empty.category", name=label) or f"Nothing in {label} yet.",
     )
     return extension_banner() + text, build_list_keyboard(todos, view="cats")
 
@@ -342,7 +399,7 @@ async def handle_callback(
         if action == "o" and len(parts) >= 2:
             rendered = build_detail(parts[1], now=now)
             if rendered is None:
-                return "That task is gone"
+                return _t("pim.toast.gone") or "That task is gone"
             await _edit(channel, chat_id, message_id, *rendered)
             return ""
 
@@ -350,16 +407,17 @@ async def handle_callback(
             card_id = parts[1]
             todo = store.complete_todo(card_id) if action == "d" else store.reopen_todo(card_id)
             if todo is None:
-                return "That task is gone"
+                return _t("pim.toast.gone") or "That task is gone"
             _resync_reminders(store, todo, user_id=user_id, chat_id=chat_id, now=now)
             await _rerender_list(channel, chat_id, message_id, now)
             if action == "u":
-                return "Reopened"
+                return _t("pim.toast.reopened") or "Reopened"
             # A recurring todo comes back OPEN with a new date — say which, or the
             # operator taps "done" and watches the row refuse to disappear.
             if todo.get("recur") and not todo.get("completed_at"):
-                return f"Done · next {_short_date(todo.get('due_at'), now)}"
-            return "Done ✓"
+                nxt = _short_date(todo.get("due_at"), now)
+                return _t("pim.toast.done_next", when=nxt) or f"Done · next {nxt}"
+            return f"{_t('pim.toast.done') or 'Done'} ✓"
 
         if action == "ok" and len(parts) >= 2:
             # Accepting a suggestion makes it an ordinary task. `origin_ref` is KEPT:
@@ -367,9 +425,9 @@ async def handle_callback(
             # proposed again alongside the copy they just accepted.
             todo = store.update_todo(parts[1], {"origin": "manual"})
             if todo is None:
-                return "That task is gone"
+                return _t("pim.toast.gone") or "That task is gone"
             await _rerender_list(channel, chat_id, message_id, now)
-            return "Kept"
+            return _t("pim.toast.kept") or "Kept"
 
         if action == "no" and len(parts) >= 2:
             # Deleting records the dismissal (BoardStore.delete_todo), so this source
@@ -380,9 +438,9 @@ async def handle_callback(
             if user_id is not None:
                 cancel_for(store, card_id, user_id=int(user_id))
             if not store.delete_todo(card_id):
-                return "That task is gone"
+                return _t("pim.toast.gone") or "That task is gone"
             await _rerender_list(channel, chat_id, message_id, now)
-            return "Dismissed — it won't come back"
+            return _t("pim.toast.dismissed") or "Dismissed — it won't come back"
 
         if action == "x" and len(parts) >= 2:
             card_id = parts[1]
@@ -391,27 +449,30 @@ async def handle_callback(
             if user_id is not None:
                 cancel_for(store, card_id, user_id=int(user_id))
             if not store.delete_todo(card_id):
-                return "That task is gone"
+                return _t("pim.toast.gone") or "That task is gone"
             await _rerender_list(channel, chat_id, message_id, now)
-            return "Deleted"
+            return _t("pim.toast.deleted") or "Deleted"
 
         if action == "s" and len(parts) >= 3:
             card_id, slot = parts[1], parts[2]
             when = _quick_date(slot, now)
             todo = store.update_todo(card_id, {"due_at": to_utc_iso(when) if when else None})
             if todo is None:
-                return "That task is gone"
+                return _t("pim.toast.gone") or "That task is gone"
             _resync_reminders(store, todo, user_id=user_id, chat_id=chat_id, now=now)
             rendered = build_detail(card_id, now=now)
             if rendered:
                 await _edit(channel, chat_id, message_id, *rendered)
-            return "Back in the inbox" if when is None else f"Due {_short_date(todo.get('due_at'), now)}"
+            if when is None:
+                return _t("pim.toast.to_inbox") or "Back in the inbox"
+            due = _short_date(todo.get("due_at"), now)
+            return _t("pim.toast.due", when=due) or f"Due {due}"
 
         if action == "r" and len(parts) >= 3:
             card_id, token = parts[1], parts[2]
             todo = store.get_todo(card_id)
             if todo is None:
-                return "That task is gone"
+                return _t("pim.toast.gone") or "That task is gone"
             leads = list(todo.get("remind_before") or [])
             on = token not in leads
             leads = [*leads, token] if on else [x for x in leads if x != token]
@@ -420,25 +481,30 @@ async def handle_callback(
             rendered = build_detail(card_id, now=now)
             if rendered:
                 await _edit(channel, chat_id, message_id, *rendered)
-            return f"{'On' if on else 'Off'}: {describe_lead(token)}"
+            lead = describe_lead(token)
+            key = "pim.toast.lead_on" if on else "pim.toast.lead_off"
+            return _t(key, lead=lead) or f"{'On' if on else 'Off'}: {lead}"
 
         if action == "p" and len(parts) >= 3:
             card_id, name = parts[1], parts[2]
             recur = None if name == "off" or name not in RECURRENCES else name
             todo = store.update_todo(card_id, {"recur": recur})
             if todo is None:
-                return "That task is gone"
+                return _t("pim.toast.gone") or "That task is gone"
             rendered = build_detail(card_id, now=now)
             if rendered:
                 await _edit(channel, chat_id, message_id, *rendered)
-            return "Repeat off" if recur is None else f"Repeats {recur}"
+            if recur is None:
+                return _t("pim.toast.repeat_off") or "Repeat off"
+            word = _t(f"pim.recur.{recur}") or recur
+            return _t("pim.toast.repeats", recur=word) or f"Repeats {word}"
 
         if action == "add":
-            return "Send: /todo <task> [when]"
+            return _t("pim.toast.add_hint") or "Send: /todo <task> [when]"
 
     except Exception:  # noqa: BLE001 — a raise here leaves the card showing stale state
         logger.exception("todo callback %r failed", cb_data)
-        return "Something went wrong"
+        return _t("pim.toast.error") or "Something went wrong"
 
     return ""
 

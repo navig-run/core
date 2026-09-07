@@ -433,3 +433,48 @@ def test_a_timecode_keeps_its_own_colons() -> None:
     chain = fx.timecode(font="/f.ttf", fps=30)
     assert r"timecode='00\:00\:00\:00'" in chain
     assert "timecode_rate=30" in chain
+
+
+# ── continuous psychedelia (no beat required) ─────────────────────────────────
+
+
+def test_the_trippy_effects_are_driven_by_time_not_by_hits() -> None:
+    """These exist so a clip can be built with NO beat detection at all.
+
+    Everything else in this module fires on a list of timestamps. A look made only of hits
+    on a steady tempo starts feeling mechanical, and a track without a reliable pulse
+    cannot use one at all.
+    """
+    assert "t/" in fx.hue_cycle(8)
+    assert fx.trails(0.9) == "lagfun=decay=0.9"
+    assert fx.smear(4) == "tmix=frames=4"
+    assert "sin(" in fx.breathe(0.05, 6)
+    assert "mod(t" in fx.pulse_invert(4)
+    assert fx.solarize(0.5).startswith("curves=")
+
+
+def test_each_trippy_effect_is_off_at_zero() -> None:
+    # A look that leaves a field unset must render the identical string it always did.
+    assert fx.hue_cycle(0) == ""
+    assert fx.trails(0) == ""
+    assert fx.smear(1) == ""
+    assert fx.breathe(0) == ""
+    assert fx.pulse_invert(0) == ""
+    assert fx.solarize(0) == ""
+
+
+def test_a_trails_decay_must_leave_something_to_decay() -> None:
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        fx.trails(1.0)
+
+
+def test_an_inversion_cannot_be_longer_than_its_own_period() -> None:
+    # Otherwise the picture is inverted permanently, which is not a pulse.
+    with pytest.raises(ValueError, match="shorter than period"):
+        fx.pulse_invert(2.0, width=2.0)
+
+
+def test_the_inversion_gate_escapes_its_commas_for_ffmpeg() -> None:
+    # An unescaped comma inside enable='' ends the filter early and ffmpeg reports a
+    # confusing error about the NEXT filter instead.
+    assert r"mod(t\,4)" in fx.pulse_invert(4)

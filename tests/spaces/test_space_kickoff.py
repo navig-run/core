@@ -27,10 +27,22 @@ def test_build_space_kickoff_collects_top_actions(tmp_path):
         encoding="utf-8",
     )
 
+    # DEV_PLAN belongs to the SPACE. It used to live in ``repo/.navig/plans`` and the
+    # assertion below proved the briefing read the PROCESS's working directory. Two of
+    # the three callers are the daemon, whose cwd on this machine is the user config
+    # dir -- a folder with no plans at all -- so that source contributed NOTHING in
+    # production, and an unrelated project's tasks on the CLI. The space is the only
+    # correct source; `cwd` stays in the signature because callers pass it.
+    (space / ".navig" / "plans").mkdir(parents=True, exist_ok=True)
+    (space / ".navig" / "plans" / "DEV_PLAN.md").write_text(
+        "- [ ] Add kickoff smoke tests\n", encoding="utf-8"
+    )
+
+    # A decoy in the cwd, whose task must NOT reach the briefing.
     repo = tmp_path / "repo"
     plans = repo / ".navig" / "plans"
     plans.mkdir(parents=True, exist_ok=True)
-    (plans / "DEV_PLAN.md").write_text("- [ ] Add kickoff smoke tests\n", encoding="utf-8")
+    (plans / "DEV_PLAN.md").write_text("- [ ] A task from another folder\n", encoding="utf-8")
 
     kickoff = build_space_kickoff("focus", space, cwd=repo, max_items=3)
     assert kickoff.goal == "Ship premium onboarding"
@@ -39,6 +51,12 @@ def test_build_space_kickoff_collects_top_actions(tmp_path):
         "Polish copy and micro-UX",
         "Add kickoff smoke tests",
     ]
+
+    # ...and it is absent because it was never READ, not because it fell off the
+    # end of a 3-item list: with room for ten it still does not appear.
+    roomy = build_space_kickoff("focus", space, cwd=repo, max_items=10)
+    assert "A task from another folder" not in roomy.actions
+    assert roomy.actions == kickoff.actions
 
 
 def test_space_switch_prints_top_next_actions(tmp_path, monkeypatch):

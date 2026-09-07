@@ -481,6 +481,38 @@ def profile_open(name: str, *, headless: bool | None = None,
                 "headless": headless,
                 "note": f"profile '{name}' already open on port {prof.port}"}
 
+    # The stable port must still be BINDABLE, not merely idle. Windows reservations move
+    # across reboots, so a profile created when its port was free becomes permanently
+    # unopenable once a reservation swallows it: bind() fails with PermissionError(13),
+    # nothing is listening, netstat shows it free, and the only symptom is a launch that
+    # times out. Repair it rather than reporting a mystery — the login lives in
+    # user_data_dir, so moving the port costs nothing and recreating the profile would
+    # cost the login. Recorded as an incident because a silent self-heal is how the
+    # original problem stayed hidden.
+    if not t.port_is_bindable(prof.port):
+        new_port = p.reallocate_port(name)
+        if new_port is None:
+            return {"ok": False, "name": name, "port": prof.port,
+                    "error": (f"port {prof.port} cannot be bound (reserved by the OS — see "
+                              f"`netsh interface ipv4 show excludedportrange protocol=tcp`) "
+                              f"and the profile registry could not be updated. Retry, or set "
+                              f"a free port by hand.")}
+        try:
+            # Module-qualified, like approval/manager.py: a bare `record` here would be
+            # SHADOWED by this module's own `async def record` (the CDP screen-recorder),
+            # which takes (port, out, secs). The gate caught exactly that — as both a
+            # discarded coroutine and a call that cannot succeed.
+            # And **data, not a positional dict: `incidents.record(event, **data)`.
+            from navig.core import incidents as _incidents
+
+            _incidents.record("PROFILE_PORT_REALLOCATED", profile=name,
+                              old_port=prof.port, new_port=new_port)
+        except Exception:  # noqa: BLE001 — a health note is not worth failing the open
+            pass
+        logger.warning("[cdp.profiles] %s: port %d is OS-reserved; moved to %d",
+                       name, prof.port, new_port)
+        prof = p.get_profile(name) or prof
+
     # Real profile → preflight: refuse while the real browser holds the profile lock.
     if prof.real and t.is_running(prof.app):
         return {"ok": False, "name": name, "port": prof.port,

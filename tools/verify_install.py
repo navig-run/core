@@ -255,6 +255,50 @@ def main() -> int:
                 if "✗" in line or "missing" in line.lower():
                     print(f"        {line.strip()}")
 
+    # -- the vault: a HARD dependency now, and nothing above touches it -----------------
+    #
+    # navig.vault.<module> are shims aliasing to the navig-vault package. If that dependency
+    # fails to resolve, the vault is dead while every check above still passes: those imports
+    # are lazy, and `space init` / `space doctor` never open a credential. The agent, the
+    # gateway and seven plugins read secrets through this, so "the installed wheel is a
+    # working navig" is not true without it.
+    section("Vault (navig-vault is a hard dependency)")
+
+    try:
+        import navig_vault
+        import navig_vault.core as _real
+
+        import navig.vault.core as _shim
+
+        check("navig-vault resolved from the declared dependency", True, navig_vault.__version__)
+        # Aliased, not re-exported: a copy breaks dotted patching and the conftest singleton
+        # resets that keep vault.db from leaking handles on Windows.
+        check("navig.vault.core IS navig_vault.core", _shim is _real,
+              "aliased" if _shim is _real else "SHIM IS A COPY")
+    except Exception as exc:  # noqa: BLE001
+        check("navig-vault resolved from the declared dependency", False,
+              f"{type(exc).__name__}: {exc}"[:140])
+        check("navig.vault.core IS navig_vault.core", False, "not importable")
+
+    # And it really stores and returns a secret, in this venv, on a throwaway vault.
+    with tempfile.TemporaryDirectory() as _vd:
+        _venv = dict(os.environ)
+        # NAVIG_CONFIG_DIR, not NAVIG_VAULT_DIR: get_vault() auto-migrates a legacy store on
+        # first use, and only moving the CONFIG dir moves the legacy source path with it --
+        # otherwise this probe would copy the developer's real credentials into a temp dir.
+        _venv["NAVIG_CONFIG_DIR"] = _vd
+        _rt = subprocess.run(
+            [sys.executable, "-c",
+             "from navig.vault import get_vault;"
+             "v = get_vault();"
+             "v.add(provider='smoke', credential_type='api_key', data={'api_key': 'round-trip'});"
+             "print('OK' if v.get_api_key('smoke') == 'round-trip' else 'BAD')"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            env=_venv, timeout=180)
+        _ok = (_rt.stdout or "").strip().endswith("OK")
+        check("a credential round-trips through the installed vault", _ok,
+              "stored and read back" if _ok else (_rt.stderr or _rt.stdout or "").strip()[-160:])
+
     print(f"\n{'=' * 62}")
     if FAILURES:
         print(f"{CHECKS - len(FAILURES)}/{CHECKS} passed — {len(FAILURES)} FAILED:")

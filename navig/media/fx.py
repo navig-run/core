@@ -491,3 +491,96 @@ def timecode(*, font: str, pos: str = "bottom-left", size: int = 22,
         f"fontsize={size}",
         f"fontcolor={colour}@{alpha:g}",
     ])
+
+
+# ── continuous psychedelia ────────────────────────────────────────────────────
+#
+# Everything above fires ON something — a beat, a cut, a timestamp. These do not: they run
+# for the whole shot and are driven by `t`, so a clip can be built with no beat detection
+# at all. That matters because not every track wants to be cut to a grid, and a look made
+# only of hits on a steady tempo is the thing that starts feeling mechanical.
+#
+# All of them are LINEAR filters on purpose. A kaleidoscope needs `split`/`hstack`, which
+# turns the chain into a labelled graph and stops it composing with `chain()`.
+
+
+def hue_cycle(seconds: float = 8.0, *, saturation: float = 1.35) -> str:
+    """Rotate the whole palette once every ``seconds``.
+
+    The single most effective trippy move and the cheapest: colour that will not sit still.
+    Saturation is lifted with it because a rotating hue on a desaturated image reads as a
+    fault rather than a choice.
+    """
+    if seconds <= 0:
+        return ""
+    return f"hue=H=2*PI*t/{seconds:g}:s={saturation:g}"
+
+
+def trails(decay: float = 0.92) -> str:
+    """Luminance echo — bright things smear forward in time.
+
+    ``decay`` is how much of the previous frame survives: 0.85 is a soft ghost, 0.97 is a
+    long comet tail that never quite clears.
+    """
+    if decay <= 0:
+        return ""
+    if not 0 < decay < 1:
+        raise ValueError(f"decay must be between 0 and 1 (exclusive), got {decay}")
+    return f"lagfun=decay={decay:g}"
+
+
+def smear(frames: int = 5) -> str:
+    """Blend the last ``frames`` together — motion turns to liquid.
+
+    Distinct from :func:`trails`: that keeps the brightest history, this averages it, so
+    movement blurs in both directions instead of dragging one way.
+    """
+    if frames <= 1:
+        return ""
+    return f"tmix=frames={frames}"
+
+
+def breathe(amount: float = 0.05, seconds: float = 6.0, *, fps: int = 30,
+            width: int = VERTICAL_W, height: int = VERTICAL_H) -> str:
+    """A slow continuous zoom in and out — the frame never settles.
+
+    Unlike :func:`punch_in` this is not keyed to anything; it is a sine, so it works on a
+    track with no detectable pulse.
+    """
+    if amount <= 0:
+        return ""
+    if seconds <= 0:
+        raise ValueError(f"seconds must be positive, got {seconds}")
+    zoom = f"1+{amount:g}*(0.5+0.5*sin(2*PI*(on/{fps})/{seconds:g}))"
+    return (
+        f"zoompan=z='{zoom}':d=1:s={width}x{height}:fps={fps}"
+        f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+    )
+
+
+def pulse_invert(period: float = 4.0, *, width: float = 0.08) -> str:
+    """Flip to negative for a moment, every ``period`` seconds.
+
+    A metronome the picture keeps rather than one the music supplies — which is the point
+    when there is no reliable beat to hang anything on.
+    """
+    if period <= 0 or width <= 0:
+        return ""
+    if width >= period:
+        raise ValueError(f"width ({width}) must be shorter than period ({period})")
+    return rf"negate=enable='lt(mod(t\,{period:g})\,{width:g})'"
+
+
+def solarize(amount: float = 1.0) -> str:
+    """Fold the highlights back down — the Sabattier look, in one curve.
+
+    ``amount`` blends between untouched (0) and a full fold (1) by moving where the curve
+    turns over, so it can be dialled in rather than only switched on.
+    """
+    if amount <= 0:
+        return ""
+    if not 0 < amount <= 1:
+        raise ValueError(f"amount must be between 0 and 1, got {amount}")
+    top = 1.0 - amount          # where white ends up after the fold
+    mid = 0.5 + 0.25 * amount   # the turnover, pushed brighter as the effect deepens
+    return f"curves=all='0/0 0.35/0.45 {mid:g}/1 1/{top:g}'"

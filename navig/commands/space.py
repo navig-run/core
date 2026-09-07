@@ -1270,8 +1270,17 @@ def _audit_spaces() -> dict:
         if len(paths) > 1
     ]
 
+    # Nested sub-spaces that are not folded. A space under another space's `spaces/`
+    # dir claims a top-level id the moment anyone cds into it — and permanently, since
+    # discovery registers before it filters. `navig space fold` is the fix.
+    unfolded_subspaces = _find_unfolded_subspaces(inventory)
+
     issue_count = (
-        len(bare_pairs) + len(dup_workspace_ids) + len(dup_registry_ids) + len(orphans)
+        len(bare_pairs)
+        + len(dup_workspace_ids)
+        + len(dup_registry_ids)
+        + len(orphans)
+        + len(unfolded_subspaces)
     )
     return {
         "roots": [str(r) for r in roots],
@@ -1281,7 +1290,38 @@ def _audit_spaces() -> dict:
         "duplicate_workspace_ids": dup_workspace_ids,
         "duplicate_registry_ids": dup_registry_ids,
         "orphan_registry_paths": orphans,
+        "unfolded_subspaces": unfolded_subspaces,
     }
+
+
+def _find_unfolded_subspaces(inventory: list[dict]) -> list[dict]:
+    """Sub-spaces under ``<space>/spaces/<name>/`` that would claim a top-level id.
+
+    Only flags folders that *would actually be surfaced* — a bare `.navig/` with no
+    manifest and no plans is already invisible and needs no marker.
+    """
+    from navig.spaces.resolver import _project_has_content, is_folded  # noqa: PLC0415
+
+    found: list[dict] = []
+    for item in inventory:
+        container = Path(item["path"]) / "spaces"
+        if not container.is_dir():
+            continue
+        try:
+            children = sorted(container.iterdir(), key=lambda p: p.name)
+        except OSError:
+            continue
+        for child in children:
+            if not child.is_dir() or child.name.startswith("."):
+                continue
+            if not (child / ".navig").is_dir():
+                continue
+            if is_folded(child) or not _project_has_content(child):
+                continue
+            found.append(
+                {"parent": item["name"], "name": child.name, "path": str(child)}
+            )
+    return found
 
 
 def _render_audit(f: dict) -> None:
@@ -1316,6 +1356,15 @@ def _render_audit(f: dict) -> None:
         cons.print("\n  registry entries pointing at a missing path (orphans):", style="yellow")
         for o in f["orphan_registry_paths"]:
             cons.print(f"    • {o['id']}  →  {o['path']}")
+    if f.get("unfolded_subspaces"):
+        cons.print(
+            "\n  nested sub-spaces that will claim a top-level id on first cd "
+            "(fix: `navig space fold <path>`):",
+            style="yellow",
+        )
+        for s in f["unfolded_subspaces"]:
+            cons.print(f"    • {s['parent']}/spaces/{s['name']}")
+            cons.print(f"        - {s['path']}", style="dim")
 
     cons.print(
         "\n  Review, then remove the stray twin/entry (quarantine the folder, drop the "
@@ -1894,6 +1943,120 @@ def space_forget(name: str = typer.Argument(..., help="Space name or path to for
         ch.success(f"Forgot space '{name}' (folder left intact).")
     else:
         ch.warning(f"'{name}' is not registered.")
+
+
+# ── Fold: demote a nested space so it never claims a top-level id ────────────
+
+
+@space_app.command("fold")
+def space_fold(
+    path: Path = typer.Argument(..., help="Path to the sub-space folder to fold"),
+) -> None:
+    """Demote a sub-space: keep it working, hide it from discovery and the registry.
+
+    A folder with a `.navig/` is claimed as a top-level space the moment anyone cds into
+    it — and permanently, because discovery registers before it filters on enabled, so
+    `disable` cannot take the id back. Folding writes `.navig/.folded` and releases any
+    id already claimed. The folder keeps working normally when you are inside it.
+    """
+    import json  # noqa: PLC0415
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    from navig.spaces import registry as space_registry  # noqa: PLC0415
+    from navig.spaces.resolver import FOLD_MARKER  # noqa: PLC0415
+    from navig.spaces.space_manifest import is_space_dir  # noqa: PLC0415
+
+    target = path.expanduser().resolve()
+    if not target.is_dir() or not is_space_dir(target):
+        ch.error(
+            f"Not a space: {target}",
+            details="A space is a folder containing a .navig/ directory.",
+        )
+        raise typer.Exit(2)
+
+    marker = target / ".navig" / FOLD_MARKER
+    if marker.is_file():
+        ch.info(f"'{target.name}' is already folded.", details=str(marker))
+        return
+
+    try:
+        marker.write_text(
+            json.dumps(
+                {
+                    "folded_at": datetime.now(timezone.utc).isoformat(),
+                    "folded_by": "navig space fold",
+                    "parent": str(target.parent),
+                    "note": "Sub-space: excluded from discovery and spaces.json. Undo: navig space unfold",
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        ch.error(f"Could not write the fold marker: {exc}", details=str(marker))
+        raise typer.Exit(1) from exc
+
+    released = space_registry.forget(str(target))
+    detail = "released its registry entry" if released else "was not registered"
+    ch.success(f"Folded '{target.name}' ({detail}).", details=str(target))
+
+
+@space_app.command("unfold")
+def space_unfold(
+    path: Path = typer.Argument(..., help="Path to the folded sub-space to restore"),
+) -> None:
+    """Undo `space fold` — the folder becomes a discoverable space again.
+
+    Reverses either spelling: the `.navig/.folded` marker, or a hand-renamed
+    `.navig.folded/` directory (restored to `.navig/`).
+    """
+    from navig.spaces.resolver import FOLD_MARKER, FOLDED_DIR  # noqa: PLC0415
+    from navig.spaces.space_manifest import is_space_dir  # noqa: PLC0415
+
+    target = path.expanduser().resolve()
+    hard = target / FOLDED_DIR
+    if not target.is_dir() or not (is_space_dir(target) or hard.is_dir()):
+        ch.error(
+            f"Not a space: {target}",
+            details="A space is a folder containing a .navig/ (or .navig.folded/) directory.",
+        )
+        raise typer.Exit(2)
+
+    # Hard fold: the whole dir was renamed away. Put it back.
+    if hard.is_dir():
+        live = target / ".navig"
+        if live.exists():
+            ch.error(
+                f"Cannot restore {FOLDED_DIR}: a .navig/ already exists.",
+                details=f"Merge them by hand, then delete {hard}.",
+            )
+            raise typer.Exit(1)
+        try:
+            hard.rename(live)
+        except OSError as exc:
+            ch.error(f"Could not restore {FOLDED_DIR}: {exc}", details=str(hard))
+            raise typer.Exit(1) from exc
+        ch.success(
+            f"Unfolded '{target.name}' — {FOLDED_DIR} restored to .navig/.",
+            details=str(target),
+        )
+        return
+
+    marker = target / ".navig" / FOLD_MARKER
+    if not marker.is_file():
+        ch.info(f"'{target.name}' is not folded — nothing to undo.")
+        return
+
+    try:
+        marker.unlink()
+    except OSError as exc:
+        ch.error(f"Could not remove the fold marker: {exc}", details=str(marker))
+        raise typer.Exit(1) from exc
+
+    ch.success(
+        f"Unfolded '{target.name}' — it will be discovered again.", details=str(target)
+    )
 
 
 # Backward-compatible function name used by tests/importers.

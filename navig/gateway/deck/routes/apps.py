@@ -29,7 +29,7 @@ import json
 import logging
 import re
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -181,7 +181,7 @@ async def handle_deck_apps_health(request: "web.Request") -> "web.Response":
              streak_days, heart_rate_zone, habits_total, habits_done_today,
              unavailable }
     """
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = date.today().isoformat()
 
     jobs, _ = await _async_load_cron_jobs()
     habit_jobs = [j for j in jobs if j.get("name", "").startswith(HABIT_NAME_PREFIX)]
@@ -258,7 +258,7 @@ async def handle_deck_apps_tasks_get(request: "web.Request") -> "web.Response":
         jobs, _ = await _async_load_cron_jobs()
         habit_jobs = [j for j in jobs if j.get("name", "").startswith(HABIT_NAME_PREFIX)]
 
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = date.today().isoformat()
 
         habits = []
         for j in habit_jobs:
@@ -923,7 +923,7 @@ async def handle_deck_apps_life(request: "web.Request") -> "web.Response":
     Each domain is fetched via an independent async provider and merged.
     """
     try:
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = date.today().isoformat()
         results = await asyncio.gather(
             _life_habits_today(today),
             _life_reminders_summary(),

@@ -108,6 +108,36 @@ _LLM_LABELS: dict[str, str] = {
     "keypoints": "📌 Key points", "actions": "☑️ Action items", "debug": "🐞 Debug",
 }
 
+
+def _t(key: str, **fields: object) -> str:
+    """A shared-locale string, resolved against the operator's ONE language."""
+    from navig.core import i18n  # noqa: PLC0415
+
+    return i18n.t(key, **fields)
+
+
+def llm_label(action: str) -> str:
+    """The heading an AI result prints under, in the operator's language.
+
+    Falls back to the English `_LLM_LABELS` entry, then to Title-case, so an
+    action added without a locale key still renders a word rather than a raw key.
+    """
+    fallback = _LLM_LABELS.get(action) or action.title()
+    value = _t(f"reply.label.{action}")
+    return fallback if value == f"reply.label.{action}" else value
+
+
+def _action_word(action: str) -> str:
+    """`llm_label` without its leading emoji -- what goes inside a SENTENCE.
+
+    An error reads "Couldn't run {action}"; dropping a decorative emoji into the
+    middle of that is noise, and embedding the raw English verb instead is how the
+    Russian card ended up half English.
+    """
+    label = llm_label(action)
+    head, _, rest = label.partition(" ")
+    return rest.strip() if rest.strip() and not head.isalnum() else label
+
 # Bounded cache of the bot's OWN AI-output text, keyed by the sent message_id.
 # Telegram's rich/AI replies come back with EMPTY reply text when a user replies
 # to them, so this lets you CHAIN actions (e.g. translate → reply 'summarize' on
@@ -160,25 +190,25 @@ def help_text() -> str:
     dispatches; the media/owner keywords and language note are curated.
     """
     def _kw(action: str) -> str:
-        label = _LLM_LABELS.get(action, action.title())
+        # The emoji comes from the localized label; the KEYWORD never does -- it is
+        # what the bot matches on, so it stays exactly as typed in every language.
+        label = llm_label(action)
         emoji = label.split(" ", 1)[0] if " " in label else "•"
         return f"{emoji} <code>{action}</code>"
 
     ai = " · ".join(_kw(a) for a in _LLM_LABELS)
     return (
-        "🎛 <b>Reply-keyword actions</b>\n"
-        "Reply to any message with one of these words and I'll run it on that message:\n\n"
-        f"<b>AI text</b>\n{ai}\n\n"
-        "<b>Media</b>\n"
-        "🎵 <code>music</code> / <code>song</code> — a music link → the same track everywhere\n"
-        "🎬 <code>tiktok</code> / <code>analyse</code> — a TikTok link → an AI briefing\n\n"
-        "<b>Owner</b>\n"
-        "🔖 <code>save</code> · 🔁 <code>refine</code> · 📌 <code>pin</code> / <code>unpin</code>\n\n"
-        "🌍 Also in FR · RU · ES · DE · PT — e.g. <code>traduis</code>, <code>переведи</code>, "
-        "<code>resumen</code>, <code>übersetze</code>, <code>traduza</code>.\n"
-        "💡 For translate, add a target: reply <code>translate fr</code>.\n"
-        "🔒 In a business chat, end a keyword with <code>?</code> (<code>translate?</code>) "
-        "to keep the result private — I'll DM it only to you."
+        f"{_t('reply.help.title')}\n"
+        f"{_t('reply.help.intro')}\n\n"
+        f"{_t('reply.help.ai')}\n{ai}\n\n"
+        f"{_t('reply.help.media')}\n"
+        f"{_t('reply.help.media_music')}\n"
+        f"{_t('reply.help.media_tiktok')}\n\n"
+        f"{_t('reply.help.owner')}\n"
+        f"{_t('reply.help.owner_keys')}\n\n"
+        f"{_t('reply.help.langs')}\n"
+        f"{_t('reply.help.translate_tip')}\n"
+        f"{_t('reply.help.business')}"
     )
 
 
@@ -233,8 +263,7 @@ async def _no_text(channel: Any, chat_id: int, action: str) -> bool:
     readable text — never leak the bare keyword to the chat agent. Returns True."""
     await channel.send_message(
         chat_id,
-        f"⚠️ I couldn't read any text in that message to {action}. "
-        "Reply to a text message and try again.",
+        _t("reply.err.no_text", action=_action_word(action)),
         parse_mode=None,
     )
     return True
@@ -278,17 +307,17 @@ async def run_bot_reply(
                 return False
             logger.warning("reply action %s failed: %s", action, res.get("reason"))
             await channel.send_message(
-                chat_id, f"⚠️ Couldn't {action} that right now — try again in a moment.",
+                chat_id, _t("reply.err.failed", action=_action_word(action)),
                 parse_mode=None,
             )
             return True
         result = (res.get("result") or "").strip()
         if not result:
             await channel.send_message(
-                chat_id, f"⚠️ Got an empty {action} result.", parse_mode=None
+                chat_id, _t("reply.err.empty", action=_action_word(action)), parse_mode=None
             )
             return True
-        body = f"**{_LLM_LABELS.get(action, action.title())}**\n\n{result}"
+        body = f"**{llm_label(action)}**\n\n{result}"
         sent: Any = None
         try:
             sent = await channel.send_rich_message(
@@ -316,7 +345,7 @@ async def run_bot_reply(
         ok = _save_to_wiki(chat_id, target)
         await channel.send_message(
             chat_id,
-            "🔖 Saved to your wiki inbox." if ok else "⚠️ Couldn't save that.",
+            _t("reply.saved") if ok else _t("reply.err.save"),
             parse_mode=None,
         )
         return True
@@ -333,11 +362,13 @@ async def run_bot_reply(
             res = None
         if res is not None:
             await channel.send_message(
-                chat_id, "📌 Pinned." if action == "pin" else "📌 Unpinned.", parse_mode=None
+                chat_id,
+                _t("reply.pinned") if action == "pin" else _t("reply.unpinned"),
+                parse_mode=None,
             )
         else:
             await channel.send_message(
-                chat_id, "📌 Couldn't pin — I may need admin rights here.", parse_mode=None
+                chat_id, _t("reply.err.pin"), parse_mode=None
             )
         return True
 
@@ -353,18 +384,18 @@ async def run_bot_reply(
             url = tt.engine.extract_url(target)
             if not url:
                 await channel.send_message(
-                    chat_id, "🎵 No TikTok link found in that message.", parse_mode=None
+                    chat_id, _t("reply.err.no_tiktok"), parse_mode=None
                 )
                 return True
             if not permissions.can_use("download", is_owner=is_owner):
-                await channel.send_message(chat_id, "⛔ Not permitted.", parse_mode=None)
+                await channel.send_message(chat_id, _t("reply.err.not_permitted"), parse_mode=None)
                 return True
             await tt.analyse_link(channel, chat_id, url)
             return True
         except Exception:  # noqa: BLE001
             logger.debug("reply tiktok action failed", exc_info=True)
             await channel.send_message(
-                chat_id, "🎵 Couldn't analyse that link right now.", parse_mode=None
+                chat_id, _t("reply.err.tiktok"), parse_mode=None
             )
             return True
 
@@ -376,18 +407,18 @@ async def run_bot_reply(
             url = music.find_music_url(target)
             if not url:
                 await channel.send_message(
-                    chat_id, "🎵 No music link found in that message.", parse_mode=None
+                    chat_id, _t("reply.err.no_music"), parse_mode=None
                 )
                 return True
             if not await music.resolve_reply(channel, chat_id, reply_to_message_id, url):
                 await channel.send_message(
-                    chat_id, "🎵 Couldn't find that track on song.link.", parse_mode=None
+                    chat_id, _t("reply.err.music_notfound"), parse_mode=None
                 )
             return True
         except Exception:  # noqa: BLE001
             logger.debug("reply music action failed", exc_info=True)
             await channel.send_message(
-                chat_id, "🎵 Couldn't convert that link right now.", parse_mode=None
+                chat_id, _t("reply.err.music"), parse_mode=None
             )
             return True
 
@@ -511,7 +542,7 @@ async def run_business_reply(
         # "⚠️ …" posted into the chat would be worse), then clean up the trigger.
         try:
             await channel.send_message(
-                owner_id, f"⚠️ I couldn't read any text in that message to {action}.",
+                owner_id, _t("reply.err.no_text", action=_action_word(action)),
                 parse_mode=None,
             )
         except Exception:  # noqa: BLE001
@@ -526,19 +557,22 @@ async def run_business_reply(
             # Report the failure to the owner privately rather than silently doing
             # nothing — never leak the bare keyword or an error into the chat.
             logger.warning("business reply action %s failed: %s", action, res.get("reason"))
-            note = (f"⚠️ Couldn't {action} that message right now."
-                    if not res.get("ok") else f"⚠️ Got an empty {action} result.")
+            note = (
+                _t("reply.err.failed", action=_action_word(action))
+                if not res.get("ok")
+                else _t("reply.err.empty", action=_action_word(action))
+            )
             try:
                 await channel.send_message(owner_id, note, parse_mode=None)
             except Exception:  # noqa: BLE001
                 pass
             await _delete_business_trigger(channel, bcid, trigger_id)
             return True
-        body = f"{_LLM_LABELS.get(action, action.title())}\n\n{result}"
+        body = f"{llm_label(action)}\n\n{result}"
         if private:
             # "read it for myself" (keyword ended with "?") — DM the owner privately,
             # rich with a plain fallback; the counterparty never sees it.
-            rich = f"**{_LLM_LABELS.get(action, action.title())}**\n\n{result}"
+            rich = f"**{llm_label(action)}**\n\n{result}"
             sent = None
             try:
                 sent = await channel.send_rich_message(owner_id, markdown=rich)
@@ -569,7 +603,7 @@ async def run_business_reply(
         ok = _save_to_wiki(chat_id, target)
         try:
             await channel.send_message(
-                owner_id, "🔖 Saved to your wiki inbox." if ok else "⚠️ Couldn't save that.",
+                owner_id, _t("reply.saved") if ok else _t("reply.err.save"),
                 parse_mode=None,
             )
         except Exception:  # noqa: BLE001

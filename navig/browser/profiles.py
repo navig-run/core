@@ -149,6 +149,17 @@ def allocate_port(data: dict | None = None) -> int:
                 continue
         except Exception:  # noqa: BLE001
             pass
+        # ⚠ "Nothing is serving CDP here" is NOT "a browser can bind here". Windows
+        # reserves ranges for Hyper-V/WSL, where bind() raises PermissionError(13) with
+        # nothing listening — invisible to the probe above, and to netstat.
+        # `targets.find_free_port` has always checked this; this allocator never did, so
+        # it handed out reserved ports and the browser then failed to open its debug port
+        # — surfacing as a launch timeout, or on Windows as a "successful" launch (the
+        # chrome.exe launcher exits 0) with a dead endpoint. Measured on the operator's
+        # machine: the reservation was 9181-9280 and PROFILE_PORT_BASE is 9280, so the
+        # FIRST profile ever created got an unusable port and stayed broken.
+        if not t.port_is_bindable(port):
+            continue
         return port
     return PROFILE_PORT_BASE + PROFILE_PORT_COUNT + 500  # practically unreachable
 
@@ -260,6 +271,28 @@ def set_default_account(name: str, account: str) -> bool:
         return False
     node[name]["default_account"] = account
     return _write(data)
+
+
+def reallocate_port(name: str) -> int | None:
+    """Move *name* to a usable stable port, keeping its profile dir (and its logins).
+
+    A "stable port" is only stable while the OS still allows it. Windows reservations MOVE
+    across reboots, so a profile created when 9280 was free becomes permanently unopenable
+    when a reservation later swallows it — the browser cannot bind, the debug port never
+    comes up, and every open reports a generic failure. The operator's ``navig-epic``
+    profile sat in exactly that state, which is why its scheduled claim could not run.
+
+    Reallocating is safe in a way that recreating the profile is NOT: the login lives in
+    ``user_data_dir``, which is untouched here — only the port field moves. Returns the new
+    port, or None if the registry could not be updated (a transient lock).
+    """
+    data = _read()
+    node = _profiles_node(data)
+    if name not in node:
+        return None
+    port = allocate_port(data)
+    node[name]["port"] = port
+    return port if _write(data) else None
 
 
 def set_profile_proxy(name: str, proxy: str | None) -> bool:

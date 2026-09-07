@@ -65,6 +65,13 @@ SEED_CATEGORIES: tuple[str, ...] = ("life", "business", "project", "rendezvous")
 # and a task they think they wrote.
 VALID_ORIGINS = ("manual", "ai", "agent")
 
+#: The origins that mean "proposed, not yet agreed to". Every surface that marks a
+#: suggestion reads THIS — three places used to decide it separately and two checked
+#: only "ai", so the suggestions the system actually produces (`origin="agent"`, from
+#: `navig todo scan` and the `task_add` tool) rendered as though the operator had
+#: written them.
+PROPOSED_ORIGINS = ("ai", "agent")
+
 DEFAULT_STAGES: list[dict[str, Any]] = [
     {"key": "backlog", "label": "Backlog"},
     {"key": "in_progress", "label": "In Progress"},

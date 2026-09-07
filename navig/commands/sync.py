@@ -25,15 +25,18 @@ def _resolve_root(repo: str | None) -> Path | None:
         root = Path(repo).expanduser().resolve()
         return root if (root / MASTER_REL).is_file() else None
 
-    from navig.commands.repo import repo_root
+    from navig.commands.repo import invocation_cwd, repo_root
 
-    root = repo_root(Path.cwd())
-    if root and (root / MASTER_REL).is_file():
-        return root
-    # Fallback: walk up from cwd (works outside a git checkout / in a worktree).
-    for parent in [Path.cwd(), *Path.cwd().parents]:
-        if (parent / MASTER_REL).is_file():
-            return parent
+    # Where the operator RAN navig, not the active space main.py chdir'd us into
+    # — otherwise `navig sync instructions` reports "Could not find MASTER …
+    # run inside a repo containing it" while standing in exactly that repo.
+    for start in dict.fromkeys((invocation_cwd(), Path.cwd())):
+        root = repo_root(start)
+        if root and (root / MASTER_REL).is_file():
+            return root
+        for parent in [start, *start.parents]:
+            if (parent / MASTER_REL).is_file():
+                return parent
     return None
 
 

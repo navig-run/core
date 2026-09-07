@@ -305,8 +305,14 @@ class TestGetBootMessage:
     def test_no_separator_without_extras(self):
         from navig.boot_messages import get_boot_message
 
-        # Deterministically pick last message by patching random
-        with patch("navig.boot_messages.random.randrange", return_value=0):
+        # The separator is appended ONLY for extras, so with none it must be absent
+        # whichever message is picked. Pin the pick anyway, at the seam that now owns
+        # it: #1242 moved the random choice out of this module and into i18n.pick, so
+        # the old patch target (navig.boot_messages.random) stopped existing and this
+        # test failed on every run. Patching i18n.pick keeps it deterministic without
+        # depending on "no message happens to contain ' · '", which is a property of
+        # the message pool that a new entry or a locale file could quietly break.
+        with patch("navig.core.i18n.pick", return_value="Systems live."):
             result = get_boot_message()
         assert " · " not in result
 

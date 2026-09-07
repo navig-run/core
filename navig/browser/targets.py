@@ -1119,6 +1119,35 @@ def _os_assigned_port() -> int | None:
             return None
 
 
+def port_is_bindable(port: int) -> bool:
+    """Can a listener actually take *port* on loopback right now?
+
+    **"Nothing is listening" is NOT the same as "usable."** Windows reserves port ranges
+    for Hyper-V / WSL / Docker, and `bind()` inside a reserved range raises
+    ``PermissionError(13)`` with nothing listening and nothing to see — no process owns it,
+    `netstat` shows it free, and only
+    ``netsh interface ipv4 show excludedportrange protocol=tcp`` reveals it. The
+    reservations MOVE across reboots, so a port that worked yesterday can be dead today.
+
+    This lived inline in :func:`find_free_port` and nowhere else, which is exactly how
+    ``profiles.allocate_port`` — the OTHER port allocator — came to hand out reserved
+    ports. Measured on the operator's machine: the reservation was **9181-9280**, and
+    ``PROFILE_PORT_BASE`` is **9280**, so the FIRST profile ever created got a port that
+    can never bind. Their ``navig-epic`` profile held it, which is why the scheduled Epic
+    claim could not open a browser at all.
+
+    ``SO_REUSEADDR`` mirrors the original inline check: it asks "is this port usable by a
+    new listener", not "is it perfectly idle".
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+
+
 def find_free_port(start: int = 9222, count: int = 50) -> int | None:
     """Find a localhost port with nothing bound AND no live CDP endpoint.
 
@@ -1140,13 +1169,8 @@ def find_free_port(start: int = 9222, count: int = 50) -> int | None:
         # Skip ports already serving CDP.
         if probe_port(port, timeout=0.4) is not None:
             continue
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                sock.bind(("127.0.0.1", port))
-                return port
-            except OSError:
-                continue
+        if port_is_bindable(port):
+            return port
     # A port the OS just handed us from bind(0) had nothing bound to it, so it cannot
     # already be serving CDP — no probe needed.
     return _os_assigned_port()

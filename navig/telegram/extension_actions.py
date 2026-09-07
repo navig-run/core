@@ -26,6 +26,17 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
+def _t(key: str, **fields: Any) -> str:
+    """One localized string, or "" when the key is absent so a caller can test it."""
+    try:
+        from navig.core import i18n  # noqa: PLC0415
+
+        text = i18n.t(key, **fields)
+    except Exception:  # noqa: BLE001
+        return ""
+    return "" if text == key else text
+
 CALLBACK_PREFIX = "xt:"
 
 #: State markers. A word plus an unmistakable mark, never a bare colour — the row
@@ -62,8 +73,14 @@ def _rows_for(extensions: list[dict[str, Any]]) -> list[list[dict[str, str]]]:
     if row:
         rows.append(row)
     rows.append([
-        {"text": "ℹ️ What each one does", "callback_data": f"{CALLBACK_PREFIX}i"},
-        {"text": "✕ Close", "callback_data": f"{CALLBACK_PREFIX}x"},
+        {
+            "text": f"ℹ️ {_t('tgext.card.what_each') or 'What each one does'}",
+            "callback_data": f"{CALLBACK_PREFIX}i",
+        },
+        {
+            "text": f"✕ {_t('tgext.card.close') or 'Close'}",
+            "callback_data": f"{CALLBACK_PREFIX}x",
+        },
     ])
     return rows
 
@@ -76,18 +93,23 @@ def build_list() -> tuple[str, dict[str, Any]]:
     exts = payload["extensions"]
     counts = payload["counts"]
 
-    lines = [
-        f"🧩 <b>Extensions</b> — {counts['on']} of {counts['total']} on",
-        "",
-    ]
+    title = _t("tgext.card.title") or "Extensions"
+    # Its OWN key, not the habit menu's: the sentence shape is the same, but sharing
+    # one would let a habit translation edit silently rewrite this card.
+    count = _t("tgext.card.count", on=counts["on"], total=counts["total"]) or (
+        f"{counts['on']} of {counts['total']} on"
+    )
+    lines = [f"🧩 <b>{html.escape(title)}</b> — {count}", ""]
+    group_labels = payload.get("group_labels", {})
     for group in payload["group_order"]:
         in_group = [e for e in exts if e["group"] == group]
         if not in_group:
             continue
-        lines.append(f"<b>{html.escape(group)}</b>")
+        lines.append(f"<b>{html.escape(group_labels.get(group, group))}</b>")
         for ext in in_group:
             if ext.get("locked"):
-                mark, tail = MARK_LOCKED, f" — {ext.get('min_tier') or 'locked'}"
+                locked = _t("tgext.card.locked") or "locked"
+                mark, tail = MARK_LOCKED, f" — {ext.get('min_tier') or locked}"
             elif ext["enabled"]:
                 mark, tail = MARK_ON, f" — {html.escape(ext['description'])}"
             else:
@@ -95,50 +117,76 @@ def build_list() -> tuple[str, dict[str, Any]]:
             lines.append(f"{mark} <b>{html.escape(ext['label'])}</b>{tail}")
         lines.append("")
 
+    off_means_gone = _t("tgext.card.off_means_gone") or (
+        "Off means gone: the commands leave /help and the \"/\" menu, the buttons "
+        "stop answering, and nothing it sends arrives. Nothing is deleted — "
+        "switching it back on restores it exactly as it was."
+    )
     lines += [
-        "<i>Off means gone: the commands leave /help and the \"/\" menu, the "
-        "buttons stop answering, and nothing it sends arrives. Nothing is "
-        "deleted — switching it back on restores it exactly as it was.</i>",
+        f"<i>{html.escape(off_means_gone)}</i>",
         "",
-        "<i>Tap one to flip it.</i>",
+        f"<i>{html.escape(_t('tgext.card.tap_hint') or 'Tap one to flip it.')}</i>",
     ]
     return "\n".join(lines), {"inline_keyboard": _rows_for(exts)}
 
 
 def build_detail(key: str | None = None) -> tuple[str, dict[str, Any]]:
     """Detail for one extension, or the index when *key* is None."""
-    from navig.gateway.channels.telegram_extensions import all_extensions, get, is_enabled
+    from navig.gateway.channels.telegram_extensions import (  # noqa: PLC0415
+        all_extensions,
+        ext_about,
+        ext_description,
+        ext_label,
+        get,
+        is_enabled,
+    )
 
-    back = [[{"text": "◀ Extensions", "callback_data": f"{CALLBACK_PREFIX}r"}]]
+    back_label = _t("tgext.card.back") or "Extensions"
+    back = [[{"text": f"◀ {back_label}", "callback_data": f"{CALLBACK_PREFIX}r"}]]
 
     if not key:
-        lines = ["🧩 <b>What each one does</b>", ""]
+        heading = _t("tgext.card.what_each") or "What each one does"
+        lines = [f"🧩 <b>{html.escape(heading)}</b>", ""]
         for ext in all_extensions():
             lines.append(
-                f"<b>{html.escape(ext.label)}</b> — {html.escape(ext.description)}"
+                f"<b>{html.escape(ext_label(ext))}</b> — "
+                f"{html.escape(ext_description(ext))}"
             )
         return "\n".join(lines), {"inline_keyboard": back}
 
     ext = get(key)
     if ext is None:
-        return "That extension no longer exists.", {"inline_keyboard": back}
+        gone = _t("tgext.card.gone") or "That extension no longer exists."
+        return gone, {"inline_keyboard": back}
 
     enabled = is_enabled(ext.id)
+    state_word = (
+        _t("tgext.card.on") or "on" if enabled else _t("tgext.card.off") or "off"
+    )
     lines = [
-        f"🧩 <b>{html.escape(ext.label)}</b>",
-        html.escape(ext.description),
+        f"🧩 <b>{html.escape(ext_label(ext))}</b>",
+        html.escape(ext_description(ext)),
         "",
-        f"<b>State</b>  {MARK_ON + ' on' if enabled else MARK_OFF + ' off'}",
+        f"<b>{html.escape(_t('tgext.card.state') or 'State')}</b>  "
+        f"{(MARK_ON if enabled else MARK_OFF)} {html.escape(state_word)}",
     ]
     if ext.commands:
         cmds = " ".join(f"/{c}" for c in sorted(ext.commands))
-        lines.append(f"<b>Commands</b>  {html.escape(cmds)}")
-    if ext.about:
-        lines += ["", "<b>Switching it off</b>"]
-        lines += [f"· {html.escape(line)}" for line in ext.about]
+        label = _t("tgext.card.commands") or "Commands"
+        lines.append(f"<b>{html.escape(label)}</b>  {html.escape(cmds)}")
+    about = ext_about(ext)
+    if about:
+        heading = _t("tgext.card.switching_off") or "Switching it off"
+        lines += ["", f"<b>{html.escape(heading)}</b>"]
+        lines += [f"· {html.escape(line)}" for line in about]
 
+    action = (
+        f"{MARK_OFF} {_t('tgext.card.switch_off') or 'Switch off'}"
+        if enabled
+        else f"{MARK_ON} {_t('tgext.card.switch_on') or 'Switch on'}"
+    )
     rows = [[{
-        "text": f"{MARK_OFF} Switch off" if enabled else f"{MARK_ON} Switch on",
+        "text": action,
         "callback_data": f"{CALLBACK_PREFIX}t:{ext.id}",
     }]] + back
     return "\n".join(lines), {"inline_keyboard": rows}
@@ -169,12 +217,11 @@ async def handle_callback(
         from navig.gateway.channels.telegram_extensions import list_extensions
 
         counts = list_extensions()["counts"]
-        await _edit(
-            channel, chat_id, message_id,
-            f"🧩 {counts['on']} of {counts['total']} extensions on. "
-            "/extensions to open this again.",
-            None,
+        summary = _t("tgext.card.summary", on=counts["on"]) or (
+            f"{counts['on']} of {counts['total']} extensions on. "
+            "/extensions to open this again."
         )
+        await _edit(channel, chat_id, message_id, f"🧩 {summary}", None)
         return ""
 
     if action == "i" or action.startswith("i:"):
@@ -186,11 +233,16 @@ async def handle_callback(
         key = action[2:]
         ext = get(key)
         if ext is None:
-            return "That extension no longer exists"
+            return _t("tgext.card.gone") or "That extension no longer exists"
         if ext.locked:
             # Should be unreachable — a locked extension is never rendered as a
             # button — but a stale card from an older build could still carry one.
-            return f"{ext.label} cannot be switched off"
+            from navig.gateway.channels.telegram_extensions import (  # noqa: PLC0415
+                ext_label,
+            )
+
+            cannot = _t("tgext.card.cannot_switch") or "cannot be switched off"
+            return f"{ext_label(ext)} {cannot}"
 
         # Re-read the lock at TAP time, not at render time: a keyboard built
         # before a licence change must not be able to toggle something now locked.
@@ -206,23 +258,34 @@ async def handle_callback(
 
 def _apply_toggle(ext: Any, *, currently: bool) -> tuple[bool, str]:
     """Persist the flip. Returns (did_change, toast)."""
+    from navig.gateway.channels.telegram_extensions import ext_label  # noqa: PLC0415
     from navig.modules.registry import get_registry
 
+    nothing = f"⚠️ {_t('tgext.card.nothing_changed') or 'Nothing changed'}"
     target = not currently
     try:
         ok = get_registry().set_enabled(ext.module_id, target)
     except Exception as exc:  # noqa: BLE001
         logger.warning("extension toggle %s failed: %s", ext.module_id, exc)
-        return False, "⚠️ Nothing changed"
+        return False, nothing
     if not ok:
-        return False, "⚠️ Nothing changed"
+        return False, nothing
 
     n = len(ext.commands)
+    name = ext_label(ext)
     if target:
-        detail = f"{n} commands back" if n else "back on"
-        return True, f"{MARK_ON} {ext.label} on — {detail}"
-    detail = f"{n} commands hidden" if n else "switched off"
-    return True, f"{MARK_OFF} {ext.label} off — {detail}"
+        detail = (
+            f"{n} {_t('tgext.card.commands_back') or 'commands back'}"
+            if n
+            else (_t("tgext.card.on") or "on")
+        )
+        return True, f"{MARK_ON} {name} {_t('tgext.card.on') or 'on'} — {detail}"
+    detail = (
+        f"{n} {_t('tgext.card.commands_hidden') or 'commands hidden'}"
+        if n
+        else (_t("tgext.card.switched_off") or "switched off")
+    )
+    return True, f"{MARK_OFF} {name} {_t('tgext.card.off') or 'off'} — {detail}"
 
 
 async def _refresh_bot_commands(channel: Any) -> None:

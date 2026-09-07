@@ -384,16 +384,28 @@ async def test_space_command_switches_and_prints_kickoff(monkeypatch, tmp_path):
     monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
     monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
 
+    # The plans belong to the SPACE. They used to be written into the cwd, and the
+    # assertion below proved the briefing read the PROCESS's directory -- which for
+    # this caller is the DAEMON's, a folder with no plans at all (#1284).
+    space_dir = Path(fake_cfg.global_config_dir) / "spaces" / "devops"
+    (space_dir / ".navig" / "plans").mkdir(parents=True, exist_ok=True)
+    (space_dir / ".navig" / "plans" / "DEV_PLAN.md").write_text(
+        "- [ ] Prepare incident runbook\n", encoding="utf-8"
+    )
+
+    # A decoy in the cwd, whose task must NOT reach the briefing.
     repo = tmp_path / "repo"
     plans_dir = repo / ".navig" / "plans"
     plans_dir.mkdir(parents=True, exist_ok=True)
-    (plans_dir / "DEV_PLAN.md").write_text("- [ ] Prepare incident runbook\n", encoding="utf-8")
+    (plans_dir / "DEV_PLAN.md").write_text("- [ ] A task from another folder\n", encoding="utf-8")
     monkeypatch.chdir(repo)
 
     await bot._handle_space(123, 456, "/space devops")
 
     assert any("Active space: <code>devops</code>" in m[1] for m in bot.messages)
     assert any("Top next actions:" in m[1] for m in bot.messages)
+    assert any("Prepare incident runbook" in m[1] for m in bot.messages)
+    assert not any("A task from another folder" in m[1] for m in bot.messages)
 
 
 async def test_space_command_bootstraps_missing_roadmap_when_vision_exists(monkeypatch, tmp_path):

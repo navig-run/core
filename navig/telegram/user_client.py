@@ -46,6 +46,16 @@ def build_client(session_str: str | None = None):
     api_id = config.get_api_id()
     api_hash = config.get_api_hash()
     if not api_id or not api_hash:
+        # Distinguish "no vault" from "no credentials". Without this the message
+        # below sends you to re-run setup over credentials that are present but
+        # unreadable, because the engine that decrypts them is not installed.
+        reason = config.vault_unavailable_reason()
+        if reason:
+            raise TelegramNotConfigured(
+                f"Telegram credentials could not be read: {reason} "
+                "Your credentials are probably intact — install the vault engine "
+                "rather than re-running `navig telegram setup`."
+            )
         raise TelegramNotConfigured(
             "Telegram api_id/api_hash are not set. Run `navig telegram setup`."
         )

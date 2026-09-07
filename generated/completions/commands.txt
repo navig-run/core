@@ -960,6 +960,7 @@ navig output-style list
 navig output-style off
 navig output-style show
 navig output-style use
+navig pipeline clip
 navig pipeline reel
 navig pipeline run
 navig pipeline schedule
@@ -1139,6 +1140,7 @@ navig space delete
 navig space disable
 navig space doctor
 navig space enable
+navig space fold
 navig space forget
 navig space init
 navig space install
@@ -1147,6 +1149,7 @@ navig space list
 navig space new
 navig space register
 navig space switch
+navig space unfold
 navig space use
 navig space wire
 navig spaces audit
@@ -1158,6 +1161,7 @@ navig spaces delete
 navig spaces disable
 navig spaces doctor
 navig spaces enable
+navig spaces fold
 navig spaces forget
 navig spaces init
 navig spaces install
@@ -1166,6 +1170,7 @@ navig spaces list
 navig spaces new
 navig spaces register
 navig spaces switch
+navig spaces unfold
 navig spaces use
 navig spaces wire
 navig stack down
