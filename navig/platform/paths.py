@@ -328,10 +328,32 @@ def vault_dir() -> Path:
 
 
 def store_dir() -> Path:
-    """User content store, with env override and legacy fallback."""
+    """User content store, with env overrides and legacy fallback.
+
+    Honours ``NAVIG_STORE_DIR`` first, then ``NAVIG_DATA_DIR``.
+
+    ⚠ The second one is a DATA-SAFETY fix, not a convenience. Five of the six
+    ``BaseStore`` subclasses resolve through :func:`data_dir`, which honours
+    ``NAVIG_DATA_DIR`` — and that is what the repo's own guidance tells you to
+    isolate a store with in tests. ``board.db`` is the one that comes through HERE,
+    and this resolver used to ignore that variable entirely: a test or a script that
+    set it, exactly as documented, wrote into the operator's LIVE board instead of a
+    temp directory. Measured on this machine — four test rows landed in the real
+    task list before anyone noticed.
+
+    The default is unchanged: with no ``NAVIG_DATA_DIR`` set, :func:`data_dir` is
+    ``config_dir() / "data"``, so ``data_dir() / "store"`` is the same path the branch
+    below computes. Only an EXPLICIT override behaves differently, which is the
+    "explicit override is authoritative" rule :func:`media_dir` already documents —
+    and it deliberately skips the legacy fallback, because an isolated directory must
+    never silently resolve to a real one.
+    """
     env = os.environ.get("NAVIG_STORE_DIR")
     if env:
         return Path(env)
+    data_env = os.environ.get("NAVIG_DATA_DIR")
+    if data_env:
+        return Path(data_env) / "store"
     new_path = config_dir() / "data" / "store"
     legacy = config_dir() / "store"
     return legacy if not new_path.exists() and legacy.exists() else new_path

@@ -38,6 +38,9 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     # blackbox / bb: the recorder capability (capability_registry OPTIONAL) — was
     # declared but never wired into the CLI; register it so `navig blackbox` works.
     "blackbox": ("navig.commands.blackbox", "blackbox_app"),
+    # todo: the PIM. Same rows the /todo Telegram card reads and writes -- one list,
+    # not a terminal-only second one.
+    "todo": ("navig.commands.todo", "todo_app"),
     "bb": ("navig.commands.blackbox", "blackbox_app"),
     "copilot": ("navig.commands.ask", "copilot_app"),
     # contribute / tools / tailscale: three command groups that defined a Typer app,

@@ -4,7 +4,7 @@ import fnmatch
 from dataclasses import dataclass, field
 from enum import Enum
 
-from navig.core.coerce import coerce_bool
+from navig.core.coerce import coerce_bool, coerce_int
 
 
 class ApprovalLevel(Enum):
@@ -79,7 +79,22 @@ class ApprovalPolicy:
     """Policy configuration for approvals."""
 
     enabled: bool = True
-    timeout_seconds: int = 120
+    # How long a human has to answer. 120 s was the old value and it predates
+    # approvals ever REACHING a human: nothing sent them to Telegram, so the
+    # window only ever governed how fast the request auto-denied itself
+    # (55 expiries on one install, every one `channel=mission`, all denied).
+    #
+    # Now that they arrive as a Telegram prompt, this is the binding constraint.
+    # Measured on that install the moment delivery started working: the operator's
+    # answer landed 7 MINUTES after the ask — "answered too late (already
+    # EXPIRED) — the inline decision was NOT applied". A notification has to be
+    # noticed, opened and read before it can be tapped; two minutes is a terminal
+    # timeout, not a human one.
+    #
+    # Waiting longer is the safe direction: `default_action` is "deny" and
+    # DANGEROUS always denies regardless, so a longer window only delays an
+    # auto-deny — it never widens what can be approved without an answer.
+    timeout_seconds: int = 900
     default_action: str = "deny"
 
     safe_patterns: list[str] = field(default_factory=lambda: DEFAULT_SAFE_PATTERNS.copy())
@@ -128,7 +143,13 @@ class ApprovalPolicy:
 
         return cls(
             enabled=coerce_bool(approval_cfg.get("enabled", True), default=True),
-            timeout_seconds=approval_cfg.get("timeout_seconds", 120),
+            # coerce_int, not a bare get: `navig config set` stores raw STRINGS, and
+            # an int used raw does not misbehave quietly — `timedelta(seconds="600")`
+            # and `asyncio.wait_for(timeout="600")` both raise TypeError. Setting the
+            # one knob that lengthens this window used to disable approvals outright.
+            timeout_seconds=coerce_int(
+                approval_cfg.get("timeout_seconds", 900), 900, minimum=1
+            ),
             default_action=approval_cfg.get("default_action", "deny"),
             safe_patterns=levels.get("safe", DEFAULT_SAFE_PATTERNS.copy()),
             confirm_patterns=levels.get("confirm", DEFAULT_CONFIRM_PATTERNS.copy()),

@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from navig.media import fx
 from navig.media.fx import (
     MAX_PUNCH,
     MAX_SHAKE_PX,
@@ -378,3 +379,57 @@ def test_letterbox_always_produces_even_dimensions(ratio: float) -> None:
 def test_letterbox_pads_back_to_the_exact_frame_size() -> None:
     # Not "approximately the input size" — the output must match the format exactly.
     assert "pad=1080:1920:" in letterbox(0.86, width=1080, height=1920)
+
+
+# ── the beat hit ──────────────────────────────────────────────────────────────
+
+
+def test_a_flash_lifts_midtones_and_leaves_black_alone() -> None:
+    """Additive brightness was the obvious implementation and it destroys dark footage.
+
+    ``eq=brightness`` raises the FLOOR, so a frame that was black becomes flat grey for
+    the duration of the hit — measured on a real render, where every downbeat washed the
+    picture out to olive. Gamma leaves true black at zero.
+    """
+    chain = fx.flash([1.0, 2.0], amount=0.35)
+    assert "gamma=0.65" in chain
+    assert "brightness" not in chain
+    assert "between(t,1,1.05)" in chain
+
+
+def test_a_flash_with_no_beats_is_nothing_at_all() -> None:
+    assert fx.flash([], amount=0.5) == ""
+    assert fx.flash([1.0], amount=0) == ""
+
+
+@pytest.mark.parametrize("amount", [0, 1, 1.5, -0.2])
+def test_an_out_of_range_flash_is_refused(amount) -> None:
+    if amount <= 0:
+        assert fx.flash([1.0], amount=amount) == ""
+    else:
+        with pytest.raises(ValueError, match="between 0 and 1"):
+            fx.flash([1.0], amount=amount)
+
+
+# ── overlays ──────────────────────────────────────────────────────────────────
+
+
+def test_an_overlay_is_placed_by_name_not_by_pixels() -> None:
+    # text_w is only known to ffmpeg at render time, so a caller computing pixels could
+    # never centre anything.
+    centred = fx.overlay("HELLO", font="/f.ttf", pos="bottom-center")
+    assert "x=(w-text_w)/2" in centred
+    # ...and the bottom margin clears the platform's own chrome, not just a few pixels.
+    assert f"h-text_h-{fx.SAFE_BOTTOM_PX}" in centred
+
+
+def test_an_unknown_overlay_position_is_refused() -> None:
+    with pytest.raises(ValueError, match="unknown overlay position"):
+        fx.overlay("x", font="/f.ttf", pos="middle-ish")
+
+
+def test_a_timecode_keeps_its_own_colons() -> None:
+    """drawtext() escapes ':' — right for arbitrary text, fatal for a timecode."""
+    chain = fx.timecode(font="/f.ttf", fps=30)
+    assert r"timecode='00\:00\:00\:00'" in chain
+    assert "timecode_rate=30" in chain

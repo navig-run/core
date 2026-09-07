@@ -140,7 +140,7 @@ def _new_id() -> str:
 
 
 class BoardStore(BaseStore):
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 4
     PRAGMAS = {"cache_size": -4000}
 
     def __init__(self, db_path: Path | None = None) -> None:
@@ -235,6 +235,14 @@ class BoardStore(BaseStore):
                 created_at   TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_todo_reminder_card ON board_todo_reminder(card_id);
+
+            -- A source line the operator was offered and said no to. Survives the
+            -- card being deleted, which is the whole point: see _migrate_v3_to_v4.
+            CREATE TABLE IF NOT EXISTS board_todo_dismissed (
+                origin_ref   TEXT PRIMARY KEY,
+                title        TEXT NOT NULL DEFAULT '',
+                dismissed_at TEXT NOT NULL
+            );
 
             -- single-row KV; settings are a JSON blob keyed 'settings'
             CREATE TABLE IF NOT EXISTS board_settings (
@@ -462,6 +470,18 @@ class BoardStore(BaseStore):
         return [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
 
     # ── Settings ─────────────────────────────────────────────────────────────
+
+    def _migrate_v3_to_v4(self, conn: sqlite3.Connection) -> None:
+        """Add the dismissal ledger."""
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS board_todo_dismissed (
+                origin_ref   TEXT PRIMARY KEY,
+                title        TEXT NOT NULL DEFAULT '',
+                dismissed_at TEXT NOT NULL
+            );
+            """
+        )
 
     def get_settings(self) -> dict[str, Any]:
         row = self._read_one("SELECT value FROM board_settings WHERE key = 'settings'")
@@ -865,7 +885,22 @@ class BoardStore(BaseStore):
         Scoped by `kind` so a stray id can never delete a BOARD card through the PIM's
         surfaces — the two populations share a table and a mis-scoped delete here
         would take out a real project task with no confirmation.
+
+        A todo that came from a SOURCE (an AI or agent suggestion) leaves a dismissal
+        record behind. Without it, deleting a suggestion deletes the only evidence it
+        was ever offered, and the next scan proposes the identical line again — which
+        teaches the operator that dismissing does nothing.
         """
+        todo = self.get_todo(card_id)
+        if todo is None:
+            return False
+        origin_ref = todo.get("origin_ref")
+        if origin_ref:
+            self._write(
+                "INSERT OR REPLACE INTO board_todo_dismissed(origin_ref, title, dismissed_at)"
+                " VALUES(?, ?, ?)",
+                (str(origin_ref), str(todo.get("title") or ""), _utcnow()),
+            )
         cursor = self._write(
             "DELETE FROM board_card WHERE id = ? AND kind = ?", (card_id, KIND_TODO)
         )
@@ -902,7 +937,13 @@ class BoardStore(BaseStore):
         row = self._read_one(
             "SELECT 1 AS hit FROM board_card WHERE origin_ref = ? LIMIT 1", (origin_ref,)
         )
-        return row is not None
+        if row is not None:
+            return True
+        dismissed = self._read_one(
+            "SELECT 1 AS hit FROM board_todo_dismissed WHERE origin_ref = ? LIMIT 1",
+            (origin_ref,),
+        )
+        return dismissed is not None
 
     # ── Todo reminders ───────────────────────────────────────────────────────
 

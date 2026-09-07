@@ -1,6 +1,6 @@
 # NAVIG Command Reference
 
-_Generated 2026-09-06T13:22:13.187389+00:00_
+_Generated 2026-09-06T13:59:46.722718+00:00_
 
 ## `navig action add`
 **Status:** `stable` · **Since:** 
@@ -10145,6 +10145,62 @@ Download a creator's whole profile — videos, slideshows images, audio, or just
 **Examples:**
 ```sh
 navig tiktok profile
+```
+
+## `navig todo add`
+**Status:** `stable` · **Since:** 
+Capture a task. The date can be part of the sentence.
+**Examples:**
+```sh
+navig todo add
+```
+
+## `navig todo categories`
+**Status:** `stable` · **Since:** 
+Your categories and how much is open in each.
+**Examples:**
+```sh
+navig todo categories
+```
+
+## `navig todo done`
+**Status:** `stable` · **Since:** 
+Tick a task off. A recurring one rolls forward instead.
+**Examples:**
+```sh
+navig todo done
+```
+
+## `navig todo list`
+**Status:** `stable` · **Since:** 
+Show your tasks, soonest first.
+**Examples:**
+```sh
+navig todo list
+```
+
+## `navig todo rm`
+**Status:** `stable` · **Since:** 
+Delete a task for good.
+**Examples:**
+```sh
+navig todo rm
+```
+
+## `navig todo scan`
+**Status:** `stable` · **Since:** 
+Find `- [ ]` work already written down in your spaces.
+**Examples:**
+```sh
+navig todo scan
+```
+
+## `navig todo when`
+**Status:** `stable` · **Since:** 
+Give a task a date — or move the one it has.
+**Examples:**
+```sh
+navig todo when
 ```
 
 ## `navig tools list`

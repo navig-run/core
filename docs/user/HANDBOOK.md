@@ -331,6 +331,21 @@ navig web vhosts                   # List virtual hosts
 navig web hestia list --users      # List HestiaCP users
 navig web hestia list --domains    # List HestiaCP domains
 
+# ═══ YOUR TASK LIST (the PIM) ═══
+navig todo                         # what's open, soonest first
+navig todo add "Dentist tomorrow 10:30"   # the date can be part of the sentence
+navig todo add "Rent every month" -c life # ...and so can the repeat
+navig todo when <id> next friday   # give an inbox item a date
+navig todo done <id>               # tick it off (a repeating one rolls forward)
+navig todo rm <id>                 # delete it for good
+navig todo categories              # your categories, with open counts
+navig todo scan                    # find `- [ ]` work in your spaces
+navig todo scan --add              # ...and add them as suggestions to confirm
+navig todo list --json             # machine-readable, for scripts and agents
+
+# Same list as `/todo` in Telegram. Reminders are delivered through the bot, so they
+# need the `todo` extension switched on (`/extensions`); the tasks are kept either way.
+
 # ═══ PILLAR 3: DATA ═══
 navig file list /path              # List directory
 navig file show /path              # View file contents

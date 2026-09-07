@@ -317,3 +317,60 @@ def test_an_unreadable_gate_does_not_hide_the_list(store: BoardStore, monkeypatc
 
     monkeypatch.setattr(tx, "is_enabled", _raise)
     assert todo_actions.extension_is_off() is False
+
+
+# ── a suggestion is not a task yet ───────────────────────────────────────────
+
+def test_a_suggestion_row_offers_KEEP_and_NO_not_done(store: BoardStore) -> None:
+    """"Done" on something you never agreed to marks it as work you FINISHED.
+
+    That quietly corrupts the record — the list then shows a completed task the
+    operator never took on. Keep or no, one tap each, which is what was asked for.
+    """
+    store.create_todo("Renew the cert", origin="agent", origin_ref="s:CURRENT_PHASE.md:1")
+    _, keyboard = todo_actions.build_view("all", now=NOW)
+
+    payloads = [b["callback_data"] for row in keyboard["inline_keyboard"] for b in row]
+    assert any(p.startswith("td:ok:") for p in payloads)
+    assert any(p.startswith("td:no:") for p in payloads)
+    assert not any(p.startswith("td:d:") for p in payloads), "no 'done' on a suggestion"
+
+
+def test_a_hand_written_row_keeps_the_normal_buttons(store: BoardStore) -> None:
+    store.create_todo("Something I typed")
+    _, keyboard = todo_actions.build_view("all", now=NOW)
+    payloads = [b["callback_data"] for row in keyboard["inline_keyboard"] for b in row]
+
+    assert any(p.startswith("td:d:") for p in payloads)
+    assert not any(p.startswith("td:ok:") for p in payloads)
+
+
+async def test_keeping_a_suggestion_makes_it_an_ordinary_task(store: BoardStore) -> None:
+    ref = "s:CURRENT_PHASE.md:1"
+    todo = store.create_todo("Renew the cert", origin="agent", origin_ref=ref)
+
+    assert await tap(_Channel(), f"td:ok:{todo['id']}") == "Kept"
+    kept = store.get_todo(todo["id"])
+    assert kept["origin"] == "manual", "the sparkle goes; it is now their task"
+    assert kept["completed_at"] is None, "keeping is not completing"
+    assert kept["origin_ref"] == ref, (
+        "the dedup key must SURVIVE acceptance, or the same source is proposed again "
+        "alongside the copy they just accepted"
+    )
+
+
+async def test_dismissing_a_suggestion_says_it_will_not_come_back(store: BoardStore) -> None:
+    ref = "s:CURRENT_PHASE.md:1"
+    todo = store.create_todo("Renew the cert", origin="agent", origin_ref=ref)
+
+    toast = await tap(_Channel(), f"td:no:{todo['id']}")
+    assert "won't come back" in toast
+    assert store.get_todo(todo["id"]) is None
+    assert store.todo_exists_for_source(ref) is True, "the dismissal is remembered"
+
+
+@pytest.mark.parametrize("payload", ["td:ok:{}", "td:no:{}"])
+async def test_a_stale_suggestion_tap_answers_rather_than_raising(
+    store: BoardStore, payload: str
+) -> None:
+    assert await tap(_Channel(), payload.format("gone123")) == "That task is gone"

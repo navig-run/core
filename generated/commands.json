@@ -37233,6 +37233,237 @@
     },
     {
       "aliases": [],
+      "arguments": [
+        {
+          "name": "text",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig todo add"
+      ],
+      "handler": "add_cmd",
+      "module": "navig.commands.todo",
+      "options": [
+        {
+          "flags": [
+            "--category",
+            "-c"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--remind",
+            "-r"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig todo add",
+      "since": "",
+      "status": "stable",
+      "summary": "Capture a task. The date can be part of the sentence.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig todo categories"
+      ],
+      "handler": "categories_cmd",
+      "module": "navig.commands.todo",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig todo categories",
+      "since": "",
+      "status": "stable",
+      "summary": "Your categories and how much is open in each.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "todo-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig todo done"
+      ],
+      "handler": "done_cmd",
+      "module": "navig.commands.todo",
+      "options": [],
+      "path": "navig todo done",
+      "since": "",
+      "status": "stable",
+      "summary": "Tick a task off. A recurring one rolls forward instead.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig todo list"
+      ],
+      "handler": "list_cmd",
+      "module": "navig.commands.todo",
+      "options": [
+        {
+          "flags": [
+            "--category",
+            "-c"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--all",
+            "-a"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig todo list",
+      "since": "",
+      "status": "stable",
+      "summary": "Show your tasks, soonest first.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "todo-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig todo rm"
+      ],
+      "handler": "rm_cmd",
+      "module": "navig.commands.todo",
+      "options": [
+        {
+          "flags": [
+            "--yes",
+            "-y"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig todo rm",
+      "since": "",
+      "status": "stable",
+      "summary": "Delete a task for good.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig todo scan"
+      ],
+      "handler": "scan_cmd",
+      "module": "navig.commands.todo",
+      "options": [
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--add"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--per-space"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig todo scan",
+      "since": "",
+      "status": "stable",
+      "summary": "Find `- [ ]` work already written down in your spaces.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "todo-id",
+          "required": true,
+          "variadic": false
+        },
+        {
+          "name": "when",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig todo when"
+      ],
+      "handler": "when_cmd",
+      "module": "navig.commands.todo",
+      "options": [],
+      "path": "navig todo when",
+      "since": "",
+      "status": "stable",
+      "summary": "Give a task a date \u2014 or move the one it has.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [],
       "examples": [
         "navig tools list"
@@ -40739,7 +40970,7 @@
       "tags": []
     }
   ],
-  "generated_at": "2026-09-06T13:22:13.187389+00:00",
+  "generated_at": "2026-09-06T13:59:46.722718+00:00",
   "schema_version": "1.0.0",
-  "total": 1389
+  "total": 1396
 }

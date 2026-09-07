@@ -94,6 +94,10 @@ class VideoGenerationConfig:
     # Model overrides per provider (release ids drift; keep swappable).
     veo_model: str = "veo-3.0-generate-preview"
     replicate_model: str = "kwaivgi/kling-v2.1"
+    # Which input a Replicate model calls its seed image. Kling says `start_image`, Wan's
+    # image-to-video says `image`, and Replicate rejects an input key a model does not
+    # declare — so seeding the wrong name is a 422, not a silently ignored extra.
+    replicate_image_key: str = "start_image"
     runway_model: str = "gen4_turbo"
     luma_model: str = "ray-2"
 
@@ -168,6 +172,37 @@ class VideoGenerator:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             self._client = None
+
+    async def upload_image(self, path: Path | str) -> str:
+        """Put a local image where Replicate can fetch it, and return that URL.
+
+        Image-to-video needs the seed frame to be reachable by the provider, and a local
+        path is not. A data URI is the obvious shortcut and the wrong one here: the frames
+        this is given are megabyte-scale PNGs, and inlining one bloats the request body far
+        past what the predictions endpoint will take. Replicate's own Files API exists for
+        exactly this, so use it and hand back the served URL.
+        """
+        token = resolve_media_key("replicate", "REPLICATE_API_TOKEN")
+        if not token:
+            raise VideoGenerationError("Replicate API token not configured")
+        src = Path(path)
+        if not src.exists():
+            raise VideoGenerationError(f"seed image not found: {src}")
+        suffix = src.suffix.lower().lstrip(".") or "png"
+        mime = {"jpg": "jpeg", "jpe": "jpeg"}.get(suffix, suffix)
+        client = await self._get_client()
+        resp = await client.post(
+            "https://api.replicate.com/v1/files",
+            headers={"Authorization": f"Bearer {token}"},
+            files={"content": (src.name, src.read_bytes(), f"image/{mime}")},
+        )
+        _check(resp, f"uploading {src.name}")
+        url = ((resp.json() or {}).get("urls") or {}).get("get")
+        if not url:
+            raise VideoGenerationError(
+                f"Replicate accepted {src.name} but returned no URL to fetch it from"
+            )
+        return str(url)
 
     async def generate(
         self,
@@ -275,7 +310,7 @@ class VideoGenerator:
         if seed is not None:
             model_input["seed"] = seed
         if image_url:
-            model_input["start_image"] = image_url
+            model_input[self.config.replicate_image_key] = image_url
         # Model-specific inputs the caller knows about and this client cannot: aspect
         # ratio, resolution, frame count. Without a way to ask for 9:16, vertical output
         # can only be reached by generating widescreen and cropping ~70% of it away,

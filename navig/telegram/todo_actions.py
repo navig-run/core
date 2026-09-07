@@ -47,6 +47,10 @@ _QUICK_SLOTS: tuple[tuple[str, str], ...] = (
 
 _VIEWS = ("all", "inbox", "today", "cats")
 
+#: Origins that mean "proposed, not yet agreed to". Rows with these get
+#: keep/no buttons instead of done, and render with a sparkle.
+_PROPOSED = ("ai", "agent")
+
 
 def extension_is_off() -> bool:
     """True when the Todo extension is switched off. Never raises."""
@@ -113,6 +117,14 @@ def build_list_keyboard(
     for todo in todos[:limit]:
         title = str(todo.get("title") or "")
         short = title if len(title) <= 22 else title[:21] + "…"
+        if todo.get("origin") in _PROPOSED:
+            # A suggestion is not a task yet, so "done" would be a lie: it would mark
+            # work the operator never agreed to as finished. Keep or no, one tap each.
+            rows.append([
+                {"text": f"✓ keep {short}", "callback_data": f"td:ok:{todo['id']}"},
+                {"text": "✕", "callback_data": f"td:no:{todo['id']}"},
+            ])
+            continue
         rows.append([
             {"text": f"✓ {short}", "callback_data": f"td:d:{todo['id']}"},
             {"text": "⋯", "callback_data": f"td:o:{todo['id']}"},
@@ -348,6 +360,29 @@ async def handle_callback(
             if todo.get("recur") and not todo.get("completed_at"):
                 return f"Done · next {_short_date(todo.get('due_at'), now)}"
             return "Done ✓"
+
+        if action == "ok" and len(parts) >= 2:
+            # Accepting a suggestion makes it an ordinary task. `origin_ref` is KEPT:
+            # it is the dedup key, and clearing it would let the same source be
+            # proposed again alongside the copy they just accepted.
+            todo = store.update_todo(parts[1], {"origin": "manual"})
+            if todo is None:
+                return "That task is gone"
+            await _rerender_list(channel, chat_id, message_id, now)
+            return "Kept"
+
+        if action == "no" and len(parts) >= 2:
+            # Deleting records the dismissal (BoardStore.delete_todo), so this source
+            # is never proposed again -- which is what makes "no" mean no.
+            card_id = parts[1]
+            from navig.pim.reminders import cancel_for  # noqa: PLC0415
+
+            if user_id is not None:
+                cancel_for(store, card_id, user_id=int(user_id))
+            if not store.delete_todo(card_id):
+                return "That task is gone"
+            await _rerender_list(channel, chat_id, message_id, now)
+            return "Dismissed — it won't come back"
 
         if action == "x" and len(parts) >= 2:
             card_id = parts[1]

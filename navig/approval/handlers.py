@@ -21,51 +21,105 @@ class TelegramApprovalHandler:
     Uses inline keyboards for approval buttons.
     """
 
-    def __init__(self, manager: "ApprovalManager", bot: Any = None):
+    def __init__(
+        self,
+        manager: "ApprovalManager",
+        bot: Any = None,
+        owner_chat_id: int | None = None,
+    ):
         self.manager = manager
         self.bot = bot
+        self.owner_chat_id = owner_chat_id
 
         # Register for approval requests
         self.manager.on_request(self.on_approval_request)
 
     async def on_approval_request(self, request: ApprovalRequest):
-        """Handle new approval request - send Telegram message with buttons."""
-        if request.channel != "telegram" or not self.bot:
+        """Send the approval prompt to Telegram, with buttons that resolve it.
+
+        This used to be unreachable four ways over, which is why every approval on
+        a live install expired unanswered (55 of them on the operator's machine,
+        all `channel=mission`, all auto-denied on a 120 s timeout):
+
+          1. the class was never instantiated anywhere;
+          2. it early-returned unless `request.channel == "telegram"` — but the
+             requests that need a human are raised by the *mission* channel, not
+             by Telegram;
+          3. it imported `telegram` (python-telegram-bot), which is NOT a
+             dependency here, so the import raised straight into the broad
+             `except` below and logged a failure nobody read;
+          4. it sent `reply_markup=<PTB object>`, while this codebase's channel
+             takes `keyboard: list[list[dict]]`.
+
+        The response half was already wired — the channel's `on_approval_response`
+        seam routes a tap into `manager.respond()`. Only the ASKING was missing.
+        """
+        if not self.bot:
+            return
+        # `cli` answers in the terminal it was typed in; everything else (mission,
+        # api, gateway) has no interactive surface and is exactly what needs a
+        # Telegram prompt.
+        if request.channel == "cli":
             return
 
         try:
-            # Import here to avoid circular deps
-            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
-            keyboard = InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton("✅ Approve", callback_data=f"approve:{request.id}"),
-                        InlineKeyboardButton("❌ Deny", callback_data=f"deny:{request.id}"),
-                    ]
-                ]
-            )
+            chat_id = self._resolve_chat_id(request)
+            if chat_id is None:
+                logger.warning(
+                    "Approval %s has no Telegram destination (user_id=%r) — not sent",
+                    request.id, request.user_id,
+                )
+                return
 
             level_emoji = {"confirm": "⚠️", "dangerous": "🚨"}.get(request.level.value, "❓")
-
+            expires = (
+                request.expires_at.strftime("%H:%M:%S") if request.expires_at else "never"
+            )
             message = (
                 f"{level_emoji} <b>Approval Required</b>\n\n"
                 f"<b>Command:</b> <code>{request.command}</code>\n"
                 f"<b>Level:</b> {request.level.value}\n"
-                f"<b>Expires:</b> {request.expires_at.strftime('%H:%M:%S') if request.expires_at else 'Never'}"
+                f"<b>Expires:</b> {expires}"
             )
 
-            # Send to user
-            chat_id = request.user_id
+            keyboard = self._approval_keyboard(request.id)
             await self.bot.send_message(
                 chat_id=int(chat_id),
                 text=message,
-                reply_markup=keyboard,
                 parse_mode="HTML",
+                keyboard=keyboard,
             )
-
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - a prompt must never break the request
             logger.error("Failed to send Telegram approval request: %s", e)
+
+    def _resolve_chat_id(self, request: ApprovalRequest) -> int | None:
+        """Where to send. `request.user_id` is "system" for mission approvals, so
+        fall back to the configured owner rather than crashing on int("system")."""
+        raw = str(getattr(request, "user_id", "") or "").strip()
+        if raw.lstrip("-").isdigit():
+            return int(raw)
+        if self.owner_chat_id:
+            return int(self.owner_chat_id)
+        return None
+
+    def _approval_keyboard(self, request_id: str) -> list[list[dict]] | None:
+        """Buttons the EXISTING callback dispatcher already understands.
+
+        `telegram_keyboards` routes `action="approve"` / `"cancel"` through
+        `_handle_approval_action`, which reads the request id out of
+        `entry.extra`. Registering through the channel's own builder is what puts
+        it there — a hand-rolled `callback_data` string would arrive with no entry
+        and be answered "Button expired".
+        """
+        builder = getattr(self.bot, "_kb_builder", None)
+        if builder is None:
+            return None
+        short = request_id[:24]
+        extra = {"request_id": request_id}
+        return [[
+            builder._make_button("✅ Approve", "approve", short, extra=extra),
+            builder._make_button("❌ Deny", "cancel", short, extra=extra),
+        ]]
 
     async def handle_callback(self, callback_data: str, user_id: str) -> tuple[bool, str]:
         """

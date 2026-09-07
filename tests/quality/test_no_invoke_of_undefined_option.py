@@ -104,6 +104,12 @@ MIN_RESOLUTION_RATE = 0.95
 MIN_PLUGIN_FILES = 100
 
 _flag_cache: dict[tuple[str, str], set[str] | None] = {}
+# Apps whose module resolved OUTSIDE this tree (a stale or non-editable install).
+# Tracked separately from an introspection failure: it is an environment condition
+# `navig doctor` -> Plugin Sources now reports, not a break in this scan — and it is
+# ORDER-DEPENDENT, because an earlier test in the same process may already have
+# imported the package from site-packages, which no sys.path change can undo.
+_OUT_OF_TREE: set[tuple[str, str]] = set()
 
 
 def _declared_options(module: str, attr: str) -> set[str] | None:
@@ -125,6 +131,7 @@ def _declared_options(module: str, attr: str) -> set[str] | None:
             # Resolved outside this tree (a stale or non-editable install). Report
             # nothing rather than a finding about code that is not under test — the
             # resolution floor below is what surfaces it if this becomes widespread.
+            _OUT_OF_TREE.add(key)
             _flag_cache[key] = None
             return None
         command = typer.main.get_command(app)
@@ -173,10 +180,11 @@ def _test_files() -> list[Path]:
     return sorted(set(found))
 
 
-def _scan() -> tuple[int, int, int, list[str]]:
+def _scan() -> tuple[int, int, int, list[str], int]:
     files = _test_files()
     invocations = 0
     resolved = 0
+    skipped_out_of_tree = 0
     findings: list[str] = []
 
     for path in files:
@@ -214,6 +222,8 @@ def _scan() -> tuple[int, int, int, list[str]]:
             invocations += 1
             declared = _declared_options(*imported[target.id])
             if declared is None:
+                if imported[target.id] in _OUT_OF_TREE:
+                    skipped_out_of_tree += 1
                 continue
             resolved += 1
             for option in options:
@@ -224,11 +234,15 @@ def _scan() -> tuple[int, int, int, list[str]]:
                         f"{target.id} <- {bare}"
                     )
 
-    return len(files), invocations, resolved, findings
+    # Two different numbers on purpose. `invocations` is what the SCAN found and is
+    # environment-independent, so the vacuity floor can use it. Out-of-tree apps are
+    # reported separately and belong only in the resolution denominator — folding them
+    # into the count made the floor itself depend on which installs happen to be stale.
+    return len(files), invocations, resolved, findings, skipped_out_of_tree
 
 
 def test_no_test_invokes_an_option_its_app_does_not_define() -> None:
-    _, _, _, findings = _scan()
+    _, _, _, findings, _ = _scan()
     unexplained = sorted({f for f in findings if f.split("  ")[0] not in KNOWN_BAD})
     assert not unexplained, (
         "these tests pass an option the app does not define, so Typer exits 2 on a "
@@ -241,7 +255,7 @@ def test_no_test_invokes_an_option_its_app_does_not_define() -> None:
 
 
 def test_the_scan_still_sees_the_suite_it_polices() -> None:
-    files, invocations, resolved, _ = _scan()
+    files, invocations, resolved, _, out_of_tree = _scan()
     assert files >= MIN_TEST_FILES, (
         f"only {files} test files found (expected >= {MIN_TEST_FILES}) — the scan root "
         "moved and this guard is reading almost nothing."
@@ -258,9 +272,13 @@ def test_the_scan_still_sees_the_suite_it_polices() -> None:
         f"{MIN_INVOCATIONS}) — the CliRunner idiom changed and this guard is holding "
         "nothing."
     )
-    rate = resolved / invocations if invocations else 0.0
+    checkable = invocations - out_of_tree
+    rate = resolved / checkable if checkable else 0.0
     assert rate >= MIN_RESOLUTION_RATE, (
-        f"only {resolved}/{invocations} ({rate:.0%}) of invoked apps could be "
-        f"introspected (expected >= {MIN_RESOLUTION_RATE:.0%}). An app that fails to "
-        "import is skipped, so a drop here silently shrinks coverage."
+        f"only {resolved}/{checkable} ({rate:.0%}) of introspectable apps resolved "
+        f"(expected >= {MIN_RESOLUTION_RATE:.0%}). An app that fails to import is "
+        "skipped, so a drop here silently shrinks coverage. Note this denominator "
+        "already EXCLUDES apps resolving outside the repo — those are an environment "
+        "condition (`navig doctor` -> Plugin Sources), and whether they appear at all "
+        "depends on what an earlier test in this process imported first."
     )

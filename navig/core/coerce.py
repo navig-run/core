@@ -29,11 +29,43 @@ from __future__ import annotations
 import re
 from typing import Any
 
-__all__ = ["coerce_bool"]
+__all__ = ["coerce_bool", "coerce_int"]
 
 # Case-folded token sets. Kept as frozensets for O(1) membership and immutability.
 _TRUE_TOKENS = frozenset({"1", "true", "yes", "on", "t", "y"})
 _FALSE_TOKENS = frozenset({"0", "false", "no", "off", "f", "n", ""})
+
+
+def coerce_int(value: Any, default: int, *, minimum: int | None = None) -> int:
+    """Coerce a config / env / JSON value to ``int``, tolerating the string forms
+    ``navig config set`` stores.
+
+    The bool sibling below exists because ``bool("false")`` is True. This one exists
+    for a sharper reason: an int read raw does not merely behave wrongly, it RAISES
+    at the point of use, far from the config that caused it. Measured on
+    ``approval.timeout_seconds``, which was read with a bare
+    ``approval_cfg.get("timeout_seconds", 120)``::
+
+        approval.timeout_seconds = "600"
+          -> timedelta(seconds="600")        TypeError
+          -> asyncio.wait_for(timeout="600") TypeError
+
+    So the ONE knob that could lengthen an approval window instead disabled
+    approvals entirely for anyone who touched it.
+
+    Anything unparseable returns *default* rather than raising: a malformed setting
+    must not be able to wedge the subsystem it configures — the same rule the xdist
+    worker override follows.
+    """
+    if isinstance(value, bool):  # bool is an int subclass; almost never intended here
+        return default
+    try:
+        out = int(str(value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return default
+    if minimum is not None and out < minimum:
+        return default
+    return out
 
 
 def coerce_bool(value: Any, default: bool = False) -> bool:

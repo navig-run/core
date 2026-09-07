@@ -250,9 +250,15 @@ def _concat_list_file(parts: list[Path], work_dir: Path) -> Path:
 
 def join(
     parts: list[Path], dst: Path, *, transition: str = "cut", transition_s: float = 0.4,
-    fps: int = DEFAULT_FPS, timeout: int = DEFAULT_TIMEOUT_S,
+    effect: str = "fade", fps: int = DEFAULT_FPS, timeout: int = DEFAULT_TIMEOUT_S,
 ) -> RenderResult:
     """Join clips end to end. ``transition="xfade"`` crossfades instead of cutting.
+
+    ``effect`` names any of ffmpeg's xfade transitions — ``fade`` (the default),
+    ``fadeblack``, ``pixelize``, ``radial``, ``wipeleft``, ``squeezev`` and the rest. It
+    was hardcoded to ``fade`` before, which is the one transition that reads as a mistake
+    on a hard-cut format: a slow dissolve between two shots of a music video looks like a
+    slideshow, where a black flash or a pixelate reads as an edit.
 
     Like the audio :func:`~navig.media.audio_edit.concat`, the stream-copy path is
     verified by duration rather than trusted — joining clips that differ in codec or
@@ -283,7 +289,7 @@ def join(
             offset = max(0.0, elapsed - transition_s)
             label = f"v{i}"
             graph.append(
-                f"[{prev}][{i}:v]xfade=transition=fade:duration={transition_s:g}"
+                f"[{prev}][{i}:v]xfade=transition={effect}:duration={transition_s:g}"
                 f":offset={offset:g}[{label}]"
             )
             prev = label

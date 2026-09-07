@@ -2021,6 +2021,62 @@ class NavigGateway:
             )
             return {"sent": True}
 
+    def _telegram_approval_responder(self):
+        """Resolve an approval button tap through the manager, or None if there is none.
+
+        Returning None is deliberate: the keyboard consumer checks for a responder
+        and answers "Approval system unavailable" rather than acknowledging a tap
+        that resolved nothing.
+        """
+        manager = getattr(self, "approval_manager", None)
+        if manager is None:
+            return None
+
+        async def _respond(user_id: int, approved: bool, request_id: str | None):
+            if not request_id:
+                return False, "⚠️ This button has lost its request id."
+            try:
+                ok = await manager.respond(request_id=request_id, approved=approved)
+            except TypeError:
+                # Older doubles take positional args.
+                ok = await manager.respond(request_id, approved)
+            if not ok:
+                return False, "⚠️ Approval request expired or not found."
+            return True, ("✅ Approved" if approved else "❌ Denied")
+
+        return _respond
+
+    def _wire_telegram_approvals(self, channel, allowed_users) -> None:
+        """Give approval requests a way to reach the operator.
+
+        Nothing sent them before: `TelegramApprovalHandler` was never instantiated
+        anywhere, so a mission asking "Remediate health issues?" waited out its
+        120 s timeout and auto-denied. Measured on the operator's install: 55
+        expiries, every one `channel=mission`, `user_id=system`, auto-DENIED.
+        Nothing unsafe ran — it just meant autonomous remediation never could.
+
+        The handler registers itself with the manager in its constructor, so
+        building it IS the wiring; it is kept on the gateway only to keep it alive.
+        """
+        manager = getattr(self, "approval_manager", None)
+        if manager is None:
+            return
+        try:
+            from navig.approval.handlers import TelegramApprovalHandler
+
+            owner = None
+            if allowed_users:
+                try:
+                    owner = int(allowed_users[0])
+                except (TypeError, ValueError):
+                    owner = None
+            self._telegram_approval_handler = TelegramApprovalHandler(
+                manager, bot=channel, owner_chat_id=owner
+            )
+            logger.info("Telegram approval prompts wired (owner=%s)", owner)
+        except Exception as exc:  # noqa: BLE001 - never block channel startup
+            logger.warning("Could not wire Telegram approval prompts: %s", exc)
+
     async def _init_channels(self):
         """Instantiate and start channel adapters (e.g. Telegram polling loop)."""
         raw_cfg = self.config_manager.global_config or {}
@@ -2057,8 +2113,17 @@ class NavigGateway:
                 require_auth=require_auth,
                 webhook_url=webhook_url,
                 webhook_secret=webhook_secret,
+                # The RESPONSE half of approvals. `create_telegram_channel` (the
+                # telegram_worker path) has always passed this; THIS construction
+                # site never did, so on the gateway's own channel every approval
+                # button answered "⚠️ Approval system unavailable" — the seam
+                # existed and one of its two callers was wired.
+                on_approval_response=self._telegram_approval_responder(),
             )
             self.channels["telegram"] = channel
+            # The REQUEST half: something has to ASK. Runs after the channel
+            # exists and after _init_autonomous_modules() built the manager.
+            self._wire_telegram_approvals(channel, allowed_users)
             await channel.start()
             logger.info("Telegram channel started")
         except Exception as exc:

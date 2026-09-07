@@ -401,3 +401,55 @@ def test_a_missing_migration_step_fails_loudly(tmp_path: Path) -> None:
     store = BoardStore(db)
     with pytest.raises(RuntimeError, match="migration path missing"):
         store._migrate(sqlite3.connect(db), BoardStore.SCHEMA_VERSION, BoardStore.SCHEMA_VERSION + 1)
+
+
+# ── v4: the dismissal ledger ─────────────────────────────────────────────────
+
+def test_deleting_a_SUGGESTION_leaves_a_dismissal_record(store: BoardStore) -> None:
+    """"No" has to mean no permanently.
+
+    `todo_exists_for_source` used to ask only `board_card`, so deleting a suggestion
+    deleted the only evidence it had been offered — and the next scan proposed the
+    identical line again. That teaches the operator that dismissing does nothing, which
+    is how a propose-and-confirm flow becomes a nag.
+    """
+    ref = "homelab-space:CURRENT_PHASE.md:14"
+    todo = store.create_todo("Renew the cert", origin="ai", origin_ref=ref)
+
+    assert store.delete_todo(todo["id"]) is True
+    assert store.get_todo(todo["id"]) is None
+    assert store.todo_exists_for_source(ref) is True, "the dismissal must outlive the row"
+
+
+def test_deleting_a_HAND_WRITTEN_todo_records_nothing(store: BoardStore) -> None:
+    """Only a task with a SOURCE can be re-proposed, so only that needs remembering.
+
+    A ledger entry for every deletion would grow without bound and record nothing
+    anyone can act on.
+    """
+    todo = store.create_todo("Something I typed myself")
+    assert store.delete_todo(todo["id"]) is True
+    assert store.todo_exists_for_source("") is False
+
+
+def test_deleting_a_todo_that_is_already_gone_reports_false(store: BoardStore) -> None:
+    assert store.delete_todo("neverexisted") is False
+
+
+def test_a_populated_v3_database_upgrades_to_v4(tmp_path: Path) -> None:
+    """The migration chain runs every step, not just the last one.
+
+    `_migrate` dispatches 2→3 then 3→4; a database created before either still has to
+    arrive with both the PIM columns AND the dismissal ledger.
+    """
+    db = tmp_path / "v2.db"
+    _v2_database(db)
+
+    store = BoardStore(db)
+    assert store.get_schema_version() == BoardStore.SCHEMA_VERSION
+
+    ref = "s:CURRENT_PHASE.md:1"
+    todo = store.create_todo("From a plan", origin="agent", origin_ref=ref)
+    store.delete_todo(todo["id"])
+    assert store.todo_exists_for_source(ref) is True
+    assert [c["title"] for c in store.list_cards()] == ["Pass the driver licence"]

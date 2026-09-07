@@ -87,12 +87,23 @@ def vhs(bleed: float = 2.0, scanlines: bool = True) -> str:
 
 
 def broadcast_grade(saturation: float = 0.15, contrast: float = 1.1,
-                    softness: float = 0.6) -> str:
-    """Desaturate, lift contrast, and soften — the 1966-tape grade.
+                    softness: float = 0.6, brightness: float = 0.0) -> str:
+    """Desaturate, lift contrast, soften, and lift or drop the floor — the tape grade.
 
     Softness last: blurring before the contrast lift would just be undone by it.
+
+    ``brightness`` (-1..1, 0 = untouched) exists because a grade without it can only ever
+    make a picture darker. Contrast pulls the shadows down, the vignette pulls the corners
+    down, and on already-dark source both compound until the frame is below what a phone
+    shows at normal brightness — with no knob to answer it. It is omitted from the filter
+    entirely at 0, so every existing look renders the identical string.
     """
-    parts = [f"eq=saturation={saturation:g}:contrast={contrast:g}"]
+    eq = f"eq=saturation={saturation:g}:contrast={contrast:g}"
+    if brightness:
+        if not -1.0 <= brightness <= 1.0:
+            raise ValueError(f"brightness must be between -1 and 1, got {brightness}")
+        eq += f":brightness={brightness:g}"
+    parts = [eq]
     if softness > 0:
         parts.append(f"gblur=sigma={softness:g}")
     return chain(*parts)
@@ -377,3 +388,106 @@ def drawtext(text: str, *, font: str, x: str, y: str, size: int = 28,
         f"fontcolor={colour}@{alpha:g}",
     ]
     return "drawtext=" + ":".join(opts)
+
+
+# The bottom of a vertical frame belongs to the platform: TikTok's caption block and action
+# rail cover roughly the lowest 380px. Anything placed below this is not "low in frame", it
+# is behind a like button.
+OVERLAY_MARGIN = 64
+
+_POSITIONS = {
+    "top-left": ("{m}", "{m}"),
+    "top-right": ("w-text_w-{m}", "{m}"),
+    "top-center": ("(w-text_w)/2", "{m}"),
+    "center": ("(w-text_w)/2", "(h-text_h)/2"),
+    "bottom-left": ("{m}", "h-text_h-{b}"),
+    "bottom-right": ("w-text_w-{m}", "h-text_h-{b}"),
+    "bottom-center": ("(w-text_w)/2", "h-text_h-{b}"),
+}
+
+
+def default_font() -> str | None:
+    """A condensed bold face if the machine has one, else anything installed.
+
+    drawtext needs a real file — it has no font-name lookup — so a look carrying overlays
+    is inert on a machine where this finds nothing. Returning None lets the caller skip
+    the overlay rather than fail the whole render for a caption.
+    """
+    import os
+
+    candidates = [
+        "C:/Windows/Fonts/ARIALNB.TTF", "C:/Windows/Fonts/arialbd.ttf",
+        "C:/Windows/Fonts/impact.ttf", "C:/Windows/Fonts/arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def overlay(text: str, *, font: str, pos: str = "top-left", size: int = 28,
+            colour: str = "white", alpha: float = 1.0, margin: int = OVERLAY_MARGIN,
+            safe_bottom: int = SAFE_BOTTOM_PX, enable: str | None = None) -> str:
+    """One positioned text overlay. ``pos`` is a corner name, not coordinates.
+
+    Named positions rather than x/y because every caller wants the same seven places and
+    each of them is an expression involving ``text_w``, which is only known to ffmpeg at
+    render time — so a caller computing pixels cannot centre anything.
+    """
+    if pos not in _POSITIONS:
+        raise ValueError(f"unknown overlay position {pos!r} — use one of: {', '.join(sorted(_POSITIONS))}")
+    x, y = _POSITIONS[pos]
+    fragment = drawtext(
+        text, font=font, x=x.format(m=margin, b=safe_bottom),
+        y=y.format(m=margin, b=safe_bottom), size=size, colour=colour, alpha=alpha,
+    )
+    if enable:
+        fragment += f":enable='{enable}'"
+    return fragment
+
+
+def flash(at: list[float], *, width: float = 0.05, amount: float = 0.35) -> str:
+    """A kick on the beat — the cheapest hit in short-form, and the easiest to overdo.
+
+    Gamma, not brightness. Additive brightness was the obvious implementation and it is
+    wrong for anything shot dark: ``eq=brightness=0.2`` raises the FLOOR, so a frame that
+    was black becomes flat grey and the picture is gone for the duration of the hit —
+    measured on a real render, where every downbeat washed the frame out to olive. Gamma
+    lifts the midtones and leaves true black at zero, so the flash reads as the picture
+    surging rather than as a lighting fault.
+    """
+    if not at or amount <= 0:
+        return ""
+    if not 0 < amount < 1:
+        raise ValueError(f"amount must be between 0 and 1 (exclusive), got {amount}")
+    gate = "+".join(f"between(t,{t:g},{t + width:g})" for t in sorted(at))
+    return f"eq=gamma={1.0 - amount:g}:enable='{gate}'"
+
+
+def timecode(*, font: str, pos: str = "bottom-left", size: int = 22,
+             colour: str = "white", alpha: float = 1.0, margin: int = OVERLAY_MARGIN,
+             safe_bottom: int = SAFE_BOTTOM_PX, fps: int = 30, start: str = "00:00:00:00") -> str:
+    """A running timecode, drawn by ffmpeg rather than baked as text.
+
+    Deliberately not routed through :func:`drawtext`: that escapes ``:`` and ``%``, which
+    is exactly right for arbitrary text and exactly wrong here, where the colons are the
+    timecode's own field separators and must reach the filter intact.
+    """
+    if pos not in _POSITIONS:
+        raise ValueError(f"unknown overlay position {pos!r} — use one of: {', '.join(sorted(_POSITIONS))}")
+    x, y = _POSITIONS[pos]
+    fontfile = font.replace("\\", "/").replace(":", r"\:")
+    escaped = start.replace(":", r"\:")
+    return "drawtext=" + ":".join([
+        f"fontfile='{fontfile}'",
+        f"timecode='{escaped}'",
+        f"timecode_rate={fps}",
+        "text=''",
+        f"x={x.format(m=margin, b=safe_bottom)}",
+        f"y={y.format(m=margin, b=safe_bottom)}",
+        f"fontsize={size}",
+        f"fontcolor={colour}@{alpha:g}",
+    ])

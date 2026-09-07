@@ -1265,6 +1265,13 @@ navig tiktok logout
 navig tiktok music-links
 navig tiktok post
 navig tiktok profile
+navig todo add
+navig todo categories
+navig todo done
+navig todo list
+navig todo rm
+navig todo scan
+navig todo when
 navig tools list
 navig tools schema
 navig tools show

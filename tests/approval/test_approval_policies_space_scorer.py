@@ -148,7 +148,13 @@ class TestApprovalPolicyFromConfig:
     def test_from_empty_config(self):
         policy = ApprovalPolicy.from_config({})
         assert policy.enabled is True
-        assert policy.timeout_seconds == 120
+        # 900, not the old 120. That value predates approvals ever REACHING a
+        # human — nothing sent them to Telegram, so the window only governed how
+        # fast a request auto-denied itself. Once delivery worked, a real answer
+        # arrived 7 MINUTES after the ask and was rejected as "answered too late".
+        # Longer is the safe direction: default_action is "deny" and DANGEROUS
+        # always denies, so this only delays an auto-deny.
+        assert policy.timeout_seconds == 900
         assert policy.default_action == "deny"
 
     def test_from_config_overrides_enabled(self):

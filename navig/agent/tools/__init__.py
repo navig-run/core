@@ -268,6 +268,19 @@ def register_todo_tools() -> None:
     _register()
 
 
+def register_pim_tools() -> None:
+    """Register task_add / task_list / task_done — the operator's REAL task list.
+
+    Distinct from ``register_todo_tools`` above, which registers the agent's own
+    per-conversation checklist. Both exist; the names and descriptions are what keep
+    a user's dentist appointment out of a scratch list and the agent's plan steps out
+    of the user's life.
+    """
+    from navig.agent.tools.pim_tools import register_pim_tools as _register
+
+    _register()
+
+
 def register_skill_tools() -> None:
     """Register ``manage_skills`` — the escape hatch when auto-activation misses.
 
@@ -302,6 +315,7 @@ def register_all_tools() -> None:
         ("browser", register_browser_tools),
         ("skills", register_skill_tools),
         ("todo", register_todo_tools),
+        ("tasks", register_pim_tools),
     ]:
         try:
             fn()

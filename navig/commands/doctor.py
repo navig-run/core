@@ -1269,6 +1269,173 @@ def check_ai_providers() -> list[tuple[str, bool, str]]:
     return results
 
 
+def _invocation_repo_root() -> Path | None:
+    """Repo root of the directory the CLI was invoked from.
+
+    `navig` chdir's to the ACTIVE SPACE during startup (``main.py``), so a bare
+    ``repo_root()`` here resolves the space rather than the folder the operator is
+    standing in. That is not hypothetical: with the active space set to
+    ``~/.navig-os/workspaces/my-workspace`` — not a git repo — every repo-scoped
+    section evaluated to empty, so the documented `navig doctor` Repo Guard row
+    silently never ran. And when a space IS a repo the failure is worse: the row
+    would describe that repo while claiming to describe yours.
+
+    ``main.py`` records the pre-chdir directory in ``NAVIG_INVOCATION_CWD`` for
+    exactly this reason. Every repo-scoped check must resolve through here.
+    """
+    from navig.commands.repo import repo_root  # noqa: PLC0415
+
+    invoked = os.environ.get("NAVIG_INVOCATION_CWD")
+    if invoked:
+        try:
+            origin = Path(invoked)
+            if origin.is_dir():
+                root = repo_root(origin)
+                if root is not None:
+                    return root
+        except OSError:
+            pass
+    return repo_root()
+
+
+def _is_plugin_source_tree(origin: Path, source_dir_name: str) -> bool:
+    """Does ``origin`` live inside a ``plugins/<source_dir_name>/`` checkout?
+
+    Deliberately root-AGNOSTIC. An editable install points at ONE checkout, and this
+    command may run from a ``.dev/worktrees/<slug>`` copy of the same repo — comparing
+    against the current root reported 11 of 12 plugins shadowed on a machine where the
+    real answer was 4, because seven correct installs pointed at the main checkout.
+    The question worth answering is source-tree vs installed-copy, not which checkout.
+    """
+    for parent in origin.parents:
+        if parent.name == source_dir_name and parent.parent.name == "plugins":
+            return True
+    return False
+
+
+def check_plugin_sources() -> list[tuple[str, bool, str]]:
+    """Plugins declared editable-local that actually resolve to an INSTALLED copy.
+
+    Empty (section skipped) outside a development checkout of this repo — an end user who
+    installed from PyPI has no ``core/pyproject.toml`` and nothing to compare against.
+
+    Inside a checkout this catches a failure that is invisible from every other
+    surface: ``[tool.uv.sources]`` says a plugin resolves to ``plugins/navig-<x>``,
+    but a non-editable install shadows it, so the CLI executes a stale copy while
+    the repo source moves on. Measured on this machine 2026-09-06: 4 of 12 declared
+    plugins were shadowed, and the mobile plugin's ``ui`` sub-app answered "No such
+    command" for a
+    sub-app registered unconditionally in the source — while that plugin's own 39
+    tests passed, because the gate runs ``python -m pytest`` with the plugin dir as
+    cwd and ``-m`` puts the source on ``sys.path`` first. Tests read the repo, the
+    CLI read the install, and ``navig plugin list`` printed a green tick over it.
+
+    Resolution uses ``find_spec`` rather than an import: these are top-level
+    packages, so the spec is answered from the file tree without executing any
+    plugin's module body.
+    """
+    try:
+        import importlib.util as _ilu  # noqa: PLC0415
+    except Exception:  # noqa: BLE001 - stdlib absent -> nothing to compare
+        return []
+
+    try:
+        import tomllib  # noqa: PLC0415 - py3.11+
+    except ImportError:
+        # No TOML reader: report NOTHING rather than a tick we cannot back.
+        return []
+
+    root = _invocation_repo_root()
+    if root is None:
+        return []
+    pyproject = root / "core" / "pyproject.toml"
+    if not pyproject.is_file():
+        return []
+
+    try:
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        declared = {
+            dist: spec["path"]
+            for dist, spec in (data.get("tool", {}).get("uv", {}).get("sources", {}) or {}).items()
+            if isinstance(spec, dict) and isinstance(spec.get("path"), str)
+        }
+    except (OSError, ValueError):
+        return [_check("editable plugins", False, "could not read core/pyproject.toml", warn=True)]
+
+    if not declared:
+        return []
+
+    shadowed: list[str] = []
+    fix_paths: list[str] = []
+    unresolved: list[str] = []
+    verified = 0
+
+    for dist, rel in sorted(declared.items()):
+        src = (pyproject.parent / rel).resolve()
+        if not src.is_dir():
+            unresolved.append(f"{dist} (declared path missing)")
+            continue
+        try:
+            pkg = next(
+                (
+                    child.name
+                    for child in sorted(src.iterdir())
+                    if child.is_dir()
+                    and child.name.startswith("navig")
+                    and (child / "__init__.py").is_file()
+                ),
+                None,
+            )
+        except OSError:
+            pkg = None
+        if pkg is None:
+            unresolved.append(f"{dist} (no package dir)")
+            continue
+        try:
+            spec = _ilu.find_spec(pkg)
+        except (ImportError, ValueError):
+            spec = None
+        origin = getattr(spec, "origin", None) if spec is not None else None
+        if not origin:
+            unresolved.append(f"{dist} (not installed)")
+            continue
+        try:
+            resolved_inside = _is_plugin_source_tree(Path(origin).resolve(), src.name)
+        except (OSError, ValueError):
+            unresolved.append(f"{dist} (unreadable origin)")
+            continue
+        if resolved_inside:
+            verified += 1
+        else:
+            shadowed.append(dist)
+            try:
+                fix_paths.append(src.relative_to(root).as_posix())
+            except ValueError:
+                fix_paths.append(str(src))
+
+    results: list[tuple[str, bool, str]] = []
+    if shadowed:
+        results.append(
+            _check(
+                "editable plugins",
+                False,
+                f"{len(shadowed)} of {len(declared)} resolve to an installed copy, not your "
+                f"source: {', '.join(shadowed)} — the CLI runs the stale code while tests read "
+                f"the repo. Fix: pip install -e {' '.join(fix_paths)}",
+                warn=True,
+            )
+        )
+    elif verified:
+        results.append(
+            _check("editable plugins", True, f"{verified} of {len(declared)} resolve to your source")
+        )
+    if unresolved:
+        # Not installed is not a failure — an optional extra may simply be absent —
+        # but it IS unverified, so it never renders as a tick.
+        results.append(_check("unverified", False, ", ".join(unresolved), warn=True))
+    return results
+
+
 def check_browsers() -> list[tuple[str, bool, str]]:
     """Debug browsers left running that no NAVIG session owns.
 
@@ -1922,10 +2089,9 @@ def check_repo_guard() -> list[tuple[str, bool, str]]:
             _guard_event_wired,
             lock_state,
             read_lock,
-            repo_root,
         )
 
-        root = repo_root()
+        root = _invocation_repo_root()
         if root is None:
             return []  # not inside a git repo — nothing to report
 
@@ -2187,6 +2353,10 @@ def _collect_sections(
     repo_guard_results = check_repo_guard()
     if repo_guard_results:  # only inside a git repo
         secs.append(("Repo Guard", repo_guard_results))
+
+    plugin_source_results = check_plugin_sources()
+    if plugin_source_results:  # only inside a navig development checkout
+        secs.append(("Plugin Sources", plugin_source_results))
 
     browser_results = check_browsers()
     if browser_results:  # only when a debug browser is actually running unowned
