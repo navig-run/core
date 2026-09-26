@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import signal
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +47,55 @@ except ImportError as _aiohttp_import_err:
     aiohttp = None
     AIOHTTP_AVAILABLE = False
     print(f"\n⚠  Gateway cannot start: {_aiohttp_import_err}\n", flush=True)
+
+
+# Identical heartbeat issues back off EXPONENTIALLY: the nth time the same set
+# is seen, it waits base * 2^(n-1), capped. So a problem is reported promptly the
+# first time and then goes quiet if nothing changes — "tell me, then stop
+# nagging" — while a genuinely new issue set starts again at base.
+#
+# The shape and the numbers were chosen by replaying the operator's real history
+# (79 missions over 30 days, only TWO distinct issue sets) through each
+# candidate. A flat window is the wrong shape: it trades early responsiveness
+# for quiet, and this does not.
+#
+#     no suppression            79        flat  6h   41
+#     backoff 1h → cap 72h      17        flat 24h   25
+#                                         flat 72h   10  (but 72h to first re-ask)
+#
+# Backoff beats every flat window that is anywhere near as responsive: it
+# re-asks within 1h while a flat window that quiet takes 24-72h.
+# Override with `missions.remediate_backoff_base_secs` (0 disables the rule).
+_REMEDIATE_BACKOFF_BASE_DEFAULT = 60 * 60
+# Ceiling on the doubling, so a long-standing issue still resurfaces every 3
+# days rather than silently never again. `remediate_backoff_max_secs`; 0 = uncapped.
+_REMEDIATE_BACKOFF_MAX_DEFAULT = 72 * 60 * 60
+
+# A floor on ANY two remediate missions, whatever their issues.
+#
+# The identity check above hashes the heartbeat's free-text issue lines, so a
+# detail that WOBBLES defeats it — measured: probing one NVIDIA model twice in a
+# row returned "live" once and a transient "503 Service Unavailable" the other
+# time, which is a different line and therefore a different signature. This floor
+# is format-independent, so flapping text can raise at most one mission per
+# heartbeat interval instead of one per flap.
+# Override with `missions.remediate_min_interval_secs` (0 disables).
+_REMEDIATE_MIN_INTERVAL_DEFAULT = 30 * 60
+
+
+def _age_seconds(created_at: str) -> float | None:
+    """Seconds since an ISO-8601 timestamp; None when it cannot be parsed.
+
+    None means "unknown age", never "brand new" — callers must not treat an
+    unparseable timestamp as inside a cooldown window.
+    """
+    try:
+        ts = datetime.fromisoformat(str(created_at))
+    except (TypeError, ValueError):
+        return None
+    if ts.tzinfo is None:  # legacy naive rows were written in UTC
+        ts = ts.replace(tzinfo=timezone.utc)
+    return max(0.0, (datetime.now(timezone.utc) - ts).total_seconds())
 
 
 # Safe no-op fallback for @web.middleware when aiohttp is not installed.
@@ -812,11 +861,17 @@ class NavigGateway:
 
         # Stop heartbeat
         if self.heartbeat_runner:
-            await self.heartbeat_runner.stop()
+            try:
+                await self.heartbeat_runner.stop()
+            except Exception:  # noqa: BLE001 — shutdown must not fail on cleanup
+                logger.debug("heartbeat_runner.stop raised", exc_info=True)
 
         # Stop cron
         if self.cron_service:
-            await self.cron_service.stop()
+            try:
+                await self.cron_service.stop()
+            except Exception:  # noqa: BLE001 — shutdown must not fail on cleanup
+                logger.debug("cron_service.stop raised", exc_info=True)
 
         # Stop Studio scheduled-post service
         if getattr(self, "scheduled_post_service", None):
@@ -824,6 +879,23 @@ class NavigGateway:
                 await self.scheduled_post_service.stop()
             except Exception:  # noqa: BLE001
                 pass
+
+        # Stop the in-daemon browser. `/browser/navigate` launches Chromium lazily via
+        # BrowserController._ensure_started(), and until now the ONLY thing that closed it
+        # was an explicit `POST /browser/stop` — so a daemon restart orphaned a live
+        # Chromium with its window, its profile dir and its page still up.
+        #
+        # The idle reaper cannot reclaim this one: it is launched by PLAYWRIGHT, not by
+        # `launch_with_cdp`, so it never enters `cdp-launched.json` and is invisible to a
+        # registry-scoped sweep. Shutdown is the only place that can own it.
+        #
+        # `stop()` on a controller that was never started is a no-op, so this is safe on
+        # every shutdown, including one where nothing ever touched /browser.
+        if getattr(self, "browser_controller", None) is not None:
+            try:
+                await self.browser_controller.stop()
+            except Exception as exc:  # noqa: BLE001 — shutdown must not fail on cleanup
+                logger.debug("browser_controller.stop raised: %r", exc)
 
         # Stop cloud manager (cloudflared subprocess + broker heartbeat)
         if self.cloud_manager is not None:
@@ -1120,21 +1192,174 @@ class NavigGateway:
         except Exception as e:  # noqa: BLE001
             logger.debug("proactive→mission bridge not wired: %s", e)
 
+    @staticmethod
+    def _remediate_signature(issue_texts: list[str]) -> str:
+        """Stable id for a SET of health issues.
+
+        Sorted before hashing, so the same problems reported in a different
+        order are one signature — while a genuinely NEW problem changes it and
+        is always asked about.
+        """
+        import hashlib  # noqa: PLC0415
+
+        return hashlib.sha256("\n".join(sorted(issue_texts)).encode("utf-8")).hexdigest()[:16]
+
+    def _remediate_window(self, key: str, default: int) -> int:
+        """Read one of the remediate suppression windows. 0 disables that rule."""
+        from navig.core.coerce import coerce_int  # noqa: PLC0415
+
+        try:
+            raw = (self.config_manager.global_config or {}).get("missions", {}).get(key, default)
+        except Exception:  # noqa: BLE001 — config is best-effort
+            return default
+        # coerce_int, not int(): `navig config set` stores raw STRINGS, and a
+        # bare int() would raise into the caller's except and silently disable
+        # suppression — restoring the very spam this exists to stop.
+        return coerce_int(raw, default, minimum=0)
+
+    def _remediate_backoff_base_secs(self) -> int:
+        """First wait before identical health issues are raised again. 0 disables."""
+        return self._remediate_window(
+            "remediate_backoff_base_secs", _REMEDIATE_BACKOFF_BASE_DEFAULT
+        )
+
+    def _remediate_backoff_max_secs(self) -> int:
+        """Ceiling on the doubling, so an issue still resurfaces. 0 = uncapped."""
+        return self._remediate_window("remediate_backoff_max_secs", _REMEDIATE_BACKOFF_MAX_DEFAULT)
+
+    def _remediate_min_interval_secs(self) -> int:
+        """Floor between ANY two remediate missions, whatever the issues. 0 disables."""
+        return self._remediate_window(
+            "remediate_min_interval_secs", _REMEDIATE_MIN_INTERVAL_DEFAULT
+        )
+
+    @staticmethod
+    def _remediate_backoff_wait(seen: int, base: int, cap: int) -> float:
+        """Wait before the same issue set may be raised again, after ``seen`` times.
+
+        ``seen`` is counted from the persisted store, so the schedule survives a
+        restart. The shift is clamped before the shift, not after — ``2 ** seen``
+        for a large ``seen`` builds a multi-thousand-bit integer first.
+        """
+        wait = float(base) * float(2 ** min(max(seen - 1, 0), 20))
+        return min(wait, float(cap)) if cap > 0 else wait
+
+    def _remediate_already_raised(
+        self, signature: str, base: int, cap: int, floor: int
+    ) -> tuple[str, float, str] | None:
+        """Would a new mission for these issues duplicate one we already raised?
+
+        Returns ``(mission_id, age_seconds, reason)`` when it would, else ``None``.
+
+        Reads the PERSISTED mission store rather than process memory, because
+        the dominant duplicate source is a daemon RESTART: ``HeartbeatRunner``
+        sleeps only 10-60s before its first check, so every restart raised the
+        same mission again and in-memory state would have been wiped.
+        """
+        executor = self.mission_executor
+        if executor is None:
+            return None
+        try:
+            missions = executor.store.list_missions(limit=200)
+        except Exception as e:  # noqa: BLE001
+            # Never let a store read block the heartbeat — but do not claim the
+            # issues are new either; say plainly that we could not check.
+            logger.debug("remediate dedup: store unreadable (%s) — not suppressing", e)
+            return None
+
+        active = executor.active
+        seen_same = 0
+        newest_same: tuple[str, float] | None = None
+        newest_any: tuple[str, float] | None = None
+        for m in missions:  # newest first
+            if (m.capability or "").lower() != "remediate":
+                continue
+            same = (m.metadata or {}).get("issue_signature") == signature
+            age = _age_seconds(m.created_at)
+            if same and m.mission_id in active:
+                # Still in flight (queued, running, or awaiting the operator's
+                # answer) — asking a second time cannot help.
+                return (m.mission_id, age or 0.0, "already in flight")
+            if same:
+                seen_same += 1
+            if age is None:  # unknown age is never "recent"
+                continue
+            if newest_any is None:
+                newest_any = (m.mission_id, age)
+            if same and newest_same is None:
+                newest_same = (m.mission_id, age)
+        if newest_same is not None and base > 0:
+            wait = self._remediate_backoff_wait(seen_same, base, cap)
+            if newest_same[1] < wait:
+                return (
+                    *newest_same,
+                    f"raised {seen_same}x before; next window {wait / 3600:.1f}h",
+                )
+        if newest_any is not None and floor > 0 and newest_any[1] < floor:
+            return (*newest_any, "a remediate mission was raised too recently")
+        return None
+
     async def _on_heartbeat_issues(self, issues) -> None:
-        """Heartbeat found problems → enqueue a remediate mission (flag-gated)."""
+        """Heartbeat found problems → enqueue a remediate mission (flag-gated).
+
+        The same issues back off exponentially instead of being raised once per
+        heartbeat plus once more per daemon restart. Unfixable-by-agent issues
+        (a lapsed provider credential, a retired model) otherwise re-ask forever:
+        the operator's store held 79 of these missions, 77 auto-denied on timeout.
+        """
         if not self._missions_autonomous_enabled() or not self.mission_executor or not issues:
             return
         try:
             from navig.contracts.mission import Mission, MissionPriority
+            from navig.heartbeat.triage import triage
+
+            verdict = triage([str(i) for i in issues])
+            if verdict.informational and not verdict.actionable:
+                # An expired key, a retired model, a 503 — the operator's or the
+                # router's to fix, never a shell agent's. The heartbeat alert has
+                # already told the operator; a mission here only ever produced a
+                # prompt and a timeout (80 of 84 in this operator's store).
+                logger.info(
+                    "Heartbeat issues are provider/model conditions (%d) — no remediate "
+                    "mission; the heartbeat alert covers them and the router falls back",
+                    len(verdict.informational),
+                )
+                return
+            issue_texts = verdict.actionable
+            signature = self._remediate_signature(issue_texts)
+            base = self._remediate_backoff_base_secs()
+            cap = self._remediate_backoff_max_secs()
+            floor = self._remediate_min_interval_secs()
+
+            duplicate = self._remediate_already_raised(signature, base, cap, floor)
+            if duplicate is not None:
+                prior_id, age, reason = duplicate
+                logger.info(
+                    "Heartbeat issues not re-raised (sig %s): %s — mission %s, %.0fm ago "
+                    "(missions.remediate_backoff_base_secs=%ds, max=%ds, min_interval=%ds)",
+                    signature,
+                    reason,
+                    prior_id[:8],
+                    age / 60,
+                    base,
+                    cap,
+                    floor,
+                )
+                return
 
             mission = Mission(
                 title="Remediate health issues",
                 capability="remediate",
-                payload={"issues": [str(i) for i in issues]},
+                payload={"issues": issue_texts},
                 priority=MissionPriority.HIGH.value,
+                metadata={"issue_signature": signature},
             )
             await self.mission_executor.submit(mission)
-            logger.info("Heartbeat issues → remediate mission %s", mission.mission_id[:8])
+            logger.info(
+                "Heartbeat issues → remediate mission %s (sig %s)",
+                mission.mission_id[:8],
+                signature,
+            )
         except Exception as e:  # noqa: BLE001
             logger.warning("Failed to create remediate mission: %s", e)
 
@@ -2278,8 +2503,25 @@ class NavigGateway:
                     from navig.messaging.adapters.sms import SmsAdapter
 
                     adapter = SmsAdapter(config=self._resolve_adapter_config(sms_cfg))
-                    registry.register(adapter)
-                    logger.debug("Messaging adapter registered: sms")
+                    # Ask BEFORE registering. The SDK import is lazy, so an
+                    # adapter with no SDK constructs fine and only fails at send
+                    # time — one ERROR per delivery for a channel that can never
+                    # work. WARNING, not debug: the operator switched this on, so
+                    # "it is off again" has to be visible and actionable.
+                    missing = adapter.missing_dependency()
+                    if missing:
+                        logger.warning(
+                            "SMS is enabled (adapters.sms.enabled) but the %r package "
+                            "is not installed, so every send would fail. Either "
+                            "`pip install %s` or turn the channel off with "
+                            "`navig config set adapters.sms.enabled false`. Not "
+                            "registering it — other channels are unaffected.",
+                            missing,
+                            missing,
+                        )
+                    else:
+                        registry.register(adapter)
+                        logger.debug("Messaging adapter registered: sms")
                 except Exception as exc:  # noqa: BLE001
                     logger.debug("SMS adapter skipped: %s", exc)
 

@@ -122,7 +122,19 @@ async def _run_provider(
         cfg.output_dir = str(out_dir)
         gen = ImageGenerator(cfg)
         try:
-            sz = ImageSize(size) if size in {s.value for s in ImageSize} else None
+            # A size the enum does not know used to become None, which is the provider's
+            # default -- so `--size 1024x1820` (a size Recraft accepts perfectly well)
+            # quietly returned a SQUARE. Nothing said the request had been dropped, and a
+            # square seed into an image-to-video model produces a square clip. Refuse
+            # instead, and name what is accepted.
+            known = {s.value for s in ImageSize}
+            if size and size not in known:
+                raise ValueError(
+                    f"unknown --size {size!r} - supported: {', '.join(sorted(known))}. "
+                    f"(Providers with their own size lists, such as Recraft, map from "
+                    f"these; asking for a size outside them would be silently squared.)"
+                )
+            sz = ImageSize(size) if size else None
             return await gen.generate(
                 enriched_prompt, size=sz, n=n,
                 provider=ImageProvider(provider) if provider else None, seed=seed,

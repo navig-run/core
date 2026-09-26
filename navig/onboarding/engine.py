@@ -34,16 +34,19 @@ OnFailurePolicy = Literal["abort", "skip", "retry"]
 
 
 def _is_click_abort(exc: BaseException) -> bool:
-    """Return True when *exc* is ``click.exceptions.Abort``.
+    """Return True when *exc* is the Abort Typer raises on Ctrl+C at a prompt.
 
-    Uses isinstance() with a guarded import to avoid hard-coding fragile
-    string checks, while keeping click as a soft dependency.
+    ``typer.Abort`` IS click's Abort on every Typer version — the separate ``click``
+    distribution before 0.27, the vendored ``typer._click`` after. A bare
+    ``from click.exceptions import Abort`` returned False for every abort on a fresh
+    install (no ``click`` package), so a Ctrl+C at a wizard prompt was handled as a
+    generic failure instead of a cancel. See navig.core.click_compat.
     """
     try:
-        from click.exceptions import Abort  # type: ignore[import]
+        from typer import Abort
 
         return isinstance(exc, Abort)
-    except ImportError:
+    except ImportError:  # pragma: no cover - typer is a hard dependency
         return False
 
 

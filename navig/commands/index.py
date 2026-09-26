@@ -4,12 +4,12 @@ Project index commands for NAVIG.
 Provides BM25/FTS-backed source indexing and search over workspace files.
 """
 
-from pathlib import Path
 
 import typer
 
 from navig.console_helper import get_console
 from navig.memory.project_indexer import ProjectIndexer
+from navig.platform.paths import invocation_cwd, resolve_user_path
 
 index_app = typer.Typer(
     help="Project source code indexer (BM25 search over workspace files)",
@@ -42,7 +42,7 @@ def index_scan(
     """
     console = get_console()
 
-    project_root = Path(root) if root else Path.cwd()
+    project_root = resolve_user_path(root) if root else invocation_cwd()
     if not project_root.is_dir():
         console.print(f"[red]Not a directory: {project_root}[/]")
         raise typer.Exit(1)
@@ -75,7 +75,7 @@ def index_search(
     """
     console = get_console()
 
-    project_root = Path(root) if root else Path.cwd()
+    project_root = resolve_user_path(root) if root else invocation_cwd()
     with ProjectIndexer(project_root) as indexer:
         if not indexer._file_hashes:
             console.print("[yellow]No index found. Run 'navig index scan' first.[/]")
@@ -115,7 +115,7 @@ def index_stats(
     """
     console = get_console()
 
-    project_root = Path(root) if root else Path.cwd()
+    project_root = resolve_user_path(root) if root else invocation_cwd()
     with ProjectIndexer(project_root) as indexer:
         stats = indexer.stats()
         if json_out:
@@ -143,7 +143,7 @@ def index_drop(
     """
     console = get_console()
 
-    project_root = Path(root) if root else Path.cwd()
+    project_root = resolve_user_path(root) if root else invocation_cwd()
 
     if not yes:
         confirmed = typer.confirm(f"Drop index for {project_root}?")

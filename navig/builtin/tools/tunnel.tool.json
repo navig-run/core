@@ -1,4 +1,5 @@
 {
+  "$schema": "./tool.schema.json",
   "id": "tool:tunnel",
   "name": "navig_tunnel",
   "description": "Execute NAVIG tunnel operations.",

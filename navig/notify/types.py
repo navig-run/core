@@ -27,6 +27,13 @@ NOTIFICATION_TYPES: list[dict] = [
     {"key": "sms_inbound",      "label": "Incoming SMS",       "category": "Messages", "default_channels": ["deck", "telegram"]},
     {"key": "email_important",  "label": "Important email",    "category": "Messages", "default_channels": ["deck", "telegram"]},
     {"key": "reminder",         "label": "Reminders",          "category": "Personal", "default_channels": ["deck", "telegram"]},
+    # Appointments are the one Personal type that earns SMS by default. A routine
+    # nudge you can read later belongs on Telegram; a doctor's appointment you are
+    # about to miss has to reach you even when Telegram does not. Keeping them a
+    # SEPARATE type from `reminder` is the whole point — the operator wanted SMS for
+    # "really important things like appointments, not simple ones", and a per-type
+    # channel matrix cannot express that while both share one type.
+    {"key": "appointment",      "label": "Appointments",       "category": "Personal", "default_channels": ["deck", "telegram", "sms"]},
     {"key": "briefing",         "label": "Briefings",          "category": "Personal", "default_channels": ["deck", "telegram", "email"]},
     {"key": "mission_complete", "label": "Mission complete",   "category": "Agent",    "default_channels": ["deck"]},
     {"key": "approval",         "label": "Approvals needed",   "category": "Agent",    "default_channels": ["deck", "telegram"]},
@@ -64,7 +71,7 @@ def emoji_for_type(type_key: str) -> str:
         return "📡"
     return {
         "sms_inbound": "📩", "email_important": "📧",
-        "reminder": "⏰", "briefing": "☀️", "mission_complete": "✅",
+        "reminder": "⏰", "appointment": "📅", "briefing": "☀️", "mission_complete": "✅",
         "approval": "🔔", "agent_message": "🤖", "system_alert": "🚨",
         "node_status": "🛰️", "security_alert": "🛡️", "invoice_due": "🧾",
         "finance_alert": "💸", "webcam_on": "📷", "webcam_off": "📷",

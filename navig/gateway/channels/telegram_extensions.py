@@ -274,12 +274,18 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
         label="Groups & forums",
         description="Moderation, checklists, forum routing and reactions.",
         group="Comms", icon="users",
-        # ON by default, deliberately. This bundle owns checklists and reactions,
-        # which have ALWAYS defaulted to on — defaulting the extension to off
-        # would silently remove two working features on upgrade. The moderation
-        # commands it also owns stay safe regardless: the dispatcher already
-        # requires a group chat AND group-admin rights for each of them, and
-        # telegram.forum_routing_enabled still defaults to off on its own.
+        # ON by default, deliberately -- for the moderation commands this bundle owns
+        # (kick / mute / unmute / search). They stay safe either way: the dispatcher
+        # requires a group chat AND group-admin rights for each.
+        #
+        # An earlier version of this comment justified the default by the bundle owning
+        # "two working features" (checklists and reactions). Neither was: reactions were
+        # retired on purpose (_process_update ignores `message_reaction` outright), and
+        # checklists were unreachable from the day they were written. Checklists ARE
+        # wired now, as an OPT-IN -- telegram.checklist_enabled defaults to false, so
+        # this extension being on does not switch them on by itself; the two ANDs.
+        # Forum routing is wired the same way -- opt-in via telegram.forum_routing_enabled,
+        # which defaults to off, so this extension cannot switch it on either.
         default_enabled=True,
         commands=frozenset({"kick", "mute", "unmute", "search"}),
     ),
@@ -350,6 +356,14 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
         callback_prefixes=("task:",),
     ),
     TelegramExtension(
+        id="paperwork",
+        label="Paper mail",
+        description="Photograph a letter with the caption /courrier: filed into the paperwork "
+                    "space with local OCR, never sent to a vision model.",
+        group="Life", icon="mailbox",
+        commands=frozenset({"courrier"}),
+    ),
+    TelegramExtension(
         id="autopilot",
         label="AI autopilot",
         description="Autonomous multi-step continuation.",
@@ -370,6 +384,7 @@ GROUP_ORDER: tuple[str, ...] = ("Life", "Systems", "Comms", "Create", "Knowledge
 # intended pressure point, not an oversight.
 CATEGORY_TO_EXTENSION: dict[str, str] = {
     "core": "core",
+    "paperwork": "paperwork",
     "admin": "groups",
     "ai": "autopilot",
     "database": "remote",

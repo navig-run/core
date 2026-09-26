@@ -28,12 +28,22 @@ The allowlist is PRE-EXISTING debt, counted rather than hidden. Sweeping all of 
 would be the speculative rewrite this rule exists to prevent — the correct codec differs per
 call site and several of these run a Python child, where the ANSI default is actually right.
 The point of the guard is that the list can only shrink.
+
+⚠ Entries are keyed by ENCLOSING FUNCTION with a count — ``path::qualname x2`` — never by
+line. A line key moves with every unrelated edit above it: shortening a docstring near line
+79 of ``commands/skills.py`` moved its allowlisted call from 504 to 501 and this guard
+failed twice at once (an "unknown" offender at 501, a "stale" entry at 504) for a change
+that touched nothing about the call. A line key also exempts whatever unrelated code later
+drifts INTO that line. The function survives both. The count is what makes the key honest:
+a second offending call added to an already-allowlisted function is a NEW offence, which
+a membership check would wave through.
 """
 
 from __future__ import annotations
 
 import ast
 import re
+from collections import Counter
 from pathlib import Path
 
 CORE = Path(__file__).resolve().parents[2] / "navig"
@@ -104,8 +114,29 @@ def _offending(call: ast.Call) -> bool:
     return not any(k.arg == "encoding" for k in call.keywords)
 
 
-def _offenders() -> dict[str, str]:
-    found: dict[str, str] = {}
+def _offending_keys(tree: ast.AST, rel: str) -> Counter[str]:
+    """``path::qualname`` for every offending call, counted per enclosing function.
+
+    A stack walk rather than ``ast.walk``, because the key IS the enclosing scope:
+    ``outer.inner`` for a nested def, ``Class.method`` for a method, ``<module>`` at top
+    level. Nothing about a line number survives an edit above the call; the function does.
+    """
+    found: Counter[str] = Counter()
+
+    def visit(node: ast.AST, stack: tuple[str, ...]) -> None:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            stack = (*stack, node.name)
+        if isinstance(node, ast.Call) and _offending(node):
+            found[f"{rel}::{'.'.join(stack) or '<module>'}"] += 1
+        for child in ast.iter_child_nodes(node):
+            visit(child, stack)
+
+    visit(tree, ())
+    return found
+
+
+def _offenders() -> Counter[str]:
+    found: Counter[str] = Counter()
     for path in _python_files():
         try:
             source = path.read_text(encoding="utf-8")
@@ -117,31 +148,42 @@ def _offenders() -> dict[str, str]:
             tree = ast.parse(source)
         except (SyntaxError, UnicodeDecodeError):
             continue
-        rel = path.relative_to(REPO).as_posix()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and _offending(node):
-                found[f"{rel}:{node.lineno}"] = "text=True on a run-time command"
+        found.update(_offending_keys(tree, path.relative_to(REPO).as_posix()))
     return found
 
 
-def _load_allowlist() -> set[str]:
-    """Pre-existing sites, kept as data next to this file so the diff of a fix is one line."""
+_ENTRY = re.compile(r"^(?P<key>\S+::\S+)(?:\s+x(?P<n>\d+))?$")
+
+
+def _load_allowlist() -> Counter[str]:
+    """Pre-existing sites, kept as data next to this file so the diff of a fix is one line.
+
+    One entry per line: ``path::qualname``, with ``x<N>`` when that function holds more
+    than one allowlisted call. A line that does not parse is an error, not a silent skip —
+    a malformed entry that vanished would read as "fixed".
+    """
     path = Path(__file__).with_name("dynamic_subprocess_allowlist.txt")
     if not path.exists():
-        return set()
-    out = set()
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.split("#", 1)[0].strip()
-        if line:
-            out.add(line)
+        return Counter()
+    out: Counter[str] = Counter()
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        m = _ENTRY.match(line)
+        assert m, f"unparseable allowlist entry: {raw!r} (expected `path::qualname [xN]`)"
+        out[m["key"]] += int(m["n"] or 1)
     return out
 
 
 def test_a_runtime_command_names_its_encoding() -> None:
-    offenders = set(_offenders()) - _load_allowlist()
-    assert not offenders, (
+    offenders, allowed = _offenders(), _load_allowlist()
+    # Counts, not membership: a second offending call in an already-allowlisted function
+    # is a NEW offence, and a set difference would wave it through.
+    new = {k: (n, allowed[k]) for k, n in offenders.items() if n > allowed[k]}
+    assert not new, (
         "a subprocess with a run-time command decodes with the locale code page:\n"
-        + "\n".join(f"  {s}" for s in sorted(offenders))
+        + "\n".join(f"  {k}  ({n} found, {a} allowlisted)" for k, (n, a) in sorted(new.items()))
         + "\n\nName the codec the child actually writes, or capture bytes and use\n"
         "navig.core.proc_text.decode_console_result when the command is genuinely unknown."
     )
@@ -150,14 +192,14 @@ def test_a_runtime_command_names_its_encoding() -> None:
 def test_the_allowlist_only_shrinks() -> None:
     """Every allowlisted site must still exist and still offend.
 
-    A stale entry is worse than no entry: it silently exempts whatever ends up at that line
-    later. This is what turns the list into a debt that can only go down.
+    A stale entry is worse than no entry: it silently exempts whatever later drifts into
+    that function. This is what turns the list into a debt that can only go down.
     """
-    current = set(_offenders())
-    stale = sorted(_load_allowlist() - current)
+    offenders, allowed = _offenders(), _load_allowlist()
+    stale = {k: (a, offenders[k]) for k, a in allowed.items() if a > offenders[k]}
     assert not stale, (
-        f"{len(stale)} allowlist entries no longer offend — delete them:\n"
-        + "\n".join(f"  {s}" for s in stale)
+        f"{len(stale)} allowlist entries no longer offend — delete or decrement them:\n"
+        + "\n".join(f"  {k}  ({a} allowlisted, {n} found)" for k, (a, n) in sorted(stale.items()))
     )
 
 
@@ -171,10 +213,40 @@ def test_the_scan_actually_reads_the_tree() -> None:
     # legitimately came down. It is a floor against a SILENT collapse (a scanner that
     # stops matching reports zero offenders and an empty list looks like success), not a
     # target — lower it again the same way, by fixing sites and re-measuring.
-    assert len(_load_allowlist()) >= 10, (
+    assert sum(_load_allowlist().values()) >= 10, (
         "the allowlist collapsed — either the scanner stopped seeing the tree or someone "
         "emptied it without fixing the sites"
     )
+
+
+def test_the_key_survives_an_edit_above_the_call() -> None:
+    """The reason for keying by function: the SAME call must produce the SAME key after
+    unrelated lines are added above it. A line key fails this by construction."""
+    body = (
+        "import subprocess\n"
+        "def helper():\n"
+        "    return subprocess.run(cmd, capture_output=True, text=True)\n"
+    )
+    shifted = "# three\n# new\n# lines\n" + body
+    before = _offending_keys(ast.parse(body), "x/y.py")
+    after = _offending_keys(ast.parse(shifted), "x/y.py")
+    assert before == after == Counter({"x/y.py::helper": 1})
+
+
+def test_a_second_call_in_an_allowlisted_function_is_a_new_offence() -> None:
+    """The reason for the count: membership alone would exempt the whole function forever."""
+    two = (
+        "import subprocess\n"
+        "class Runner:\n"
+        "    def go(self):\n"
+        "        subprocess.run(a, capture_output=True, text=True)\n"
+        "        subprocess.run(b, capture_output=True, text=True)\n"
+    )
+    keys = _offending_keys(ast.parse(two), "x/y.py")
+    assert keys == Counter({"x/y.py::Runner.go": 2})
+    # One allowlisted, two found: the guard must see the second one.
+    allowed = Counter({"x/y.py::Runner.go": 1})
+    assert {k for k, n in keys.items() if n > allowed[k]} == {"x/y.py::Runner.go"}
 
 
 def test_the_detector_matches_the_shapes_it_claims_to() -> None:

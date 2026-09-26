@@ -493,7 +493,7 @@ def register_deck_routes(
         allowed_users=allowed_users or [],
         require_auth=require_auth,
         dev_mode=deck_cfg.get("dev_mode", False),
-        auth_max_age=deck_cfg.get("auth_max_age", 3600),
+        auth_max_age=deck_cfg.get("auth_max_age", 86400),
         api_key=api_key,
         # Pass the raw config value through; configure_deck_auth coerce_bool's it.
         # A bare bool() here PRE-CORRUPTS the string ("false" → True) before the

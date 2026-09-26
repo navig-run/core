@@ -477,9 +477,22 @@ class OperationRecorder:
         try:
             from navig.store.audit import get_audit_store
 
+            # Who ran it. `session_id` was always None here, so two agents on one
+            # machine were indistinguishable in the audit — and when the daemon
+            # died at 20:01 with another session's `cdp stop --all` at the same
+            # second, nothing could say whose it was. The same best-effort
+            # identity the repo guard and host locks use (NAVIG_SESSION_ID →
+            # CLAUDE_*_SESSION_ID → terminal → user@host).
+            try:
+                from navig.core.host_lock import session_id as _session_id
+
+                _sid = _session_id()
+            except Exception:  # noqa: BLE001
+                _sid = None
             get_audit_store().log_event(
                 action=f"{record.operation_type.value}",
                 actor="user",
+                session_id=_sid,
                 target=record.host or record.app,
                 details={
                     "command": record.command,
@@ -957,9 +970,13 @@ def claim_cli_operation(
         middleware record (library call, tests) or the command doesn't match.
     """
     try:
-        import click
+        # NOT `import click`: Typer 0.27 vendors click and installs no `click` package, and a
+        # separately-installed click has a different context stack anyway — either way the
+        # claim silently failed and every enriched command wrote TWO ledger lines on a fresh
+        # install. See navig.core.click_compat.
+        from navig.core.click_compat import get_current_context
 
-        ctx = click.get_current_context(silent=True)
+        ctx = get_current_context(silent=True)
     except Exception:  # noqa: BLE001 — recording plumbing must never raise
         return None, None
     while ctx is not None:
@@ -1023,9 +1040,21 @@ class RecordedOperation:
         tags: list[str] | None = None,
         filepath: str | None = None,
         session_id: str | None = None,
+        claim: tuple[str, ...] = (),
     ):
+        """
+        Args:
+            claim: when the enclosing CLI invocation matches one of these substrings,
+                adopt the middleware's in-flight record instead of starting a second one
+                (see :func:`claim_cli_operation`). Without it a command wrapped in this
+                context manager wrote TWO ledger lines per run — the middleware's and
+                its own — which is how `navig apply x --dry-run` showed up as both a
+                read-only entry and a red `workflow_run`. Leave empty for library use,
+                where the outer command owns the record.
+        """
         self.command = command
         self.op_type = op_type
+        self.claim = claim
         self.host = host
         self.app = app
         self.args = args
@@ -1051,15 +1080,35 @@ class RecordedOperation:
         import time
 
         self._start_time = time.time()
-        self._record = self._recorder.start_operation(
-            command=self.command,
-            operation_type=self.op_type,
-            host=self.host,
-            app=self.app,
-            args=self.args,
-            reversible=self.reversible,
-            tags=self.tags,
-        )
+        claimed, claimed_start = (claim_cli_operation(match=self.claim) if self.claim else (None, None))
+        if claimed is not None:
+            # One ledger line per invocation: enrich the middleware's record rather than
+            # writing a sibling. The middleware already classified a `--dry-run` as
+            # read_query; keep that over the caller's (execution-time) type.
+            self._record = claimed
+            if claimed.operation_type != OperationType.READ_QUERY:
+                claimed.operation_type = self.op_type
+            claimed.command = self.command
+            if self.host:
+                claimed.host = self.host
+            if self.app:
+                claimed.app = self.app
+            if self.args:
+                claimed.args = {**(claimed.args or {}), **self.args}
+            if self.tags:
+                claimed.tags = list(dict.fromkeys([*(claimed.tags or []), *self.tags]))
+            if claimed_start:
+                self._start_time = claimed_start
+        else:
+            self._record = self._recorder.start_operation(
+                command=self.command,
+                operation_type=self.op_type,
+                host=self.host,
+                app=self.app,
+                args=self.args,
+                reversible=self.reversible,
+                tags=self.tags,
+            )
 
         # File history checkpoint — snapshot the file before any write/modify
         if self.filepath and self.op_type in (

@@ -54,9 +54,15 @@ async def handle_api_events(request: "web.Request") -> "web.Response":
     if deck_telegram_only():
         init_data = request.query.get("init_data", "")
         token = deck_bot_token()
-        result = validate_init_data(init_data, token, deck_auth_max_age()) if (init_data and token) else None
+        reasons: list[str] = []
+        result = (
+            validate_init_data(init_data, token, deck_auth_max_age(), reason=reasons)
+            if (init_data and token)
+            else None
+        )
         if not (result and result.get("user")):
-            logger.warning("SSE /api/events unauthorized: telegram_only requires valid initData")
+            why = reasons[0] if reasons else "no initData presented"
+            logger.warning("SSE /api/events unauthorized: %s", why)
             return web.json_response(
                 {"error": "unauthorized", "detail": "Valid Telegram WebApp initData required"},
                 status=401,

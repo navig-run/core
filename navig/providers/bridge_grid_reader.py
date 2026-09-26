@@ -24,11 +24,14 @@ We consider the entry valid if:
 from __future__ import annotations
 
 import json
+import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from navig.platform.paths import config_dir
+
+logger = logging.getLogger(__name__)
 
 # Must match PRIMARY_TTL_MS in navig-bridge extension.ts (15 000 ms)
 PRIMARY_TTL_SECONDS: float = 15.0
@@ -97,8 +100,19 @@ def _read_and_validate() -> dict | None:
         try:
             if not _is_pid_alive(int(pid)):
                 return None
-        except Exception:
-            pass  # Cannot check; assume alive
+        except Exception as exc:  # noqa: BLE001
+            # FAIL CLOSED. "Could not check" is not "verified alive", and the
+            # answer here decides whether the registry routes real requests at
+            # this bridge. `check_pid_exists` catches NoSuchProcess only, so what
+            # lands here is a garbage `pid` in the file (ValueError) or a PID that
+            # exists but cannot be inspected — on Windows that is `AccessDenied`
+            # for a system-owned process, i.e. the bridge died and its PID was
+            # RECYCLED to something protected. Neither is evidence of a live
+            # bridge. The 15s TTL bounded the old fail-open, but a green light
+            # over an unknown is still the wrong default (cf. `navig doctor`).
+            logger.debug("bridge-grid pid %r could not be verified — treating as stale: %s",
+                         pid, exc)
+            return None
 
     return data
 

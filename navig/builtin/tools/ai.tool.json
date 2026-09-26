@@ -1,4 +1,5 @@
 {
+  "$schema": "./tool.schema.json",
   "id": "tool:ai",
   "name": "navig_ai",
   "description": "Execute NAVIG ai operations.",

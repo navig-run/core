@@ -916,6 +916,46 @@ def _no_env_leaks(_isolate_navig_config_dir):
 
 
 @pytest.fixture(autouse=True)
+def _no_cwd_leaks(_isolate_navig_config_dir):
+    """A test must leave the process cwd where it found it.
+
+    The cwd is process-global exactly like ``os.environ``, and a leaked one fails the same
+    way: as a flake in some OTHER test, in another directory, only when xdist puts the two
+    in one worker. ``tests/ops/test_monitoring_unicode.py`` loaded a module by a RELATIVE
+    path and went 10-red in the full suite after an earlier test had ``chdir``'d into an
+    isolated temp config dir and not come back -- green in isolation, every time. The victim
+    was anchored to ``__file__`` (#1427); this names the culprit instead.
+
+    Same discipline as ``_no_env_leaks``: snapshot, yield, REPAIR before failing so one
+    leak cannot cascade, then fail the leaking test by name. ``monkeypatch.chdir`` restores
+    on teardown and is invisible here; a bare ``os.chdir`` with no restore is what this
+    catches. A test that ``chdir``'d into a directory it then DELETED is the worst case --
+    ``os.getcwd()`` raises for every later test -- and is reported as a leak too.
+    """
+    try:
+        before = os.getcwd()
+    except OSError:
+        # The cwd is already gone when this test starts: a previous test's leak that the
+        # guard has just repaired would not leave it so; report it rather than mask it.
+        before = None
+    yield
+    try:
+        after = os.getcwd()
+    except OSError:
+        after = "<deleted directory>"
+    if before is None or after == before:
+        return
+    # Repair before failing: one leaking test must not cascade into every test after it.
+    os.chdir(before)
+    raise AssertionError(
+        f"this test changed the process cwd and did not restore it ({before!r} -> {after!r}), "
+        "which leaks into every later test in this xdist worker -- any relative path they "
+        "resolve now points somewhere else. Use monkeypatch.chdir(...), which restores on "
+        "teardown, instead of a bare os.chdir."
+    )
+
+
+@pytest.fixture(autouse=True)
 def _reset_navig_singletons():
     """Reset module-level singletons before and after every test.
 

@@ -289,6 +289,32 @@ def _installed_space_ids() -> set[str]:
         return set()
 
 
+def _installed_plugin_ids() -> set[str]:
+    """Ids of first-party plugins installed locally (package · pip · legacy formats)."""
+    try:
+        from navig.plugins.host import get_plugin_host  # noqa: PLC0415
+
+        return {str(p.id) for p in get_plugin_host().list_installed()}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def _installed_skill_ids() -> set[str]:
+    """Ids of skills the agent can already pull in (user + builtin skill dirs)."""
+    try:
+        from navig.skills.loader import skills_by_id  # noqa: PLC0415
+
+        return set(skills_by_id().keys())
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def _plugin_id_of(slug: str) -> str:
+    """Catalog plugin slugs are the package name (``navig-social``) or a bare id
+    (``vault``); the plugin host keys installs by the bare id."""
+    return slug[6:] if slug.startswith("navig-") else slug
+
+
 def _license_tier() -> str:
     """The current effective Harbor tier name, ``free`` if the license is unreadable."""
     try:
@@ -318,11 +344,15 @@ def _enrich_bay_item(
     tier_rank: int,
     installed_spaces: set[str],
     fail_open: bool,
+    installed_plugins: set[str] | None = None,
+    installed_skills: set[str] | None = None,
 ) -> dict[str, Any]:
     """Attach live entitlement (``unlocked``/``capability``) + ``installed`` to an item.
 
     The static web catalog can't carry live unlock state — this is the daemon's
     unique value-add for local surfaces (desktop OS / Anchor / Deck).
+    ``installed`` is known for spaces, plugins and skills — the three kinds the
+    daemon can enumerate locally; the other kinds carry no flag (unknown ≠ false).
     """
     pricing = item.get("pricing") if isinstance(item.get("pricing"), dict) else {}
     model = str(pricing.get("model") or "free")
@@ -341,8 +371,13 @@ def _enrich_bay_item(
     out["unlocked"] = unlocked
     out["capability"] = capability
     out["spec"] = _install_spec(str(item.get("install") or ""))
-    if item.get("kind") == "space":
+    kind = item.get("kind")
+    if kind == "space":
         out["installed"] = slug in installed_spaces
+    elif kind == "plugin" and installed_plugins is not None:
+        out["installed"] = _plugin_id_of(slug) in installed_plugins
+    elif kind == "skill" and installed_skills is not None:
+        out["installed"] = slug in installed_skills
     return out
 
 
@@ -372,6 +407,8 @@ def gather_bay_items(*, kind: str | None = None, surface: str | None = None) -> 
         caps, tier_rank, fail_open = [], 0, True
 
     installed_spaces = _installed_space_ids()
+    installed_plugins = _installed_plugin_ids()
+    installed_skills = _installed_skill_ids()
     out: list[dict[str, Any]] = []
     for it in items:
         if not isinstance(it, dict):
@@ -387,6 +424,8 @@ def gather_bay_items(*, kind: str | None = None, surface: str | None = None) -> 
                 tier_rank=tier_rank,
                 installed_spaces=installed_spaces,
                 fail_open=fail_open,
+                installed_plugins=installed_plugins,
+                installed_skills=installed_skills,
             )
         )
     return {

@@ -132,6 +132,36 @@ def test_collect_stale_reports_branch_stash_and_worktree(repo: Path) -> None:
     assert lock_state(data["lock"])["state"] == "free"
 
 
+def test_stale_flags_a_worktree_whose_add_died_and_names_the_fix(repo: Path) -> None:
+    """`git worktree list` shows a partial checkout from a dead add as a normal worktree;
+    `stale` must not. The lock reason is carried in the JSON, the table marks the row, and
+    the nudge names the exact command. A lock with any other reason is reported as a lock,
+    never as a dead add."""
+    from typer.testing import CliRunner
+
+    from navig.commands.repo import collect_stale, repo_app
+
+    dead = repo / ".dev" / "worktrees" / "dead-add"
+    _git("worktree", "add", str(dead), "-b", "feat/dead-add", cwd=repo)
+    _git("worktree", "lock", "--reason", "initializing", str(dead), cwd=repo)
+    held = repo / ".dev" / "worktrees" / "held"
+    _git("worktree", "add", str(held), "-b", "feat/held", cwd=repo)
+    _git("worktree", "lock", "--reason", "reviewing", str(held), cwd=repo)
+
+    by_name = {Path(w["path"]).name: w for w in collect_stale(repo)["worktrees"]}
+    assert by_name["dead-add"]["dead_add"] is True
+    assert by_name["dead-add"]["locked"] == "initializing"
+    assert by_name["held"]["dead_add"] is False
+    assert by_name["held"]["locked"] == "reviewing"
+
+    result = CliRunner().invoke(repo_app, ["stale", "--repo", str(repo)])
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())  # Rich wraps at the console width
+    assert "dead add" in flat
+    assert "navig repo remove dead-add --force" in flat
+    assert "locked: reviewing" in flat
+
+
 def test_git_timeout_degrades_to_a_failed_result_instead_of_raising(monkeypatch):
     """A timed-out git call must not abort the command mid-flight.
 
@@ -144,10 +174,29 @@ def test_git_timeout_degrades_to_a_failed_result_instead_of_raising(monkeypatch)
     """
     from navig.commands import repo as repo_mod
 
-    def _timeout(*_args, **_kwargs):
-        raise subprocess.TimeoutExpired(cmd=["git", "worktree", "remove"], timeout=15)
+    class _HangingPopen:
+        """A child that never finishes: communicate() times out, the kill/wait calls
+        `terminate_process_tree_sync` makes are accepted and do nothing."""
 
-    monkeypatch.setattr(repo_mod.subprocess, "run", _timeout)
+        pid = None
+        returncode = None
+
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def communicate(self, timeout=None):
+            raise subprocess.TimeoutExpired(cmd=["git", "worktree", "remove"], timeout=timeout)
+
+        def terminate(self) -> None:
+            pass
+
+        def kill(self) -> None:
+            pass
+
+        def wait(self, timeout=None) -> int:
+            return 0
+
+    monkeypatch.setattr(repo_mod.subprocess, "Popen", _HangingPopen)
     res = repo_mod._git(["worktree", "remove", "wt"], ".", timeout=300)
 
     assert res.returncode == 124  # conventional timeout exit code, not an exception
@@ -188,3 +237,47 @@ def test_remove_runs_the_deletion_on_the_longer_timeout(tmp_path, monkeypatch):
     removal = next(c for c in calls if c["args"][:2] == ["worktree", "remove"])
     assert removal["timeout"] == repo_mod._GIT_DELETE_TIMEOUT
     assert repo_mod._GIT_DELETE_TIMEOUT > repo_mod._GIT_TIMEOUT
+
+
+def test_stale_counts_the_changelog_fragments_an_unmerged_branch_carries(repo: Path) -> None:
+    """A fragment is the cheapest honest signal that a branch carries user-facing work.
+    Counted three-dot and added-only, scoped to core/changelog.d/: a fragment main already
+    holds is not the branch's, a README is not a fragment, and a branch with none says
+    nothing at all."""
+    from typer.testing import CliRunner
+
+    from navig.commands.repo import branch_fragments, collect_stale, repo_app
+
+    frag_dir = repo / "core" / "changelog.d"
+    frag_dir.mkdir(parents=True)
+    (frag_dir / "README.md").write_text("# contract\n", encoding="utf-8")
+    (frag_dir / "on-main.fixed.md").write_text("- **On main.**\n", encoding="utf-8")
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-qm", "main carries one fragment", cwd=repo)
+
+    _git("checkout", "-qb", "feat/noted", cwd=repo)
+    (frag_dir / "noted.added.md").write_text("- **Noted.**\n", encoding="utf-8")
+    (frag_dir / "noted-too.fixed.md").write_text("- **Noted too.**\n", encoding="utf-8")
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-qm", "feat: noted (two fragments)", cwd=repo)
+
+    _git("checkout", "-q", "main", cwd=repo)
+    _git("checkout", "-qb", "feat/silent", cwd=repo)
+    (repo / "f.txt").write_text("changed\n", encoding="utf-8")
+    _git("commit", "-qam", "chore: silent", cwd=repo)
+    _git("checkout", "-q", "main", cwd=repo)
+
+    assert branch_fragments(repo, "main", "feat/noted") == 2
+    assert branch_fragments(repo, "main", "feat/silent") == 0
+    assert branch_fragments(repo, "main", "no/such/branch") == 0, "a hint, never a gate"
+
+    by_name = {b["name"]: b for b in collect_stale(repo)["unmerged_branches"]}
+    assert by_name["feat/noted"]["fragments"] == 2
+    assert by_name["feat/silent"]["fragments"] == 0
+
+    result = CliRunner().invoke(repo_app, ["stale", "--repo", str(repo)])
+    assert result.exit_code == 0, result.output
+    flat = " ".join(result.output.split())
+    assert "2 changelog fragments" in flat and "user-facing work waiting" in flat
+    silent_row = next(ln for ln in result.output.splitlines() if "feat/silent" in ln)
+    assert "fragment" not in silent_row

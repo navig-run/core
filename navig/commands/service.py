@@ -28,6 +28,18 @@ from navig.platform.paths import log_dir as _log_dir
 ch = lazy_import("navig.console_helper")
 
 
+def _stdin_is_tty() -> bool:
+    """Is a human at the keyboard? False under `pythonw` (the scheduled tasks, the
+    tray), where ``sys.stdin`` is None and ``sys.stdin.isatty()`` raises
+    AttributeError — which used to turn the "retry elevated?" prompt on a failed
+    stop into a traceback in restart.log."""
+    stream = sys.stdin
+    try:
+        return bool(stream is not None and stream.isatty())
+    except (AttributeError, ValueError, OSError):
+        return False
+
+
 def _stop_failure_message() -> str:
     """Why the last daemon stop failed, in words the operator can act on. Reads the
     reason NavigDaemon recorded (e.g. an elevation mismatch); falls back to a manual
@@ -424,6 +436,94 @@ def service_install(
         raise typer.Exit(1)
 
 
+def _spawn_daemon_direct() -> None:
+    """The fallback launch: ``pythonw -m navig.daemon.entry`` detached from this CLI."""
+    import subprocess
+
+    from navig.daemon.service_manager import _pythonw_exe
+
+    cmd = [_pythonw_exe(), "-m", "navig.daemon.entry"]
+    if sys.platform == "win32":
+        # pythonw.exe — completely invisible, no console window
+        subprocess.Popen(
+            cmd,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    else:
+        subprocess.Popen(
+            cmd,
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+
+#: How long a launch waits for the daemon's pid file. The boot sweep alone is a
+#: WMI enumeration (10–20 s measured on the operator's machine); 45 s leaves room
+#: for a loaded one. A daemon that has not written its pid in 45 s is not coming.
+_TASK_BOOT_WAIT_S = 45
+
+
+def _wait_for_daemon(daemon: object, *, attempts: int = 10, interval: float = 1.0) -> bool:
+    """Poll for the pid file instead of a fixed sleep — on a slow Windows machine
+    the daemon may need several seconds to write it, and a fixed 2 s wait used to
+    report failure for a daemon that came up a moment later."""
+    import time
+
+    for _ in range(attempts):
+        time.sleep(interval)
+        if daemon.is_running():  # type: ignore[attr-defined]
+            return True
+    return False
+
+
+def _launch_daemon(daemon: object) -> tuple[bool, str]:
+    """Start the daemon and wait for it. Returns ``(started, how)``.
+
+    On Windows, THROUGH the scheduled task first. A daemon Popen'd from this CLI
+    has no living parent the moment the CLI exits — the exact shape of an orphan —
+    and the operator's hourly process sweep killed precisely that, twice on
+    2026-09-14 (`KILL pythonw.exe 118488 ppid=62344 gone`), while the login-boot
+    daemon, whose parent is the Task Scheduler service, survived 147 sweeps. The
+    task-launched daemon also carries the task's env, working directory and
+    RestartOnFailure: the boot-time shape from every launch path. The task must
+    already be enabled (callers re-enable after a stop); with
+    ``MultipleInstances=IgnoreNew`` a `/run` can be silently ignored, so the
+    daemon is CONFIRMED before this returns — and if it did not come up, or the
+    task is not installed, the direct spawn is the fallback, exactly as before.
+    """
+    from navig.daemon.service_manager import task_scheduler_run
+
+    if os.name == "nt":
+        res = task_scheduler_run()
+        if isinstance(res, tuple) and res and res[0]:
+            # A booting daemon sweeps stale generations BEFORE it writes its pid
+            # file, and that sweep is a WMI enumeration — 10–20 s measured here.
+            # A 10 s wait declared the task launch dead while it was still
+            # booting, spawned a direct competitor, and the competitor killed
+            # it (2026-09-21). Wait for a boot that sweeps.
+            if _wait_for_daemon(daemon, attempts=_TASK_BOOT_WAIT_S):
+                return True, "scheduled task"
+            # Still nothing after that — but is a supervisor of ours visibly
+            # booting? Then the last thing to do is start a second one.
+            booting = getattr(daemon, "booting_supervisor_pids", lambda: [])()
+            if booting:
+                ch.info(
+                    f"A daemon (pid={booting[0][0]}) is still booting — waiting for it "
+                    "rather than starting a second one"
+                )
+                if _wait_for_daemon(daemon, attempts=_TASK_BOOT_WAIT_S):
+                    return True, "scheduled task"
+            ch.warning(
+                "The scheduled task was told to run but no daemon appeared — "
+                "falling back to a direct spawn"
+            )
+    _spawn_daemon_direct()
+    return _wait_for_daemon(daemon, attempts=_TASK_BOOT_WAIT_S), "direct spawn"
+
+
 # =========================================================================
 # start (foreground or signal running daemon)
 # =========================================================================
@@ -505,7 +605,19 @@ def _ensure_autostart_enabled() -> None:
             task_scheduler_enabled_state,
         )
 
-        enabled, _installed, _detail = task_scheduler_enabled_state()
+        enabled, installed, _detail = task_scheduler_enabled_state()
+        if installed is True:
+            # An install that predates the on-demand restart task keeps the
+            # deck's Restart refusing (correctly) until someone re-runs
+            # `service install`. Register it here instead: `start` is the one
+            # command every install runs. Silent when present.
+            from navig.daemon.service_manager import (  # noqa: PLC0415
+                task_scheduler_ensure_restart_task,
+            )
+
+            ok_r, msg_r = task_scheduler_ensure_restart_task()
+            if ok_r and "registered" in msg_r:
+                ch.success(msg_r)
         if enabled is not False:
             return
         ok, msg = task_scheduler_enable()
@@ -569,7 +681,6 @@ def service_start(
 
         daemon_main()
     else:
-        import subprocess
         import time
 
         # Check the stop-intent flag.
@@ -580,7 +691,6 @@ def service_start(
         #   explicitly typing `navig service start`), clear both the stop flag and the
         #   watchdog deadline so the daemon is allowed to start immediately.
         from navig.daemon.service_manager import (
-            _pythonw_exe,
             clear_stop_flag,
             clear_watchdog_deadline,
             stop_flag_is_set,
@@ -588,7 +698,7 @@ def service_start(
         )
 
         if stop_flag_is_set():
-            if not sys.stdin.isatty():
+            if not _stdin_is_tty():
                 ch.warning(
                     "Daemon was stopped by user intent — auto-restart blocked. "
                     "To restart interactively run:  navig service start"
@@ -614,42 +724,18 @@ def service_start(
                 break
             time.sleep(0.2)
 
-        # Use pythonw.exe on Windows — completely invisible, no console window
-        exe = _pythonw_exe()
-        cmd = [exe, "-m", "navig.daemon.entry"]
+        # Re-enable the Task Scheduler task BEFORE launching — a prior
+        # `navig service stop` disables it, `schtasks /run` refuses a disabled
+        # task, and the launch goes through the task by preference (see
+        # `_launch_daemon`). Enabling here also arms logon/failure-restart on
+        # every exit path below. Silent if the task is not installed.
+        if os.name == "nt":
+            task_scheduler_enable()
         ch.info("Starting NAVIG daemon in background...")
-        if sys.platform == "win32":
-            subprocess.Popen(
-                cmd,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        else:
-            subprocess.Popen(
-                cmd,
-                start_new_session=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-
-        # Poll for the daemon PID file instead of a fixed sleep — on slow
-        # Windows machines the daemon may take several seconds to write its
-        # PID file, causing a fixed 2 s wait to falsely report failure.
-        _POLL_INTERVAL = 1.0  # seconds between checks
-        _POLL_MAX = 10  # total attempts → up to 10 s
-        _started = False
-        for _attempt in range(_POLL_MAX):
-            time.sleep(_POLL_INTERVAL)
-            if NavigDaemon.is_running():
-                _started = True
-                break
+        _started, _how = _launch_daemon(NavigDaemon)
         if _started:
-            # Re-enable the Task Scheduler task (may have been disabled by
-            # a prior 'navig service stop') so logon/failure-restart fires again.
-            if os.name == "nt":
-                task_scheduler_enable()  # silent if task not installed
-            ch.success(f"Daemon started (pid={NavigDaemon.read_pid()})")
+            ch.success(f"Daemon started (pid={NavigDaemon.read_pid()}, via {_how})")
+            _ensure_autostart_enabled()
         else:
             ch.error("Daemon failed to start. Check logs: navig service logs")
             raise typer.Exit(1)
@@ -726,7 +812,7 @@ def service_stop(
         reason = _stop_failure_message()
         ch.error(f"Couldn't stop the daemon — {reason}")
         if not _is_elevated() and ("elevated" in reason.lower() or "denied" in reason.lower()):
-            if sys.stdin.isatty() and typer.confirm("Retry as Administrator?", default=True):
+            if _stdin_is_tty() and typer.confirm("Retry as Administrator?", default=True):
                 _report_elevated_and_exit(_relaunch_elevated(["service", "stop"]), "stopped")
             ch.info("Retry elevated:  navig service stop --admin")
         raise typer.Exit(1)
@@ -777,11 +863,9 @@ def service_restart(
         ch.info("Requesting elevation…")
         _report_elevated_and_exit(_relaunch_elevated(["service", "restart"]), "restarted")
 
-    import subprocess
     import time
 
     from navig.daemon.service_manager import (
-        _pythonw_exe,
         clear_stop_flag,
         clear_watchdog_deadline,
         task_scheduler_disable,
@@ -801,7 +885,7 @@ def service_restart(
             ch.error(f"Couldn't stop the daemon — {reason}")
             # If elevation is the blocker, offer a one-step elevated retry.
             if not _is_elevated() and ("elevated" in reason.lower() or "denied" in reason.lower()):
-                if sys.stdin.isatty() and typer.confirm("Retry as Administrator?", default=True):
+                if _stdin_is_tty() and typer.confirm("Retry as Administrator?", default=True):
                     _report_elevated_and_exit(_relaunch_elevated(["service", "restart"]), "restarted")
                 ch.info("Retry elevated:  navig service restart --admin")
             # Re-arm before bailing out: we disabled the task above, and a restart
@@ -834,49 +918,27 @@ def service_restart(
             break
         time.sleep(0.2)
 
-    ch.info("Starting daemon...")
-    exe = _pythonw_exe()
-    cmd = [exe, "-m", "navig.daemon.entry"]
-    if sys.platform == "win32":
-        subprocess.Popen(
-            cmd,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    else:
-        subprocess.Popen(
-            cmd,
-            start_new_session=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-    # Poll for the PID file instead of a fixed 2 s sleep — on slow Windows
-    # machines the daemon may need several seconds to write its PID file.
-    _POLL_INTERVAL = 1.0  # seconds between checks
-    _POLL_MAX = 10  # total attempts → up to 10 s
-    _started = False
-    for _attempt in range(_POLL_MAX):
-        time.sleep(_POLL_INTERVAL)
-        if NavigDaemon.is_running():
-            _started = True
-            break
-    # Re-enable UNCONDITIONALLY. This used to sit inside `if _started:`, so any restart
-    # that did not observe the daemon within the 10-second poll window left autostart
-    # DISABLED -- permanently, and silently. The daemon frequently comes up a moment
-    # later ("Gateway ready in 17.23s" is a real measurement from this machine), which
-    # produces the exact state found repeatedly on the operator's install: daemon
-    # RUNNING, scheduled task DISABLED, so nothing would restart it after a reboot or a
-    # crash. Every early `raise typer.Exit(1)` above this point had the same effect.
+    # Re-enable UNCONDITIONALLY, and BEFORE the launch. This used to sit inside
+    # `if _started:` after the spawn, so any restart that did not observe the daemon
+    # within the 10-second poll window left autostart DISABLED -- permanently, and
+    # silently. The daemon frequently comes up a moment later ("Gateway ready in
+    # 17.23s" is a real measurement from this machine), which produced the exact state
+    # found repeatedly on the operator's install: daemon RUNNING, scheduled task
+    # DISABLED, so nothing would restart it after a reboot or a crash.
     #
-    # `restart` means "end up running", so the task must be armed on EVERY exit path.
-    # A deliberate `navig service stop` is a different command and still leaves it off.
+    # `restart` means "end up running", so the task must be armed on EVERY exit path —
+    # and it must be armed before `_launch_daemon`, which starts the daemon THROUGH the
+    # task by preference (`schtasks /run` refuses a disabled task). A deliberate
+    # `navig service stop` is a different command and still leaves it off.
     if os.name == "nt":
         task_scheduler_enable()  # silent if task not installed
 
+    ch.info("Starting daemon...")
+    _started, _how = _launch_daemon(NavigDaemon)
+
     if _started:
-        ch.success(f"Daemon restarted (pid={NavigDaemon.read_pid()})")
+        ch.success(f"Daemon restarted (pid={NavigDaemon.read_pid()}, via {_how})")
+        _ensure_autostart_enabled()
     else:
         ch.error("Daemon failed to start. Check: navig service logs")
         raise typer.Exit(1)
@@ -1007,6 +1069,68 @@ def service_status(
 
 
 # =========================================================================
+# pids — the contract for external process sweepers
+# =========================================================================
+@service_app.command("pids")
+def service_pids(
+    json_output: bool = typer.Option(False, "--json", help="Structured output for tools"),
+    plain: bool = typer.Option(
+        False, "--plain", help="One pid per line — for a sweeper's exclusion list"
+    ),
+):
+    """
+    The pids an external process sweeper must spare — every navig-owned tree.
+
+    To a cleanup script a navig daemon and a leaked helper look the same: python,
+    parent gone. On this operator's machine an hourly sweep killed the daemon twice
+    before this existed. Roots are the pid files navig writes (supervisor, gateway,
+    agent, standalone worker), verified as still owned (a recycled pid is not listed), then expanded
+    to descendants. A sweeper that must not depend on navig being runnable can read
+    the same files directly — see `navig service pids --json` for their paths.
+
+    Examples:
+        navig service pids
+        navig service pids --plain        # feed to an exclusion list
+        navig service pids --json
+    """
+    import json
+
+    from navig.daemon.supervisor import NavigDaemon
+
+    trees = NavigDaemon.owned_process_trees()
+    if json_output:
+        print(json.dumps({"trees": trees}, indent=2))
+        return
+    if plain:
+        for t in trees:
+            for m in t["members"]:
+                print(m["pid"])
+        return
+    if not trees:
+        ch.info("No navig-owned process trees are running (nothing to spare)")
+        return
+
+    from navig.console_helper import Table
+
+    tbl = Table(box=None, show_header=True, padding=(0, 2))
+    tbl.add_column("Role", no_wrap=True)
+    tbl.add_column("PID", no_wrap=True, justify="right")
+    tbl.add_column("Process", no_wrap=True)
+    tbl.add_column("Pid file", overflow="fold")  # a path has no spaces to wrap at
+    for t in trees:
+        for i, m in enumerate(t["members"]):
+            tbl.add_row(
+                t["role"] if i == 0 else "  └",
+                str(m["pid"]),
+                m.get("name") or "?",
+                t["pid_file"] if i == 0 else "",
+            )
+    ch.console.print(tbl)
+    total = sum(len(t["members"]) for t in trees)
+    ch.dim(f"{total} pid(s) across {len(trees)} tree(s) · a sweeper spares all of them: navig service pids --plain")
+
+
+# =========================================================================
 # uninstall
 # =========================================================================
 @service_app.command("uninstall")
@@ -1047,7 +1171,7 @@ def service_uninstall(
             reason = _stop_failure_message()
             ch.error(f"Failed to stop running daemon before uninstall — {reason}")
             if not _is_elevated() and ("elevated" in reason.lower() or "denied" in reason.lower()):
-                if sys.stdin.isatty() and typer.confirm("Retry as Administrator?", default=True):
+                if _stdin_is_tty() and typer.confirm("Retry as Administrator?", default=True):
                     _report_elevated_and_exit(_relaunch_elevated(elevate_args), "uninstalled")
                 ch.info("Retry elevated:  navig service uninstall --admin")
             raise typer.Exit(1)

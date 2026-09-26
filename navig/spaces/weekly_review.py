@@ -189,11 +189,28 @@ def build(tracker: Path, start: date, end: date) -> str:
         out += body
 
     # ── What the journal already said ────────────────────────────────────────
+    # ⚠ `setback_for` matches the card's OLD labelled shape ("2. **What knocked
+    # me off:** …"), which entries stopped being written in once the card began
+    # asking for the day in free form. So a week of diligent journalling yields
+    # NOTHING here — and the empty branch used to render regardless, telling the
+    # operator "nothing recorded this week" over seven full entries.
+    #
+    # "Nothing recorded" and "nothing labelled to pull" are different statements
+    # about someone's week, so the three cases are separated. Free text is
+    # deliberately NOT mined for a setback: `setback_for` says picking a sentence
+    # out of it and presenting it as "what broke this week" would be the system
+    # inventing a finding.
     setbacks = [(d, journal.setback_for(tracker, d.isoformat())) for d in days]
     found = [(d, s) for d, s in setbacks if s]
+    wrote = [d for d in days if journal.has_entry(tracker, d.isoformat())]
     out += ["", "**What knocked me off — from the journal**"]
     if found:
         out += [f"- {d.strftime('%a %d')}: {s}" for d, s in found]
+    elif wrote:
+        out.append(
+            f"- _{len(wrote)} entr{'y' if len(wrote) == 1 else 'ies'} this week, "
+            "written free-form — read them rather than a line pulled out of them_"
+        )
     else:
         out.append("- _nothing recorded this week_")
 
@@ -209,8 +226,9 @@ def build(tracker: Path, start: date, end: date) -> str:
     if no_entry:
         # "No journal entry" was the first wording and it read as a contradiction
         # inside the very file --write had just created. Naming the missing thing
-        # — the three lines — is both accurate and answerable.
-        out += ["", "**No three lines:** " + ", ".join(d.strftime("%a %d") for d in no_entry)]
+        # is both accurate and answerable — it used to name "the three lines",
+        # which the card no longer asks for.
+        out += ["", "**Nothing written:** " + ", ".join(d.strftime("%a %d") for d in no_entry)]
 
     out += [
         "",

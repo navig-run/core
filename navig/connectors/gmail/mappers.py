@@ -50,8 +50,16 @@ def gmail_message_to_resource(msg: dict[str, Any]) -> Resource:
     subject = _extract_header(headers, "Subject") or "(no subject)"
     from_addr = _extract_header(headers, "From")
     to_addr = _extract_header(headers, "To")
+    cc_addr = _extract_header(headers, "Cc")
     date_str = _extract_header(headers, "Date")
     message_id_header = _extract_header(headers, "Message-ID")
+    in_reply_to = _extract_header(headers, "In-Reply-To")
+    edge_tag = _extract_header(headers, "X-Cybesis-Tag")
+    edge_alias = _extract_header(headers, "X-Cybesis-Alias")
+
+    # Gmail's own receive time (ms epoch) — the Date header is sender-supplied
+    # and often absent/garbled on spam; internalDate is what the UI sorts by.
+    internal_date = str(msg.get("internalDate", "") or "")
 
     return Resource(
         id=msg_id,
@@ -64,9 +72,14 @@ def gmail_message_to_resource(msg: dict[str, Any]) -> Resource:
         metadata={
             "from": from_addr,
             "to": to_addr,
+            "cc": cc_addr,
             "labels": label_ids,
             "message_id": message_id_header,
+            "in_reply_to": in_reply_to,
+            "edge_tag": edge_tag,
+            "edge_alias": edge_alias,
             "thread_id": msg.get("threadId", ""),
+            "internal_date": internal_date,
         },
     )
 

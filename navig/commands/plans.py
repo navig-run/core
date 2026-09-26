@@ -12,6 +12,7 @@ from navig.console_helper import get_console
 from navig.core.yaml_io import atomic_write_text
 from navig.plans.frontmatter import parse_frontmatter_with_body as _split_frontmatter
 from navig.plans.frontmatter import render_frontmatter
+from navig.platform.paths import resolve_user_path
 from navig.spaces import get_default_space, normalize_space_name
 from navig.spaces.briefing import build_spaces_briefing_lines
 from navig.spaces.next_action import get_space_next_action, select_best_next_action
@@ -36,7 +37,12 @@ def _find_project_root(start: Path | None = None) -> Path:
 
 
 def _plans_dir(path: str | None = None) -> Path:
-    base = Path(path).resolve() if path else Path.cwd()
+    """Plans dir for a typed --path (anchored to where the operator ran the command)
+    or, by default, the ACTIVE SPACE — deliberately ``Path.cwd()``: main.py chdir's
+    there first, and plans belong to the space. Only the typed half follows the
+    operator; contrast ``space doctor``, whose help promises "current directory".
+    """
+    base = resolve_user_path(path) if path else Path.cwd()
     project_root = _find_project_root(base)
     plans = project_root / ".navig" / "plans"
     plans.mkdir(parents=True, exist_ok=True)
@@ -111,7 +117,7 @@ def plans_status(
     path: str | None = typer.Option(None, "--path", "-p", help="Workspace path"),
 ) -> None:
     """Show current progress by resolved space."""
-    cwd = Path(path).resolve() if path else Path.cwd()
+    cwd = resolve_user_path(path) if path else Path.cwd()
     rows = collect_spaces_progress(cwd=cwd)
 
     if not rows:
@@ -192,7 +198,7 @@ def plans_briefing(
     path: str | None = typer.Option(None, "--path", "-p", help="Workspace path"),
 ) -> None:
     """Print a daily briefing of active work across all spaces."""
-    cwd = Path(path).resolve() if path else Path.cwd()
+    cwd = resolve_user_path(path) if path else Path.cwd()
     lines = ["Daily spaces briefing:"]
     lines.extend(build_spaces_briefing_lines(cwd=cwd, max_items=5))
     typer.echo("\n".join(lines))
@@ -204,7 +210,7 @@ def plans_next(
     path: str | None = typer.Option(None, "--path", "-p", help="Workspace path"),
 ) -> None:
     """Show the best next action across spaces (or a specific space)."""
-    cwd = Path(path).resolve() if path else Path.cwd()
+    cwd = resolve_user_path(path) if path else Path.cwd()
     action = (
         get_space_next_action(normalize_space_name(space), cwd=cwd)
         if space
@@ -283,7 +289,7 @@ def plans_summary(
                 return stripped.lstrip("# ").strip()
         return "—"
 
-    cwd = Path(path).resolve() if path else Path.cwd()
+    cwd = resolve_user_path(path) if path else Path.cwd()
     discovered = discover_space_paths(cwd=cwd)
 
     if not discovered:

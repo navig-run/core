@@ -116,6 +116,13 @@ _NOT_A_BRAIN_PATH: frozenset[str] = frozenset({
     # reassurance is part of why the suite spent months writing test state into the source
     # tree; see tests/platform/test_suite_state_isolation.py.
     "find_app_root",
+    # `invocation_cwd()` answers "which directory did the operator type this command in"
+    # (NAVIG_INVOCATION_CWD, stashed by main.py before it chdir's into the active space).
+    # It is the OPERATOR's position, not a brain state root: two brains run from the same
+    # shell would agree, and two shells under one brain would disagree — so classifying it
+    # per-brain or machine-global is a category error either way. Its sibling
+    # `resolve_user_path(given)` takes an argument and is never enumerated here.
+    "invocation_cwd",
 })
 
 

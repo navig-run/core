@@ -32,6 +32,27 @@ from navig.core.proc_text import decode_console_result
 # capture-plus-encode chain is slower still.
 DEFAULT_TIMEOUT_S = 600
 
+# How much wall-clock to allow per second of finished video, plus a fixed head start.
+# A flat 600s is fine for a fifteen-second cut and hopeless for a nine-minute one: a
+# 1080x1920 x264 `medium` pass runs near 0.7x realtime, and a full-song render chains
+# several of them (grade, then one per overlay, then captions). An 8:54 track blew the
+# flat limit on its FIRST pass -- and the render died after the model work was already
+# paid for, which is the expensive way to find out.
+TIMEOUT_PER_SECOND = 8.0
+TIMEOUT_OVERHEAD_S = 120
+
+
+def timeout_for(seconds: float, floor: int = DEFAULT_TIMEOUT_S) -> int:
+    """Wall-clock budget for a pass over ``seconds`` of video.
+
+    Scales with the material instead of trusting one number to fit both a 15-second cut
+    and a nine-minute one. Never returns less than ``floor``, so short clips keep the old
+    behaviour exactly.
+    """
+    if seconds <= 0:
+        return floor
+    return max(floor, int(seconds * TIMEOUT_PER_SECOND) + TIMEOUT_OVERHEAD_S)
+
 # TikTok / Shorts / Reels. Anything else is a crop away.
 VERTICAL_W = 1080
 VERTICAL_H = 1920
@@ -502,11 +523,14 @@ def apply_filter(
             dst, int(info["width"]), int(info["height"]), float(info["duration"]), "copy"
         )
     exe = _require("ffmpeg")
+    # Budget scaled to the material: a grade over nine minutes cannot finish inside the
+    # same ten minutes that comfortably covers a fifteen-second cut.
+    budget = timeout_for(float(probe(src)["duration"]), floor=timeout)
     _exec(
         [exe, "-nostdin", "-y", "-i", str(src), "-vf", f"{vf},format={_PIX_FMT}",
          "-r", str(fps), "-c:v", "libx264", "-preset", "medium", "-crf", "18",
          "-c:a", "copy", str(dst)],
-        dst, timeout, src.name,
+        dst, budget, src.name,
     )
     info = probe(dst)
     return RenderResult(
@@ -536,7 +560,7 @@ def burn_captions(
         [exe, "-nostdin", "-y", "-i", str(src), "-vf", vf,
          "-c:v", "libx264", "-preset", "medium", "-crf", "18",
          "-pix_fmt", _PIX_FMT, "-c:a", "copy", str(dst)],
-        dst, timeout, src.name,
+        dst, timeout_for(float(probe(src)["duration"]), floor=timeout), src.name,
     )
     info = probe(dst)
     return RenderResult(dst, int(info["width"]), int(info["height"]), float(info["duration"]), vf)
@@ -588,4 +612,152 @@ def mix(
     info = probe(dst)
     return RenderResult(
         dst, int(info["width"]), int(info["height"]), float(info["duration"]), "mix"
+    )
+
+
+# ── compositing: real footage laid over the picture ───────────────────────────
+
+# Blend modes that read as *light added to a scene* rather than as a second picture
+# stuck on top. `screen` is the one a black-background overlay wants: black contributes
+# nothing, so bokeh, dust, smoke and film burn land as light and the black around them
+# disappears without anyone cutting a matte.
+BLEND_MODES = frozenset({
+    "screen", "lighten", "addition", "overlay", "softlight", "hardlight", "multiply",
+})
+
+# Above this an overlay stops being atmosphere and becomes the subject. It is a soft
+# ceiling: a look may want 0.9 for a full-frame film burn, but the default sits where a
+# viewer reads the overlay without losing the picture underneath.
+DEFAULT_OVERLAY_OPACITY = 0.55
+
+
+def tint_filter(colour: str) -> str:
+    """Recolour footage to one hue, keeping its brightness — grey it, then paint it.
+
+    Overlay stock comes in whatever colour the person who shot it liked, and blue bokeh
+    over a blood-red picture reads as two unrelated videos rather than one. Desaturating
+    first and re-colouring by luminance keeps every particle, flare and falloff exactly
+    where it was and only changes what colour the light is.
+
+    The mixer works on an already-grey frame, where R=G=B=Y, so ``rr`` alone scales the
+    red output to ``r*Y`` — which is why the off-diagonal terms stay at zero rather than
+    being set to the colour as well.
+    """
+    raw = colour.strip().lstrip("#").removeprefix("0x")
+    if len(raw) != 6:
+        raise VideoEditError(f"tint must be a six-digit hex colour, got {colour!r}")
+    try:
+        r, g, b = (int(raw[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    except ValueError as exc:
+        raise VideoEditError(f"tint is not a hex colour: {colour!r}") from exc
+    return f"hue=s=0,colorchannelmixer=rr={r:.4f}:gg={g:.4f}:bb={b:.4f}"
+
+
+# How long an overlay takes to arrive and leave when it is windowed. Long enough that it
+# reads as light entering the shot rather than a layer being switched on.
+OVERLAY_FADE_S = 0.7
+
+
+def composite(
+    base: Path, overlay: Path, dst: Path, *,
+    mode: str = "screen",
+    opacity: float = DEFAULT_OVERLAY_OPACITY,
+    start: float = 0.0,
+    tint: str | None = None,
+    window: tuple[float, float] | None = None,
+    timeout: int = DEFAULT_TIMEOUT_S,
+) -> RenderResult:
+    """Lay ``overlay`` footage over ``base`` — bokeh, dust, smoke, film burn, static.
+
+    This is the difference between a generated picture and a shot one. A still that has
+    been zoomed and graded still reads as a still; the same still under real particles
+    moving at a rate nothing else in the frame shares reads as *filmed*, because the two
+    motions do not agree and the eye stops looking for the seam.
+
+    **The overlay loops and the base decides the length.** Overlay stock is rarely the
+    length of the shot that needs it, and an overlay that runs out mid-clip leaves the
+    picture visibly bare for the remainder — the one failure a viewer always notices. So
+    the overlay is looped indefinitely and ``-shortest`` ends the render with the base.
+
+    ``start`` seeks into the overlay before looping, which is how two clips using the
+    same stock avoid opening on the same frame — the tell that gives a library away.
+
+    The overlay is scaled to *cover* the base and centre-cropped: letterboxing an overlay
+    would put hard black bars across a picture whose whole point is that its black is
+    invisible.
+    """
+    if mode not in BLEND_MODES:
+        raise VideoEditError(
+            f"unknown blend mode {mode!r} — available: {', '.join(sorted(BLEND_MODES))}"
+        )
+    if not 0.0 <= opacity <= 1.0:
+        raise ValueError(f"opacity must be between 0 and 1, got {opacity}")
+    # Checked here, with the other argument validation, rather than where the filter is
+    # built: whether a window makes sense has nothing to do with whether the files exist,
+    # and a caller that passed both wrongly should hear about the argument it can fix.
+    if window is not None and window[1] <= window[0]:
+        raise VideoEditError(
+            f"overlay window ends at or before it starts ({window[0]:g}s -> {window[1]:g}s)"
+        )
+    if not Path(base).exists():
+        raise VideoEditError(f"base clip not found: {base}")
+    if not Path(overlay).exists():
+        raise VideoEditError(f"overlay footage not found: {overlay}")
+
+    info = probe(Path(base))
+    width, height = int(info["width"]), int(info["height"])
+    fps = float(info.get("fps") or DEFAULT_FPS) or DEFAULT_FPS
+    seconds = float(info["duration"])
+
+    exe = _require("ffmpeg")
+    # `shortest=1` on the BLEND, not `-shortest` on the muxer. Measured the hard way: with
+    # an infinitely looped overlay, `-shortest` alone does not end the render — blend's
+    # framesync repeats the base's last frame forever rather than reporting EOF, and the
+    # encoder happily wrote over an hour of video from an eight-second clip before it was
+    # killed. `shortest=1` ends the graph with the first input that actually runs out.
+    recolour = f"{tint_filter(tint)}," if tint else ""
+    # An overlay that runs for the whole clip stops being an effect and becomes a filter
+    # over the film: white-ish particles screened end to end lift the black floor and wash
+    # the colour out of everything underneath. `window` confines it to part of the clip.
+    #
+    # Gated by fading the OVERLAY to black rather than by switching the blend on and off.
+    # Under `screen` black contributes nothing, so faded-to-black is the same as absent —
+    # and it arrives and leaves as light instead of appearing between two frames.
+    gate = ""
+    if window is not None:
+        w_from, w_to = window
+        fade = min(OVERLAY_FADE_S, (w_to - w_from) / 2)
+        gate = (f"setpts=PTS-STARTPTS,"
+                f"fade=t=in:st={w_from:.3f}:d={fade:.3f},"
+                f"fade=t=out:st={max(0.0, w_to - fade):.3f}:d={fade:.3f},")
+    chain = (
+        f"[1:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{height},fps={fps:g},{gate}{recolour}format=gbrp,setsar=1[ov];"
+        f"[0:v]format=gbrp,setsar=1[bs];"
+        f"[bs][ov]blend=all_mode={mode}:all_opacity={opacity:g}:shortest=1,"
+        f"format={_PIX_FMT}[out]"
+    )
+    cmd = [exe, "-nostdin", "-y", "-i", str(base)]
+    if start > 0:
+        cmd += ["-ss", f"{start:.3f}"]
+    cmd += [
+        "-stream_loop", "-1", "-i", str(overlay),
+        "-filter_complex", chain, "-map", "[out]",
+        # The base may have no audio yet (picture is assembled before the track is mixed
+        # in). `0:a?` maps it when present instead of failing the whole render when not.
+        "-map", "0:a?",
+        "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+        "-c:a", "copy",
+        # A hard cap on top of the filter guard. The base length is already measured, so
+        # a runaway loop cannot cost more than the clip it was asked for even if a future
+        # ffmpeg changes framesync semantics again.
+        "-t", f"{seconds:.3f}", str(dst),
+    ]
+    _exec(cmd, Path(dst), timeout_for(seconds, floor=timeout),
+          f"{Path(base).name} + {Path(overlay).name}")
+    out = probe(Path(dst))
+    return RenderResult(
+        Path(dst), int(out["width"]), int(out["height"]), float(out["duration"]),
+        f"blend={mode}@{opacity:g}" + (f" tint={tint}" if tint else "")
+        + (f" window={window[0]:g}-{window[1]:g}" if window else ""),
     )

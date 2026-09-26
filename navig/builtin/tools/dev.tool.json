@@ -1,4 +1,5 @@
 {
+  "$schema": "./tool.schema.json",
   "id": "tool:dev",
   "name": "navig_dev",
   "description": "Execute NAVIG dev operations.",

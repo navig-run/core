@@ -2050,6 +2050,8 @@ def host_lock_status(
                     "machine": st.machine,
                     "command": st.command,
                     "claimed_at": st.claimed_at,
+                    "kind": st.kind,
+                    "ttl_minutes": st.ttl_minutes,
                     "me": host_lock.session_id(),
                     "identity_quality": host_lock.identity_quality(),
                     "mode": host_lock.mode(),
@@ -2064,11 +2066,12 @@ def host_lock_status(
     elif st.state == "mine":
         ch.success(f"host lock: held by THIS session — {target} (for {st.age_minutes}m)")
     elif st.state == "stale":
-        ch.warning(
-            f"host lock: stale — {target}",
-            f"session {st.session} last active {st.age_minutes}m ago "
-            f"(TTL {host_lock.LOCK_TTL_MINUTES}m); it will be taken over automatically.",
+        why = (
+            f"session {st.session} has ended (its process is gone); last active {st.age_minutes}m ago"
+            if st.reason == "session ended"
+            else f"session {st.session} last active {st.age_minutes}m ago (TTL {st.ttl_minutes or host_lock.LOCK_TTL_MINUTES}m, {st.kind or 'explicit'} claim)"
         )
+        ch.warning(f"host lock: stale — {target}", f"{why}; it will be taken over automatically.")
     else:
         ch.warning(f"host lock: HELD BY ANOTHER SESSION — {target}", host_lock.describe(st, target))
 
@@ -2097,12 +2100,12 @@ def host_lock_acquire(
             f"Cannot acquire — {target} is locked by another session.",
             host_lock.describe(st, target)
             + "\n\nWait for it to finish (locks expire after "
-            f"{host_lock.LOCK_TTL_MINUTES}m of inactivity), or --force if that session is dead.",
+            f"{st.ttl_minutes or host_lock.LOCK_TTL_MINUTES}m of inactivity), or --force if that session is dead.",
         )
         raise typer.Exit(2)
 
-    host_lock.claim(target, note or "navig host lock acquire")
-    ch.success(f"host lock acquired — {target}")
+    host_lock.claim(target, note or "navig host lock acquire", kind="explicit")
+    ch.success(f"host lock acquired — {target} (explicit: frees after {host_lock.LOCK_TTL_MINUTES}m idle)")
 
 
 @host_lock_app.command("release")

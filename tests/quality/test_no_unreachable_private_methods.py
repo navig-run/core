@@ -54,6 +54,14 @@ from collections import Counter
 from functools import lru_cache
 from pathlib import Path
 
+import pytest
+
+# Pinned to one of TWO xdist lanes (needs `--dist loadgroup`, which the gate passes):
+# this guard parses the whole tree, and eight workers each holding a whole-tree AST
+# at the same moment is what crashes workers on a shared box and fakes a red gate.
+# Lane assignment is declared in tests/quality/test_heavy_tree_guards_are_pinned.py.
+pytestmark = pytest.mark.xdist_group("whole_tree_ast_1")
+
 CORE = Path(__file__).resolve().parents[2] / "navig"
 REPO = Path(__file__).resolve().parents[3]
 
@@ -117,7 +125,6 @@ KNOWN_UNWIRED: dict[str, str] = {
     # Reachable-looking helpers with no caller. Left in place rather than deleted
     # because each is small, correct, and the surrounding feature is still evolving.
     "_send_smart_reply": "checklist smart-reply path not surfaced",
-    "_get_thread_for_command": "forum per-command threading not surfaced",
     "_edit_checklist_task": "checklist edit path not yet surfaced",
     "_handle_tier_override": "tier override not surfaced as a command",
     "_handle_persona": "persona command not surfaced",

@@ -7,6 +7,7 @@ Based on standard authentication patterns.
 
 import asyncio
 import base64
+import dataclasses
 import hashlib
 import http.server
 import json
@@ -122,6 +123,16 @@ class OAuthProviderConfig:
     redirect_uri: str = f"http://127.0.0.1:{_OAUTH_REDIRECT_PORT}/auth/callback"
     scopes: list[str] = field(default_factory=list)
     userinfo_url: str | None = None
+    # Provider-specific authorize-URL parameters. Google only issues a *refresh*
+    # token when asked (``access_type=offline`` + ``prompt=consent``); without
+    # them the connection silently dies when the 1-hour access token expires.
+    extra_authorize_params: dict[str, str] = field(default_factory=dict)
+    # Redirect used by the *interactive CLI* flow (``run_oauth_flow_interactive``),
+    # which listens on its own loopback server. ``redirect_uri`` stays the
+    # gateway-hosted callback used by the Deck flow. Providers whose registration
+    # accepts any loopback redirect (Google "Desktop app" clients) set this so the
+    # CLI completes automatically instead of falling back to "paste the URL".
+    cli_redirect_uri: str | None = None
 
     def build_authorize_url(
         self,
@@ -139,6 +150,9 @@ class OAuthProviderConfig:
         }
         if self.scopes:
             params["scope"] = " ".join(self.scopes)
+        # Extra params never override the PKCE/state core of the request.
+        for key, value in self.extra_authorize_params.items():
+            params.setdefault(key, value)
 
         return f"{self.authorize_url}?{urlencode(params)}"
 
@@ -352,11 +366,28 @@ async def exchange_code_for_tokens(
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
+        # Best-effort account email (Google's opaque access tokens carry no
+        # claims, so the JWT path above yields nothing for them). Non-critical:
+        # the connector still works without it — it only labels the vault row.
+        email = None
+        if provider.userinfo_url and access_token:
+            try:
+                info = await client.get(
+                    provider.userinfo_url,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    timeout=10.0,
+                )
+                if info.status_code == 200:
+                    email = info.json().get("email") or None
+            except Exception:  # noqa: BLE001
+                email = None
+
         return OAuthCredentials(
             access=access_token,
             refresh=refresh_token,
             expires=expires,
             account_id=account_id,
+            email=email,
             client_id=provider.client_id,
         )
 
@@ -451,12 +482,18 @@ def run_oauth_flow_interactive(
     code_verifier, code_challenge = generate_pkce_pair()
     state = generate_state()
 
-    # Build authorization URL
-    auth_url = provider.build_authorize_url(state, code_challenge)
-
     # Try to start callback server
     callback_server = OAuthCallbackServer()
     use_callback_server = callback_server.start()
+
+    # When our loopback listener is up and the provider allows it, redirect
+    # there — the authorize URL and the token exchange must carry the SAME
+    # redirect_uri, so swap it on a copy of the config, never the registry entry.
+    if use_callback_server and provider.cli_redirect_uri:
+        provider = dataclasses.replace(provider, redirect_uri=provider.cli_redirect_uri)
+
+    # Build authorization URL
+    auth_url = provider.build_authorize_url(state, code_challenge)
 
     if use_callback_server:
         log(f"Starting OAuth flow for {provider.name}...")

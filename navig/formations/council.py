@@ -48,7 +48,10 @@ MAX_ROUNDS = 5
 # misconfigured (no credential) or unreachable. Content, auth (401/403),
 # rate-limit, and retired-model errors keep today's behavior — the call fails,
 # the run continues.
-_FALLBACK_STATUSES = frozenset({"nokey", "unreachable"})
+# ``slow`` IS here, unlike in the plans drafter: this set triggers a one-shot
+# retry on the DEFAULT provider, and a route too slow to answer inside the
+# per-agent budget is exactly a case where the default deserves the attempt.
+_FALLBACK_STATUSES = frozenset({"nokey", "unreachable", "slow"})
 _PROVIDER_IN_ERROR_RE = re.compile(r"provider '([^']+)'")
 
 # Max chars of the short failure reason embedded in the operator-facing

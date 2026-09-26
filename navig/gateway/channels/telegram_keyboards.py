@@ -20,6 +20,8 @@ import html
 import logging
 import re
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -1193,9 +1195,30 @@ class CallbackHandler:
         self.channel = channel
         self.store = get_callback_store()
         self._answered_callback_ids: set[str] = set()
-        # (chat_id, short_id, mode) of conversions running right now — see the
-        # audmsg speed/slowed branch for why callback-id dedupe is not enough.
-        self._audio_jobs_inflight: set[tuple[int, str, str]] = set()
+        # Jobs running right now, keyed however the branch identifies "the same request".
+        # Telegram issues a NEW callback_query id for every press, so `_answered_callback_ids`
+        # cannot see a repeat press as a repeat — see `_single_flight`.
+        self._jobs_inflight: set[tuple] = set()
+
+    @asynccontextmanager
+    async def _single_flight(self, key: tuple) -> AsyncIterator[bool]:
+        """Yield True if this job may start, False if an identical one is already running.
+
+        For a callback that costs real money or posts a message, a double-tap is not a
+        harmless repeat: it runs the LLM twice and puts two answers in the chat. Callback-id
+        dedupe cannot help — every press carries a fresh id — so the key must describe the
+        REQUEST (chat, user, what was asked), not the press.
+
+        Always releases: a raising job must not wedge the button forever.
+        """
+        if key in self._jobs_inflight:
+            yield False
+            return
+        self._jobs_inflight.add(key)
+        try:
+            yield True
+        finally:
+            self._jobs_inflight.discard(key)
 
     async def handle(self, callback_query: dict[str, Any]) -> None:
         cb_id = callback_query.get("id", "")
@@ -3380,21 +3403,18 @@ class CallbackHandler:
             # this: a double-tap would download the file twice, run ffmpeg twice and send
             # two identical tracks back. The key includes the mode so ⏩ and 🐢 on the same
             # file still run concurrently — they are different requests.
-            job = (chat_id, short_id, action)
-            if job in self._audio_jobs_inflight:
-                await self._answer(cb_id, "Already working on that one…", show_alert=False)
-                return
-            self._audio_jobs_inflight.add(job)
-            # Answer FIRST: Telegram spins the button until the callback is acknowledged,
-            # and re-encoding a long track takes far longer than that spinner tolerates.
-            await self._answer(cb_id, "⏩ Speeding up..." if action == "speed" else "🐢 Slowing down...")
-            try:
+            async with self._single_flight((chat_id, short_id, action)) as may_run:
+                if not may_run:
+                    await self._answer(cb_id, "Already working on that one…", show_alert=False)
+                    return
+                # Answer FIRST: Telegram spins the button until the callback is acknowledged,
+                # and re-encoding a long track takes far longer than that spinner tolerates.
+                await self._answer(
+                    cb_id, "⏩ Speeding up..." if action == "speed" else "🐢 Slowing down..."
+                )
                 ok, detail = await self.channel._edit_audio_and_reply(
                     chat_id, file_id, action, meta=meta, reply_to_message_id=message_id
                 )
-            finally:
-                # Always release: a raising conversion must not wedge the button forever.
-                self._audio_jobs_inflight.discard(job)
             if not ok:
                 await self.channel.send_message(chat_id, f"⚠️ {detail}", parse_mode=None)
             return
@@ -3848,7 +3868,19 @@ class CallbackHandler:
         question from the response (via _FOLLOWUP_EXTRACT_RE), strip the marker
         line from the displayed text, and attach an ↗️ Ask this button.
         """
-        await self._answer(cb_id, "📖 Going deeper…")
+        async with self._single_flight(("dig_deeper", chat_id, user_id, cb_key)) as may_run:
+            if not may_run:
+                # This one POSTS a message, so a double-tap is two LLM calls and two
+                # answers in the chat -- not a harmless repeat.
+                await self._answer(cb_id, "Already going deeper on that one…")
+                return
+            await self._answer(cb_id, "📖 Going deeper…")
+            await self._dig_deeper(chat_id, user_id, cb_key, entry)
+
+    async def _dig_deeper(
+        self, chat_id: int, user_id: int, cb_key: str, entry: "CallbackEntry"
+    ) -> None:
+        """The body of the dig-deeper callback, once it is cleared to run."""
         typing_task = asyncio.create_task(self.channel._keep_typing(chat_id))
         try:
             prompt = _DIG_DEEPER_PROMPT.format(
@@ -3915,7 +3947,17 @@ class CallbackHandler:
             await self._answer(cb_id, "⏳ Question expired")
             return
 
-        await self._answer(cb_id, "")
+        async with self._single_flight(
+            ("ask_followup", chat_id, user_id, followup_key)
+        ) as may_run:
+            if not may_run:
+                await self._answer(cb_id, "Already answering that one…")
+                return
+            await self._answer(cb_id, "")
+            await self._ask_followup(chat_id, user_id, question)
+
+    async def _ask_followup(self, chat_id: int, user_id: int, question: object) -> None:
+        """The body of the follow-up callback, once it is cleared to run."""
         typing_task = asyncio.create_task(self.channel._keep_typing(chat_id))
         try:
             response = await self._get_ai_response(str(question), user_id)

@@ -50,6 +50,13 @@ _DORMANT: dict[str, set[str]] = {
     # `delegation` toolset resolves to zero tools today (also pinned, from the other
     # direction, by tests/agent/test_toolset_registry_parity.py's KNOWN_EMPTY entry).
     "agent/delegate.py": {"DelegateTool", "register_delegate_tool", "AgentDepthError"},
+    # Fourth: a bridge to a daemon that does not exist. It POSTs to /api/v1/browser/task on
+    # port 7421, which nothing in the repository serves -- the "Go browser executor" it was
+    # written against was never part of this Python-only core. Its only caller (`navig
+    # links open`) silently fell to a plain webbrowser.open on every credentialed link
+    # until it was ported onto cdp_actions. Five test files exercise the helpers here, so
+    # it stays until an owner decides between deleting it and building its daemon.
+    "integrations/browser_orchestrator.py": {"run_browser_task"},
 }
 
 

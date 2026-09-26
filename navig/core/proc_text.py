@@ -55,7 +55,7 @@ import functools
 import os
 import subprocess
 
-__all__ = ["console_encoding", "decode_console_output", "decode_console_result"]
+__all__ = ["console_encoding", "decode_console_output", "decode_console_result", "oem_encoding"]
 
 # Python registers the "oem" codec alias on Windows only; it resolves to GetOEMCP(). It is
 # the correct default here and the fallback when the console code page cannot be read.
@@ -119,15 +119,48 @@ def decode_console_output(raw: bytes | str | None) -> str:
 
     ``str`` passes through unchanged, so a caller that already used text mode can route
     through here without a type check of its own.
+
+    When the console page is UTF-8 (``chcp 65001``, a ``[Console]::OutputEncoding`` set by
+    an installer that ran in the same console) and the bytes are NOT valid UTF-8, they came
+    from a tool that ignores the console page and writes the OEM one regardless — measured
+    with ``icacls`` under a 65001 console: the same cp866 bytes it writes under 866. Decoding
+    those as UTF-8 "with replacement" turned every localized ACL name into U+FFFD; the OEM
+    page is the only remaining candidate, so it is tried.
     """
     if isinstance(raw, str):
         return raw
     if not raw:
         return ""
+    data = bytes(raw)
     try:
-        return bytes(raw).decode("utf-8")
+        return data.decode("utf-8")
     except UnicodeDecodeError:
-        return bytes(raw).decode(console_encoding(), errors="replace")
+        pass
+    enc = console_encoding()
+    if enc == "utf-8":
+        enc = oem_encoding()
+    return data.decode(enc, errors="replace")
+
+
+def oem_encoding() -> str:
+    """The OEM code page as a codec name (``cp866``…) — what a console tool that ignores the
+    console page writes. ``utf-8`` off Windows; the ``oem`` alias when it cannot be read."""
+    if os.name != "nt":
+        return "utf-8"
+    try:
+        import ctypes  # noqa: PLC0415
+
+        code_page = int(ctypes.windll.kernel32.GetOEMCP() or 0)
+    except (AttributeError, OSError, ValueError):
+        return _WINDOWS_FALLBACK
+    if not code_page:
+        return _WINDOWS_FALLBACK
+    candidate = f"cp{code_page}"
+    try:
+        codecs.lookup(candidate)
+    except LookupError:
+        return _WINDOWS_FALLBACK
+    return candidate
 
 
 def decode_console_result(

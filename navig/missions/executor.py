@@ -30,6 +30,10 @@ from navig.contracts.store import RuntimeStore, get_runtime_store
 logger = logging.getLogger(__name__)
 
 
+class MissionIncomplete(RuntimeError):
+    """The agent loop ended without a real answer (turn cap / empty reply)."""
+
+
 class Autonomy(str, Enum):
     """Resolved per-mission autonomy mode at the executor boundary."""
 
@@ -292,6 +296,7 @@ class MissionExecutor:
 
                 self.store.flush()
                 await self._emit(mission)  # terminal
+                await self._notify_complete(mission)
         except Exception as exc:  # noqa: BLE001 — never let a task die unobserved
             logger.error("Mission executor crashed on %s: %s", mission.mission_id[:8], exc)
             # The crash may have happened AFTER the mission went RUNNING but before the
@@ -316,15 +321,46 @@ class MissionExecutor:
         return mission
 
     async def _run_agent(self, mission: Mission) -> str:
-        """Dispatch the mission through the canonical agentic ReAct loop."""
+        """Dispatch the mission through the canonical agentic ReAct loop — under
+        a MissionGrant, so no tool call inside it pages the operator."""
         from navig.agent.conv import ConversationalAgent
+        from navig.tools.approval import MissionGrant, mission_grant
 
         agent = ConversationalAgent()
-        return await agent.run_agentic(
-            message=self._build_prompt(mission),
-            max_iterations=self.max_iterations,
-            toolset=self._toolset_for(mission),
+        grant = MissionGrant(
+            mission_id=mission.mission_id,
+            title=mission.title or "",
+            allowed_commands=tuple(self._allowed_commands()),
+            enabled_by=f"missions.{(mission.capability or 'agentic').lower()}.autonomy",
         )
+        with mission_grant(grant):
+            result = await agent.run_agentic(
+                message=self._build_prompt(mission),
+                max_iterations=self.max_iterations,
+                toolset=self._toolset_for(mission),
+            )
+        # A loop that hit its turn cap (or got an empty reply) returns a sentence
+        # saying so; filing that sentence as the result reported SUCCEEDED for a
+        # run that produced nothing — the operator's feed read "Remediate health
+        # issues — succeeded: Agent reached the 8-turn limit". That is a failure.
+        incomplete = getattr(agent, "last_run_incomplete", None)
+        if incomplete:
+            raise MissionIncomplete(f"{incomplete}: {result}")
+        return result
+
+    def _missions_cfg(self) -> dict:
+        try:
+            return (self.gateway.config_manager.global_config or {}).get("missions", {}) or {}
+        except Exception:  # noqa: BLE001 — config is best-effort
+            return {}
+
+    def _allowed_commands(self) -> list[str]:
+        """``missions.allowed_commands``: glob patterns a mission may run unasked
+        beyond the read-only set (e.g. ``"navig mode set *"``). Empty by default."""
+        raw = self._missions_cfg().get("allowed_commands") or []
+        if isinstance(raw, str):
+            raw = [raw]
+        return [str(p) for p in raw if str(p).strip()]
 
     async def _run_draft(self, mission: Mission) -> str:
         """DRAFT mode: propose, never execute. A single no-tools planning call."""
@@ -349,6 +385,13 @@ class MissionExecutor:
 
     # ── Autonomy resolution ───────────────────────────────────────────
 
+    #: Per-capability autonomy when the mission itself says nothing. `remediate`
+    #: is AUTO: under the MissionGrant it can only run read-only diagnostics and
+    #: report, so the mission-level prompt bought nothing but a 15-minute timeout
+    #: (80 of the operator's 84 remediate missions ended exactly that way).
+    #: Override per capability with ``missions.<capability>.autonomy``.
+    _CAPABILITY_AUTONOMY: dict[str, Autonomy] = {"remediate": Autonomy.AUTO}
+
     def _resolve_autonomy(self, mission: Mission) -> Autonomy:
         raw = (mission.metadata or {}).get("autonomy")
         if isinstance(raw, str):
@@ -356,6 +399,13 @@ class MissionExecutor:
             if r in ("draft", "approval", "auto"):
                 return Autonomy(r)
             # board's "inherit" (and anything else) falls through to the global level
+        cap = (mission.capability or "").lower()
+        cfg_raw = (self._missions_cfg().get(cap) or {}) if cap else {}
+        cfg_level = str(cfg_raw.get("autonomy") or "").lower() if isinstance(cfg_raw, dict) else ""
+        if cfg_level in ("draft", "approval", "auto"):
+            return Autonomy(cfg_level)
+        if cap in self._CAPABILITY_AUTONOMY:
+            return self._CAPABILITY_AUTONOMY[cap]
         return self._global_autonomy()
 
     def _global_autonomy(self) -> Autonomy:
@@ -371,6 +421,38 @@ class MissionExecutor:
         except Exception:  # noqa: BLE001
             level = "balanced"
         return Autonomy.AUTO if level == "autonomous" else Autonomy.APPROVAL
+
+    async def _notify_complete(self, mission: Mission) -> None:
+        """Push a SYSTEM mission's outcome through the notify router.
+
+        `mission_complete` was a registered notification type that nothing ever
+        dispatched — so the three remediate missions that did run on the
+        operator's daemon rewrote the LLM routing and told nobody. A mission that
+        acts unasked must at least say what it did. Best-effort, never raises.
+        """
+        cap = (mission.capability or "").lower()
+        if cap not in ("remediate", "proactive"):
+            return
+        try:
+            from navig.notify.router import dispatch
+
+            status = mission.status.value if hasattr(mission.status, "value") else str(mission.status)
+            result = ""
+            try:
+                fresh = self.store.get_mission(mission.mission_id)
+                result = str(getattr(fresh, "result", None) or getattr(fresh, "error", None) or "")
+            except Exception:  # noqa: BLE001
+                result = ""
+            body = result.strip()[:1500] or f"status: {status}"
+            await dispatch(
+                "mission_complete",
+                f"{mission.title} — {status}",
+                body,
+                priority="normal",
+                data={"source": "navig", "mission_id": mission.mission_id, "capability": cap},
+            )
+        except Exception:  # noqa: BLE001 — a report must never fail the mission
+            logger.debug("mission_complete notify failed for %s", mission.mission_id[:8], exc_info=True)
 
     async def _emit(self, mission: Mission) -> None:
         """Broadcast a `mission_state` SSE event so the Deck shows it live."""
@@ -470,10 +552,23 @@ class MissionExecutor:
                 else:
                     lines.append(f"- {it}")
             body = "\n".join(lines) or "(no issue details provided)"
+            allowed = self._allowed_commands()
+            extra = (
+                "\n\nYou MAY also run these pre-authorised commands: "
+                + ", ".join(f"`{p}`" for p in allowed)
+                if allowed
+                else ""
+            )
             return (
                 "The system health check reported the following issue(s). Diagnose the "
-                "root cause and take the minimal safe action to resolve them, then report "
-                "what you did and the resulting state.\n\nIssues:\n" + body
+                "root cause using READ-ONLY diagnostics only (status, list, show, doctor, "
+                "logs, ping, git status, …). You are running unattended: any command that "
+                "changes state will be refused, so do NOT attempt one and do NOT retry a "
+                "refused command. Finish with a short report — root cause, evidence, and "
+                "the exact command(s) the operator should run to fix it, if any."
+                + extra
+                + "\n\nIssues:\n"
+                + body
             )
 
         if cap == "proactive":

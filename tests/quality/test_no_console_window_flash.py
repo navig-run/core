@@ -72,6 +72,8 @@ _WINDOWLESS_ENTRIES: dict[str, str] = {
     "core/navig/daemon/telegram_worker.py": "pythonw.exe -m navig.daemon.telegram_worker",
     "core/navig/main.py": "pythonw.exe -m navig gateway start (and every CLI entry; no-ops "
                           "when a console exists)",
+    "core/navig/desktop/tray_app.py": "pythonw.exe via commands/tray.py "
+                                      "(CREATE_NO_WINDOW | DETACHED_PROCESS)",
 }
 
 _INSTALLER = "install_windowless_spawn_default"
@@ -322,3 +324,52 @@ def test_an_explicit_window_choice_is_never_overridden() -> None:
     assert creation_flags(base=CREATE_NEW_CONSOLE) == CREATE_NEW_CONSOLE
     assert creation_flags(base=DETACHED_PROCESS) == DETACHED_PROCESS
     assert not (creation_flags(base=CREATE_NEW_CONSOLE) & CREATE_NO_WINDOW)
+
+
+def test_the_installed_default_preserves_an_explicit_window_choice() -> None:
+    """The same rule, on the mechanism the tray actually uses.
+
+    The test above pins `creation_flags()`, a helper a caller opts into. `tray_app` does
+    not use it: it calls `subprocess.Popen(..., creationflags=CREATE_NEW_CONSOLE)`
+    directly, and since the tray now installs the windowless default, that call is
+    routed through the INSTALLED WRAPPER instead. So the assertion whose docstring names
+    the tray was guarding a path the tray never takes — the difference between a guard
+    over a path and a guard over the surface.
+
+    Wrap a recorder rather than the real initialiser, so nothing is ever spawned.
+    """
+    import subprocess
+
+    from navig.platform import process as _p
+
+    if not _p.IS_WINDOWS:  # pragma: no cover
+        return
+
+    seen: list[int] = []
+
+    def _recorder(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        seen.append(kwargs.get("creationflags", 0) or 0)
+
+    original_init = subprocess.Popen.__init__
+    original_probe = _p.process_has_console
+    original_flag = _p._default_installed
+    try:
+        subprocess.Popen.__init__ = _recorder  # type: ignore[method-assign]
+        _p.process_has_console = lambda: False  # pytest has a console; the daemon does not
+        assert _p.install_windowless_spawn_default(force=True) is True
+
+        # The tray's deliberate terminal: its choice must survive untouched.
+        subprocess.Popen.__init__(object(), ["x"], creationflags=_p.CREATE_NEW_CONSOLE)
+        assert seen[-1] == _p.CREATE_NEW_CONSOLE, (
+            "the installed default overrode an explicit CREATE_NEW_CONSOLE — the tray's "
+            "'open a terminal' items would open no terminal"
+        )
+        assert not (seen[-1] & _p.CREATE_NO_WINDOW)
+
+        # A caller who said nothing is the case the default exists for.
+        subprocess.Popen.__init__(object(), ["x"])
+        assert seen[-1] & _p.CREATE_NO_WINDOW, "an unflagged child would still flash"
+    finally:
+        subprocess.Popen.__init__ = original_init  # type: ignore[method-assign]
+        _p.process_has_console = original_probe
+        _p._default_installed = original_flag

@@ -13,8 +13,9 @@ Routes (all under /api/deck):
   GET    /telegram/rooms                       list rooms (?type= ?admin=1)
   GET    /telegram/rooms/{id}                   room metadata
   POST   /telegram/rooms/{id}/refresh           re-sync meta via getChat
-  GET    /telegram/rooms/{id}/messages          ?kind= ?q= ?limit= ?before=
+  GET    /telegram/rooms/{id}/messages          ?kind= ?q= ?limit= ?before= ?deleted=
   GET    /telegram/rooms/{id}/media             ?kind=
+  GET    /telegram/deleted                      what was deleted (?chat_id= ?limit=)
   POST   /telegram/rooms/{id}/post              body: {text, reply_to?}
   GET    /telegram/media/{id}                   media + analysis
   POST   /telegram/media/{id}/analyze           (re)run analysis
@@ -140,10 +141,37 @@ async def handle_room_messages(request: "web.Request") -> "web.Response":
         limit = int(request.query.get("limit", 100))
         before = request.query.get("before")
         before_id = int(before) if before else None
-        msgs = _store().list_messages(cid, kind=kind, q=q, limit=limit, before_id=before_id)
+        # ?deleted=only|include|exclude (default exclude). The store has always
+        # kept deleted messages — a soft delete is the ONLY record that a message
+        # ever existed — but no route exposed them, so "what was deleted" was
+        # answerable solely by the Telegram DM alert.
+        deleted = (request.query.get("deleted") or "").lower()
+        msgs = _store().list_messages(
+            cid, kind=kind, q=q, limit=limit, before_id=before_id,
+            include_deleted=deleted == "include", deleted_only=deleted == "only",
+        )
         return _ok({"messages": msgs, "count": len(msgs)})
     except Exception as exc:
         logger.exception("telegram room messages failed")
+        return _err(str(exc))
+
+
+async def handle_deleted(request: "web.Request") -> "web.Response":
+    """What was deleted — across every room, newest first.
+
+    The deletion DM is a push the operator may miss, mute, or scroll past; this
+    is the pull that makes the same record browsable, with the room title and the
+    media descriptor already joined in."""
+    try:
+        raw_chat = request.query.get("chat_id")
+        chat_id = int(raw_chat) if raw_chat else None
+        limit = int(request.query.get("limit", 100))
+        rows = _store().list_deleted(chat_id=chat_id, limit=limit)
+        return _ok({"messages": rows, "count": len(rows)})
+    except ValueError:
+        return _err("chat_id and limit must be integers", status=400)
+    except Exception as exc:
+        logger.exception("telegram deleted list failed")
         return _err(str(exc))
 
 
@@ -299,6 +327,7 @@ def register(app: "web.Application") -> None:
     app.router.add_post("/api/deck/telegram/rooms/{id}/refresh", handle_room_refresh)
     app.router.add_get("/api/deck/telegram/rooms/{id}/messages", handle_room_messages)
     app.router.add_get("/api/deck/telegram/rooms/{id}/media", handle_room_media)
+    app.router.add_get("/api/deck/telegram/deleted", handle_deleted)
     app.router.add_post("/api/deck/telegram/rooms/{id}/post", handle_room_post)
     app.router.add_get("/api/deck/telegram/media/{id}", handle_media_get)
     app.router.add_post("/api/deck/telegram/media/{id}/analyze", handle_media_analyze)

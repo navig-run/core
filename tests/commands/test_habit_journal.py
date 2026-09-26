@@ -2,10 +2,10 @@
 Tests for the evening journal entry — navig.spaces.journal plus the two writers.
 
 The tracker recorded whether a day happened and nothing recorded what happened
-in it, although the card has always ended with "three lines in the journal".
-These tests pin the two things that make the entry trustworthy: it never invents
-labels for lines the owner did not write, and a redelivered Telegram reply
-cannot write the same evening twice.
+in it, although the card has always ended by asking for the day in writing.
+These tests pin the two things that make the entry trustworthy: it stores what
+the writer actually wrote and never invents labels for it, and a redelivered
+Telegram reply cannot write the same evening twice.
 """
 
 from __future__ import annotations
@@ -52,7 +52,13 @@ class FakeChannel:
 # ===========================================================================
 
 class TestAppendEntry:
-    def test_new_file_gets_a_title_and_the_three_labels(self, tracker):
+    def test_a_new_file_gets_a_title_and_the_writing_verbatim(self, tracker):
+        """Three lines used to be LABELLED with the card's three questions.
+
+        The card no longer asks them, so labelling three lines would assert
+        three answers nobody gave — in the one file that must not contain
+        things the writer did not say. Three lines is now just three lines.
+        """
         path, written = journal.append_entry(
             tracker, DAY, "shipped the pricing page\nlost an hour to a client\nwrite the README"
         )
@@ -61,26 +67,49 @@ class TestAppendEntry:
         assert written is True
         assert path == tracker.parent / "journal" / f"{DAY}.md"
         assert body.startswith("# Journal — Wednesday, 26 August 2026")
-        assert "1. **Proud of:** shipped the pricing page" in body
-        assert "2. **What knocked me off:** lost an hour to a client" in body
-        assert "3. **Tomorrow's number one:** write the README" in body
+        assert "shipped the pricing page" in body
+        assert "lost an hour to a client" in body
+        assert "write the README" in body
+        for prompt in journal.PROMPTS:
+            assert prompt not in body, f"the card's old question {prompt!r} was invented"
 
-    def test_two_lines_are_written_verbatim_without_labels(self, tracker):
-        """Labelling two lines with three questions would invent content."""
+    def test_lines_are_written_verbatim_without_labels(self, tracker):
+        """Labelling someone's lines with questions would invent content."""
         path, _ = journal.append_entry(tracker, DAY, "walked 8 km\nbed by 23:30")
         body = path.read_text(encoding="utf-8")
 
-        assert "- walked 8 km" in body
-        assert "- bed by 23:30" in body
+        # Verbatim, and NOT bulleted: "- " was the right shape for three terse
+        # answers and the wrong one for writing about a day.
+        assert "walked 8 km" in body
+        assert "- walked 8 km" not in body
+        assert "bed by 23:30" in body
         for prompt in journal.PROMPTS:
             assert prompt not in body
 
-    def test_owner_numbering_is_not_doubled(self, tracker):
+    def test_the_writers_own_numbering_survives_untouched(self, tracker):
+        """It used to be STRIPPED, because a label was prefixed to each line and
+        "1. **Proud of:** 1. finished it" reads like a bug. Nothing is prefixed
+        any more, so their numbering is simply their formatting — keep it."""
         path, _ = journal.append_entry(tracker, DAY, "1. finished it\n2. slept badly\n3. call mom")
         body = path.read_text(encoding="utf-8")
 
-        assert "1. **Proud of:** finished it" in body
+        assert "1. finished it" in body
+        assert "2. slept badly" in body
         assert "1. 1." not in body
+        assert "**Proud of:**" not in body
+
+    def test_paragraph_breaks_survive(self, tracker):
+        """The point of the whole change: a day written as prose stays prose.
+
+        `clean_lines` drops blank lines, so rendering from it collapsed every
+        paragraph break — in markdown that silently fuses separate paragraphs
+        into one. The body is written from the text itself for this reason.
+        """
+        text = "Long morning at the dentist.\n\nThen the release actually went out."
+        path, _ = journal.append_entry(tracker, DAY, text)
+        body = path.read_text(encoding="utf-8")
+
+        assert "dentist.\n\nThen the release" in body
 
     def test_identical_text_is_not_written_twice(self, tracker):
         """Telegram redelivers updates; a retry must not duplicate the evening."""
@@ -117,7 +146,14 @@ class TestAppendEntry:
 # ===========================================================================
 
 class TestJournalPrompt:
-    def test_closing_the_day_asks_for_the_three_lines(self, tracker):
+    def test_closing_the_day_invites_writing_about_it(self, tracker):
+        """It used to say "Three lines" and ask three numbered questions.
+
+        What must NOT change is the mechanical half: `force_reply` is what makes
+        the answer identifiable as this day's entry, and naming the file is what
+        makes the record verifiable. Those are asserted here; the wording of the
+        invitation is asserted per-locale in test_journal_free_form.py.
+        """
         channel = FakeChannel()
         habit_tracker.remember_target(CHAT, tracker)
 
@@ -127,8 +163,12 @@ class TestJournalPrompt:
         assert methods == ["editMessageText", "sendMessage"]
         prompt = channel.calls[-1][1]
         assert prompt["reply_markup"] == {"force_reply": True, "selective": True}
-        assert "Three lines" in prompt["text"]
         assert f"journal/{DAY}.md" in prompt["text"]
+        assert "Three lines" not in prompt["text"]
+        numbered = [
+            ln for ln in prompt["text"].splitlines() if ln.strip()[:3] in ("1. ", "2. ", "3. ")
+        ]
+        assert numbered == [], f"the card still asks numbered questions: {numbered}"
 
     def test_the_prompt_is_remembered_so_a_restart_cannot_drop_it(self, tracker):
         channel = FakeChannel(message_id=909)

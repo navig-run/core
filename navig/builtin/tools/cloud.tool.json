@@ -1,4 +1,5 @@
 {
+  "$schema": "./tool.schema.json",
   "id": "tool:cloud",
   "name": "navig_cloud",
   "description": "Execute NAVIG cloud operations.",

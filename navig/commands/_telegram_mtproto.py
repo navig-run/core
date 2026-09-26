@@ -90,26 +90,6 @@ def register(telegram_app: "typer.Typer") -> None:
         auth.logout()
         ch.success("Logged out - session cleared from the vault.")
 
-    @telegram_app.command("status")
-    def tg_status() -> None:
-        """Show MTProto login status."""
-        from navig.telegram import config as tgcfg
-        from navig.telegram import telethon_available, user_client
-        ch.info(f"telethon installed : {telethon_available()}")
-        ch.info(f"api credentials    : {'set' if tgcfg.have_api_credentials() else 'MISSING (run setup)'}")
-        if not tgcfg.is_logged_in():
-            ch.info("login              : not logged in (run: navig telegram login <phone>)")
-            return
-        me = _run(user_client.whoami())
-        if me:
-            ch.success(f"login              : {me.get('username') or me.get('name')} (id {me['id']})")
-        else:
-            # Distinct from the `ch.info("not logged in")` case above: that is a normal
-            # state you have simply not left yet. A session file that exists but is NOT
-            # authorized is broken, and every command downstream fails on it — so the
-            # exit code agrees with the glyph that was already there.
-            ch.error("login              : session present but NOT authorized - re-login")
-            raise typer.Exit(1)
 
     @telegram_app.command("dialogs")
     def tg_dialogs(
@@ -890,6 +870,67 @@ def register(telegram_app: "typer.Typer") -> None:
         from navig.telegram import business as biz
         biz.set_deletion_alert(state.lower() in ("on", "true", "1", "yes"))
         ch.success(f"Deletion alert {'ON' if biz.deletion_alert_enabled() else 'OFF'}")
+
+    @business_app.command("deleted")
+    def tg_biz_deleted(
+        chat: str = typer.Option(None, "--chat", "-c", help="only this chat id"),
+        limit: int = typer.Option(30, "--limit", "-n", help="how many to show"),
+        as_json: bool = typer.Option(False, "--json", help="raw rows for scripts"),
+    ) -> None:
+        """What was deleted in your business chats — the DM alert, browsable.
+
+        A deletion alert is a push you can miss or mute; this is the pull. Rows
+        marked "not kept" predate the media fix or are a type NAVIG cannot re-send.
+        """
+        from navig.store.telegram_catalog import TelegramCatalogStore
+        from navig.telegram import business as biz
+
+        try:
+            chat_id = int(chat) if chat else None
+        except ValueError:
+            ch.error("--chat must be a numeric chat id")
+            raise typer.Exit(1) from None
+
+        rows = TelegramCatalogStore().list_deleted(chat_id=chat_id, limit=limit)
+        if as_json:
+            ch.console.print_json(json.dumps(rows, default=str))
+            return
+        if not rows:
+            ch.info("No deleted messages recorded yet.")
+            ch.dim("Deletions are recorded from the moment the business catcher is on:"
+                   "  navig telegram business status")
+            return
+
+        from navig.console_helper import Table
+
+        table = Table(box=None, show_header=True, padding=(0, 2))
+        table.add_column("When", no_wrap=True)
+        table.add_column("Chat", no_wrap=True)
+        table.add_column("From", no_wrap=True)
+        table.add_column("What")   # the one wrappable column
+        for r in rows:
+            media = r.get("media") or {}
+            kind = media.get("kind")
+            text = (r.get("text") or "").replace("\n", " ⏎ ")
+            # media first, then non-file content (a poll, a location) — the same
+            # order and the same words the deletion DM uses.
+            label = biz.media_label(kind) if kind else biz.content_label(r.get("content"))
+            if label:
+                what = f"{label} — {text}" if text else label
+            elif text:
+                what = text
+            else:
+                what = "[dim]not kept[/dim]"
+            table.add_row(
+                biz.format_when(r.get("date")) or "[dim]—[/dim]",
+                (r.get("room_title") or str(r.get("chat_id")))[:22],
+                (r.get("sender_name") or "—")[:16],
+                what[:160],
+            )
+        ch.console.print(table)
+        kept = sum(1 for r in rows if (r.get("text") or r.get("media")))
+        ch.dim(f"\n{len(rows)} deleted · {kept} with content kept"
+               f" · re-sent to you as a DM when it happens")
 
     @business_app.command("emoji")
     def tg_biz_emoji(

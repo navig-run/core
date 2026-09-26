@@ -1,4 +1,3 @@
-```skill
 ---
 name: iperf3-network-test
 description: Run iperf3 network speed tests — client or server mode
@@ -65,4 +64,3 @@ navig net iperf3 client --host 10.0.0.10 --reverse
 
 - `--dry-run` prints the command that would be executed without running it
 - Server mode runs indefinitely until interrupted (NAVIG will capture termination signal)
-```

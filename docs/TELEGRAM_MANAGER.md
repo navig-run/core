@@ -96,8 +96,21 @@ navig telegram business alerts on|off                  # deleted-message → DM 
 4. **React** to any message with an AI emoji and the bot replies with the result:
    - 🌍 / 🌐 → translate · 📋 → summarize · 💡 → explain
    - (remap via config `telegram.business.emoji.<emoji> = <tool>`)
-5. When a message is **deleted**, you get a Telegram **DM** with the cached content
-   (`business alerts on`).
+5. When a message is **deleted**, you get ONE Telegram **DM** per deletion event
+   (`business alerts on`). Every line is **who · when · what**: `• you · 21 Sep 17:18 ·
+   📷 photo — caption`, and a cached photo / voice / sticker / file is **re-sent to you by
+   `file_id`**; if that file id no longer resolves, the DM says so rather than quietly
+   delivering less than it announced. A message with no text and no file still names
+   itself (`📊 poll`, `📍 location`, `📖 shared story`). A line says *why* it has no
+   content — "NAVIG has watched this chat since 14 Sep, so this one is older" is a
+   different fact from "never cataloged this chat", and both differ from a caption-less
+   photo. Conversations with **other bots** are cataloged too (data only — never
+   auto-replied to).
+
+   The DM is a push you can miss or mute. The same record is browsable:
+   **`navig telegram business deleted`** (a table; `--chat`, `-n`, `--json`) and the
+   deck's **Business → Recently deleted** panel. Deletions are only recorded from the
+   moment the catcher is on — nothing can recover a message NAVIG never saw.
 
 ---
 

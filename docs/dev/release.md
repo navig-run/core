@@ -8,11 +8,11 @@ This checklist is for NAVIG maintainers preparing an official release.
   - `pyproject.toml` (bumped by `version_bump.py`)
   - `latest.json` (root — canonical, auto-synced by `tools/_version_sync.py`)
   - `navig-www/public/latest.json` (auto-synced when `NAVIG_DEV_SYNC=1` or sibling dir detected)
-- [ ] **Update CHANGELOG.md** with release notes:
-  - New features
-  - Bug fixes
-  - Breaking changes (if any)
-  - Security updates
+- [ ] **Changelog** — nothing to write by hand at release time. Every merged change left a
+  fragment in `changelog.d/`; the bump folds them and rotates `[Unreleased]` under the new
+  version in the release commit. Preview with `npm run release:dry`; validate the fragments
+  with `npm run changelog:check`. An empty release refuses the bump (`--no-changelog` to
+  override, only when there truly are no user-facing entries).
 - [ ] **Run full test suite**:
   ```bash
   pytest tests/ -v
@@ -29,44 +29,38 @@ This checklist is for NAVIG maintainers preparing an official release.
   ```
 - [ ] **Review security** considerations (credentials, input validation)
 
-## Build
+## Build, tag, publish, release — one script
 
-- [ ] **Create build artifacts**:
-  ```bash
-  python -m build
-  ```
-- [ ] **Generate SHA256 checksums**:
-  ```bash
-  sha256sum dist/* > dist/checksums.txt
-  ```
-- [ ] **Test installation from wheel**:
-  ```bash
-  pip install dist/navig-*.whl
-  ```
+```bash
+cd core
+python tools/version_bump.py bump minor --commit   # pyproject + changelog rotated, one commit
+bash tools/release.sh 3.26.0 --publish            # everything below
+```
 
-## Publish
+`tools/release.sh` does, in order — each step a precondition of the next:
 
-- [ ] **Create Git tag**:
-  ```bash
-  git tag -a v2.x.x -m "Release v2.x.x"
-  ```
-- [ ] **Push tag to GitHub**:
-  ```bash
-  git push origin v2.x.x
-  ```
-- [ ] **Create GitHub Release**:
-  - Use tag as release name
-  - Copy changelog section to release notes
-  - Attach build artifacts (`.tar.gz`, `.whl`)
-  - Attach `checksums.txt`
-- [ ] **Publish GitHub Release** (must not be draft/prerelease):
-  - Publishing the release automatically triggers `.github/workflows/publish.yml`
-  - Workflow validates tag/version, builds artifacts, runs `twine check`, and publishes to PyPI via trusted publishing (OIDC)
-- [ ] **Fallback manual publish** (emergency only):
-  ```bash
-  twine upload dist/*
-  ```
-- [ ] **Update website** download links (if applicable)
+1. **Guards** — on `main`, clean tree, tag absent locally AND on origin, and
+   `pyproject.toml` carries exactly the version you named (else it points you at
+   `version_bump.py`; a tag over a wheel of another version is the one mistake you cannot
+   take back).
+2. **Changelog** rotated under `## [X.Y.Z]` (a no-op after `version_bump`) + manifests, committed.
+3. **Build** wheel + sdist, `twine check`, prove the wheel is `navig-X.Y.Z-*.whl`, then the
+   **real-install smoke** (`scripts/verify-install.mjs`: install into a clean venv and drive
+   it — the gate every repo-side check cannot be). `--skip-verify` skips only that.
+4. **Push main, tag, push the tag.**
+5. **Publish to PyPI** with `--publish` (`python -m twine upload dist/*`; twine reads
+   `TWINE_USERNAME=__token__` / `TWINE_PASSWORD` or `~/.pypirc`). The org's GitHub Actions is
+   **billing-blocked**, so the tag workflow (`.github/workflows/release.yml`) does not run —
+   this flag IS how a release reaches PyPI. Without it the exact command is printed.
+6. **GitHub Release** with the wheel and sdist **attached**, body from the one release-notes
+   writer (`python tools/changelog_assemble.py --release-notes X.Y.Z`: install block + that
+   version's changelog block, or its headline digest when the block is over GitHub's
+   125,000-character limit), with GitHub's "What's Changed" list appended.
+7. **`latest.json` re-synced** now that the release asset exists — `download_url` is verified,
+   never fabricated — committed and pushed (the second commit `release.yml` would have made).
+
+If Actions can run again, the same tag push runs `release.yml`, which composes the release
+body from the same writer and refuses a tag whose `pyproject.toml` says another version.
 
 ### Quick bump commands (maintainers)
 
@@ -89,7 +83,7 @@ npm run release:big
 
 Command mapping:
 
-- `release:normal` → patch bump (`X.Y.Z` -> `X.Y.(Z+1)`) — bumps `pyproject.toml`, syncs `latest.json`, commits, tags, pushes
+- `release:normal` → patch bump (`X.Y.Z` -> `X.Y.(Z+1)`) — folds `changelog.d/` fragments, rotates `[Unreleased]` under the new version, bumps `pyproject.toml`, syncs `latest.json`, commits (one commit, all of it), tags, pushes main **and** the tag. Then `bash tools/release.sh X.Y.Z --publish` builds, verifies, publishes and creates the release.
 - `release:minor` → minor bump (`X.Y.Z` -> `X.(Y+1).0`)
 - `release:big` → major bump (`X.Y.Z` -> `(X+1).0.0`)
 - `release:dry` → preview next patch version only (no file or git changes)
@@ -115,6 +109,13 @@ npm run version:sync
 - [ ] **Update documentation** if needed:
   - Installation instructions
   - Breaking change migration guides
+- [ ] **Refresh the site's published snapshot** — `cd web/www && npm run sync:site`, then
+  commit `content/cli-reference.generated.json`, `content/bay-catalog.generated.json`,
+  `public/latest.json` (and `core/navig/data/bay-catalog.json`). These are what
+  navig.run documents; they must describe the **released** CLI, so this is the one
+  moment to regenerate and commit them. Run between releases, the builders overwrite
+  the committed files and print a ⚠ saying so — `git checkout -- <file>` puts the site
+  back on the shipped version.
 
 ## Hotfix Process
 

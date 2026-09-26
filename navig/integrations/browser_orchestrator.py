@@ -1,6 +1,20 @@
 """
 NAVIG Browser Task Orchestrator
 
+**NOT WIRED.** Nothing in ``core/navig`` calls ``run_browser_task``. It POSTs to
+``/api/v1/browser/task`` on ``daemon.browser_port`` (7421), and nothing in the repository
+serves that route: the "Go browser executor (router.go)" below was never part of this
+Python-only core. Its one caller, ``navig links open``, hit the dead route on every
+credentialed open, caught the error and fell to a plain ``webbrowser.open`` -- it was ported
+onto the CDP stack (``navig.browser.cdp_actions``) instead, which is the browser automation
+that actually exists. ``commands/webhook.py`` talks to the same port and is dead the same
+way, though it says so loudly.
+
+Kept, not deleted, because five test files exercise its helpers and the decision it needs --
+delete it, or build the daemon it was written for -- is an owner's. Guarded by
+``tests/quality/test_dormant_modules.py``: the moment production code imports it again, that
+fails and names the file.
+
 Python-side bridge between the AI planner and the Go browser executor (router.go).
 Handles the full task lifecycle including:
   - Sending task specs to the Go daemon via HTTP

@@ -92,6 +92,42 @@ def home_dir() -> Path:
     return Path.home()
 
 
+def invocation_cwd() -> Path:
+    """The directory the operator actually ran ``navig`` from.
+
+    ``main.py`` chdir's into the ACTIVE SPACE before any command runs, stashing
+    the real invocation directory in ``NAVIG_INVOCATION_CWD`` first. So by the
+    time a command body executes, ``Path.cwd()`` is the space — not where the
+    operator is standing.
+
+    Any path the operator TYPED (a relative ``--path``/argument) and any default
+    that means "here" must therefore resolve against this, never ``Path.cwd()``.
+    Resolving against the process cwd does not fail loudly: it silently answers a
+    DIFFERENT directory — ``navig space init x --path .`` scaffolded 102 items
+    into the active space while the operator stood in their project.
+
+    Falls back to the process cwd when the variable is absent (a direct in-process
+    call in tests, or an embedding caller).
+    """
+    raw = os.environ.get("NAVIG_INVOCATION_CWD")
+    if raw:
+        origin = Path(raw)
+        if origin.is_dir():
+            return origin
+    return Path.cwd()
+
+
+def resolve_user_path(given: Path | str) -> Path:
+    """Resolve a path the operator TYPED against the directory they typed it in.
+
+    An absolute path is taken as given; a relative one is anchored to
+    :func:`invocation_cwd` rather than the process cwd. See that function for why
+    the difference is not cosmetic.
+    """
+    p = Path(given).expanduser()
+    return p.resolve() if p.is_absolute() else (invocation_cwd() / p).resolve()
+
+
 def config_dir() -> Path:
     """NAVIG configuration directory.
 
@@ -476,19 +512,69 @@ def stack_dir() -> Path:
 # ── App-root discovery ────────────────────────────────────────────────────────
 
 
+def _global_navig_dirs() -> set[Path]:
+    """The ``.navig`` directories that are the GLOBAL config, never a project.
+
+    Two of them, deliberately: ``config_dir()`` (honours ``NAVIG_CONFIG_DIR``) and the
+    un-isolated default ``~/.navig``. When ``NAVIG_CONFIG_DIR`` points a sandbox, a test,
+    or a second brain somewhere else, the real ``~/.navig`` is still the operator's global
+    dir — treating it as a project would silently un-isolate that sandbox.
+    """
+    out: set[Path] = set()
+    for candidate in (config_dir(), home_dir() / ".navig"):
+        try:
+            out.add(Path(candidate).resolve())
+        except OSError:
+            out.add(Path(candidate))
+    return out
+
+
 def find_app_root(verbose: bool = False) -> Path | None:
     """Walk upward from CWD to find a directory that contains ``.navig/``.
 
     Returns the directory containing ``.navig/``, or ``None`` if not found.
+
+    The walk skips the GLOBAL config dir. ``~/.navig`` is where user-level config lives,
+    and it sits in the parent chain of every directory under the home folder — so a bare
+    walk "found a project" from ``~/Documents``, ``%LOCALAPPDATA%/Temp``, anywhere under
+    ``~``, and answered with the HOME DIRECTORY as the project root. Two consequences,
+    both measured on the maintainer's box before this guard existed:
+
+    * ``NAVIG_CONFIG_DIR=<sandbox>`` was silently overridden whenever the cwd was under
+      ``~``: ``base_dir`` became the real ``~/.navig``, so ``navig host list`` printed the
+      operator's real hosts and IPs and ``navig gateway status`` read the real bot token —
+      inside a sandbox built specifically to keep them out of a public recording;
+    * with no isolation the symptom was invisible (same directory either way), which is
+      why it survived: ``ConfigManager`` merely believed it was "in an app context".
+
+    A project ``.navig/`` under the home folder (``~/projects/app/.navig``) is still found
+    — it is reached before the walk climbs to ``~``.
+
+    Reaching the global dir ENDS the walk (``None``), it does not merely skip a level.
+    Nothing above the global config dir can be the project, and continuing the climb is
+    how the first version of this guard regressed: with ``NAVIG_CONFIG_DIR`` pointed at
+    ``<tmp>/space/.navig`` and the cwd at ``<tmp>/space``, the walk skipped that dir and
+    kept going — up to the source checkout's own ``core/.navig``, where a subprocess-driven
+    test then wrote its ledger. ``None`` here resolves ``base_dir`` to ``config_dir()``,
+    which for that layout is the same directory the old walk returned.
     """
     current = Path.cwd()
+    global_dirs = _global_navig_dirs()
     while True:
         navig_dir = current / ".navig"
         try:
             if navig_dir.is_dir():
+                try:
+                    is_global = navig_dir.resolve() in global_dirs
+                except OSError:
+                    is_global = navig_dir in global_dirs
+                if is_global:
+                    if verbose:
+                        _warn(f"Reached {navig_dir}: the global config dir is not a project")
+                    return None
                 if is_directory_accessible(navig_dir):
                     return current
-                elif verbose:
+                if verbose:
                     _warn(f"Found .navig at {navig_dir} but cannot access it (permission denied)")
         except (PermissionError, OSError) as exc:
             if verbose:

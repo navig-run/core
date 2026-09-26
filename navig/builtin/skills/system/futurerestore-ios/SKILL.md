@@ -1,4 +1,3 @@
-```skill
 ---
 name: futurerestore-ios
 description: Restore an iOS device to a specific firmware using a saved SHSH2 blob via futurerestore
@@ -64,4 +63,3 @@ The operation is allowed up to 600 seconds (10 minutes). Large IPSW restores are
 - `--dry-run` validates that blob and IPSW files exist, then prints the command without executing
 - Exits with code `2` on any futurerestore error
 - Do not unplug the device during restore
-```

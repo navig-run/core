@@ -332,3 +332,61 @@ async def test_route_post(store, monkeypatch):
     resp = await tm.handle_room_post(FakeRequest(match={"id": "-100"}, body={"text": "hello room"}))
     body = _payload(resp)
     assert body["ok"] and body["data"]["message_id"] == 555
+
+
+# ── "What was deleted" — the deck routes behind the Business tab's panel ───────
+#
+# The store has always kept soft-deleted rows; no route returned them, so the
+# only answer to "what was deleted" was the DM alert that fires once.
+
+
+async def test_route_deleted_lists_across_rooms_with_titles(store):
+    from navig.gateway.deck.routes import telegram_manager as tm
+
+    store.upsert_room(-100, type="group", title="Ops room")
+    store.upsert_room(555, type="business", title="Yck")
+    store.upsert_message(-100, 1, text="gone from ops", kind="text")
+    store.upsert_message(555, 1, text="gone from dm", kind="business")
+    store.upsert_message(555, 2, text="still here", kind="business")
+    store.mark_message_deleted(-100, 1)
+    store.mark_message_deleted(555, 1)
+
+    body = _payload(await tm.handle_deleted(FakeRequest()))
+    assert body["ok"] and body["data"]["count"] == 2
+    assert {m["room_title"] for m in body["data"]["messages"]} == {"Ops room", "Yck"}
+    assert "still here" not in [m["text"] for m in body["data"]["messages"]]
+
+
+async def test_route_deleted_filters_by_chat_and_rejects_junk(store):
+    from navig.gateway.deck.routes import telegram_manager as tm
+
+    store.upsert_message(555, 1, text="a", kind="business")
+    store.upsert_message(556, 1, text="b", kind="business")
+    store.mark_message_deleted(555, 1)
+    store.mark_message_deleted(556, 1)
+
+    body = _payload(await tm.handle_deleted(FakeRequest(query={"chat_id": "555"})))
+    assert [m["text"] for m in body["data"]["messages"]] == ["a"]
+
+    # A bad chat_id is the caller's error (400), not a 500 traceback.
+    resp = await tm.handle_deleted(FakeRequest(query={"chat_id": "nope"}))
+    assert resp.status == 400
+
+
+async def test_route_messages_deleted_modes(store):
+    from navig.gateway.deck.routes import telegram_manager as tm
+
+    store.upsert_message(555, 1, text="live", kind="business")
+    store.upsert_message(555, 2, text="gone", kind="business")
+    store.mark_message_deleted(555, 2)
+
+    default = _payload(await tm.handle_room_messages(FakeRequest(match={"id": "555"})))
+    assert [m["text"] for m in default["data"]["messages"]] == ["live"]
+
+    only = _payload(await tm.handle_room_messages(
+        FakeRequest(match={"id": "555"}, query={"deleted": "only"})))
+    assert [m["text"] for m in only["data"]["messages"]] == ["gone"]
+
+    both = _payload(await tm.handle_room_messages(
+        FakeRequest(match={"id": "555"}, query={"deleted": "include"})))
+    assert {m["text"] for m in both["data"]["messages"]} == {"live", "gone"}

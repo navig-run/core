@@ -26,6 +26,9 @@ from navig.agent.component import Component
 from navig.agent.config import EarsConfig
 from navig.agent.nervous_system import EventType, NervousSystem
 from navig.core.coerce import coerce_bool
+from navig.debug_logger import get_debug_logger
+
+logger = get_debug_logger()
 
 
 @dataclass
@@ -61,6 +64,25 @@ class InputListener(ABC):
         self.name = name
         self._running = False
         self._message_callback: Callable[[InputMessage], Any] | None = None
+        # Why this listener is NOT running, when it was enabled and failed to
+        # start. Every listener's start() used to swallow its own failure with
+        # `except Exception: pass  # best-effort`, so an ENABLED channel that
+        # failed to bind was indistinguishable from a DISABLED one — the startup
+        # report simply omitted it. Measured on a real install: the REST listener
+        # defaults to port 8790, which sits inside a Windows RESERVED port range on
+        # that machine, so bind() raised PermissionError on every boot and nothing
+        # anywhere said so.
+        self._error: str | None = None
+
+    def _failed(self, exc: BaseException, detail: str = "") -> None:
+        """Record why start() failed. Never raises — the agent keeps booting."""
+        self._running = False
+        reason = f"{type(exc).__name__}: {exc}"
+        # The detail (e.g. the port that would not bind) goes INTO the recorded
+        # reason, not just the log line — the health check and the startup banner
+        # read `_error`, and "PermissionError" alone does not tell anyone what to do.
+        self._error = (f"{detail} — {reason}" if detail else reason)[:200]
+        logger.warning("input listener %r failed to start: %s", self.name, self._error)
 
     def set_callback(self, callback: Callable[[InputMessage], Any]) -> None:
         """Set callback for received messages."""
@@ -146,8 +168,8 @@ class MCPListener(InputListener):
         try:
             # Integration with existing MCP server
             self._running = True
-        except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+        except Exception as exc:  # noqa: BLE001
+            self._failed(exc)  # best-effort: keep booting, but say WHY it is off
 
     async def stop(self) -> None:
         """Stop MCP server."""
@@ -185,8 +207,13 @@ class APIListener(InputListener):
         except ImportError:
             # aiohttp not installed
             pass
-        except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+        except Exception as exc:  # noqa: BLE001
+            # Name the port: it is the actionable detail. The default (8790) lands
+            # inside a Windows reserved range on some machines (`netsh interface
+            # ipv4 show excludedportrange tcp`), where bind() raises
+            # PermissionError(13) with nothing listening. Reservations MOVE across
+            # reboots, so a port that worked last month can be refused today.
+            self._failed(exc, detail=f"bind {self.host}:{self.port}")
 
     async def stop(self) -> None:
         """Stop API server."""
@@ -397,8 +424,8 @@ class WebhookListener(InputListener):
 
         except ImportError:
             pass  # optional dependency not installed; feature disabled
-        except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+        except Exception as exc:  # noqa: BLE001
+            self._failed(exc)  # best-effort: keep booting, but say WHY it is off
 
     async def stop(self) -> None:
         """Stop webhook server."""
@@ -521,8 +548,10 @@ class Ears(Component):
         for _name, listener in self._listeners.items():
             try:
                 await listener.start()
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+            except Exception as exc:  # noqa: BLE001
+                # A listener's own start() records most failures; this catches
+                # one that raised before its handler. Keep booting either way.
+                listener._failed(exc)
 
     async def _on_stop(self) -> None:
         """Stop all listeners."""
@@ -536,6 +565,7 @@ class Ears(Component):
         """Health check for ears."""
         return {
             "listeners": {name: listener._running for name, listener in self._listeners.items()},
+            "listener_errors": self.get_listener_errors(),
             "message_counts": self._message_counts,
             "queue_size": self._message_queue.qsize(),
         }
@@ -575,3 +605,15 @@ class Ears(Component):
     def get_listener_status(self) -> dict[str, bool]:
         """Get status of all listeners."""
         return {name: listener._running for name, listener in self._listeners.items()}
+
+    def get_listener_errors(self) -> dict[str, str]:
+        """Listeners that were ENABLED but are not running, with the reason.
+
+        The distinction the boolean status cannot make: "off because disabled"
+        versus "off because it failed to start". Only the second is a problem.
+        """
+        return {
+            name: listener._error
+            for name, listener in self._listeners.items()
+            if not listener._running and listener._error
+        }

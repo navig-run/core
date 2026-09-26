@@ -903,8 +903,10 @@ class TestRegistration:
 
     def test_ledger_reads_are_skipped_by_the_recorder_middleware(self):
         """Observer effect: `navig ledger show` must not append to what it shows."""
-        from navig.cli.middleware import _SKIP_RECORD_KEYWORDS
+        from navig.cli.middleware import _SKIP_RECORD_RESOURCES, _should_skip_record
 
-        assert "ledger " in _SKIP_RECORD_KEYWORDS
+        assert "ledger" in _SKIP_RECORD_RESOURCES
+        assert _should_skip_record(["ledger", "show"], ["ledger", "show"])
         # but `navig undo` IS recorded (it's a real operation)
-        assert not any(kw.strip() == "undo" for kw in _SKIP_RECORD_KEYWORDS)
+        assert "undo" not in _SKIP_RECORD_RESOURCES
+        assert not _should_skip_record(["undo"], ["undo"])

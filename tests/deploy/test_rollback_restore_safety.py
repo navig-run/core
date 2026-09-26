@@ -25,15 +25,13 @@ temporary filesystem so the safety properties are demonstrated rather than asser
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from navig.deploy.models import BackupConfig, SnapshotRecord
 from navig.deploy.rollback import RollbackManager
+from tests.fixtures.posix_shell import POSIX_SHELL, needs_posix_shell
 
 SNAP = "/var/backups/myapp/20240101"
 
@@ -163,8 +161,10 @@ def test_success_still_reports_the_snapshot_it_restored(tmp_path: Path) -> None:
 
 # ── executed against a real filesystem ──────────────────────────────────────────
 
-_SH = shutil.which("bash") or shutil.which("sh")
-needs_sh = pytest.mark.skipif(_SH is None, reason="no POSIX shell available")
+# By full path, resolved once: a bare "bash" on Windows is the WSL launcher (System32 wins
+# over PATH), which would run this RESTORE script against WSL-translated paths.
+_SH = POSIX_SHELL
+needs_sh = needs_posix_shell
 
 
 def _run(tmp_path: Path, *, target: Path, snapshot: Path) -> subprocess.CompletedProcess:

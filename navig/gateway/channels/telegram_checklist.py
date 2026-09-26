@@ -150,7 +150,7 @@ class TelegramChecklistMixin:
         the API call fails.
         """
         cfg = self._get_checklist_config()
-        if coerce_bool(cfg.get("checklist_enabled", True), default=True) and should_send_as_checklist(text):
+        if coerce_bool(cfg.get("checklist_enabled", False), default=False) and should_send_as_checklist(text):
             tasks = extract_task_list(text)
             if tasks:  # guard against race between the two checks
                 title = _derive_checklist_title(text, original_query)
@@ -183,8 +183,15 @@ class TelegramChecklistMixin:
         *,
         reply_to: int | None = None,
         thread_id: int | None = None,
+        keyboard: list | dict | None = None,
     ) -> dict | None:
-        """Call ``sendChecklist`` API.  Returns the result dict or ``None`` on failure."""
+        """Call ``sendChecklist`` API.  Returns the result dict or ``None`` on failure.
+
+        ``keyboard`` is the reply's inline keyboard (a bare list of rows, or an already
+        wrapped markup dict). An AI reply almost always carries one -- the explore
+        questions, dig-deeper, fresh-ideas -- and upgrading the text to a checklist must
+        not silently drop those buttons. ``sendChecklist`` accepts ``reply_markup``.
+        """
         payload: dict = {
             "chat_id": chat_id,
             "title": title,
@@ -194,6 +201,10 @@ class TelegramChecklistMixin:
             payload["reply_to_message_id"] = reply_to
         if thread_id:
             payload["message_thread_id"] = thread_id
+        if keyboard:
+            payload["reply_markup"] = (
+                keyboard if isinstance(keyboard, dict) else {"inline_keyboard": keyboard}
+            )
 
         try:
             result = await self._api_call("sendChecklist", payload)
@@ -249,9 +260,16 @@ class TelegramChecklistMixin:
             # today stays off for two independent reasons.
             from navig.gateway.channels.telegram_extensions import is_enabled
 
+            # OPT-IN. This feature was unreachable from the day it was written (no call
+            # site anywhere; see tests/quality/test_feature_flags_are_read.py), so "on by
+            # default" was never a behaviour anyone experienced. It is wired now, and it
+            # is off until the operator turns it on -- a reply that is a LIST is not
+            # always a task list, and a wrong checklist is worse than a plain list.
+            # Flipping this default is a one-line owner decision, made after seeing it.
             return {
-                "checklist_enabled": coerce_bool(tg.get("checklist_enabled", True), default=True)
+                "checklist_enabled": coerce_bool(tg.get("checklist_enabled", False), default=False)
                 and is_enabled("groups")
             }
         except Exception:  # noqa: BLE001
-            return {"checklist_enabled": True}
+            # An unreadable config must not switch an opt-in feature ON.
+            return {"checklist_enabled": False}

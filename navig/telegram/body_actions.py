@@ -432,7 +432,7 @@ async def settle_prompt(channel: Any, chat_id: int, message_id: int, text: str) 
     confirmation were always the same event.
     """
     try:
-        await channel._api_call(
+        result = await channel._api_call(
             "editMessageText",
             {
                 "chat_id": chat_id,
@@ -444,9 +444,28 @@ async def settle_prompt(channel: Any, chat_id: int, message_id: int, text: str) 
                 "reply_markup": {"inline_keyboard": []},
             },
         )
-        return True
     except Exception as exc:  # noqa: BLE001
         # A message too old to edit, or deleted. The caller falls back to sending
         # — the operator must never be left without confirmation that it landed.
-        logger.debug("could not settle the weigh-in prompt: %s", exc)
+        logger.warning("could not settle the weigh-in prompt: %s", exc)
         return False
+
+    # ⚠ `_api_call` reports a REJECTED call by returning None, not by raising —
+    # `if result.get("ok"): return result.get("result")`, otherwise it falls
+    # through. So `return True` after the call treated "message is not modified"
+    # / "message can't be edited" as a settled prompt, the caller skipped its
+    # `✅ {confirmation}` fallback, and the operator who had just answered the
+    # weigh-in got silence. Their weight was recorded; only the receipt was lost,
+    # which from the chat is indistinguishable from losing the measurement.
+    if result is None:
+        # WARNING, not debug: this is the branch that ends with a person
+        # believing their data was thrown away, and debug is not captured at the
+        # daemon's normal level — so it used to be silent in the log too.
+        logger.warning(
+            "weigh-in prompt %s in chat %s could not be edited — falling back to a "
+            "separate confirmation message",
+            message_id,
+            chat_id,
+        )
+        return False
+    return True

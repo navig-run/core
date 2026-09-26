@@ -65,10 +65,13 @@ single-operator default unchanged.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import enum
+import fnmatch
 import os
 import threading
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -601,6 +604,30 @@ class ApprovalGate:
         if not needs_approval(tool_name, safety_level, args=parameters, policy=policy):
             return ApprovalDecision.APPROVED
 
+        # Under a mission the operator is never paged — whichever caller this is
+        # (the agent loop, an MCP tool, the sync bridge). The grant decides:
+        # a read-only shell command or a pre-authorised pattern proceeds and is
+        # audited; anything else is denied. `gate_agent_tool_call` makes the
+        # same call earlier to phrase the denial for the agent; this is the
+        # floor beneath every other path.
+        grant = current_mission_grant()
+        if grant is not None:
+            allowed, why = _decide_under_grant(grant, tool_name, parameters)
+            if allowed:
+                audit_auto_approval(
+                    tool_name,
+                    enabled_by=f"{grant.enabled_by} (mission {grant.mission_id[:8]}: {why})",
+                    parameters=parameters,
+                )
+            logger.info(
+                "approval: tool='{}' {} under mission {} ({})",
+                tool_name,
+                "auto-approved" if allowed else "denied",
+                grant.mission_id[:8],
+                why,
+            )
+            return ApprovalDecision.APPROVED if allowed else ApprovalDecision.DENIED
+
         req = ApprovalRequest(
             tool_name=tool_name,
             safety_level=safety_level,
@@ -725,7 +752,10 @@ def check_sync(
 
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            return ex.submit(_run).result()
+            # A worker thread starts with an EMPTY context: without this copy a
+            # mission's grant would not reach the gate here, and the call would
+            # page the operator from inside the one place that must never page.
+            return ex.submit(contextvars.copy_context().run, _run).result()
     except Exception as exc:  # noqa: BLE001
         logger.error("approval.check_sync failed ({}): {} — denying", tool_name, exc)
         return ApprovalDecision.DENIED
@@ -967,6 +997,77 @@ def bind_approval_manager(manager: Any | None, audit_log: Any | None = None) -> 
 # =============================================================================
 
 
+# =============================================================================
+# Mission grant — an autonomous mission never pages the operator per tool call
+# =============================================================================
+#
+# On 2026-09-19 a "Remediate health issues" mission asked the operator to approve
+# `tool bash_exec` six times in one minute. A mission is the unit the operator (or
+# the autonomy policy) decides on; its tool calls are not. Inside a mission:
+#
+#   * a SHELL command that is provably read-only (navig.tools.shell_readonly) runs
+#     unprompted and is audited as auto-approved, naming the config key that
+#     allowed it;
+#   * a command matching an operator-listed pattern (``missions.allowed_commands``)
+#     runs the same way;
+#   * everything else is DENIED with a reason the agent reads — so it reports the
+#     action it wanted as a recommendation instead of asking a human who, in the
+#     operator's store, answered 3 of 84 such requests.
+#
+# The grant is a ContextVar so it follows the mission's task and nothing else:
+# an interactive chat turn running at the same time keeps its prompts.
+
+#: Tools whose ``command`` parameter is a shell line the classifier can judge.
+_SHELL_TOOLS: frozenset[str] = frozenset({"bash_exec", "run_command", "navig_run"})
+
+
+@dataclass(frozen=True)
+class MissionGrant:
+    """What a running mission may do without asking."""
+
+    mission_id: str
+    title: str = ""
+    allowed_commands: tuple[str, ...] = ()  # fnmatch patterns, from missions.allowed_commands
+    enabled_by: str = "missions.autonomous_enabled"
+
+
+_mission_grant: contextvars.ContextVar[MissionGrant | None] = contextvars.ContextVar(
+    "navig_mission_grant", default=None
+)
+
+
+def current_mission_grant() -> MissionGrant | None:
+    return _mission_grant.get()
+
+
+@contextmanager
+def mission_grant(grant: MissionGrant) -> Iterator[None]:
+    """Run a block under *grant*. Nested asyncio tasks inherit it; siblings do not."""
+    token = _mission_grant.set(grant)
+    try:
+        yield
+    finally:
+        _mission_grant.reset(token)
+
+
+def _decide_under_grant(
+    grant: MissionGrant, tool_name: str, parameters: dict[str, Any] | None
+) -> tuple[bool, str]:
+    """(allowed, reason). Never raises; unknown → denied."""
+    params = parameters or {}
+    if tool_name in _SHELL_TOOLS:
+        from navig.tools.shell_readonly import is_read_only, why_not_read_only
+
+        cmd = str(params.get("command") or params.get("cmd") or "")
+        if is_read_only(cmd):
+            return True, "read-only shell command"
+        low = cmd.lower().strip()
+        if any(fnmatch.fnmatch(low, p.lower()) for p in grant.allowed_commands):
+            return True, "matches missions.allowed_commands"
+        return False, why_not_read_only(cmd)
+    return False, f"`{tool_name}` changes state and a mission may not do that unasked"
+
+
 async def gate_agent_tool_call(
     tool_name: str,
     *,
@@ -983,10 +1084,42 @@ async def gate_agent_tool_call(
     FAIL CLOSED: if the gate itself breaks (import error inside the backend,
     unexpected crash), a gated tool is denied rather than executed ungated —
     the agent-loop twin of the #299 policy_check contract.
+
+    Under a :class:`MissionGrant` the human is never asked: a read-only shell
+    command (or one the operator pre-authorised) proceeds and is audited; any
+    other gated call is denied with a reason the agent can act on.
     """
     try:
         if not needs_approval(tool_name):
             return None
+        grant = current_mission_grant()
+        if grant is not None:
+            allowed, why = _decide_under_grant(grant, tool_name, parameters)
+            if allowed:
+                audit_auto_approval(
+                    tool_name,
+                    enabled_by=f"{grant.enabled_by} (mission {grant.mission_id[:8]}: {why})",
+                    parameters=parameters,
+                )
+                logger.info(
+                    "approval: tool='{}' auto-approved under mission {} ({})",
+                    tool_name,
+                    grant.mission_id[:8],
+                    why,
+                )
+                return None
+            logger.info(
+                "approval: tool='{}' denied under mission {} — {}",
+                tool_name,
+                grant.mission_id[:8],
+                why,
+            )
+            return (
+                f"[Denied inside mission '{grant.title or grant.mission_id[:8]}': {why}. "
+                "A mission may only run read-only diagnostics on its own. Do not retry it — "
+                "report this command as a recommended action for the operator, with the "
+                "exact command and why it is needed.]"
+            )
         gate = get_approval_gate()
         context: dict[str, Any] = {}
         if session_key:

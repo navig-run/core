@@ -2430,7 +2430,7 @@
       "arguments": [
         {
           "name": "provider",
-          "required": true,
+          "required": false,
           "variadic": false
         }
       ],
@@ -2450,7 +2450,7 @@
       "path": "navig ai login",
       "since": "",
       "status": "stable",
-      "summary": "Login to an AI provider using OAuth (e.g., OpenAI Codex).",
+      "summary": "Login to an AI provider using OAuth.",
       "tags": []
     },
     {
@@ -2623,6 +2623,24 @@
           "flags": [
             "--provider",
             "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--check"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
           ],
           "takes_value": true
         }
@@ -3313,6 +3331,280 @@
       "since": "",
       "status": "stable",
       "summary": "Ask AI about server/configuration.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "file",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig audio beat analyse"
+      ],
+      "handler": "beat_analyse",
+      "module": "navig_audio.commands.beat",
+      "options": [
+        {
+          "flags": [
+            "--bpm"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--card"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--title"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig audio beat analyse",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83d\udd0d What is this beat \u2014 tempo, key, structure, spectrum, and a style brief derived from them.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig audio beat gen"
+      ],
+      "handler": "beat_gen",
+      "module": "navig_audio.commands.beat",
+      "options": [
+        {
+          "flags": [
+            "--style"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--count",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--bpm"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--key"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--structure"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--add"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--avoid"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--styles",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--plan"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--model"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--seed"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--prompt-mode"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--measure/--no-measure"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig audio beat gen",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83c\udf9b  Render beats from a style \u2014 bar-exact sections, no vocals, tempo and key checked afterwards.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig audio beat plan"
+      ],
+      "handler": "beat_plan",
+      "module": "navig_audio.commands.beat",
+      "options": [
+        {
+          "flags": [
+            "--style"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--bpm"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--key"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--structure"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--add"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--avoid"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--styles",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--from-api"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--model"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig audio beat plan",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83e\uddee The arrangement a render would use \u2014 section by section, in seconds. Spends nothing.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig audio beat styles"
+      ],
+      "handler": "beat_styles",
+      "module": "navig_audio.commands.beat",
+      "options": [
+        {
+          "flags": [
+            "--styles",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig audio beat styles",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83d\udcda The beat styles available \u2014 built-in genres plus any file you pass.",
       "tags": []
     },
     {
@@ -7048,6 +7340,47 @@
     },
     {
       "aliases": [],
+      "arguments": [
+        {
+          "name": "names",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig cdp profile vacuum"
+      ],
+      "handler": "profile_vacuum_cmd",
+      "module": "navig.commands.cdp",
+      "options": [
+        {
+          "flags": [
+            "--all"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--yes",
+            "-y"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig cdp profile vacuum",
+      "since": "",
+      "status": "stable",
+      "summary": "Reclaim disk from a profile WITHOUT losing its logins: delete only what Chrome rebuilds.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [],
       "examples": [
         "navig cdp record"
@@ -8195,7 +8528,14 @@
       ],
       "handler": "connector_connect",
       "module": "navig.commands.connector_cmd",
-      "options": [],
+      "options": [
+        {
+          "flags": [
+            "--account"
+          ],
+          "takes_value": true
+        }
+      ],
       "path": "navig connector connect",
       "since": "",
       "status": "stable",
@@ -8371,8 +8711,8 @@
       "examples": [
         "navig contacts add"
       ],
-      "handler": "contacts_add",
-      "module": "navig.commands.dispatch",
+      "handler": "add_cmd",
+      "module": "navig_contacts.commands.contacts",
       "options": [
         {
           "flags": [
@@ -8408,12 +8748,146 @@
             "-p"
           ],
           "takes_value": true
+        },
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
         }
       ],
       "path": "navig contacts add",
       "since": "",
       "status": "stable",
-      "summary": "Add a contact to the address book.",
+      "summary": "Add a contact by hand.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig contacts doctor"
+      ],
+      "handler": "doctor_cmd",
+      "module": "navig_contacts.commands.contacts",
+      "options": [
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--fix"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig contacts doctor",
+      "since": "",
+      "status": "stable",
+      "summary": "Check that the book says the same thing in both of its halves.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig contacts export"
+      ],
+      "handler": "export_cmd",
+      "module": "navig_contacts.commands.contacts",
+      "options": [
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--tier",
+            "-t"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--output",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--include-dead"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig contacts export",
+      "since": "",
+      "status": "stable",
+      "summary": "Export contacts as CSV.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig contacts flag"
+      ],
+      "handler": "flag_cmd",
+      "module": "navig_contacts.commands.contacts",
+      "options": [
+        {
+          "flags": [
+            "--handle",
+            "-H"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--state"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--from-file"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--network",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig contacts flag",
+      "since": "",
+      "status": "stable",
+      "summary": "Record whether a handle still resolves, so exports can skip dead ones.",
       "tags": []
     },
     {
@@ -8428,13 +8902,39 @@
       "examples": [
         "navig contacts import"
       ],
-      "handler": "contacts_import",
-      "module": "navig.commands.dispatch",
-      "options": [],
+      "handler": "import_cmd",
+      "module": "navig_contacts.commands.contacts",
+      "options": [
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--source"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--reports/--no-reports"
+          ],
+          "takes_value": true
+        }
+      ],
       "path": "navig contacts import",
       "since": "",
       "status": "stable",
-      "summary": "Import contacts from Telegram Desktop export.",
+      "summary": "Import an address book, merging duplicates into one contact per person.",
       "tags": []
     },
     {
@@ -8443,9 +8943,23 @@
       "examples": [
         "navig contacts list"
       ],
-      "handler": "contacts_list",
-      "module": "navig.commands.dispatch",
+      "handler": "list_cmd",
+      "module": "navig_contacts.commands.contacts",
       "options": [
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--tier",
+            "-t"
+          ],
+          "takes_value": true
+        },
         {
           "flags": [
             "--limit",
@@ -8463,7 +8977,123 @@
       "path": "navig contacts list",
       "since": "",
       "status": "stable",
-      "summary": "List saved contacts.",
+      "summary": "List contacts.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig contacts liveness"
+      ],
+      "handler": "liveness_cmd",
+      "module": "navig_contacts.commands.contacts",
+      "options": [
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig contacts liveness",
+      "since": "",
+      "status": "stable",
+      "summary": "What the book knows about which routes still resolve.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "alias",
+          "required": true,
+          "variadic": false
+        },
+        {
+          "name": "into",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig contacts merge"
+      ],
+      "handler": "merge_cmd",
+      "module": "navig_contacts.commands.contacts",
+      "options": [
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig contacts merge",
+      "since": "",
+      "status": "stable",
+      "summary": "Fold one contact into another, reversibly.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig contacts merges"
+      ],
+      "handler": "merges_cmd",
+      "module": "navig_contacts.commands.contacts",
+      "options": [
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--limit",
+            "-n"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig contacts merges",
+      "since": "",
+      "status": "stable",
+      "summary": "Every merge and split applied, and whether it was undone.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig contacts migrate"
+      ],
+      "handler": "migrate_cmd",
+      "module": "navig_contacts.commands.contacts",
+      "options": [
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--apply"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig contacts migrate",
+      "since": "",
+      "status": "stable",
+      "summary": "Bring a pre-merge contact book onto the shared schema.",
       "tags": []
     },
     {
@@ -8478,8 +9108,8 @@
       "examples": [
         "navig contacts remove"
       ],
-      "handler": "contacts_remove",
-      "module": "navig.commands.dispatch",
+      "handler": "remove_cmd",
+      "module": "navig_contacts.commands.contacts",
       "options": [
         {
           "flags": [
@@ -8487,12 +9117,54 @@
             "-y"
           ],
           "takes_value": true
+        },
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
         }
       ],
       "path": "navig contacts remove",
       "since": "",
       "status": "stable",
-      "summary": "Remove a contact from the address book.",
+      "summary": "Remove a contact.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "alias",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig contacts review"
+      ],
+      "handler": "review_cmd",
+      "module": "navig_contacts.commands.contacts",
+      "options": [
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--all"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig contacts review",
+      "since": "",
+      "status": "stable",
+      "summary": "Record that a flagged merge was looked at and found correct.",
       "tags": []
     },
     {
@@ -8517,13 +9189,20 @@
       "examples": [
         "navig contacts route"
       ],
-      "handler": "contacts_route",
-      "module": "navig.commands.dispatch",
+      "handler": "route_cmd",
+      "module": "navig_contacts.commands.contacts",
       "options": [
         {
           "flags": [
             "--priority",
             "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--space",
+            "-s"
           ],
           "takes_value": true
         }
@@ -8538,6 +9217,35 @@
       "aliases": [],
       "arguments": [
         {
+          "name": "query",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig contacts search"
+      ],
+      "handler": "search_cmd",
+      "module": "navig_contacts.commands.contacts",
+      "options": [
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig contacts search",
+      "since": "",
+      "status": "stable",
+      "summary": "Find someone by anything you remember about them.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
           "name": "alias",
           "required": true,
           "variadic": false
@@ -8546,13 +9254,113 @@
       "examples": [
         "navig contacts show"
       ],
-      "handler": "contacts_show",
-      "module": "navig.commands.dispatch",
-      "options": [],
+      "handler": "show_cmd",
+      "module": "navig_contacts.commands.contacts",
+      "options": [
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        }
+      ],
       "path": "navig contacts show",
       "since": "",
       "status": "stable",
-      "summary": "Show full contact details.",
+      "summary": "Everything known about one contact, and where it came from.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "alias",
+          "required": true,
+          "variadic": false
+        },
+        {
+          "name": "identifier",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig contacts split"
+      ],
+      "handler": "split_cmd",
+      "module": "navig_contacts.commands.contacts",
+      "options": [
+        {
+          "flags": [
+            "--as"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig contacts split",
+      "since": "",
+      "status": "stable",
+      "summary": "Move one identifier onto a contact of its own.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig contacts stats"
+      ],
+      "handler": "stats_cmd",
+      "module": "navig_contacts.commands.contacts",
+      "options": [
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig contacts stats",
+      "since": "",
+      "status": "stable",
+      "summary": "How many people, at which tiers, and how much evidence backs them.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "merge-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig contacts undo"
+      ],
+      "handler": "undo_cmd",
+      "module": "navig_contacts.commands.contacts",
+      "options": [
+        {
+          "flags": [
+            "--space",
+            "-s"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig contacts undo",
+      "since": "",
+      "status": "stable",
+      "summary": "Reverse a merge, restoring the absorbed contact.",
       "tags": []
     },
     {
@@ -12189,64 +12997,270 @@
       "aliases": [],
       "arguments": [],
       "examples": [
-        "navig email list"
+        "navig email connect"
       ],
-      "handler": "list_emails",
+      "handler": "cmd_connect",
       "module": "navig_email.commands.email",
-      "options": [
-        {
-          "flags": [
-            "--limit",
-            "-n"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--unread/--all"
-          ],
-          "takes_value": false
-        },
-        {
-          "flags": [
-            "--json"
-          ],
-          "takes_value": false
-        }
-      ],
-      "path": "navig email list",
+      "options": [],
+      "path": "navig email connect",
       "since": "",
       "status": "stable",
-      "summary": "List emails from your inbox.",
+      "summary": "Link a Gmail account (OAuth). Same as `navig connector connect gmail`.",
       "tags": []
     },
     {
       "aliases": [],
-      "arguments": [
-        {
-          "name": "query",
-          "required": true,
-          "variadic": false
-        }
+      "arguments": [],
+      "examples": [
+        "navig email digest"
       ],
+      "handler": "cmd_digest",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email digest",
+      "since": "",
+      "status": "stable",
+      "summary": "Template digest for the period; `--llm` adds prose through the guarded model door.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email edge deploy"
+      ],
+      "handler": "edge_deploy",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email edge deploy",
+      "since": "",
+      "status": "stable",
+      "summary": "Deploy the Worker from the plugin's edge/ folder (uses wrangler's own login).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email edge events"
+      ],
+      "handler": "edge_events",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email edge events",
+      "since": "",
+      "status": "stable",
+      "summary": "Recent messages the edge handled (metadata only \u2014 never bodies).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email edge secrets"
+      ],
+      "handler": "edge_secrets",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email edge secrets",
+      "since": "",
+      "status": "stable",
+      "summary": "Push the Worker's secrets from navig's own vault/config. Nothing is ever printed.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email edge send"
+      ],
+      "handler": "edge_send",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email edge send",
+      "since": "",
+      "status": "stable",
+      "summary": "Send AS support@<domain> (or another @domain address) through Cloudflare Email Sending.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email edge stats"
+      ],
+      "handler": "edge_stats",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email edge stats",
+      "since": "",
+      "status": "stable",
+      "summary": "Counts by alias / tag / day / sender domain for mail that entered at the edge.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email edge status"
+      ],
+      "handler": "edge_status",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email edge status",
+      "since": "",
+      "status": "stable",
+      "summary": "Is the Worker up, and does it have Email Sending?",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email followup"
+      ],
+      "handler": "cmd_followup",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email followup",
+      "since": "",
+      "status": "stable",
+      "summary": "Draft follow-ups in the space's style for ledger threads (opt-in model; drafts only).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email labels ensure"
+      ],
+      "handler": "labels_ensure",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email labels ensure",
+      "since": "",
+      "status": "stable",
+      "summary": "Create a label (and its parents) if missing; print its id.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email labels list"
+      ],
+      "handler": "labels_list",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email labels list",
+      "since": "",
+      "status": "stable",
+      "summary": "Every label with its counts.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email list"
+      ],
+      "handler": "cmd_list",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email list",
+      "since": "",
+      "status": "stable",
+      "summary": "List messages of a folder (newest first).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email read"
+      ],
+      "handler": "cmd_read",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email read",
+      "since": "",
+      "status": "stable",
+      "summary": "Read one message (or its whole thread), body included.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email replied"
+      ],
+      "handler": "cmd_replied",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email replied",
+      "since": "",
+      "status": "stable",
+      "summary": "Find every Sent reply to mail that sat in a folder (spam): ledger, corpus, label, stats.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email rules apply"
+      ],
+      "handler": "rules_apply",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email rules apply",
+      "since": "",
+      "status": "stable",
+      "summary": "Run the rules over existing mail (backfill labels). Notifications are NOT sent here.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email rules check"
+      ],
+      "handler": "rules_check",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email rules check",
+      "since": "",
+      "status": "stable",
+      "summary": "Validate the rules file; with a message id, show which rules would fire.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email rules list"
+      ],
+      "handler": "rules_list",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email rules list",
+      "since": "",
+      "status": "stable",
+      "summary": "The rules the watch applies (space file + enabled daemon rules).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
       "examples": [
         "navig email search"
       ],
-      "handler": "search_emails",
+      "handler": "cmd_search",
       "module": "navig_email.commands.email",
-      "options": [
-        {
-          "flags": [
-            "--limit",
-            "-n"
-          ],
-          "takes_value": true
-        }
-      ],
+      "options": [],
       "path": "navig email search",
       "since": "",
       "status": "stable",
-      "summary": "Search emails by subject, sender, or content.",
+      "summary": "Search with Gmail's own syntax (spam and trash included).",
       "tags": []
     },
     {
@@ -12255,71 +13269,73 @@
       "examples": [
         "navig email send"
       ],
-      "handler": "send_email",
+      "handler": "cmd_send",
       "module": "navig_email.commands.email",
-      "options": [
-        {
-          "flags": [
-            "--to",
-            "-t"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--subject",
-            "-s"
-          ],
-          "takes_value": true
-        },
-        {
-          "flags": [
-            "--body",
-            "-b"
-          ],
-          "takes_value": true
-        }
-      ],
+      "options": [],
       "path": "navig email send",
       "since": "",
       "status": "stable",
-      "summary": "Send an email.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "arguments": [
-        {
-          "name": "provider",
-          "required": false,
-          "variadic": false
-        }
-      ],
-      "examples": [
-        "navig email setup"
-      ],
-      "handler": "setup_email",
-      "module": "navig_email.commands.email",
-      "options": [],
-      "path": "navig email setup",
-      "since": "",
-      "status": "stable",
-      "summary": "Configure email provider credentials.",
+      "summary": "Send (or draft) a message \u2014 through Gmail, or AS the domain via the Cloudflare edge.",
       "tags": []
     },
     {
       "aliases": [],
       "arguments": [],
       "examples": [
-        "navig email sync"
+        "navig email stats"
       ],
-      "handler": "sync_email",
+      "handler": "cmd_stats",
       "module": "navig_email.commands.email",
       "options": [],
-      "path": "navig email sync",
+      "path": "navig email stats",
       "since": "",
       "status": "stable",
-      "summary": "Sync email data from remote provider.",
+      "summary": "Counts for the period (received/sent/spam/unread, per label & rule, top senders, per day).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email status"
+      ],
+      "handler": "cmd_status",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email status",
+      "since": "",
+      "status": "stable",
+      "summary": "Connected account, mailbox size, rules loaded, last watch.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email tag"
+      ],
+      "handler": "cmd_tag",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email tag",
+      "since": "",
+      "status": "stable",
+      "summary": "Add/remove labels on one message or on a search result.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig email watch"
+      ],
+      "handler": "cmd_watch",
+      "module": "navig_email.commands.email",
+      "options": [],
+      "path": "navig email watch",
+      "since": "",
+      "status": "stable",
+      "summary": "One incremental pass over new mail: rules \u2192 labels / Telegram / run. For cron (every 5 min).",
       "tags": []
     },
     {
@@ -19303,7 +20319,7 @@
       "path": "navig habit journal",
       "since": "",
       "status": "stable",
-      "summary": "Write the day's three lines into the space journal.",
+      "summary": "Write the day's entry into the space journal.",
       "tags": []
     },
     {
@@ -27157,6 +28173,261 @@
       "aliases": [],
       "arguments": [],
       "examples": [
+        "navig mobile ui apps"
+      ],
+      "handler": "ui_apps",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui apps",
+      "since": "",
+      "status": "stable",
+      "summary": "List launchable apps for a platform.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mobile ui assert"
+      ],
+      "handler": "ui_assert",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui assert",
+      "since": "",
+      "status": "stable",
+      "summary": "Assert the current screen shows (or --gone: hides) a text/ref \u2014 the",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mobile ui close"
+      ],
+      "handler": "ui_close",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui close",
+      "since": "",
+      "status": "stable",
+      "summary": "End the current UI session.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mobile ui devices"
+      ],
+      "handler": "ui_devices",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui devices",
+      "since": "",
+      "status": "stable",
+      "summary": "List app-automation targets (simulators / emulators / devices).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mobile ui doctor"
+      ],
+      "handler": "ui_doctor",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui doctor",
+      "since": "",
+      "status": "stable",
+      "summary": "agent-device's own environment check (SDKs, drivers, permissions).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mobile ui exec"
+      ],
+      "handler": "ui_exec",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui exec",
+      "since": "",
+      "status": "stable",
+      "summary": "Escape hatch \u2014 pass raw arguments straight to agent-device.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mobile ui fill"
+      ],
+      "handler": "ui_fill",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui fill",
+      "since": "",
+      "status": "stable",
+      "summary": "Fill a text field identified by its snapshot ref.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mobile ui open"
+      ],
+      "handler": "ui_open",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui open",
+      "since": "",
+      "status": "stable",
+      "summary": "Start a UI session bound to an app \u2014 snapshot/tap/\u2026 then act on it.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mobile ui press"
+      ],
+      "handler": "ui_press",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui press",
+      "since": "",
+      "status": "stable",
+      "summary": "Press a device button / key.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mobile ui record"
+      ],
+      "handler": "ui_record",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui record",
+      "since": "",
+      "status": "stable",
+      "summary": "Record your manual flow into a replayable .ad script (interactive).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mobile ui replay"
+      ],
+      "handler": "ui_replay",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui replay",
+      "since": "",
+      "status": "stable",
+      "summary": "Replay a recorded .ad script (streams progress).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mobile ui screenshot"
+      ],
+      "handler": "ui_screenshot",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui screenshot",
+      "since": "",
+      "status": "stable",
+      "summary": "Capture the app screen to a PNG (app-context \u2014 distinct from the raw",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mobile ui scroll"
+      ],
+      "handler": "ui_scroll",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui scroll",
+      "since": "",
+      "status": "stable",
+      "summary": "Scroll the current view.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mobile ui snapshot"
+      ],
+      "handler": "ui_snapshot",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui snapshot",
+      "since": "",
+      "status": "stable",
+      "summary": "Accessibility snapshot with element refs (@e1\u2026) \u2014 the agent's eyes.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mobile ui tap"
+      ],
+      "handler": "ui_tap",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui tap",
+      "since": "",
+      "status": "stable",
+      "summary": "Tap an element by its snapshot ref.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mobile ui type"
+      ],
+      "handler": "ui_type",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui type",
+      "since": "",
+      "status": "stable",
+      "summary": "Type text into the currently focused field.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig mobile ui wait"
+      ],
+      "handler": "ui_wait",
+      "module": "navig_mobile.commands.mobile",
+      "options": [],
+      "path": "navig mobile ui wait",
+      "since": "",
+      "status": "stable",
+      "summary": "Wait for the UI to settle.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
         "navig mobile watch"
       ],
       "handler": "cmd_watch",
@@ -27207,6 +28478,12 @@
         {
           "flags": [
             "--json"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--modes-only"
           ],
           "takes_value": true
         }
@@ -27350,6 +28627,18 @@
         {
           "flags": [
             "--uncensored/--no-uncensored"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--fallback-provider"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--fallback-model"
           ],
           "takes_value": true
         }
@@ -28016,6 +29305,68 @@
     },
     {
       "aliases": [],
+      "arguments": [
+        {
+          "name": "type-key",
+          "required": true,
+          "variadic": false
+        },
+        {
+          "name": "title",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig notify send"
+      ],
+      "handler": "send",
+      "module": "navig.commands.notify",
+      "options": [
+        {
+          "flags": [
+            "--body",
+            "-b"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig notify send",
+      "since": "",
+      "status": "stable",
+      "summary": "Dispatch one notification and report which channels accepted it.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig notify types"
+      ],
+      "handler": "types",
+      "module": "navig.commands.notify",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig notify types",
+      "since": "",
+      "status": "stable",
+      "summary": "Show every notification type and the channels it currently routes to.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [],
       "examples": [
         "navig output-style create"
@@ -28091,6 +29442,180 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig paperwork apply"
+      ],
+      "handler": "cmd_apply",
+      "module": "navig_paperwork.commands.paperwork",
+      "options": [],
+      "path": "navig paperwork apply",
+      "since": "",
+      "status": "stable",
+      "summary": "Execute the plan: copy, verify by hash, then quarantine the source.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig paperwork echeances"
+      ],
+      "handler": "cmd_echeances",
+      "module": "navig_paperwork.commands.paperwork",
+      "options": [],
+      "path": "navig paperwork echeances",
+      "since": "",
+      "status": "stable",
+      "summary": "The deadline radar: what is overdue or due soon, from filed letters and recurrent renewals.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig paperwork handoff"
+      ],
+      "handler": "cmd_handoff",
+      "module": "navig_paperwork.commands.paperwork",
+      "options": [],
+      "path": "navig paperwork handoff",
+      "since": "",
+      "status": "stable",
+      "summary": "File the manifest's non-company documents into the spaces that own them.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig paperwork index"
+      ],
+      "handler": "cmd_index",
+      "module": "navig_paperwork.commands.paperwork",
+      "options": [],
+      "path": "navig paperwork index",
+      "since": "",
+      "status": "stable",
+      "summary": "Rebuild the document index and the invoice register from disk.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig paperwork reply"
+      ],
+      "handler": "cmd_reply",
+      "module": "navig_paperwork.commands.paperwork",
+      "options": [],
+      "path": "navig paperwork reply",
+      "since": "",
+      "status": "stable",
+      "summary": "Draft the reply to a filed letter (French, formal) into out/courriers/ \u2014 never sent.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig paperwork review"
+      ],
+      "handler": "cmd_review",
+      "module": "navig_paperwork.commands.paperwork",
+      "options": [],
+      "path": "navig paperwork review",
+      "since": "",
+      "status": "stable",
+      "summary": "Show what the plan intends, or just the rows that still need you.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig paperwork scan"
+      ],
+      "handler": "cmd_scan",
+      "module": "navig_paperwork.commands.paperwork",
+      "options": [],
+      "path": "navig paperwork scan",
+      "since": "",
+      "status": "stable",
+      "summary": "Extract, classify and deduplicate documents into a reviewable plan.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig paperwork undo"
+      ],
+      "handler": "cmd_undo",
+      "module": "navig_paperwork.commands.paperwork",
+      "options": [],
+      "path": "navig paperwork undo",
+      "since": "",
+      "status": "stable",
+      "summary": "Reverse an apply, restoring every source from the quarantine.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "audio",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig pipeline captions"
+      ],
+      "handler": "pipeline_captions",
+      "module": "navig_pipeline.commands.pipeline",
+      "options": [
+        {
+          "flags": [
+            "--out",
+            "-o"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--language",
+            "-l"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--offset"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--no-chunk"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig pipeline captions",
+      "since": "",
+      "status": "stable",
+      "summary": "\u270d\ufe0f  Transcribe a track to an .srt \u2014 with word-level timings.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "shotlist",
@@ -28156,6 +29681,12 @@
         },
         {
           "flags": [
+            "--range"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
             "--port"
           ],
           "takes_value": true
@@ -28177,6 +29708,66 @@
       "since": "",
       "status": "stable",
       "summary": "\ud83c\udfb5 Build a vertical clip cut to a track you already have \u2014 no narration.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "audio",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig pipeline hooks"
+      ],
+      "handler": "pipeline_hooks",
+      "module": "navig_pipeline.commands.pipeline",
+      "options": [
+        {
+          "flags": [
+            "--top",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--min"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--max"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--language",
+            "-l"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--bpm"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig pipeline hooks",
+      "since": "",
+      "status": "stable",
+      "summary": "\ud83c\udfa3 Rank the passages of a track worth cutting a short clip from.",
       "tags": []
     },
     {
@@ -29002,6 +30593,12 @@
             "--plain"
           ],
           "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
         }
       ],
       "path": "navig plugin list",
@@ -29291,6 +30888,12 @@
         {
           "flags": [
             "--plain"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
           ],
           "takes_value": true
         }
@@ -30274,6 +31877,59 @@
     },
     {
       "aliases": [],
+      "arguments": [
+        {
+          "name": "branch",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig repo land"
+      ],
+      "handler": "land_cmd",
+      "module": "navig.commands.repo",
+      "options": [
+        {
+          "flags": [
+            "--repo"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--yes",
+            "-y"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--no-github"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--no-fetch"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig repo land",
+      "since": "",
+      "status": "stable",
+      "summary": "Finish a MERGED branch completely: delete it locally, on origin, and its worktree.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [],
       "examples": [
         "navig repo lock release"
@@ -30476,6 +32132,94 @@
       "since": "",
       "status": "stable",
       "summary": "Report leftover agent work: worktrees, unmerged branches, stashes, lock.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig repo sweep"
+      ],
+      "handler": "sweep_cmd",
+      "module": "navig.commands.repo",
+      "options": [
+        {
+          "flags": [
+            "--repo"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--yes",
+            "-y"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--no-github"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--no-fetch"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--remote",
+            "-r"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig repo sweep",
+      "since": "",
+      "status": "stable",
+      "summary": "Delete local branches whose work is provably already on the default branch.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig repo sync"
+      ],
+      "handler": "sync_cmd",
+      "module": "navig.commands.repo",
+      "options": [
+        {
+          "flags": [
+            "--repo"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig repo sync",
+      "since": "",
+      "status": "stable",
+      "summary": "Return the MAIN checkout to the default branch and fast-forward it.",
       "tags": []
     },
     {
@@ -31295,6 +33039,34 @@
       "since": "",
       "status": "stable",
       "summary": "Show NAVIG daemon logs.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig service pids"
+      ],
+      "handler": "service_pids",
+      "module": "navig.commands.service",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--plain"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig service pids",
+      "since": "",
+      "status": "stable",
+      "summary": "The pids an external process sweeper must spare \u2014 every navig-owned tree.",
       "tags": []
     },
     {
@@ -33273,6 +35045,36 @@
       "aliases": [],
       "arguments": [],
       "examples": [
+        "navig social presence crawl"
+      ],
+      "handler": "presence_crawl",
+      "module": "navig_social.commands.social",
+      "options": [],
+      "path": "navig social presence crawl",
+      "since": "",
+      "status": "stable",
+      "summary": "Crawl every account in a space's registry and record what moved.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig social presence trend"
+      ],
+      "handler": "presence_trend",
+      "module": "navig_social.commands.social",
+      "options": [],
+      "path": "navig social presence trend",
+      "since": "",
+      "status": "stable",
+      "summary": "First \u2192 latest movement for every tracked account, across all snapshots.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
         "navig social receipts"
       ],
       "handler": "social_receipts",
@@ -33533,7 +35335,7 @@
       "arguments": [
         {
           "name": "name",
-          "required": true,
+          "required": false,
           "variadic": false
         }
       ],
@@ -33762,7 +35564,7 @@
       "arguments": [
         {
           "name": "name",
-          "required": true,
+          "required": false,
           "variadic": false
         }
       ],
@@ -33886,10 +35688,202 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig space media config"
+      ],
+      "handler": "media_config",
+      "module": "navig.commands.space_media",
+      "options": [
+        {
+          "flags": [
+            "--init"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--media-root"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--projects-root"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--space-root"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig space media config",
+      "since": "",
+      "status": "stable",
+      "summary": "Show the media layout, or write it with ``--init``.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig space media fix"
+      ],
+      "handler": "media_fix",
+      "module": "navig.commands.space_media",
+      "options": [
+        {
+          "flags": [
+            "--dry-run/--apply"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--move-media"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig space media fix",
+      "since": "",
+      "status": "stable",
+      "summary": "Repair what can be repaired without a judgement call.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "project",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig space media link"
+      ],
+      "handler": "media_link",
+      "module": "navig.commands.space_media",
+      "options": [
+        {
+          "flags": [
+            "--name",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--create/--no-create"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig space media link",
+      "since": "",
+      "status": "stable",
+      "summary": "Attach one project to its media folder, creating the folder if needed.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig space media list"
+      ],
+      "handler": "media_list",
+      "module": "navig.commands.space_media",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig space media list",
+      "since": "",
+      "status": "stable",
+      "summary": "Show every media link and its target, healthy ones included.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "project",
+          "required": true,
+          "variadic": false
+        },
+        {
+          "name": "target",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig space media relink"
+      ],
+      "handler": "media_relink",
+      "module": "navig.commands.space_media",
+      "options": [],
+      "path": "navig space media relink",
+      "since": "",
+      "status": "stable",
+      "summary": "Repoint one media link. Removes the link only \u2014 never the media.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig space media verify"
+      ],
+      "handler": "media_verify",
+      "module": "navig.commands.space_media",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--all",
+            "-a"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--no-git"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--strict"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig space media verify",
+      "since": "",
+      "status": "stable",
+      "summary": "Check every media link across the configured trees.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "name",
-          "required": true,
+          "required": false,
           "variadic": false
         }
       ],
@@ -33950,6 +35944,39 @@
       "since": "",
       "status": "stable",
       "summary": "Register an external `.navig/` folder so it shows in the deck (enabled).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "space",
+          "required": true,
+          "variadic": false
+        },
+        {
+          "name": "new-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig space rename"
+      ],
+      "handler": "space_rename",
+      "module": "navig.commands.space",
+      "options": [
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig space rename",
+      "since": "",
+      "status": "stable",
+      "summary": "Give a space a new id \u2014 manifest, registry and the active-space pointer together.",
       "tags": []
     },
     {
@@ -34170,7 +36197,7 @@
       "arguments": [
         {
           "name": "name",
-          "required": true,
+          "required": false,
           "variadic": false
         }
       ],
@@ -34399,7 +36426,7 @@
       "arguments": [
         {
           "name": "name",
-          "required": true,
+          "required": false,
           "variadic": false
         }
       ],
@@ -34523,10 +36550,202 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig spaces media config"
+      ],
+      "handler": "media_config",
+      "module": "navig.commands.space_media",
+      "options": [
+        {
+          "flags": [
+            "--init"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--media-root"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--projects-root"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--space-root"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig spaces media config",
+      "since": "",
+      "status": "stable",
+      "summary": "Show the media layout, or write it with ``--init``.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig spaces media fix"
+      ],
+      "handler": "media_fix",
+      "module": "navig.commands.space_media",
+      "options": [
+        {
+          "flags": [
+            "--dry-run/--apply"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--move-media"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig spaces media fix",
+      "since": "",
+      "status": "stable",
+      "summary": "Repair what can be repaired without a judgement call.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "project",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig spaces media link"
+      ],
+      "handler": "media_link",
+      "module": "navig.commands.space_media",
+      "options": [
+        {
+          "flags": [
+            "--name",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--create/--no-create"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig spaces media link",
+      "since": "",
+      "status": "stable",
+      "summary": "Attach one project to its media folder, creating the folder if needed.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig spaces media list"
+      ],
+      "handler": "media_list",
+      "module": "navig.commands.space_media",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig spaces media list",
+      "since": "",
+      "status": "stable",
+      "summary": "Show every media link and its target, healthy ones included.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "project",
+          "required": true,
+          "variadic": false
+        },
+        {
+          "name": "target",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig spaces media relink"
+      ],
+      "handler": "media_relink",
+      "module": "navig.commands.space_media",
+      "options": [],
+      "path": "navig spaces media relink",
+      "since": "",
+      "status": "stable",
+      "summary": "Repoint one media link. Removes the link only \u2014 never the media.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig spaces media verify"
+      ],
+      "handler": "media_verify",
+      "module": "navig.commands.space_media",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--all",
+            "-a"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--no-git"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--strict"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig spaces media verify",
+      "since": "",
+      "status": "stable",
+      "summary": "Check every media link across the configured trees.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "name",
-          "required": true,
+          "required": false,
           "variadic": false
         }
       ],
@@ -34587,6 +36806,39 @@
       "since": "",
       "status": "stable",
       "summary": "Register an external `.navig/` folder so it shows in the deck (enabled).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "space",
+          "required": true,
+          "variadic": false
+        },
+        {
+          "name": "new-id",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig spaces rename"
+      ],
+      "handler": "space_rename",
+      "module": "navig.commands.space",
+      "options": [
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig spaces rename",
+      "since": "",
+      "status": "stable",
+      "summary": "Give a space a new id \u2014 manifest, registry and the active-space pointer together.",
       "tags": []
     },
     {
@@ -35598,6 +37850,42 @@
       "since": "",
       "status": "stable",
       "summary": "Toggle the deleted-message -> DM-you alert.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig telegram business deleted"
+      ],
+      "handler": "tg_biz_deleted",
+      "module": "navig.commands._telegram_mtproto",
+      "options": [
+        {
+          "flags": [
+            "--chat",
+            "-c"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--limit",
+            "-n"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig telegram business deleted",
+      "since": "",
+      "status": "stable",
+      "summary": "What was deleted in your business chats \u2014 the DM alert, browsable.",
       "tags": []
     },
     {
@@ -36959,13 +39247,13 @@
       "examples": [
         "navig telegram status"
       ],
-      "handler": "tg_status",
-      "module": "navig.commands._telegram_mtproto",
+      "handler": "telegram_status",
+      "module": "navig.commands.telegram",
       "options": [],
       "path": "navig telegram status",
       "since": "",
       "status": "stable",
-      "summary": "Show MTProto login status.",
+      "summary": "Show Telegram bot status.",
       "tags": []
     },
     {
@@ -41144,7 +43432,7 @@
       "tags": []
     }
   ],
-  "generated_at": "2026-09-07T14:38:05.854606+00:00",
+  "generated_at": "2026-09-26T17:42:22.076706+00:00",
   "schema_version": "1.0.0",
-  "total": 1401
+  "total": 1486
 }

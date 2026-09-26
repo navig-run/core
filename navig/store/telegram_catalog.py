@@ -302,12 +302,28 @@ class TelegramCatalogStore(BaseStore):
         return _message_dict(row) if row else None
 
     def get_message_by_ref(self, chat_id: int, message_id: int) -> dict[str, Any] | None:
-        """Fetch a single message by its Telegram ``(chat_id, message_id)`` ref."""
+        """Fetch a single message by its Telegram ``(chat_id, message_id)`` ref.
+
+        Carries ``content`` for a non-file message — by the time the deletion
+        alert asks, this row is the only place that description still exists."""
         row = self._read_one(
             "SELECT * FROM tg_messages WHERE chat_id = ? AND message_id = ?",
             (chat_id, message_id),
         )
         return _message_dict(row) if row else None
+
+    def first_message_at(self, chat_id: int) -> str | None:
+        """When this chat's oldest cataloged message was RECORDED (``created_at``),
+        or None when the chat has never been cataloged.
+
+        Deliberately the record time, not the message ``date``: it answers "since
+        when has NAVIG been watching this chat", which is what tells a deletion of
+        an unknown message apart — older than the watch (expected) versus a chat
+        NAVIG never saw at all (a gap worth knowing about)."""
+        row = self._read_one(
+            "SELECT MIN(created_at) AS first FROM tg_messages WHERE chat_id = ?", (chat_id,)
+        )
+        return (row["first"] if row else None) or None
 
     # ── Media tags / category + link index ────────────────────────
 
@@ -369,10 +385,13 @@ class TelegramCatalogStore(BaseStore):
         limit: int = 100,
         before_id: int | None = None,
         include_deleted: bool = False,
+        deleted_only: bool = False,
     ) -> list[dict[str, Any]]:
         clauses = ["m.chat_id = ?"]
         params: list[Any] = [chat_id]
-        if not include_deleted:
+        if deleted_only:
+            clauses.append("m.deleted = 1")
+        elif not include_deleted:
             clauses.append("m.deleted = 0")
         if kind:
             if kind == "media":
@@ -400,6 +419,46 @@ class TelegramCatalogStore(BaseStore):
             tuple(params),
         )
         return [_message_dict(r) for r in rows]
+
+    def list_deleted(
+        self, *, chat_id: int | None = None, limit: int = 100, since: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Deleted messages across every room, newest first, with the room title.
+
+        Ordered by local ``id`` (insertion order), NOT ``message_id``: ids are
+        per-chat counters, so ordering a cross-room list by them interleaves
+        chats arbitrarily. Soft-deleted rows are the only record that a message
+        ever existed, which is what makes this the answer to "what was deleted"."""
+        clauses = ["m.deleted = 1"]
+        params: list[Any] = []
+        if chat_id is not None:
+            clauses.append("m.chat_id = ?")
+            params.append(chat_id)
+        if since:
+            clauses.append("m.created_at >= ?")
+            params.append(since)
+        params.append(max(1, min(500, limit)))
+        rows = self._read_all(
+            f"""
+            SELECT m.*, r.title AS room_title, r.type AS room_type,
+                   d.kind AS media_kind, d.mime AS media_mime, d.size AS media_size,
+                   d.filename AS media_filename, d.analysis_status AS media_status
+            FROM tg_messages m
+            LEFT JOIN tg_rooms r ON r.chat_id = m.chat_id
+            LEFT JOIN tg_media d ON d.id = m.media_ref
+            WHERE {' AND '.join(clauses)}
+            ORDER BY m.id DESC
+            LIMIT ?
+            """,
+            tuple(params),
+        )
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            d = _message_dict(r)
+            d["room_title"] = r["room_title"]
+            d["room_type"] = r["room_type"]
+            out.append(d)
+        return out
 
     # ── Media ─────────────────────────────────────────────────
 
@@ -616,6 +675,14 @@ def _room_dict(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def _message_dict(row: sqlite3.Row) -> dict[str, Any]:
+    """Row → message dict.
+
+    ``content`` is DERIVED from the stored payload rather than the payload being
+    returned: a non-file message (a location, a poll, a shared story) has no text
+    and no media row, so without this it reads back as blank everywhere. The raw
+    payload itself stays out — the regular ingest stores the WHOLE Telegram
+    message there, which would multiply every list response for one short string.
+    ``safe_json_loads`` because one corrupt blob must not take out a listing."""
     keys = row.keys()
     d = {
         "id": row["id"],
@@ -631,6 +698,10 @@ def _message_dict(row: sqlite3.Row) -> dict[str, Any]:
         "edited_at": row["edited_at"],
         "deleted": bool(row["deleted"]),
     }
+    if "raw_json" in keys:
+        payload = safe_json_loads(row["raw_json"], None)
+        if isinstance(payload, dict) and payload.get("content"):
+            d["content"] = str(payload["content"])
     if "media_kind" in keys:
         d["media"] = (
             {

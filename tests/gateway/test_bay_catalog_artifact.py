@@ -79,3 +79,55 @@ def test_kinds_match_the_client_union(items: list[dict]) -> None:
         "deck-types.ts AND to KIND_GLYPHS/KIND_LABELS in BayPage.tsx, then update "
         "KNOWN_KINDS here."
     )
+
+
+# ── Completeness + preview material (batch 2, "is everything in the Bay?") ────
+
+# The registry INDEX of published plugin packages (registry/plugins/registry.json) —
+# not the plugins/ source tree; spelled as one segment so the plugin-subject
+# detector in tests/quality/test_source_guards_are_wired.py (which looks for
+# `<root> / "plugins"`, i.e. guards that SCAN the plugin code) does not count
+# this file as one.
+REGISTRY_PLUGINS = Path(__file__).resolve().parents[3] / "registry/plugins/registry.json"
+README_CAP = 12 * 1024 + 64  # build-time cap + the "…" tail
+
+
+def test_every_published_first_party_plugin_is_listed(items: list[dict]) -> None:
+    """The plugin registry is the INDEX of published packages; the Bay used to list
+    only the ten someone had hand-copied into catalog.curated.json."""
+    if not REGISTRY_PLUGINS.is_file():
+        pytest.skip("registry/plugins/registry.json not in this checkout")
+    published = {
+        str(p["id"]) for p in json.loads(REGISTRY_PLUGINS.read_text(encoding="utf-8"))["plugins"]
+        if p.get("published")
+    }
+    assert published, "no published plugins in the registry — the floor moved"
+    listed = {
+        (i["slug"][6:] if str(i["slug"]).startswith("navig-") else str(i["slug"]))
+        for i in items if i.get("kind") == "plugin"
+    }
+    missing = sorted(published - listed)
+    assert not missing, f"published plugins absent from the Bay: {missing}"
+
+
+def test_skills_carry_a_preview_and_ai_skills_carry_try_it_prompts(items: list[dict]) -> None:
+    """A card's "demo" is its own text: SKILL.md for skills, plus the phrases an AI
+    skill fires on as one-click prompts. Absent = a detail page with nothing to show."""
+    skills = [i for i in items if i.get("kind") == "skill"]
+    assert skills
+    without = [i["slug"] for i in skills if not i.get("readme")]
+    assert not without, f"skills with no preview text: {without}"
+    ai = [i for i in skills if "ai-skill" in (i.get("tags") or [])]
+    assert ai, "no AI skills tagged — the floor moved"
+    no_prompts = [i["slug"] for i in ai if not i.get("demoPrompts")]
+    assert not no_prompts, f"AI skills with no Try-it prompts: {no_prompts}"
+    for i in ai:
+        for p in i["demoPrompts"]:
+            assert 8 <= len(p) <= 120, f"{i['slug']}: prompt length out of band: {p!r}"
+
+
+def test_preview_text_stays_within_the_build_cap(items: list[dict]) -> None:
+    """The catalog is served whole and cached by every surface; one uncapped
+    README would dwarf the other hundred items."""
+    over = [(i["slug"], len(i["readme"])) for i in items if len(i.get("readme") or "") > README_CAP]
+    assert not over, f"preview text over the cap: {over}"

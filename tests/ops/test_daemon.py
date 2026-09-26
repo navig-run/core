@@ -177,6 +177,14 @@ class TestNavigDaemon:
 class TestDaemonConfig:
     """Test daemon configuration."""
 
+    @pytest.fixture(autouse=True)
+    def _entry_chdirs_to_its_home(self, monkeypatch):
+        """Two cases here drive `entry.main()` in-process, and entry chdir's to
+        config_dir() by design (the daemon's home). Restore after each test — the
+        conftest cwd guard named this class as the second leaker the full suite had
+        never attributed (see tests/daemon/test_entry_is_idempotent.py for the first)."""
+        monkeypatch.chdir(os.getcwd())
+
     def test_save_default_config(self, tmp_path, monkeypatch):
         from navig.daemon import entry
 

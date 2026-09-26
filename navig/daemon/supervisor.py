@@ -25,7 +25,7 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -92,8 +92,54 @@ def _pid_file() -> Path:
     return PID_FILE if PID_FILE is not None else _daemon_dir() / "supervisor.pid"
 
 
+def _resolved_log_file() -> str | None:
+    """The path `navig.core.logging` attaches its file handler to — mirrored
+    exactly (`ConfigManager.base_dir / "navig.log"`), never re-derived, so this
+    cannot disagree with where the lines actually go. ``None`` when it cannot
+    be resolved: an unknown is reported as unknown, not as a guess."""
+    try:
+        from navig.config import get_config_manager
+
+        return str(get_config_manager().base_dir / "navig.log")
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _state_file() -> Path:
     return STATE_FILE if STATE_FILE is not None else _daemon_dir() / "state.json"
+
+
+def _own_create_time() -> float | None:
+    """This process's start time (psutil), or None without psutil."""
+    try:
+        import psutil  # type: ignore[import-untyped]
+
+        return float(psutil.Process().create_time())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _created_before(pid: int, instant: float) -> bool:
+    """Was *pid* created strictly before *instant*? Unknown → True (the old behaviour:
+    a candidate we cannot date is treated as a stale generation, as it always was)."""
+    try:
+        import psutil  # type: ignore[import-untyped]
+
+        return float(psutil.Process(pid).create_time()) < instant
+    except Exception:  # noqa: BLE001
+        return True
+
+
+#: How often the supervisor loop touches ``state.json`` while it is alive. The
+#: file's mtime is the daemon's "last seen alive" — the fact a death incident
+#: needs to DATE the death (not the detection, which the task can delay by five
+#: minutes) and the fact `doctor` needs to tell a supervisor that is wedged from
+#: one that is supervising. A touch is an ``os.utime``, no rewrite: 30 s is
+#: cheap, and one interval of slack is the resolution a death gets dated to.
+HEARTBEAT_S: float = 30.0
+#: A heartbeat older than this, on a supervisor whose PROCESS is alive, means its
+#: loop is stuck — three missed beats, so one slow tick under load stays quiet.
+HEARTBEAT_STALE_S: float = 3 * HEARTBEAT_S
 
 
 def _capture_code_identity() -> dict[str, Any]:
@@ -410,6 +456,13 @@ class NavigDaemon:
         # moved on disk. Captured ONCE here — never recomputed — so it reflects boot,
         # not whatever HEAD happens to be at the next _write_state().
         self._boot_code: dict[str, Any] = _capture_code_identity()
+        # When THIS process started — set once in run(). `_write_state` used to
+        # stamp `datetime.now()` on every call, and it is called on every child
+        # restart, so the dashboard's "since HH:MM" moved each time the bot
+        # child bounced.
+        self._started_at: str | None = None
+        self._last_beat: float = 0.0
+        self._orphan_reported = False
 
     # -- child registration ------------------------------------------------
 
@@ -534,10 +587,260 @@ class NavigDaemon:
         return pid_from_pidfile(_pid_file())
 
     @staticmethod
+    def _reap_stale_pid_file(pid: int, reason: str) -> None:
+        """Delete a pid file that points at a dead process — and record why.
+
+        A pid file whose process is gone is the fingerprint of an UNGRACEFUL death:
+        a clean stop removes the file. This used to be reaped silently, in four
+        places, so a daemon that was force-killed and later relaunched by the
+        scheduled task left no trace at all — the operator's bot was deaf for
+        minutes and nothing said so. The incident carries the dead pid and when
+        that daemon started (the pid file's mtime), and reaches the operator
+        through the same `config_incidents` push the config layer's rescues use.
+
+        Recorded exactly once per death: the file is gone after this, so the next
+        caller finds no pid file and records nothing.
+        """
+        pf = _pid_file()
+        # Re-read before touching anything. Between the caller's read and now a
+        # RELAUNCHING daemon may have written its own pid here (the task fires
+        # on a 5-minute trigger; a `doctor` can race it). Reaping then deletes a
+        # LIVE daemon's pid file: it keeps running, `is_running()` says no, and
+        # the next start boots a second one. Only the number judged dead is ours.
+        # A file already gone was reaped by another caller — record nothing, or
+        # two concurrent status checks report one death twice.
+        try:
+            current = int(pf.read_text(encoding="utf-8").strip() or 0)
+        except OSError:
+            return
+        except ValueError:
+            current = pid
+        if current != pid:
+            return
+        started_at: str | None = None
+        try:
+            started_at = datetime.fromtimestamp(pf.stat().st_mtime, tz=timezone.utc).isoformat()
+        except OSError:
+            pass
+        # The state file outlives an ungraceful death too (a clean stop removes
+        # both), and its mtime is the last heartbeat: the death happened AFTER
+        # it, within one interval. That dates the death — detection can be five
+        # minutes later — and it closes the neighbour window, so a command run
+        # against an already-dead daemon is not listed as a suspect.
+        last_alive = NavigDaemon.last_seen_alive()
+        pf.unlink(missing_ok=True)
+        _state_file().unlink(missing_ok=True)
+        try:
+            from navig.core import incidents
+
+            incidents.record(
+                incidents.DAEMON_DIED_UNGRACEFULLY,
+                previous_pid=pid,
+                started_at=started_at,
+                last_seen_alive=last_alive,
+                reason=reason,
+                nearby_commands=NavigDaemon._commands_before_now(started_at, last_seen_alive=last_alive),
+            )
+        except Exception:  # noqa: BLE001 — an observation must never break a status check
+            pass
+
+    @staticmethod
+    def _commands_before_now(
+        started_at: str | None,
+        *,
+        last_seen_alive: str | None = None,
+        window_s: float = 15 * 60,
+    ) -> list[dict]:
+        """navig commands audited in the window before this detection — verbs only.
+
+        The death is detected some time after it happened (the task relaunches
+        within five minutes; a status check may be later still), so the window
+        runs back from NOW, capped at the dead daemon's own start: anything
+        before it started cannot have killed it. Tonight the answer would have
+        been "navig cdp stop (session 9f39fd34) at 18:01:13Z" — the correlation
+        that took an hour by hand.
+
+        When the last heartbeat is known the window CLOSES there plus one
+        interval (the death happened before the beat that never came): a
+        command run after that ran against a daemon that was already dead and
+        is not a suspect — five minutes of detection lag used to list it as one.
+
+        ⚠ VERB ONLY. `details.command` holds the full line, and
+        `navig config set gateway.auth.token <secret>` is an ordinary command —
+        copying it here would put the secret into the incident log AND the
+        Telegram push. Keep ``navig <group> <verb>``; drop everything after.
+        """
+        try:
+            from navig.store.audit import get_audit_store
+
+            end = datetime.now(timezone.utc)
+            if last_seen_alive:
+                try:
+                    beat = datetime.fromisoformat(last_seen_alive)
+                    if beat.tzinfo is None:
+                        beat = beat.replace(tzinfo=timezone.utc)
+                    # + one interval: the death is somewhere between the last
+                    # beat and the one that never came; + 10 s of loop jitter.
+                    end = min(end, beat + timedelta(seconds=HEARTBEAT_S + 10))
+                except ValueError:
+                    pass
+            start = end - timedelta(seconds=window_s)
+            if started_at:
+                try:
+                    born = datetime.fromisoformat(started_at)
+                    if born.tzinfo is None:
+                        born = born.replace(tzinfo=timezone.utc)
+                    start = max(start, born)
+                except ValueError:
+                    pass
+            if start >= end:
+                return []
+            fmt = "%Y-%m-%dT%H:%M:%S.%fZ"
+            rows = get_audit_store().events_between(start.strftime(fmt), end.strftime(fmt), limit=12)
+        except Exception:  # noqa: BLE001 — the incident must still be recorded without this
+            return []
+        out: list[dict] = []
+        for r in rows:
+            details = r.get("details")
+            if isinstance(details, str):
+                try:
+                    details = json.loads(details)
+                except ValueError:
+                    details = {}
+            cmd = str((details or {}).get("command") or r.get("action") or "")
+            verb = " ".join(cmd.split()[:3])  # "navig cdp stop" — never the arguments
+            out.append(
+                {
+                    "at": str(r.get("timestamp") or ""),
+                    "command": verb,
+                    "session": str(r.get("session_id") or "")[:8] or None,
+                    "status": r.get("status"),
+                }
+            )
+        return out
+
+    @staticmethod
+    def owned_process_trees() -> list[dict[str, Any]]:
+        """Every navig-owned long-lived process tree on this machine — the pids an
+        external process sweeper must spare.
+
+        A sweeper cannot tell the daemon from a leaked helper: both are python with
+        the parent gone. The operator's hourly cleanup killed the daemon twice on
+        2026-09-14 for exactly that reason. This is the contract: each entry is a
+        pid FILE navig writes, resolved to its owner only if the process is older
+        than the file naming it (``pid_from_pidfile`` — a recycled pid is not the
+        owner), then expanded to every descendant. Roots:
+
+        * ``daemon/supervisor.pid`` — the service supervisor; its children are the
+          gateway and the telegram worker.
+        * ``gateway.pid`` — a standalone ``navig gateway start`` (inside the
+          supervisor it is already a descendant and is not listed twice).
+        * ``agent/agent.pid`` — a standalone ``navig agent start``.
+        * ``worker.pid`` — a standalone telegram worker (``navig bot start --background``
+          with no service installed); written by the worker itself.
+
+        Never raises; a root that is missing, dead or recycled contributes nothing.
+        """
+        from navig.daemon.single_instance import pid_from_pidfile
+
+        roots = [
+            ("supervisor", _pid_file()),
+            ("gateway", paths.config_dir() / "gateway.pid"),
+            ("agent", paths.config_dir() / "agent" / "agent.pid"),
+            ("worker", paths.config_dir() / "worker.pid"),
+        ]
+        try:
+            import psutil  # type: ignore[import-untyped]
+        except ImportError:
+            psutil = None  # type: ignore[assignment]
+        seen: set[int] = set()
+        out: list[dict[str, Any]] = []
+        for role, pf in roots:
+            try:
+                root = pid_from_pidfile(pf)
+            except Exception:  # noqa: BLE001
+                root = None
+            if root is None or root in seen:
+                continue
+            members: list[dict[str, Any]] = []
+            if psutil is not None:
+                try:
+                    proc = psutil.Process(root)
+                    for p in [proc, *proc.children(recursive=True)]:
+                        try:
+                            members.append({"pid": p.pid, "name": p.name()})
+                        except Exception:  # noqa: BLE001
+                            members.append({"pid": p.pid, "name": None})
+                except Exception:  # noqa: BLE001
+                    members = [{"pid": root, "name": None}]
+            else:
+                members = [{"pid": root, "name": None}]
+            seen.update(m["pid"] for m in members)
+            out.append({"role": role, "pid_file": str(pf), "root": root, "members": members})
+        return out
+
+    @staticmethod
+    def parent_of(pid: int) -> dict[str, Any]:
+        """Who launched the daemon — the process SHAPE an orphan sweep kills on.
+
+        Returns ``{"ppid", "name", "alive", "shape"}`` where ``shape`` is one of:
+
+        * ``"service"`` — the parent is the Task Scheduler / service host
+          (``svchost.exe``, ``nssm.exe``) or init/systemd (pid 1). The daemon has a
+          living parent for life. This is the shape a task-launched daemon has.
+        * ``"orphan"`` — the parent is GONE. A daemon spawned detached from a CLI
+          that then exited. On 2026-09-14 the operator's hourly process sweep
+          killed exactly this shape twice (`KILL pythonw.exe 118488 ppid=62344
+          gone`) — an external sweeper cannot tell it from a leaked helper.
+        * ``"process"`` — a live, ordinary parent (a foreground `service start -f`,
+          a dev shell): fine while that parent lives.
+        * ``"unknown"`` — could not be read (no psutil, access denied).
+
+        psutil's ``parent()`` pre-empts pid reuse (a parent that started AFTER
+        the child is not its parent), so a recycled ppid reads as gone, not alive.
+        """
+        out: dict[str, Any] = {"ppid": None, "name": None, "alive": None, "shape": "unknown"}
+        try:
+            import psutil  # type: ignore[import-untyped]
+
+            proc = psutil.Process(int(pid))
+            out["ppid"] = proc.ppid()
+            parent = proc.parent()
+        except Exception:  # noqa: BLE001 — NoSuchProcess / AccessDenied / no psutil
+            return out
+        if parent is None:
+            out["alive"] = False
+            out["shape"] = "orphan" if out["ppid"] else "unknown"
+            return out
+        out["alive"] = True
+        try:
+            out["name"] = parent.name()
+        except Exception:  # noqa: BLE001
+            out["name"] = None
+        name = (out["name"] or "").lower()
+        if parent.pid == 1 or name in ("svchost.exe", "nssm.exe", "systemd", "init", "launchd"):
+            out["shape"] = "service"
+        else:
+            out["shape"] = "process"
+        return out
+
+    @staticmethod
     def is_running() -> bool:
         """Check if a daemon is already running."""
         pid = NavigDaemon.read_pid()
         if pid is None:
+            # `read_pid` answers None for missing AND for "the file names a process
+            # that is dead or recycled" — and leaves the file where it is. Only the
+            # second is a death. Tell them apart by the file, and record it: a pid
+            # file that outlived its process is the one trace an ungraceful exit
+            # leaves, and it used to be discarded here without a word.
+            pf = _pid_file()
+            if pf.exists():
+                try:
+                    stale = int(pf.read_text(encoding="utf-8").strip() or 0)
+                except (OSError, ValueError):
+                    stale = 0
+                NavigDaemon._reap_stale_pid_file(stale, "pid file names no live daemon")
             return False
         try:
             if sys.platform == "win32":
@@ -548,15 +851,15 @@ class NavigDaemon:
                 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
                 handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
                 if not handle:
-                    # Process does not exist — clean up stale PID file
-                    _pid_file().unlink(missing_ok=True)
+                    # Process does not exist — the previous daemon died without a stop
+                    NavigDaemon._reap_stale_pid_file(pid, "process gone")
                     return False
                 # Verify the process hasn't exited (STILL_ACTIVE = 259 = 0x103)
                 exit_code = ctypes.wintypes.DWORD()
                 kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
                 if exit_code.value != 259:  # process has exited
                     kernel32.CloseHandle(handle)
-                    _pid_file().unlink(missing_ok=True)
+                    NavigDaemon._reap_stale_pid_file(pid, "process exited")
                     return False
                 # Verify the PID belongs to a Python process (not a reused PID)
                 # QueryFullProcessImageNameW is fast — no subprocess needed
@@ -566,15 +869,16 @@ class NavigDaemon:
                 kernel32.CloseHandle(handle)
                 exe_name = Path(buf.value).name.lower() if buf.value else ""
                 if exe_name not in ("python.exe", "pythonw.exe", "python3.exe"):
-                    # PID reused by a non-Python process — stale PID file
-                    _pid_file().unlink(missing_ok=True)
+                    # PID reused by a non-Python process — the daemon died and its
+                    # number was handed to something else; the file outlived it
+                    NavigDaemon._reap_stale_pid_file(pid, f"pid reused by {exe_name or 'unknown'}")
                     return False
                 return True
             else:
                 os.kill(pid, 0)
                 return True
         except (OSError, ProcessLookupError):
-            _pid_file().unlink(missing_ok=True)
+            NavigDaemon._reap_stale_pid_file(pid, "process lookup failed")
             return False
 
     @staticmethod
@@ -611,14 +915,88 @@ class NavigDaemon:
         """Write daemon state to JSON for external queries."""
         state = {
             "pid": os.getpid(),
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": self._started_at or datetime.now(timezone.utc).isoformat(),
             "children": [c.to_dict() for c in self.children],
             "boot_code": getattr(self, "_boot_code", {}),
+            # The file's mtime is the heartbeat; this says how often to expect
+            # one, so a reader never hardcodes the interval — and its ABSENCE
+            # tells `doctor` the running daemon predates heartbeats, which is
+            # "unknown", not "wedged".
+            "heartbeat_s": HEARTBEAT_S,
+            # Where this daemon's navig.log actually lands. The logging setup
+            # resolves it as `ConfigManager.base_dir / "navig.log"`, and
+            # base_dir follows the cwd into a PROJECT .navig/ when the restart
+            # was run from inside one — so `~/.navig/navig.log` simply stops
+            # advancing, with nothing anywhere to say where the lines went.
+            # Recorded here so `navig doctor` can name the file that is live.
+            "log_file": _resolved_log_file(),
+            "cwd": os.getcwd(),
         }
         try:
             atomic_write_text(_state_file(), json.dumps(state, indent=2))
+            self._last_beat = time.monotonic()
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
+
+    def _heartbeat(self) -> None:
+        """Touch ``state.json`` every :data:`HEARTBEAT_S` — proof the LOOP is alive.
+
+        Every other liveness check asks "is the pid alive?", which a supervisor
+        stuck in a blocking call answers yes to while restarting nothing. The
+        mtime is the one signal that comes from the loop itself. An ``os.utime``
+        rewrites nothing; a state file that went missing is rewritten instead.
+        """
+        now = time.monotonic()
+        if now - self._last_beat < HEARTBEAT_S:
+            return
+        self._last_beat = now
+        try:
+            sf = _state_file()
+            if sf.exists():
+                os.utime(sf, None)
+            else:
+                self._write_state()
+        except OSError:
+            pass  # best-effort; a missed beat is not worth an outage
+        self._page_if_orphan_shaped()
+
+    def _page_if_orphan_shaped(self) -> None:
+        """Once per life: tell the operator BEFORE the sweep does.
+
+        Every navig launch path goes through the scheduled task, so this fires
+        only on the fallback spawn, a foreign launcher (the tray, a shell) that
+        exited, or a machine where the task was never installed — exactly the
+        cases `doctor`'s Daemon-parent row exists for, pushed instead of pulled.
+        Checked on every beat because a parent can exit long after boot.
+        """
+        if self._orphan_reported:
+            return
+        try:
+            info = NavigDaemon.parent_of(os.getpid())
+        except Exception:  # noqa: BLE001
+            return
+        if info.get("shape") != "orphan":
+            return
+        self._orphan_reported = True
+        try:
+            from navig.core import incidents
+
+            incidents.record(
+                incidents.DAEMON_ORPHAN_SHAPED, pid=os.getpid(), parent_pid=info.get("ppid")
+            )
+        except Exception:  # noqa: BLE001 — a page must never break the loop
+            pass
+
+    @staticmethod
+    def last_seen_alive() -> str | None:
+        """ISO-UTC time of the last heartbeat (``state.json`` mtime), or None.
+
+        None means there is no state file — a cleanly stopped daemon removes it.
+        """
+        try:
+            return datetime.fromtimestamp(_state_file().stat().st_mtime, tz=timezone.utc).isoformat()
+        except OSError:
+            return None
 
     @staticmethod
     def read_state() -> dict[str, Any] | None:
@@ -701,13 +1079,36 @@ class NavigDaemon:
                 self.logger.warning("Stale PID file (pid=%s) - removing and starting fresh", pid)
                 self._remove_pid()
 
+        # A sibling supervisor that started moments BEFORE us is not a stale
+        # generation — it is a concurrent boot (2026-09-21: the task launched one,
+        # then `service restart` spawned a second while the first was still in
+        # its own sweep). The older boot is the one with the living parent; we
+        # yield to it rather than kill it.
+        # One process-table enumeration (WMI, 10–20 s here) serves both the
+        # sibling check and the sweep — a second one would double the boot.
+        candidates = self._enumerate_navig_pids()
+        sibling = self._booting_sibling(candidates)
+        if sibling is not None:
+            self.logger.info(
+                "Another daemon (pid=%d) started just before us and is still booting — "
+                "yielding to it",
+                sibling,
+            )
+            return
+
         # Sweep stale daemon generations from previous restarts before
-        # writing the new PID file so their log handles are released.
-        swept = self._kill_orphan_daemons(exclude_pid=os.getpid())
+        # writing the new PID file so their log handles are released. Never a
+        # process younger than us: that is a concurrent boot, and it yields
+        # (above) on its own — sweeping it too is how two boots killed each
+        # other.
+        swept = self._kill_orphan_daemons(
+            exclude_pid=os.getpid(), only_older_than=_own_create_time(), pids=candidates
+        )
         if swept:
             self.logger.info("Swept %d orphan daemon PID(s): %s", len(swept), swept)
 
         self._running = True
+        self._started_at = datetime.now(timezone.utc).isoformat()
         self._write_pid()
         self.logger.info("=== NAVIG Daemon starting (pid=%d) ===", os.getpid())
 
@@ -768,6 +1169,7 @@ class NavigDaemon:
                         child.start(self.logger)
                         self._write_state()
 
+                self._heartbeat()
                 await asyncio.sleep(2)  # poll interval
         finally:
             if self._health_server is not None:
@@ -853,6 +1255,62 @@ class NavigDaemon:
             except OSError:
                 pass
 
+    #: A supervisor-shaped sibling that started within this many seconds before us
+    #: is treated as a concurrent boot, not a stale generation. The boot sweep is
+    #: WMI-bound (~10–20 s measured); a minute covers a loaded machine.
+    BOOT_GRACE_S: float = 90.0
+
+    @staticmethod
+    def booting_supervisor_pids(
+        *, config_dir: Path | None = None, candidates: list[int] | None = None
+    ) -> list[tuple[int, float]]:
+        """``(pid, create_time)`` of every OTHER supervisor process of OUR brain.
+
+        Supervisor-shaped means the cmdline runs ``navig.daemon.entry`` (or the
+        ``-m navig.daemon`` form) — not a gateway or telegram worker child. Scoped by
+        config dir like every kill path; an unreadable process is not ours. Empty
+        without psutil or on any failure. *candidates* lets a caller that already
+        enumerated the process table (a WMI call) hand it in instead of paying twice.
+        """
+        try:
+            import psutil  # type: ignore[import-untyped]
+
+            from navig.daemon.single_instance import config_dir_of
+            from navig.platform import paths
+
+            mine = (config_dir if config_dir is not None else paths.config_dir()).resolve()
+        except Exception:  # noqa: BLE001
+            return []
+        out: list[tuple[int, float]] = []
+        pids = candidates if candidates is not None else NavigDaemon._enumerate_navig_pids()
+        for pid in pids:
+            if pid == os.getpid():
+                continue
+            try:
+                proc = psutil.Process(pid)
+                cmd = " ".join(proc.cmdline() or []).lower()
+                if "navig.daemon.entry" not in cmd and "-m navig.daemon" not in cmd:
+                    continue
+                if "telegram_worker" in cmd or "gateway start" in cmd:
+                    continue
+                theirs = config_dir_of(pid)
+                if theirs is None or Path(theirs).resolve() != mine:
+                    continue
+                out.append((pid, float(proc.create_time())))
+            except Exception:  # noqa: BLE001 — gone, or not ours to read
+                continue
+        return out
+
+    def _booting_sibling(self, candidates: list[int] | None = None) -> int | None:
+        """The pid of a supervisor that started within ``BOOT_GRACE_S`` BEFORE us, if any."""
+        ours = _own_create_time()
+        if ours is None:
+            return None
+        for pid, created in self.booting_supervisor_pids(candidates=candidates):
+            if ours - self.BOOT_GRACE_S <= created < ours:
+                return pid
+        return None
+
     @staticmethod
     def _kill_orphan_daemons(
         exclude_pid: int | None = None,
@@ -862,8 +1320,14 @@ class NavigDaemon:
         pids: list[int] | None = None,
         killer=None,
         keep: set[int] | None = None,
+        only_older_than: float | None = None,
     ) -> list[int]:
         """Force-kill stale navig daemon/gateway/worker processes **for OUR brain only**.
+
+        ``only_older_than`` (a ``psutil`` create_time): skip any candidate created at
+        or after that instant. The boot sweep passes its own start time, so a
+        concurrent boot that began after us is never a casualty — it yields on
+        its own. Without psutil the filter is a no-op (the previous behaviour).
 
         Sweeps stale daemon generations left by previous restarts. The enumeration
         (PowerShell / pgrep) is machine-wide, so every candidate PID is scoped by its
@@ -917,6 +1381,8 @@ class NavigDaemon:
             if found_pid == current_pid or found_pid in keep:
                 continue
             if exclude_pid is not None and found_pid == exclude_pid:
+                continue
+            if only_older_than is not None and not _created_before(found_pid, only_older_than):
                 continue
             # Config-dir scoping — NEVER kill a process that isn't ours or can't be
             # identified. A different config dir is a different brain; an unreadable

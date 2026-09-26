@@ -1,4 +1,3 @@
-```skill
 ---
 name: yt-dlp-media-download
 description: Download video/audio from YouTube and 1000+ sites using yt-dlp
@@ -100,4 +99,3 @@ navig media yt download --url {url} --dry-run
 - `--dry-run` prints the yt-dlp command without downloading
 - Respects yt-dlp's rate limits and site-specific restrictions
 - Geo-blocked content requires a VPN or cookies — not handled by this tool
-```

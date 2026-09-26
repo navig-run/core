@@ -1,4 +1,3 @@
-```skill
 ---
 name: screenshot-capture
 description: Capture screenshots of the full screen, a specific monitor, or a region
@@ -92,4 +91,3 @@ Format: `x,y,width,height` in screen pixels.
 
 - `--dry-run` returns what would be captured (monitor/region info) without saving
 - Output directory must be writable — tool checks before capture
-```

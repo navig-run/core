@@ -60,6 +60,24 @@ def mode_show(
         _show_modes()
 
 
+def _fallback_label(cfg) -> str:
+    """How a mode's fallback is shown in the table.
+
+    A fallback is only useful on a DIFFERENT provider — otherwise one outage
+    takes out the primary and its safety net together. So the model name alone is
+    ambiguous: "grok-3-mini" does not say xai. Show the provider whenever it
+    differs; an empty ``fallback_provider`` means "same as the primary" and needs
+    no prefix.
+    """
+    model = (getattr(cfg, "fallback_model", "") or "").strip()
+    if not model:
+        return "[dim]—[/dim]"
+    provider = (getattr(cfg, "fallback_provider", "") or "").strip()
+    if provider and provider != (getattr(cfg, "provider", "") or "").strip():
+        return f"{provider}:{model}"
+    return model
+
+
 def _show_modes():
     """Render a Rich table of all LLM modes."""
     from rich.table import Table
@@ -103,7 +121,7 @@ def _show_modes():
         has_key = _has_api_key(cfg.provider)
         key_icon = "[green]✓[/green]" if has_key else "[red]✗[/red]"
         uncensored = "[yellow]YES[/yellow]" if cfg.use_uncensored else "[dim]no[/dim]"
-        fallback = cfg.fallback_model or "[dim]—[/dim]"
+        fallback = _fallback_label(cfg)
 
         table.add_row(
             f"{emoji} {mode_name}",
@@ -139,13 +157,38 @@ def mode_set(
     uncensored: bool | None = typer.Option(
         None, "--uncensored/--no-uncensored", help="Enable/disable uncensored routing"
     ),
+    fallback_provider: str | None = typer.Option(
+        None, "--fallback-provider", help="Provider to use when the primary fails"
+    ),
+    fallback_model: str | None = typer.Option(
+        None, "--fallback-model", help="Model to use when the primary fails"
+    ),
 ):
-    """Update a mode's provider, model, or parameters."""
+    """Update a mode's provider, model, or parameters.
 
-    from navig.llm.router import get_llm_router
+    A mode's FALLBACK is what answers when the primary cannot. It had no CLI at
+    all, so repointing one meant hand-editing `llm_router.llm_modes.<mode>.*` in
+    config.yaml — and `navig mode doctor` now probes fallbacks, so it can show
+    you a dead one it gave you no way to fix.
+    """
+
+    from navig.llm.router import CANONICAL_MODES, MODE_ALIASES, get_llm_router
 
     console = get_console()
     router = get_llm_router()
+
+    # `resolve_mode` defaults ANY unrecognised hint to "big_tasks". That is the
+    # right call when ROUTING a message — send an unknown intent to the capable
+    # model — and destructive when choosing which config row to OVERWRITE:
+    # `navig mode set codingg --model X` silently repointed the heaviest mode,
+    # and the "Unknown mode" branch below could never fire because update_mode
+    # never sees an unresolved name. Validate the WRITE, leave routing alone.
+    typed = (mode or "").strip().lower()
+    if typed not in CANONICAL_MODES and typed not in MODE_ALIASES:
+        console.print(f"[red]Unknown mode:[/red] {mode}")
+        console.print(f"[dim]Modes:   {', '.join(sorted(CANONICAL_MODES))}[/dim]")
+        console.print(f"[dim]Aliases: {', '.join(sorted(MODE_ALIASES))}[/dim]")
+        raise typer.Exit(1)
 
     canonical = router.resolve_mode(mode)
     try:
@@ -156,6 +199,8 @@ def mode_set(
             temperature=temperature,
             max_tokens=max_tokens,
             use_uncensored=uncensored,
+            fallback_provider=fallback_provider,
+            fallback_model=fallback_model,
         )
     except ValueError as exc:
         # Out-of-range temp/max_tokens — reject instead of persisting a value that
@@ -178,6 +223,13 @@ def mode_set(
     resolved = router.get_config(canonical)
     console.print(f"  Provider: [bold]{resolved.provider}[/bold]")
     console.print(f"  Model:    [bold]{resolved.model}[/bold]")
+    mode_cfg = router.modes.get_mode(canonical)
+    fb_model = (getattr(mode_cfg, "fallback_model", "") or "") if mode_cfg else ""
+    if fb_model:
+        # An empty fallback_provider means "same provider as the primary" — show
+        # what will actually be dialled, not the blank.
+        fb_provider = (getattr(mode_cfg, "fallback_provider", "") or "") or resolved.provider
+        console.print(f"  Fallback: [bold]{fb_provider}:{fb_model}[/bold]")
     console.print(f"  Reason:   [dim]{resolved.resolution_reason}[/dim]")
 
 
@@ -342,11 +394,20 @@ def mode_route_set(
 def mode_doctor(
     mode: str = typer.Argument(None, help="Mode to probe (default: all modes)."),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
+    modes_only: bool = typer.Option(
+        False, "--modes-only", help="Skip fallbacks and hybrid routing tiers."
+    ),
 ):
     """Probe each mode's provider:model with a 1-token call — catches DEAD/EOL
     models (410), auth failures (401), and unreachable endpoints before they hit
-    you in production. Exits non-zero if any mode is not live (CI-friendly)."""
-    from navig.llm.liveness import probe_modes
+    you in production. Exits non-zero if any mode needs FIXING (CI-friendly); a
+    provider that is merely busy or rate-limited is reported, not failed.
+
+    Also probes each mode's FALLBACK and the hybrid routing tiers, which nothing
+    covered: a fallback is exercised only when its primary has already failed,
+    and all three of one install's routing tiers pointed at models that answered
+    410 GONE with no surface reporting it."""
+    from navig.llm.liveness import probe_modes, probe_routes
     from navig.llm.router import get_llm_router
 
     console = get_console()
@@ -359,13 +420,26 @@ def mode_doctor(
         "auth": "[yellow]⚠ auth[/yellow]",
         "nokey": "[yellow]○ no key[/yellow]",
         "unreachable": "[red]✗ unreachable[/red]",
+        "transient": "[yellow]↻ busy[/yellow]",
+        "slow": "[yellow]🐢 slow[/yellow]",
         "error": "[red]✗ error[/red]",
     }
+    # A provider being briefly busy is not a broken config, so it must not fail
+    # the command — `navig mode doctor` is documented as CI-friendly, and a red
+    # build over someone else's rate limit teaches people to ignore it.
+    # `slow` joins them: the model ANSWERED, it was just past the probe's cap
+    # (an NVIDIA cold start is 40–107 s). Failing the command over that is the
+    # same "red build over someone else's latency" this comment already rejects.
+    _NOT_A_DEFECT = ("live", "transient", "slow")
+    _ROUTE_LABEL = {"mode": "mode", "fallback": "└ fallback", "tier": "tier"}
     if not json_output:
         console.print("[dim]Probing each mode's model (1 token each)…[/dim]")
     # probe_modes resolves each mode's ACTUAL route (fast-chat override, default
     # provider, fallbacks) and runs a real 1-token call — the shared liveness path.
-    rows = probe_modes(targets)
+    if mode or modes_only:
+        rows = [{"kind": "mode", "label": r["mode"], **r} for r in probe_modes(targets)]
+    else:
+        rows = probe_routes()
 
     if json_output:
         import json as _json
@@ -374,27 +448,47 @@ def mode_doctor(
     else:
         from rich.table import Table
 
-        table = Table(title="🩺 LLM Mode Liveness", border_style="dim", show_header=True,
+        table = Table(title="🩺 LLM Route Liveness", border_style="dim", show_header=True,
                       header_style="bold")
-        table.add_column("Mode", style="cyan", no_wrap=True)
+        table.add_column("Route", style="dim", no_wrap=True)
+        table.add_column("Name", style="cyan", no_wrap=True)
         table.add_column("Provider", no_wrap=True)
         table.add_column("Model", no_wrap=True)
         table.add_column("Status", no_wrap=True)
         table.add_column("Detail")
         for r in rows:
-            table.add_row(r["mode"], r["provider"], r["model"],
-                          _ICON.get(r["status"], r["status"]), r["detail"])
+            table.add_row(_ROUTE_LABEL.get(r["kind"], r["kind"]), r["label"], r["provider"],
+                          r["model"], _ICON.get(r["status"], r["status"]), r["detail"])
         console.print(table)
-        bad = [r for r in rows if r["status"] != "live"]
+        # A dead FALLBACK is reported but does not fail the command: it breaks
+        # nothing today, and a machine without ollama running would otherwise be
+        # permanently red for a contingency it never uses. A dead primary or
+        # routing tier IS live breakage and does fail.
+        bad = [r for r in rows
+               if r["status"] not in _NOT_A_DEFECT and r["kind"] != "fallback"]
+        weak = [r for r in rows
+                if r["status"] not in _NOT_A_DEFECT and r["kind"] == "fallback"]
+        busy = [r["label"] for r in rows if r["status"] == "transient"]
+        if weak:
+            console.print(
+                f"[yellow]{len(weak)} fallback(s) would not answer if their primary "
+                f"failed: {', '.join(r['label'] for r in weak)}.[/yellow]"
+            )
         if bad:
-            dead = [r["mode"] for r in rows if r["status"] == "dead"]
+            dead = [r["label"] for r in rows
+                    if r["status"] == "dead" and r["kind"] != "fallback"]
             hint = (f" Repoint with [cyan]navig mode set {dead[0]} --provider <p> --model <m>[/cyan]"
                     if dead else "")
-            console.print(f"[yellow]{len(bad)}/{len(rows)} mode(s) not live.[/yellow]{hint}")
+            console.print(f"[yellow]{len(bad)}/{len(rows)} route(s) need fixing.[/yellow]{hint}")
         else:
-            console.print(f"[green]All {len(rows)} modes live.[/green]")
+            console.print(f"[green]All {len(rows)} routes usable.[/green]")
+        if busy:
+            console.print(
+                f"[dim]{len(busy)} provider(s) busy or rate-limited after a retry "
+                f"({', '.join(busy)}) — transient, re-run to confirm.[/dim]"
+            )
 
-    if any(r["status"] != "live" for r in rows):
+    if any(r["status"] not in _NOT_A_DEFECT and r["kind"] != "fallback" for r in rows):
         raise typer.Exit(1)
 
 

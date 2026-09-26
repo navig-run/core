@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from navig.core.yaml_io import atomic_write_text, safe_load_yaml
+from navig.core.yaml_io import atomic_write_text, load_yaml_for_update
 
 _SENTINEL = ".workspace_to_spaces.migrated"
 
@@ -120,7 +120,24 @@ def migrate_workspace_to_spaces(
     spaces_root = navig_root / "spaces"
 
     try:
-        cfg = safe_load_yaml(config_file) or {}
+        # Read-modify-write, so the read must distinguish "no file" from "could not
+        # read". `safe_load_yaml(...) or {}` collapsed both into an empty dict, and this
+        # runs at EVERY startup before anything else touches config.yaml — a transient
+        # lock on an existing file would have been written back as a two-key config.
+        # `load_yaml_for_update` raises ConfigReadError for that case; the outer handler
+        # turns it into a skipped migration, never a wipe.
+        #
+        # A genuinely absent file is a first run. The dict written below becomes THE
+        # config.yaml (ConfigManager only seeds its defaults when the file is missing),
+        # so it must carry the schema version: without it the very first command a new
+        # user ran announced "Applying 1 configuration migrations… [0.9 -> 1.0]" for a
+        # file navig had itself created a moment earlier.
+        if not config_file.exists():
+            from navig.core.migrations import CURRENT_VERSION
+
+            cfg: dict = {"version": CURRENT_VERSION}
+        else:
+            cfg = load_yaml_for_update(config_file)
         active = _extract_active_space(cfg)
         if not active:
             active = "default"

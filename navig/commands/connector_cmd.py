@@ -177,6 +177,9 @@ def connector_status(
 @connector_app.command("connect")
 def connector_connect(
     connector_id: str = typer.Argument(help="Connector ID (e.g. gmail, google_calendar)"),
+    account: str | None = typer.Option(
+        None, "--account", help="Link a SECOND account of this connector (email); the first one is kept."
+    ),
 ) -> None:
     """Authenticate and connect a service connector."""
     from navig.connectors.auth_manager import ConnectorAuthManager
@@ -203,7 +206,7 @@ def connector_connect(
         _register_oauth_config(connector_id, auth)
 
         # Run OAuth flow
-        token = _run(auth.authenticate(connector_id, interactive=True))
+        token = _run(auth.authenticate(connector_id, interactive=True, account=account))
         if not token:
             ch.error("Authentication failed. No access token received.")
             raise typer.Exit(1)

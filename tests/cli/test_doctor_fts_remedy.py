@@ -34,12 +34,47 @@ def _resolve(command: str):
     app = getattr(module, app_attr, None)
     assert app is not None, f"{module_name}.{app_attr} does not exist"
 
-    names = set()
+    cmds, groups = _names(app)
+    return verb, cmds | set(groups)
+
+
+def _names(app):
+    """A Typer's direct verbs and its sub-Typers, by the names the CLI actually accepts."""
+    cmds: set[str] = set()
     for info in app.registered_commands:
-        names.add(info.name or (info.callback.__name__.replace("_", "-") if info.callback else ""))
+        cmds.add(info.name or (info.callback.__name__.replace("_", "-") if info.callback else ""))
         if info.callback is not None:
-            names.add(info.callback.__name__)
-    return verb, names
+            cmds.add(info.callback.__name__)
+    groups = {g.name: g.typer_instance for g in app.registered_groups if g.name}
+    return cmds, groups
+
+
+def _walk(words: list[str]) -> str | None:
+    """Walk `navig <group> [<sub>...] <verb>` through the REAL registration, descending
+    sub-Typers structurally. Returns None when every word resolves, else why not.
+
+    The first version checked only the second word against the group's direct verbs and
+    kept a hand-typed `_SUBGROUPS` allowlist for sub-Typers — which meant
+    `navig cdp profile <anything>` passed the moment `profile` was allowlisted, phantom
+    verb and all. The leaf is what the operator types; the leaf is what must exist.
+    """
+    from navig.cli.registration import _EXTERNAL_CMD_MAP
+
+    module_name, app_attr = _EXTERNAL_CMD_MAP[words[0]]
+    app = getattr(__import__(module_name, fromlist=[app_attr]), app_attr, None)
+    if app is None:
+        return f"{module_name}.{app_attr} does not exist"
+    path = ["navig", words[0]]
+    for w in words[1:]:
+        cmds, groups = _names(app)
+        if w in groups:
+            app = groups[w]
+            path.append(w)
+            continue
+        if w in cmds:
+            return None
+        return f"`{' '.join(path)}` has no verb `{w}`"
+    return None  # a bare group, or a path of groups — a valid thing to print
 
 
 @pytest.mark.parametrize("db,command", sorted(_FTS_REPAIR_COMMAND.items()))
@@ -154,14 +189,12 @@ def test_every_command_doctor_prints_exists():
             broken.append(f"doctor.py:{lineno} `navig {' '.join(words)}` — no such command")
             continue
         if len(words) >= 2 and group in _EXTERNAL_CMD_MAP:
-            _, names = _resolve(f"navig {group} {words[1]}")
-            # A second word that is not prose must be a real verb; letting the shorter
-            # prefix win would swallow `navig db backup` (db valid, backup not).
-            if words[1] not in names and words[1] not in _SUBGROUPS.get(group, set()):
-                broken.append(
-                    f"doctor.py:{lineno} `navig {group} {words[1]}` — "
-                    f"`{group}` has no verb `{words[1]}`"
-                )
+            # Every word after the group must resolve — sub-Typers descended structurally,
+            # the LEAF verified. Letting a shorter prefix win would swallow `navig db backup`
+            # (db valid, backup not) or `navig cdp profile nonsense` (profile valid, leaf not).
+            why = _walk(words)
+            if why:
+                broken.append(f"doctor.py:{lineno} `navig {' '.join(words)}` — {why}")
     assert not broken, "doctor prints advice naming commands that do not exist:\n  " + "\n  ".join(
         broken
     )
@@ -169,5 +202,3 @@ def test_every_command_doctor_prints_exists():
 
 # Commands registered on the root app rather than through _EXTERNAL_CMD_MAP.
 _TOP_LEVEL = {"doctor", "init", "update", "ai", "import", "vault"}
-# Verbs that are sub-Typers (registered_groups), which _resolve does not enumerate.
-_SUBGROUPS = {"repo": {"guard"}, "db": {"local"}}

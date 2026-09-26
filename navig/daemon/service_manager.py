@@ -33,6 +33,12 @@ from navig.platform import paths
 
 SERVICE_NAME = "NavigDaemon"
 TASK_NAME = "NAVIG Daemon"
+#: An on-demand sibling task that runs `navig service restart` OUTSIDE the daemon's
+#: process tree. Anything inside the tree (the gateway's /api/daemon/restart, a bot
+#: command) cannot restart the daemon itself: `stop_running_daemon` kills the
+#: supervisor with `taskkill /T`, and the restarter is a descendant. Measured: it
+#: died mid-stop, after disabling autostart and before re-enabling it.
+TASK_RESTART_NAME = "NAVIG Daemon Restart"
 SYSTEMD_UNIT = "navig-agent"  # Linux systemd unit name
 
 
@@ -345,6 +351,66 @@ def _task_bootstrap_args(home: Path) -> str:
     )
 
 
+def _task_restart_args(home: Path) -> str:
+    """The `-c` bootstrap the RESTART task runs: `navig service restart`, with the
+    same env baking as the daemon task and stdout to daemon/restart.log (pythonw
+    has no console; a restart that fails must leave a readable line)."""
+    h = str(home).replace("\\", "/")
+    return (
+        f'-c "import os, sys; '
+        f"{_task_env_setup(home)}"
+        f"os.makedirs(r'{h}/daemon', exist_ok=True); "
+        f"_f=open(r'{h}/daemon/restart.log', 'a', encoding='utf-8', buffering=1); "
+        f"sys.stdout=sys.stderr=_f; "
+        f"sys.argv=['navig', 'service', 'restart']; "
+        f"import runpy; runpy.run_module('navig', run_name='__main__', alter_sys=True)\""
+    )
+
+
+def _schtasks_restart_xml() -> str:
+    """The on-demand restart task: NO triggers — it runs only when asked (see
+    ``task_scheduler_run_restart``), by the gateway's restart route or anything
+    else living inside the daemon's tree. Its parent is the Task Scheduler
+    service, so the tree kill it performs cannot reach it. Pure text: builds XML,
+    mutates nothing."""
+    from xml.sax.saxutils import escape as _xml_escape
+
+    home = _navig_home()
+    python = _xml_escape(_pythonw_exe())
+    workdir = _xml_escape(str(home))
+    args = _xml_escape(_task_restart_args(home))
+    return f"""<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>NAVIG daemon restart — on demand, from outside the daemon's process tree</Description>
+  </RegistrationInfo>
+  <Triggers />
+  <Principals>
+    <Principal>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>true</Hidden>
+    <ExecutionTimeLimit>PT5M</ExecutionTimeLimit>
+  </Settings>
+  <Actions>
+    <Exec>
+      <Command>{python}</Command>
+      <Arguments>{args}</Arguments>
+      <WorkingDirectory>{workdir}</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>"""
+
+
 def _schtasks_xml() -> str:
     """Generate a Task Scheduler XML definition."""
     from xml.sax.saxutils import escape as _xml_escape
@@ -486,6 +552,23 @@ def task_scheduler_install(start_now: bool = True) -> tuple[bool, str]:
             check=True,
             capture_output=True,
         )
+        # The on-demand restart task rides along. Best-effort: the daemon task is
+        # the install; a restart task that could not be registered costs the
+        # deck's Restart button, which then says so.
+        try:
+            restart_xml = daemon_dir() / "navig-restart-task.xml"
+            restart_xml.write_text(_schtasks_restart_xml(), encoding="utf-16")
+            subprocess.run(
+                ["schtasks", "/create", "/tn", TASK_RESTART_NAME, "/xml", str(restart_xml), "/f"],
+                check=True,
+                capture_output=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            import logging
+
+            logging.getLogger("navig.daemon").warning(
+                "service: could not register the restart task: %s", exc
+            )
         if start_now:
             subprocess.run(
                 ["schtasks", "/run", "/tn", TASK_NAME],
@@ -571,6 +654,114 @@ def task_scheduler_enable() -> tuple[bool, str]:
         return False, str(e)
 
 
+def task_scheduler_run() -> tuple[bool, str]:
+    """Start the daemon THROUGH the scheduled task, so its parent is the Task
+    Scheduler service and not a CLI that exits a second later.
+
+    Why the parent matters: a daemon Popen'd from `navig service restart` is an
+    ORPHAN the moment the CLI returns, and that is the fingerprint an hourly
+    process sweep on the operator's machine kills on — it took the daemon down
+    twice on 2026-09-14 (`KILL pythonw.exe 118488 ppid=62344 gone`) while the
+    login-boot daemon, whose parent is svchost, survived 147 sweeps. The task
+    also supplies the env (`NAVIG_SERVICE`, `NAVIG_CONFIG_DIR`), the working
+    directory and RestartOnFailure — the boot-time shape, from every launch path.
+
+    The task must be ENABLED first (`schtasks /run` refuses a disabled task);
+    callers that disabled it around a stop re-enable before calling this. With
+    ``MultipleInstances=IgnoreNew`` a task whose previous instance Task Scheduler
+    still considers running is silently ignored, so a caller must confirm the
+    daemon actually came up and fall back to a direct spawn if it did not.
+    """
+    refusal = _refuse_task_mutation("run")
+    if refusal is not None:
+        return refusal
+    if sys.platform != "win32":
+        return False, "Task Scheduler is Windows-only"
+    try:
+        r = subprocess.run(
+            ["schtasks", "/run", "/tn", TASK_NAME],
+            capture_output=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return False, str(e)
+    if r.returncode != 0:
+        return False, (r.stderr or r.stdout or b"").decode("utf-8", errors="replace").strip()
+    return True, f"Task '{TASK_NAME}' started"
+
+
+def task_scheduler_restart_task_installed() -> bool | None:
+    """Is the on-demand restart task registered? None = could not tell."""
+    if sys.platform != "win32":
+        return None
+    try:
+        r = subprocess.run(
+            ["schtasks", "/query", "/tn", TASK_RESTART_NAME],
+            capture_output=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return r.returncode == 0
+
+
+def task_scheduler_ensure_restart_task() -> tuple[bool, str]:
+    """Register the on-demand restart task if the daemon task exists and it does not.
+
+    Idempotent and cheap when present (one `schtasks /query`). This is what lets an
+    install that predates the restart task pick it up from `navig service start` —
+    the one command every install runs — instead of waiting for a re-install.
+    """
+    refusal = _refuse_task_mutation("ensure-restart-task")
+    if refusal is not None:
+        return refusal
+    if sys.platform != "win32":
+        return False, "Task Scheduler is Windows-only"
+    if task_scheduler_restart_task_installed() is True:
+        return True, f"Task '{TASK_RESTART_NAME}' present"
+    try:
+        restart_xml = daemon_dir() / "navig-restart-task.xml"
+        restart_xml.parent.mkdir(parents=True, exist_ok=True)
+        restart_xml.write_text(_schtasks_restart_xml(), encoding="utf-16")
+        r = subprocess.run(
+            ["schtasks", "/create", "/tn", TASK_RESTART_NAME, "/xml", str(restart_xml), "/f"],
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return False, str(e)
+    if r.returncode != 0:
+        return False, (r.stderr or r.stdout or b"").decode("utf-8", errors="replace").strip()
+    return True, f"Task '{TASK_RESTART_NAME}' registered (the deck's Restart can use it now)"
+
+
+def task_scheduler_run_restart() -> tuple[bool, str]:
+    """Restart the daemon from OUTSIDE its process tree, via the restart task.
+
+    The only correct way for anything inside the tree (the gateway's
+    /api/daemon/restart route) to restart the daemon: `stop_running_daemon` kills
+    the supervisor with `taskkill /T`, so an in-tree restarter dies mid-stop —
+    measured — after disabling autostart and before re-enabling it. The task's
+    process is a child of the Task Scheduler service; the tree kill cannot reach it.
+    """
+    refusal = _refuse_task_mutation("run-restart")
+    if refusal is not None:
+        return refusal
+    if sys.platform != "win32":
+        return False, "Task Scheduler is Windows-only"
+    try:
+        r = subprocess.run(
+            ["schtasks", "/run", "/tn", TASK_RESTART_NAME],
+            capture_output=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return False, str(e)
+    if r.returncode != 0:
+        return False, (r.stderr or r.stdout or b"").decode("utf-8", errors="replace").strip()
+    return True, f"Task '{TASK_RESTART_NAME}' started"
+
+
 def task_scheduler_uninstall() -> tuple[bool, str]:
     refusal = _refuse_task_mutation("uninstall")
     if refusal is not None:
@@ -584,6 +775,10 @@ def task_scheduler_uninstall() -> tuple[bool, str]:
             ["schtasks", "/delete", "/tn", TASK_NAME, "/f"],
             check=True,
             capture_output=True,
+        )
+        subprocess.run(
+            ["schtasks", "/delete", "/tn", TASK_RESTART_NAME, "/f"],
+            capture_output=True,  # best-effort: absent on installs older than it
         )
         return True, "Scheduled task removed"
     except subprocess.CalledProcessError as e:
@@ -1108,6 +1303,100 @@ def uninstall(method: str | None = None) -> tuple[bool, str]:
     return False, f"Unknown method: {method}"
 
 
+def _child_is_live(pid: object) -> bool | None:
+    """Is the child's pid a running process NOW — True / False / None (could not tell).
+
+    state.json is a snapshot written at boot and after a restart, never in
+    between, so its ``alive`` flag is what was true THEN. A child that died and
+    sits in its restart back-off carries ``alive: True`` and a dead pid.
+    """
+    try:
+        pid_i = int(pid)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if pid_i <= 0:
+        return None
+    try:
+        import psutil  # type: ignore[import-untyped]
+    except ImportError:
+        return None
+    try:
+        proc = psutil.Process(pid_i)
+        return bool(proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE)
+    except psutil.NoSuchProcess:
+        return False
+    except (psutil.Error, OSError):
+        return None  # AccessDenied: an elevated daemon seen from a plain shell
+
+
+def _launched_by_line(daemon: object, pid: int) -> str:
+    """One line naming the daemon's parent — and warning when there is none.
+
+    A daemon with no living parent is orphan-shaped: an hourly process sweep on
+    the operator's machine killed that shape twice on 2026-09-14. Every launch
+    path now relaunches through the scheduled task, so seeing "orphan" here
+    means an older daemon (or a fallback spawn) — restart it.
+    """
+    parent_of = getattr(daemon, "parent_of", None)
+    info = parent_of(pid) if callable(parent_of) else {"shape": "unknown"}
+    shape = info.get("shape")
+    name = info.get("name") or "?"
+    if shape == "service":
+        return f"  Launched by: {name} (pid={info.get('ppid')}) — the service/task; a living parent"
+    if shape == "orphan":
+        return (
+            f"  Launched by: NOBODY — parent pid {info.get('ppid')} is gone (a detached spawn). "
+            "Orphan-shaped: process sweeps kill this. Relaunch through the task: navig service restart"
+        )
+    if shape == "process":
+        return f"  Launched by: {name} (pid={info.get('ppid')}) — alive; the daemon lives while it does"
+    return "  Launched by: unknown (could not read the parent)"
+
+
+def _daemon_vitals(state: dict, daemon: object) -> list[str]:
+    """``Since`` and ``Heartbeat`` lines from the supervisor's state file.
+
+    The heartbeat is the supervisor touching state.json every ``heartbeat_s``
+    — the one liveness signal that comes from the LOOP rather than the pid, so
+    a wedged supervisor (alive, restarting nothing) reads STALE here instead of
+    RUNNING. A state file without ``heartbeat_s`` predates the feature: say so
+    rather than call an old mtime a wedge.
+    """
+    from datetime import datetime, timezone
+
+    lines: list[str] = []
+    started = state.get("started_at")
+    if isinstance(started, str) and started:
+        try:
+            dt = datetime.fromisoformat(started.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            up = int((datetime.now(timezone.utc) - dt).total_seconds())
+            h, m = divmod(max(up, 0) // 60, 60)
+            lines.append(f"  Since: {dt.astimezone().strftime('%Y-%m-%d %H:%M')} (up {h}h {m:02d}m)")
+        except ValueError:
+            pass
+    interval = state.get("heartbeat_s")
+    last_seen = getattr(daemon, "last_seen_alive", None)
+    last = last_seen() if callable(last_seen) else None
+    if not interval or not last:
+        lines.append("  Heartbeat: none (this daemon predates heartbeat tracking — restart once to enable it)")
+        return lines
+    try:
+        age = int((datetime.now(timezone.utc) - datetime.fromisoformat(last)).total_seconds())
+        every = float(interval)
+    except (TypeError, ValueError):
+        return lines
+    if age > 3 * every:
+        lines.append(
+            f"  Heartbeat: STALE — the loop last ticked {age}s ago (expected every {int(every)}s); "
+            "the supervisor may be wedged: navig service restart"
+        )
+    else:
+        lines.append(f"  Heartbeat: {age}s ago (every {int(every)}s)")
+    return lines
+
+
 def status(method: str | None = None) -> tuple[bool, str]:
     """Check NAVIG daemon service status."""
     from navig.daemon.supervisor import NavigDaemon
@@ -1132,10 +1421,26 @@ def status(method: str | None = None) -> tuple[bool, str]:
     if daemon_pid:
         lines.append(f"  PID: {daemon_pid}")
 
+    if daemon_running and daemon_pid:
+        lines.append(_launched_by_line(NavigDaemon, daemon_pid))
     state = NavigDaemon.read_state()
     if state and daemon_running:
+        lines.extend(_daemon_vitals(state, NavigDaemon))
         for child in state.get("children", []):
-            status_str = "ALIVE" if child.get("alive") else "DEAD"
+            # Verify the pid NOW; the snapshot's `alive` is what was true when
+            # the file was written. Never print ALIVE over a guess.
+            live = _child_is_live(child.get("pid"))
+            if live is None:
+                # Cannot check the pid (typically an elevated daemon seen from a
+                # plain shell): say so, and say how — "unverified" alone reads
+                # like a problem with the child.
+                status_str = (
+                    "ALIVE (unverified — run from an elevated shell to check)"
+                    if child.get("alive")
+                    else "DEAD"
+                )
+            else:
+                status_str = "ALIVE" if live else "DEAD"
             lines.append(
                 f"  {child['name']}: {status_str} (pid={child.get('pid', '?')}, restarts={child.get('restart_count', 0)})"
             )
@@ -1170,6 +1475,11 @@ def status(method: str | None = None) -> tuple[bool, str]:
             else:
                 nxt = health.get("next_run") or "?"
                 lines.append(f"Task Scheduler: Healthy (watchdog re-checks, next {nxt})")
+                if task_scheduler_restart_task_installed() is False:
+                    lines.append(
+                        f"  ! restart task '{TASK_RESTART_NAME}' not registered — the deck's "
+                        "Restart needs it (an in-tree restart kills itself). Fix: navig service install"
+                    )
             summary = _summary_line(detail_ts)
             if summary:
                 lines.append(f"  Detail: {summary}")

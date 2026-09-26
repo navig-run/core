@@ -34,6 +34,7 @@ from pathlib import Path
 import typer
 
 from navig import console_helper as ch
+from navig.platform.paths import invocation_cwd, resolve_user_path
 
 # capability link → source (relative to the workshop root)
 _CLAUDE_LINKS: tuple[tuple[str, str], ...] = (
@@ -53,19 +54,10 @@ _ROOT_LINKS: tuple[tuple[str, str], ...] = (
 # dev hygiene folders created only if missing
 _DEV_DIRS: tuple[str, ...] = (".lab", ".backup", "tests", "scripts")
 
-_GITIGNORE_START = "# ── navig wire (managed) ── do not edit between markers"
-_GITIGNORE_END = "# ── end navig wire (managed) ──"
-_GITIGNORE_BLOCK = (
-    "\n" + _GITIGNORE_START + "\n"
-    "# linked capability junctions (live under .claude/, sources in .navig/)\n"
-    ".claude/skills\n.claude/blocks\n.claude/agents\n.claude/output-styles\n.claude/rules\n"
-    "# machine-local / private — never commit\n"
-    ".navig/\n.lab/\n.local/\n.dev/\n.backup/\n.wiki\n.docs\n"
-    "# build / cache / IDE artifacts\n"
-    ".next/\n.open-next/\n.wrangler/\n.venv/\n.pytest_cache/\n"
-    ".tmp/\n.core-sync-tmp/\n.idea/\n"
-    + _GITIGNORE_END + "\n"
-)
+# The .gitignore rules live in ONE place — navig.spaces.gitignore — shared with the
+# scaffold `navig space init` writes, so the two cannot drift (they had: both
+# blanket-ignored .navig/, contradicting the flagship repo, which commits its plans).
+from navig.spaces.gitignore import reconcile as _reconcile_gitignore
 
 _LAB_RULE = """\
 # The `.lab/` corpus — copy & improve, don't reinvent
@@ -135,7 +127,11 @@ def wire_command(
         _scaffold_space_skeleton,
     )
 
-    target = (path.expanduser().resolve() if path else Path.cwd())
+    # ⚠ Both halves anchor to where the operator TYPED the command, not the
+    # process cwd: main.py chdir's into the active space first, so a bare
+    # `navig wire` (or a relative --path) wired the SPACE instead of the folder
+    # the operator was standing in — writing junctions into the wrong tree.
+    target = resolve_user_path(path) if path else invocation_cwd()
     if target.exists() and not target.is_dir():
         ch.error(f"Cannot wire {target}", details="A file exists at that path.")
         raise typer.Exit(1)
@@ -226,41 +222,31 @@ def wire_command(
         except OSError:
             pass
 
-    # 6) .gitignore managed block — refresh in place between markers, else append.
-    gitignore = target / ".gitignore"
+    # 6) .gitignore — one implementation shared with `space doctor --fix`
+    #    (navig.spaces.gitignore.reconcile): retire the old scaffold head, refresh or
+    #    append the managed block, warn about a blanket `.navig/` the operator wrote.
     if not dry_run:
-        try:
-            existing = gitignore.read_text(encoding="utf-8") if gitignore.is_file() else ""
-            if _GITIGNORE_START in existing and _GITIGNORE_END in existing:
-                s = existing.index(_GITIGNORE_START)
-                e = existing.index(_GITIGNORE_END) + len(_GITIGNORE_END)
-                new = (existing[:s].rstrip("\n") + "\n" + _GITIGNORE_BLOCK.strip("\n")
-                       + "\n" + existing[e:].lstrip("\n")).strip("\n") + "\n"
-                if new != existing:
-                    gitignore.write_text(new, encoding="utf-8")
-                    actions.append("refresh .gitignore (managed block)")
-            elif _GITIGNORE_START not in existing:
-                gitignore.write_text(
-                    existing.rstrip("\n") + "\n" + _GITIGNORE_BLOCK if existing
-                    else _GITIGNORE_BLOCK.lstrip("\n"),
-                    encoding="utf-8",
-                )
-                actions.append("update .gitignore (managed block)")
-        except OSError:
-            pass
+        actions.extend(_reconcile_gitignore(target))
 
     # 7) Register in the spaces registry (enabled).
     if not no_register and not dry_run:
         try:
-            from navig.platform.paths import config_dir as _config_dir  # noqa: PLC0415
             from navig.spaces import registry as _registry  # noqa: PLC0415
 
-            under_home = str(target).startswith(str(_config_dir() / "spaces"))
-            _registry.register(
-                target, id=name, name=name,
-                source="root" if under_home else "external", enabled=True,
-            )
-            actions.append("register in spaces.json (enabled)")
+            other = _registry.id_taken_by_another_path(name, target)
+            if other:
+                # Everything above (skeleton, links, gitignore) was still worth doing; only
+                # the registry entry would have been a duplicate id — say so, and how.
+                actions.append(
+                    f"⚠ NOT registered: '{name}' is already the id of {other} — one id, one space. "
+                    f"Give this folder another id: navig space rename {target} <other-id> "
+                    f"(then navig space register {target}), or forget the other: navig space forget {name}"
+                )
+            else:
+                _registry.register(
+                    target, id=name, name=name, source=_registry.source_for(target), enabled=True,
+                )
+                actions.append("register in spaces.json (enabled)")
         except Exception:  # noqa: BLE001
             pass
 

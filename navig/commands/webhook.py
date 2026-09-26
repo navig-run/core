@@ -1,6 +1,24 @@
 """
 NAVIG Webhook CLI Commands
 
+**NOT WIRED.** Every command here talks to a webhook-management API (``/api/v1/webhooks``)
+on ``daemon.browser_port`` (7421), and nothing in the repository serves it. The "Go host
+daemon" the old error hint pointed at was never part of this Python-only core, and
+``navig gateway start`` does not help either: the gateway serves a different port, and its
+``/webhook/{source}`` route is an inbound RECEIVER for external services posting to navig --
+not this management API (and that receiver is itself a documented no-op today: it is
+registered before ``self.webhook_receiver`` exists, and enabling it is a separate decision
+because it exposes an external endpoint; see ``NavigGateway._setup_webhook_routes``). So
+every command below fails at the connection, on every install.
+
+They used to fail with "host daemon is not running" plus a hint to start the gateway, which
+sent people to start something that would not have fixed it. They now say what is true.
+The commands stay so that ``navig webhook --help`` documents the intended surface; the
+decision they need -- implement the API in the gateway, or remove the group -- is an owner's.
+(Same situation as ``integrations/browser_orchestrator.py``, which is registered in
+``tests/quality/test_dormant_modules.py``; a command module cannot be, since the CLI
+registry always imports it.)
+
 Commands:
     navig webhook list             — List all registered webhooks (inbound + outbound)
     navig webhook add-inbound      — Create an inbound trigger endpoint
@@ -48,8 +66,14 @@ def _api(method: str, path: str, json=None):
             raise typer.Exit(1)
         return r.json()
     except httpx.ConnectError as _exc:
-        _ch.error("NAVIG host daemon is not running (port 7421).")
-        _ch.info("Start with: navig gateway start  (or the Go host daemon)")
+        # Honest, not hopeful: nothing serves this API in this install, so there is nothing
+        # the user can start. The previous hint ("navig gateway start (or the Go host
+        # daemon)") named a daemon that does not exist and a command that serves a
+        # different port and a different route.
+        _ch.error(
+            "navig webhook needs a webhook-management API (port 7421) that is not part of "
+            "this install -- there is nothing to start."
+        )
         raise typer.Exit(1) from _exc
 
 

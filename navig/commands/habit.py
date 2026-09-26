@@ -388,7 +388,7 @@ def habit_log(
 
 @habit_app.command("journal")
 def habit_journal(
-    text: str = typer.Argument(..., help="The three lines, separated by newlines"),
+    text: str = typer.Argument(..., help="What happened today — write as much as you like"),
     on_date: str | None = typer.Option(
         None, "--date", help="Write into another day (YYYY-MM-DD); defaults to today"
     ),
@@ -396,17 +396,21 @@ def habit_journal(
         None, "--space", help="Space directory (or habits.csv path) that owns the journal"
     ),
 ) -> None:
-    """Write the day's three lines into the space journal.
+    """Write the day's entry into the space journal.
 
     The same entry the check-in card asks for after the day is closed — this is
     the route that does not need Telegram, a phone, or the gateway running.
 
-      navig habit journal "finished the release page
-      lost an hour to a client
-      write the pricing copy"
+      navig habit journal "Long morning at the dentist, so the release slipped.
 
-    Exactly three lines get the card's labels; any other number is written down
-    as you wrote it.
+      Got the pricing copy done in the evening and it reads better than the
+      version I spent all last week on."
+
+    Written exactly as you wrote it: paragraph breaks and your own numbering are
+    kept, and nothing is added in front of your lines. (Until the card stopped
+    asking three fixed questions, an entry of exactly three lines was labelled
+    with them; that branch is gone, because labelling three paragraphs would
+    assert three answers nobody gave.)
     """
     if on_date:
         try:
@@ -427,7 +431,7 @@ def habit_journal(
         raise typer.Exit(1) from exc
 
     if written:
-        ch.success(f"{day} — three lines written.")
+        ch.success(f"{day} — entry written.")
     else:
         ch.dim(f"{day} — already recorded, nothing added.")
     ch.dim(f"{entry}")
@@ -479,6 +483,23 @@ def habit_review(
     path = _tracker_path(space)
     start = end - timedelta(days=days - 1)
     block = weekly_review.build(path, start, end)
+
+    # With `journal.reflect` on, the review carries a read-back of the week's
+    # entries. Appended AFTER build() rather than inside it: build() is pure and
+    # synchronous — the review must still render when no model is configured,
+    # and it must never wait on one.
+    from navig.spaces import journal_reflection
+
+    if journal_reflection.is_enabled():
+        import asyncio
+
+        try:
+            reflection = asyncio.run(journal_reflection.week(path, end))
+        except Exception as exc:  # noqa: BLE001
+            ch.warning("Could not read the week back.", str(exc))
+            reflection = None
+        if reflection:
+            block = block.rstrip("\n") + f"\n\n**Reading the week back**\n\n{reflection}\n"
 
     # Printed raw, not through a Rich table: this is markdown meant to be pasted
     # into a journal file, and a rendered table cannot be pasted back.

@@ -1,4 +1,5 @@
 {
+  "$schema": "./tool.schema.json",
   "id": "tool:run",
   "name": "navig_run",
   "description": "Execute NAVIG run operations.",

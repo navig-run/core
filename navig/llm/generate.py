@@ -1341,15 +1341,26 @@ def _call_provider(
             raise
 
         logger.warning("Provider system call failed (%s), trying httpx direct: %s", provider, e)
-        return _call_direct_openai_compat(
-            provider,
-            model,
-            messages,
-            temperature,
-            max_tokens,
-            timeout,
-            base_url,
-        )
+        try:
+            return _call_direct_openai_compat(
+                provider,
+                model,
+                messages,
+                temperature,
+                max_tokens,
+                timeout,
+                base_url,
+            )
+        except Exception as direct_exc:
+            # Both paths failed. The provider-system error carries the API's OWN
+            # message ("Use 'max_completion_tokens' instead", "output limit was
+            # reached"); the direct fallback reports a generic "Client error '400
+            # Bad Request'". Masking the first with the second loses the only text
+            # that says what to do — and callers classify on that text, so
+            # `navig mode doctor` reported a LIVE model as "error".
+            # Same reasoning as the anthropic/mcp_bridge branch above: when the
+            # fallback cannot add information, surface the original.
+            raise e from direct_exc
 
 
 def _call_via_providers_system(

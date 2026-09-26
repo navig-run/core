@@ -12,6 +12,7 @@ from pathlib import Path
 import typer
 
 from navig.lazy_loader import lazy_import
+from navig.platform.paths import invocation_cwd, resolve_user_path
 
 ch = lazy_import("navig.console_helper")
 
@@ -192,7 +193,10 @@ def formation_init(
     """
     from navig.formations.loader import discover_formations
 
-    ws = workspace or Path.cwd()
+    # A typed --workspace anchors to where the operator ran the command, and so
+    # does the default: main.py chdir's into the active space first, so a bare
+    # Path.cwd() would write .navig/profile.json into the space, not the project.
+    ws = resolve_user_path(workspace) if workspace else invocation_cwd()
     formation_map = discover_formations()
 
     if profile not in formation_map:

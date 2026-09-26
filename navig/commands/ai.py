@@ -480,17 +480,37 @@ def ai_models(
     provider: str | None = typer.Option(
         None, "--provider", "-p", help="Filter by provider (e.g., openai, airllm)"
     ),
+    check: bool = typer.Option(
+        False, "--check", help="Call every listed model once (1 token) and report what is GONE."
+    ),
+    timeout: float = typer.Option(
+        90.0, "--timeout", help="Per-model budget for --check, seconds.",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON (with --check)."),
 ):
     """List available AI models from all providers.
+
+    ``--check`` turns the listing into an audit: it calls every id in the
+    CATALOG — both the registry manifest and the provider-config table — and
+    reports which ones the provider has retired, with a paste-ready denylist
+    entry for each. This is the sweep that `navig mode doctor` does not do:
+    doctor probes the models an install ROUTES to, while these are the ones it
+    can SUBSTITUTE IN (`models[0]` is the credential probe and the routing
+    substitution default), so a retirement lands here first.
 
     Examples:
         navig ai models
         navig ai models --provider airllm
-        navig ai models --provider openai
+        navig ai models --check                     # audit every provider you hold a key for
+        navig ai models --check -p groq --json
     """
     from rich.table import Table
 
     console = get_console()
+
+    if check:
+        _ai_models_check(console, provider, timeout=timeout, json_output=json_output)
+        return
 
     try:
         from navig.providers import BUILTIN_PROVIDERS
@@ -522,7 +542,8 @@ def ai_models(
             console.print(f"[bold]{pname}[/bold]")
 
             table = Table(box=None, show_header=True, padding=(0, 2))
-            table.add_column("Model ID", style="cyan")
+            # The id is the thing a user copies into `--model`; never crop it.
+            table.add_column("Model ID", style="cyan", no_wrap=True)
             table.add_column("Name")
             table.add_column("Context", justify="right")
             table.add_column("Max Tokens", justify="right")
@@ -549,6 +570,96 @@ def ai_models(
 
     except ImportError:
         console.print("[yellow]Provider system not available.[/yellow]")
+
+
+def _ai_models_check(
+    console, provider: str | None, *, timeout: float, json_output: bool
+) -> None:
+    """The catalog audit behind ``navig ai models --check``.
+
+    Exits 1 when a catalog id is RETIRED, because that is a fact about the repo
+    the operator can act on (denylist it, replace it) and it silently breaks
+    `models[0]`-shaped defaults. It does NOT exit 1 for a slow model, a busy
+    provider, or a provider with no key — none of those is a defect, and a red
+    exit over someone else's latency teaches people to ignore the command.
+    """
+    from rich.table import Table
+
+    from navig.llm.liveness import denylist_lines, probe_catalog, retired_catalog_entries
+
+    if not json_output:
+        console.print(
+            "[bold cyan]Catalog audit[/bold cyan] "
+            "[dim]— 1 token per id, manifest + provider table[/dim]"
+        )
+    rows = probe_catalog(provider, timeout=timeout)
+    if not rows:
+        console.print(
+            f"[yellow]No catalog models to check{f' for {provider}' if provider else ''}.[/yellow]"
+        )
+        raise typer.Exit(0)
+
+    if json_output:
+        import json as _json
+
+        # Machines get every row, including the unjudged ones the table folds
+        # into its footer — a filtered JSON would hide what was not checked.
+        typer.echo(_json.dumps(rows, indent=2))
+    else:
+        # An audit of 5 providers should not print 54 rows of "no key". Those
+        # collapse into the footer, which NAMES them — unless a single provider
+        # was asked about, where staying silent about its rows would be evasive.
+        shown = rows if provider else [r for r in rows if r["status"] != "nokey"]
+        _ICON = {
+            "live": "[green]● live[/green]",
+            "dead": "[red]✗ RETIRED[/red]",
+            "auth": "[yellow]⚠ auth[/yellow]",
+            "nokey": "[dim]○ not probed[/dim]",
+            "denylisted": "[dim]▪ denylisted[/dim]",
+            "unreachable": "[red]✗ unreachable[/red]",
+            "transient": "[yellow]↻ busy[/yellow]",
+            "slow": "[yellow]🐢 slow[/yellow]",
+            "error": "[red]✗ error[/red]",
+        }
+        table = Table(box=None, show_header=True, padding=(0, 2))
+        table.add_column("Provider", style="cyan", no_wrap=True)
+        table.add_column("Model ID", no_wrap=True)
+        table.add_column("Listed in", style="dim", no_wrap=True)
+        table.add_column("Status", no_wrap=True)
+        table.add_column("Detail")
+        for r in shown:
+            table.add_row(r["provider"], r["model"], r["where"],
+                          _ICON.get(r["status"], r["status"]), r["detail"])
+        if shown:
+            console.print(table)
+
+    retired = retired_catalog_entries(rows)
+    probed = [r for r in rows if r["status"] not in ("nokey", "denylisted")]
+    skipped = sorted({r["provider"] for r in rows if r["status"] == "nokey"})
+    if not json_output:
+        console.print()
+        console.print(
+            f"[dim]{len(probed)} id(s) called · {len(retired)} retired · "
+            f"{len(rows) - len(probed)} not probed[/dim]"
+        )
+        if skipped:
+            # Never a tick over an unknown: say which providers went unjudged.
+            console.print(
+                f"[dim]no credential, so not judged: {', '.join(skipped)}[/dim]"
+            )
+        if retired:
+            console.print()
+            console.print(
+                "[yellow]Add these to navig/llm/liveness.py::RETIRED_MODELS — the sweep "
+                "needs live keys, the denylist is what gates the build:[/yellow]"
+            )
+            for line in denylist_lines(rows):
+                console.print(f"[red]{line}[/red]")
+            console.print(
+                "[dim]…then replace them in registry.py / types.py with ids that answered.[/dim]"
+            )
+    if retired:
+        raise typer.Exit(1)
 
 
 @ai_app.command("providers")
@@ -630,26 +741,41 @@ def ai_providers(
 
             try:
                 client = create_client(config, api_key=api_key, oauth_token=oauth_token, timeout=10)
-                # Make a minimal request to test auth
+                # Make a minimal request to test auth. The question is "does the
+                # credential work", so walk the known model ids and skip the ones
+                # the provider reports retired — a hand-maintained first row was a
+                # dead id for every keyed provider on 2026-09-19.
                 from navig.providers import CompletionRequest, Message
+                from navig.providers.probe_models import probe_candidates, probe_first_answering
+
+                candidates = probe_candidates(provider_name) or ["gpt-4o-mini"]
 
                 async def test_request():
-                    request = CompletionRequest(
-                        messages=[Message(role="user", content="Hi")],
-                        model=config.models[0].id if config.models else "gpt-4o-mini",
-                        max_tokens=5,
-                    )
+                    async def _attempt(model: str):
+                        await client.complete(CompletionRequest(
+                            messages=[Message(role="user", content="Hi")],
+                            model=model,
+                            max_tokens=5,
+                        ))
+
                     try:
-                        await client.complete(request)
-                        return True, None
-                    except Exception as e:
-                        return False, str(e)
+                        return await probe_first_answering(candidates, _attempt)
                     finally:
                         await client.close()
 
-                success, error = asyncio.run(test_request())
-                if success:
-                    console.print(f"[green]✓ {provider_name} is working![/green]")
+                answered, error, gone = asyncio.run(test_request())
+                if answered:
+                    console.print(f"[green]✓ {provider_name} is working![/green] [dim](answered as {answered})[/dim]")
+                    if gone:
+                        console.print(
+                            f"[yellow]⚠ retired model id(s) in the registry: {', '.join(gone)}[/yellow]"
+                        )
+                elif gone and len(gone) == len(candidates):
+                    console.print(
+                        f"[red]✗ {provider_name}: every known model id is retired "
+                        f"({', '.join(gone)}) — the credential was never judged. "
+                        f"Update navig/providers/registry.py.[/red]"
+                    )
                 else:
                     console.print(f"[red]✗ {provider_name} error: {error}[/red]")
             except Exception as e:
@@ -683,7 +809,9 @@ def ai_providers(
             if api_key:
                 key_status, key_style = "✓ configured", "green"
             elif name in _conn_providers:
-                key_status, key_style, source = "✓ subscription", "green", (source or "connection")
+                # resolve_auth found nothing (it says "not_found", which is truthy) —
+                # the credential IS the routable connection, so name that.
+                key_status, key_style, source = "✓ subscription", "green", "connection"
             else:
                 key_status, key_style = "✗ not set", "red"
 
@@ -911,13 +1039,34 @@ def ai_airllm(
             raise typer.Exit(1)
 
 
+# What people type at `navig ai login` -> the template `navig connect login` wants.
+# Both spellings of each subscription, because the old command's help said
+# "openai-codex" and the new one calls it "chatgpt".
+_CONNECT_TEMPLATE_FOR = {
+    "claude": "claude-max",
+    "claude-max": "claude-max",
+    "anthropic": "claude-max",
+    "chatgpt": "chatgpt",
+    "openai": "chatgpt",
+    "openai-codex": "chatgpt",
+    "codex": "chatgpt",
+}
+
+
 @ai_app.command("login")
 def ai_login(
     ctx: typer.Context,
-    provider: str = typer.Argument(..., help="OAuth provider (e.g., openai-codex)"),
+    provider: str = typer.Argument(
+        None, help="OAuth provider. Subscriptions live under `navig connect login`."
+    ),
     headless: bool = typer.Option(False, "--headless", help="Headless mode (no browser auto-open)"),
 ):
-    """Login to an AI provider using OAuth (e.g., OpenAI Codex)."""
+    """Login to an AI provider using OAuth.
+
+    ⚠ Subscription OAuth (Claude Pro/Max, ChatGPT Plus/Pro) lives under
+    `navig connect login`. This command covers the legacy per-provider OAuth
+    registry, which currently has no entries — so it points you there.
+    """
 
     console = get_console()
 
@@ -931,17 +1080,29 @@ def ai_login(
 
         # Check if any OAuth providers are configured
         if not OAUTH_PROVIDERS:
-            console.print("[red]✗ OAuth authentication is not currently available.[/red]")
+            # This registry is empty, so EVERY call lands here. Saying "OAuth is
+            # not available" was simply false — `navig connect login` is a working
+            # OAuth flow — and sending people to paste an API key is the wrong
+            # answer for someone who has a subscription. Point at the real command.
+            template = _CONNECT_TEMPLATE_FOR.get((provider or "").strip().lower())
+            console.print(
+                "[yellow]Subscription logins moved to [cyan]navig connect login[/cyan].[/yellow]"
+            )
             console.print()
-            console.print("[yellow]Why?[/yellow]")
-            console.print("OAuth requires provider-specific client registration.")
-            console.print("OpenAI's OAuth is only available to enterprise partners.")
+            if template:
+                console.print(f"  [cyan]navig connect login {template}[/cyan]")
+            else:
+                console.print("  [cyan]navig connect login claude-max[/cyan]   Claude Pro/Max")
+                console.print("  [cyan]navig connect login chatgpt[/cyan]      ChatGPT Plus/Pro")
             console.print()
-            console.print("[cyan]Use API key authentication instead:[/cyan]")
-            console.print("  navig vault add openai sk-... --type api-key")
-            console.print("  navig vault add anthropic sk-ant-... --type api-key")
-            console.print()
-            console.print("[dim]See: docs/development/oauth-limitations.md[/dim]")
+            console.print(
+                "[dim]Already connected? [cyan]navig connect list[/cyan] shows their state, "
+                "[cyan]navig connect test[/cyan] re-checks it.[/dim]"
+            )
+            console.print(
+                "[dim]Using an API key instead: "
+                "[cyan]navig connect add <template>[/cyan] (hidden prompt, never argv).[/dim]"
+            )
             raise typer.Exit(1)
 
         provider_lower = provider.lower()

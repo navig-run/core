@@ -734,9 +734,15 @@ async def handle_callback(
 def journal_prompt_text(day: str) -> str:
     """What the card asks for once the day is closed.
 
-    The three questions are quoted from the daily card rather than paraphrased:
-    the point is that the answer is short and always the same shape, so it can be
-    given at 22:15 without composing anything.
+    It used to ask three numbered questions — proud of / knocked me off / tomorrow's
+    first task — chosen so the answer was short and always the same shape. The
+    operator asked for the opposite: "free form of writing of all my day", because
+    a fixed shape collects three sentences and a day is not three sentences.
+
+    So this is an invitation, not a form. The only structural hints that survive
+    are the ones that are *mechanical* rather than editorial: reply to THIS
+    message (that is what makes the answer identifiable), a voice note works, and
+    here is the file it lands in.
     """
     title = _t("habit.journal.title", day=_human_day(day))
     # `skip` is a COMMAND, so it is substituted rather than translated: a locale
@@ -747,9 +753,7 @@ def journal_prompt_text(day: str) -> str:
         [
             f"✍️ <b>{html.escape(title)}</b>",
             "",
-            _t("habit.journal.q1"),
-            _t("habit.journal.q2"),
-            _t("habit.journal.q3"),
+            _t("habit.journal.invite"),
             "",
             f"<i>{_t('habit.journal.reply_hint')}</i>",
             f"<i>{_t('habit.journal.voice_hint')}</i>",

@@ -270,6 +270,13 @@ class ConversationalAgent:
         # Claude Max subscription → another one). Callers may read it to surface
         # "answered with <account>"; reset at the start of every turn.
         self._last_account_fallback: dict[str, Any] | None = None
+        #: Why the last `run_agentic` ended WITHOUT a real answer — ``"turn_limit"`` or
+        #: ``"empty_response"`` — or None when it produced one. The loop returns a
+        #: human sentence either way, and a caller that files that sentence as a
+        #: result reports success for a run that produced nothing (the mission
+        #: executor did: "succeeded — Agent reached the 8-turn limit"). A structured
+        #: signal, so no caller has to pattern-match prose.
+        self.last_run_incomplete: str | None = None
         self._entrypoint, self.context = "channel", {}
         self._plan_context_loaded: bool = False
         self._plan_ctx_loaded_at: float = 0.0  # epoch timestamp of last plan ctx fetch
@@ -900,6 +907,7 @@ class ConversationalAgent:
         _session_key = session_key or self._session_id
 
         budget = IterationBudget(max_iterations=max_iterations)
+        self.last_run_incomplete = None
         if (
             cost_tracker is not None
             and hasattr(cost_tracker, "record")
@@ -2038,11 +2046,13 @@ class ConversationalAgent:
             # still available) points at the user's phrasing for something no
             # rephrasing can fix, and hides the real event. Say which happened.
             if budget.is_exhausted():
+                self.last_run_incomplete = "turn_limit"
                 final_response = (
                     f"Agent reached the {turn}-turn limit without a final answer. "
                     "Try a more specific request."
                 )
             else:
+                self.last_run_incomplete = "empty_response"
                 final_response = (
                     f"No answer came back — {provider_name}/{model_name} returned "
                     f"an empty response on turn {turn}. Try again, or switch model."

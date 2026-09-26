@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Container
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -46,6 +47,36 @@ class InstalledPlugin:
     commands: list[str] = field(default_factory=list)   # top-level CLI names it provides
     error: str = ""                  # legacy-format load error, when known
     missing_deps: list[str] = field(default_factory=list)  # legacy-format unmet deps
+
+
+def wire_state(plugin: InstalledPlugin, shadowed: Container[str] = ()) -> str:
+    """One word for a plugin's wire state — the canonical precedence.
+
+    ``disabled > failed > degraded > shadowed > wired``. Every surface that reports a
+    plugin's state reads THIS, so they cannot disagree: `navig plugin list`'s table and
+    banner, and the hub/store aggregator (which maps the word onto its own coarser
+    ``WireState`` vocabulary).
+
+    Two copies of this ladder existed and they DID disagree. The hub's copy tested only
+    ``health.state == 'failed'`` and never ``error`` — but the legacy branch of
+    ``list_installed`` sets ``error`` and leaves ``health`` as None, so a legacy plugin
+    that failed to load was advertised as usable in the store while `navig plugin list`
+    correctly showed it as failed.
+
+    ``shadowed`` is the set of ids resolving to an installed copy rather than the source
+    ``[tool.uv.sources]`` declares (see ``navig.plugins.sources``). It is passed IN so
+    this stays a pure function: the audit touches the filesystem, and a caller runs it
+    once per listing rather than once per plugin.
+    """
+    if not plugin.enabled:
+        return "disabled"
+    if plugin.error or (plugin.health is not None and plugin.health.state.value == "failed"):
+        return "failed"
+    if plugin.health is not None and plugin.health.state.value == "degraded":
+        return "degraded"
+    if plugin.id in shadowed:
+        return "shadowed"
+    return "wired"
 
 
 class PluginHost:

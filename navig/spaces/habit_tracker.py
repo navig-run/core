@@ -225,7 +225,7 @@ def remember_spark(chat_id: int, key: str) -> None:
 
 # ── The journal prompt the closing card leaves open ───────────────────────────
 #
-# Closing the day asks for three lines. The answer arrives as a normal Telegram
+# Closing the day asks for the day in writing. The answer arrives as a normal Telegram
 # message, possibly minutes later, so the gateway has to know that a reply to
 # THAT message is a journal entry and not a question for the agent.
 #
@@ -236,7 +236,7 @@ def remember_spark(chat_id: int, key: str) -> None:
 
 
 def set_journal_prompt(chat_id: int, day: str, prompt_msg_id: int | None) -> None:
-    """Record that *chat_id* was asked for the three lines of *day*."""
+    """Record that *chat_id* was asked to write about *day*."""
     data = _read_state()
     entry = _chat_state(data, chat_id)
     entry["journal_prompt"] = {"day": day, "message_id": prompt_msg_id}

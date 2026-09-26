@@ -79,6 +79,10 @@ KRAKEN_FRAMES = [
 
 KRAKEN_MINI = " ◉‿◉\n /||\\\n ~  ~"
 
+#: Terminal rows needed before the 14-row mascot panel fits WITHOUT starving the two
+#: ratio panels beside it (header 3 + footer 3 + kraken 14 + tip 5 + 2 × ≥ 6 rows).
+KRAKEN_MIN_ROWS = 38
+
 NAVIG_BANNER = (
     "    ███╗   ██╗ █████╗ ██╗   ██╗██╗ ██████╗\n"
     "    ████╗  ██║██╔══██╗██║   ██║██║██╔════╝\n"
@@ -375,14 +379,25 @@ def run_boot_sequence(fast: bool = False) -> None:
     bar_w = min(20, cols - 30)
     if bar_w < 8:
         bar_w = 8
+    # Each spinner frame must overwrite the previous one. That used to be attempted with
+    # a `\r` INSIDE the printed text — and Rich's `Text` strips control characters (CR
+    # included) before rendering, so the carriage return never reached the terminal:
+    # every frame was appended to the line, the line wrapped at the terminal width, and
+    # the boot screen came out as a staircase of `Scanning services` repeated ~23 times
+    # per step (seen in the first recording of `navig dashboard`; identical on Windows).
+    # `Control.move_to_column(0)` goes through `console.control`, which Rich does emit.
+    from rich.control import Control
+
     for icon, label in BOOT_STEPS:
         for fi in range(bar_w + 3):
             filled = min(fi, bar_w)
             sp = SPINNER_CHARS[fi % len(SPINNER_CHARS)]
             bar = f"[cyan]{'█' * filled}[/cyan][dim]{'░' * (bar_w - filled)}[/dim]"
-            console.print(f"\r  [yellow]{sp}[/yellow] {icon}  {label}  {bar}", end="")
+            console.control(Control.move_to_column(0))
+            console.print(f"  [yellow]{sp}[/yellow] {icon}  {label}  {bar}", end="")
             time.sleep(0.015)
-        console.print(f"\r  [green]✓[/green] {icon}  {label}  [green]{'█' * bar_w}[/green]")
+        console.control(Control.move_to_column(0))
+        console.print(f"  [green]✓[/green] {icon}  {label}  [green]{'█' * bar_w}[/green]")
 
     console.print()
     console.print("  [bold green]⚡ Kraken ready[/bold green]")
@@ -409,8 +424,8 @@ def create_layout(cols: int = 120, rows: int = 30) -> Layout:
         layout["main"].split_column(
             Layout(name="services", ratio=3),
             Layout(name="tunnels", ratio=2),
-            Layout(name="hosts", ratio=2),
-            Layout(name="history", ratio=2),
+            Layout(name="hosts", ratio=2, minimum_size=6),
+            Layout(name="history", ratio=2, minimum_size=6),
         )
     # Wide terminal: two columns
     else:
@@ -422,19 +437,25 @@ def create_layout(cols: int = 120, rows: int = 30) -> Layout:
             Layout(name="services", ratio=3),
             Layout(name="tunnels", ratio=2),
         )
-        # Show kraken panel only if tall enough
-        if rows >= 28:
+        # Show the kraken panel only if tall enough. The threshold used to be 28 rows,
+        # which is exactly where it breaks: header 3 + footer 3 + kraken 14 + tip 5 are
+        # fixed, so at 28–34 rows the two RATIO panels — Remote Hosts and Recent Ops, the
+        # ones with the operator's data — were squeezed to their borders and rendered
+        # EMPTY (three configured hosts, an empty "Remote Hosts" box; seen in the first
+        # showcase recording at 32 rows). Each needs ≥ 6 rows to show anything, so the
+        # mascot has to wait for 38.
+        if rows >= KRAKEN_MIN_ROWS:
             layout["right"].split_column(
-                Layout(name="hosts", ratio=2),
+                Layout(name="hosts", ratio=2, minimum_size=6),
                 Layout(name="kraken", size=14),
                 Layout(name="tip", size=5),
-                Layout(name="history", ratio=1),
+                Layout(name="history", ratio=1, minimum_size=6),
             )
         else:
             layout["right"].split_column(
-                Layout(name="hosts", ratio=2),
+                Layout(name="hosts", ratio=2, minimum_size=6),
                 Layout(name="tip", size=5),
-                Layout(name="history", ratio=1),
+                Layout(name="history", ratio=1, minimum_size=6),
             )
     return layout
 
@@ -937,8 +958,8 @@ def run_dashboard(
         # Wide layout has left/right split
         if cols >= 90:
             layout["hosts"].update(make_hosts_panel(config_manager, state.hosts_status, cols))
-            # Kraken only on tall terminals
-            if rows >= 28:
+            # Kraken only on tall terminals (same threshold as create_layout)
+            if rows >= KRAKEN_MIN_ROWS:
                 layout["kraken"].update(make_kraken_panel(state.kraken_frame))
             layout["tip"].update(make_tip_panel(state.activity_log))
             layout["history"].update(make_history_panel())

@@ -37,6 +37,11 @@ from navig.messaging.adapter import (
 logger = logging.getLogger(__name__)
 
 
+#: provider -> the pip package its SDK lives in. Kept beside the two lazy imports
+#: in `_get_client`, which is where the requirement actually bites.
+_PROVIDER_PACKAGES = {"twilio": "twilio", "vonage": "vonage"}
+
+
 class SmsAdapter:
     """
     SMS transport adapter (Twilio / Vonage).
@@ -54,6 +59,36 @@ class SmsAdapter:
             self._config.get("twilio", {}).get("messaging_service_sid", "") or ""
         ).strip()
         self._client: Any = None
+
+    def missing_dependency(self) -> str | None:
+        """The pip package this adapter needs but cannot import, or ``None``.
+
+        ⚠ Asked at REGISTRATION, because the SDK import lives inside
+        `_get_client` — several call frames below `send`. So an adapter whose
+        SDK is not installed constructs cleanly, registers as a usable channel,
+        and then raises on EVERY send. Measured on the operator's own daemon:
+        `adapters.sms.enabled` was true with a twilio block, the package was
+        never installed, and each habit reminder produced
+
+            sms_send_failed | to=+33… | error=twilio package required: pip install twilio
+
+        one ERROR per delivery, forever, for a channel that could never work.
+        A channel that cannot send must not present itself as one that can.
+
+        Returns the package NAME rather than a bool so the caller can name the
+        remedy instead of saying "something is missing".
+        """
+        import importlib.util  # noqa: PLC0415
+
+        package = _PROVIDER_PACKAGES.get(self._provider)
+        if not package:
+            return None  # unknown provider — not a dependency problem
+        try:
+            return None if importlib.util.find_spec(package) else package
+        except (ImportError, ValueError):
+            # find_spec raises when a parent package is itself missing/broken;
+            # either way the SDK is not importable.
+            return package
 
     # ── Protocol properties ───────────────────────────────────
 

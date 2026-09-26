@@ -116,6 +116,10 @@ navig approve no
 navig approve policy
 navig approve yes
 navig ask
+navig audio beat analyse
+navig audio beat gen
+navig audio beat plan
+navig audio beat styles
 navig audio check
 navig audio clone
 navig audio draft
@@ -229,6 +233,7 @@ navig cdp profile prune
 navig cdp profile remove
 navig cdp profile usage
 navig cdp profile use
+navig cdp profile vacuum
 navig cdp record
 navig cdp screenshot
 navig cdp scroll
@@ -275,11 +280,23 @@ navig connector list
 navig connector search
 navig connector status
 navig contacts add
+navig contacts doctor
+navig contacts export
+navig contacts flag
 navig contacts import
 navig contacts list
+navig contacts liveness
+navig contacts merge
+navig contacts merges
+navig contacts migrate
 navig contacts remove
+navig contacts review
 navig contacts route
+navig contacts search
 navig contacts show
+navig contacts split
+navig contacts stats
+navig contacts undo
 navig context clear
 navig context init
 navig context set
@@ -405,11 +422,29 @@ navig ebay publish
 navig ebay relist
 navig ebay ship
 navig ebay show
+navig email connect
+navig email digest
+navig email edge deploy
+navig email edge events
+navig email edge secrets
+navig email edge send
+navig email edge stats
+navig email edge status
+navig email followup
+navig email labels ensure
+navig email labels list
 navig email list
+navig email read
+navig email replied
+navig email rules apply
+navig email rules check
+navig email rules list
 navig email search
 navig email send
-navig email setup
-navig email sync
+navig email stats
+navig email status
+navig email tag
+navig email watch
 navig eval run
 navig evolve fix
 navig evolve optimize
@@ -920,6 +955,23 @@ navig mobile root
 navig mobile scan
 navig mobile screenshot
 navig mobile storage
+navig mobile ui apps
+navig mobile ui assert
+navig mobile ui close
+navig mobile ui devices
+navig mobile ui doctor
+navig mobile ui exec
+navig mobile ui fill
+navig mobile ui open
+navig mobile ui press
+navig mobile ui record
+navig mobile ui replay
+navig mobile ui screenshot
+navig mobile ui scroll
+navig mobile ui snapshot
+navig mobile ui tap
+navig mobile ui type
+navig mobile ui wait
 navig mobile watch
 navig mode detect
 navig mode doctor
@@ -955,12 +1007,24 @@ navig net speedtest
 navig node add
 navig node list
 navig node remove
+navig notify send
+navig notify types
 navig output-style create
 navig output-style list
 navig output-style off
 navig output-style show
 navig output-style use
+navig paperwork apply
+navig paperwork echeances
+navig paperwork handoff
+navig paperwork index
+navig paperwork reply
+navig paperwork review
+navig paperwork scan
+navig paperwork undo
+navig pipeline captions
 navig pipeline clip
+navig pipeline hooks
 navig pipeline reel
 navig pipeline run
 navig pipeline schedule
@@ -1036,12 +1100,15 @@ navig repo conflicts
 navig repo guard install
 navig repo guard status
 navig repo guard uninstall
+navig repo land
 navig repo lock release
 navig repo lock status
 navig repo new
 navig repo prune
 navig repo remove
 navig repo stale
+navig repo sweep
+navig repo sync
 navig run
 navig scaffold apply
 navig scaffold validate
@@ -1064,6 +1131,7 @@ navig server-template sync
 navig service config
 navig service install
 navig service logs
+navig service pids
 navig service restart
 navig service start
 navig service status
@@ -1122,6 +1190,8 @@ navig social connect
 navig social disconnect
 navig social engagement
 navig social fan-out
+navig social presence crawl
+navig social presence trend
 navig social receipts
 navig social redirect-uri
 navig social refresh
@@ -1146,8 +1216,15 @@ navig space init
 navig space install
 navig space lint
 navig space list
+navig space media config
+navig space media fix
+navig space media link
+navig space media list
+navig space media relink
+navig space media verify
 navig space new
 navig space register
+navig space rename
 navig space switch
 navig space unfold
 navig space use
@@ -1167,8 +1244,15 @@ navig spaces init
 navig spaces install
 navig spaces lint
 navig spaces list
+navig spaces media config
+navig spaces media fix
+navig spaces media link
+navig spaces media list
+navig spaces media relink
+navig spaces media verify
 navig spaces new
 navig spaces register
+navig spaces rename
 navig spaces switch
 navig spaces unfold
 navig spaces use
@@ -1206,6 +1290,7 @@ navig task run
 navig task show
 navig task test
 navig telegram business alerts
+navig telegram business deleted
 navig telegram business disable
 navig telegram business emoji
 navig telegram business enable

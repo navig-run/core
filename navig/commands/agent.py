@@ -1098,23 +1098,10 @@ def telegram_start(
         if foreground:
             subprocess.run(cmd, check=True)
         else:
-            # Background mode
-            if sys.platform == "win32":
-                subprocess.Popen(
-                    cmd,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                ch.success("Bot started in background")
-            else:
-                subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
-                )
-                ch.success("Bot started in background")
+            # One policy for every background bot launch (navig.daemon.launch).
+            from navig.daemon.launch import start_bot_in_background
+
+            start_bot_in_background(gateway=False, port=None, ch=ch)
     except KeyboardInterrupt:
         ch.info("\nBot stopped by user")
     except Exception as e:
@@ -2236,6 +2223,7 @@ def agent_plan(
                 dry_run=dry_run,
                 auto_approve=auto_yes or dry_run,
                 max_retries=1,
+                max_steps=max_steps,
             )
         )
     except Exception as exc:

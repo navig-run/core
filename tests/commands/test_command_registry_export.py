@@ -97,6 +97,89 @@ def test_export_script_writes_artifacts(tmp_path: Path):
     assert payload["total"] > 0
 
 
+def _load_export_module():
+    repo_root = Path(__file__).resolve().parents[2]
+    export_script = repo_root / "tools" / "export_registry.py"
+    spec = importlib.util.spec_from_file_location("export_registry_check", export_script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _snapshot(directory: Path) -> dict[str, bytes]:
+    return {
+        p.relative_to(directory).as_posix(): p.read_bytes()
+        for p in sorted(directory.rglob("*"))
+        if p.is_file()
+    }
+
+
+def test_check_matches_a_fresh_export_and_writes_nothing(tmp_path: Path, capsys):
+    """``--check`` is the read-only verb: green against its own output, and the tree it
+    compared against is byte-identical afterwards — including the timestamp a regen
+    would have bumped."""
+    module = _load_export_module()
+    out = tmp_path / "generated"
+    flags = ["--format", "both", "--deprecations-report", "--output-dir", str(out)]
+    assert module.main(flags) == 0
+    before = _snapshot(out)
+    assert set(before) == {
+        "commands.json", "commands.md", "completions/commands.txt", "deprecations.json",
+    }
+    capsys.readouterr()
+
+    assert module.main(["--check", *flags]) == 0
+    captured = capsys.readouterr()
+    assert "nothing written" in captured.out
+    assert _snapshot(out) == before, "--check must not touch the artifacts it compares"
+
+
+def test_check_names_every_stale_artifact_and_fails(tmp_path: Path, capsys):
+    """Each drifted or missing artifact is named on stderr with exit 1 — a green tick over a
+    stale manifest is what the freshness gate exists to prevent, and the CLI verb must not
+    be softer than the gate."""
+    module = _load_export_module()
+    out = tmp_path / "generated"
+    flags = ["--format", "both", "--deprecations-report", "--output-dir", str(out)]
+    assert module.main(flags) == 0
+    capsys.readouterr()
+
+    md = out / "commands.md"
+    md.write_text(md.read_text(encoding="utf-8") + "\n<!-- drift -->\n", encoding="utf-8")
+    (out / "deprecations.json").unlink()
+    before = _snapshot(out)
+
+    assert module.main(["--check", *flags]) == 1
+    captured = capsys.readouterr()
+    assert "commands.md: differs" in captured.err
+    assert "deprecations.json: missing" in captured.err
+    assert "commands.json:" not in captured.err and "commands.txt:" not in captured.err, (
+        "an artifact that still matches must not be reported as stale"
+    )
+    assert "Regenerate & commit" in captured.err
+    assert _snapshot(out) == before, "a red --check must not repair anything either"
+
+
+def test_check_is_blind_to_the_timestamp_alone(tmp_path: Path, capsys):
+    """A regen ALWAYS changes ``generated_at``; if --check flagged that, it would be red on
+    every committed manifest and teach everyone to ignore it."""
+    module = _load_export_module()
+    out = tmp_path / "generated"
+    flags = ["--format", "both", "--deprecations-report", "--output-dir", str(out)]
+    assert module.main(flags) == 0
+    cj = out / "commands.json"
+    payload = json.loads(cj.read_text(encoding="utf-8"))
+    payload["generated_at"] = "2001-01-01T00:00:00+00:00"
+    # Re-render every artifact around the pinned stamp, exactly as a regen at that instant
+    # would have — the shape the committed tree is always in.
+    for rel, text in module._render_artifacts(payload, "both", True).items():
+        (out / rel).parent.mkdir(parents=True, exist_ok=True)
+        (out / rel).write_text(text, encoding="utf-8")
+    capsys.readouterr()
+    assert module.main(["--check", *flags]) == 0, capsys.readouterr().err
+
+
 # ---------------------------------------------------------------------------
 # Anti-rot: the checked-in manifest must cover every registered command.
 # ---------------------------------------------------------------------------

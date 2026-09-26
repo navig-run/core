@@ -1,4 +1,3 @@
-```skill
 ---
 name: telemetry-audit
 description: Privacy audit — captures all outbound/inbound TCP connections from VS Code and Windows telemetry services, traces each remote endpoint to its owner (WHOIS/ASN/PTR/GeoIP), maps data categories, locates local staging files, and generates a classified risk report. Passive and read-only.
@@ -272,4 +271,3 @@ Official docs: https://learn.microsoft.com/en-us/windows/privacy/configure-windo
 
 - `defender-exclusion-manage` — modify Defender exclusions
 - `procmon-capture` — detailed per-process file/registry/network trace (requires Procmon64.exe on USB)
-```

@@ -38,6 +38,73 @@ _SYSTEM: dict[str, str] = {
         "You are a concise summarizer. Summarize the message below in 1-3 short sentences "
         "capturing the key point(s), in the same language as the input. Output ONLY the summary."
     ),
+    # Reads back a free-form journal entry the operator just wrote. Deliberately
+    # NOT a clinical instrument: it names what is on the page and asks one
+    # question, because the value is being read attentively, not being assessed.
+    #
+    # The constraints are the design. "No diagnosis, no disorder names" keeps a
+    # tired evening sentence from being handed back as a condition. "Quote their
+    # own words" keeps it anchored to what was actually written instead of
+    # generic counsel that would fit anybody. "One question, and only if it earns
+    # its place" stops every entry ending in homework.
+    #
+    # Same language as the input, because this is the operator talking to
+    # themselves and a reply in the wrong language breaks that completely.
+    "reflect": (
+        "You are a thoughtful, warm reader of someone's private daily journal. "
+        "They wrote freely about their day. Read it the way an attentive friend "
+        "with psychological training would — closely, without judging.\n\n"
+        "Write a short reflection (3-6 sentences) that:\n"
+        "- names the emotional thread running through the entry, in plain words;\n"
+        "- quotes or echoes one or two of THEIR OWN phrases, so they can see you "
+        "actually read it;\n"
+        "- notes any pattern worth seeing: what they returned to, what they "
+        "described at length versus in passing, what they seemed to step around;\n"
+        "- ends with at most ONE open question, and only if a real one is there. "
+        "Do not manufacture a question to have one.\n\n"
+        "Hard limits: no diagnosis, no disorder or syndrome names, no clinical "
+        "labels, no advice unless they explicitly asked for it, no praise that "
+        "would fit any entry. Do not tell them how to feel. If the entry is brief "
+        "or flat, say something brief — do not inflate it.\n\n"
+        "If the entry contains signs of crisis or self-harm, do not analyse: "
+        "respond briefly, warmly and directly, and say that talking to someone "
+        "they trust or a professional is worth it right now.\n\n"
+        "Write in the SAME LANGUAGE as the entry. Output ONLY the reflection — "
+        "no preamble, no heading, no bullet markers."
+    ),
+    # The week's entries read together. Same limits as `reflect`, different
+    # question: not "what is on this page" but "what moved across these pages".
+    # Patterns are the only thing a weekly read can see that a daily one cannot,
+    # so that is what it is asked for — and nothing else, because a week of
+    # someone's writing is exactly where a model is most tempted to explain
+    # them to themselves.
+    "reflect_week": (
+        "You are a thoughtful, warm reader of someone's private daily journal. "
+        "Below are their entries for one week, each under its date. Read them "
+        "together, the way an attentive friend with psychological training "
+        "would read a week of letters — closely, without judging.\n\n"
+        "Write a short reflection (5-8 sentences) about the WEEK, not about any "
+        "one day:\n"
+        "- name the thread that runs through the week, in plain words;\n"
+        "- say what shifted from the start of the week to the end, if anything "
+        "did — and say plainly if it did not;\n"
+        "- quote or echo two or three of THEIR OWN phrases from different days, "
+        "so they can see the pattern in their own words;\n"
+        "- notice what they kept returning to, and what they mentioned once and "
+        "then never again;\n"
+        "- end with at most ONE open question about the coming week, and only "
+        "if a real one is there.\n\n"
+        "Hard limits: no diagnosis, no disorder or syndrome names, no clinical "
+        "labels, no advice unless they explicitly asked for it, no praise that "
+        "would fit any week. Do not tell them how to feel. Do not summarise the "
+        "days one by one — that is a list, not a reflection. If the entries are "
+        "brief or few, say something brief.\n\n"
+        "If any entry contains signs of crisis or self-harm, do not analyse: "
+        "respond briefly, warmly and directly, and say that talking to someone "
+        "they trust or a professional is worth it right now.\n\n"
+        "Write in the SAME LANGUAGE as the entries. Output ONLY the reflection — "
+        "no preamble, no heading, no bullet markers."
+    ),
     "context": (
         "You are a neutral analyst. Briefly explain the context, intent, and any implied "
         "meaning of the message below. Be concise and factual, in the same language as the "
@@ -173,7 +240,24 @@ def set_emoji_override(emoji: str, tool: str | None) -> None:
     cfg.save(scope="global")
 
 
-async def run_text_action(tool: str, content: str, *, is_owner: bool, arg: str = "") -> dict:
+#: Default content budget. Sized for the original job — reacting to ONE Telegram
+#: message, which is at most 4096 characters by Telegram's own limit — so for
+#: that job it never cuts anything. A caller handing over something longer (a
+#: journal entry, a week of them) must say so, because the cut is otherwise
+#: silent: the model answers about the part it saw and nothing marks the seam.
+DEFAULT_MAX_CHARS = 4000
+
+
+async def run_text_action(
+    tool: str,
+    content: str,
+    *,
+    is_owner: bool,
+    arg: str = "",
+    max_chars: int = DEFAULT_MAX_CHARS,
+    mode: str = "chat",
+    model_override: str | None = None,
+) -> dict:
     """Run a sandboxed (no-tools) AI text action on message content.
 
     ``arg`` is an optional parameter for arg-aware tools — currently ``translate``,
@@ -206,8 +290,24 @@ async def run_text_action(tool: str, content: str, *, is_owner: bool, arg: str =
     content = (content or "").strip()
     if not content:
         return {"ok": False, "reason": "empty", "tool": tool}
+    # ⚠ A cut here is invisible to the caller AND to the model, which answers
+    # confidently about the part it saw. Measured with the weekly journal
+    # read-back before this budget existed: a week of ~240-word entries is
+    # ~7,900 chars, and the 4,000 cut kept Monday–Thursday and dropped
+    # Friday–Sunday — the reflection was then asked "what shifted by Sunday"
+    # having never seen Sunday. So the cut is logged, and marked in the text
+    # so the model at least knows the seam is there.
+    if len(content) > max_chars:
+        logger.warning(
+            "telegram AI action %s: content cut from %d to %d chars — the model "
+            "will not see the end of it",
+            tool,
+            len(content),
+            max_chars,
+        )
+        content = content[:max_chars] + "\n[… cut here — the rest was not shown to you]"
     # Wrap untrusted content in explicit delimiters so it can't pose as instructions.
-    user_msg = f"<<<MESSAGE\n{content[:4000]}\nMESSAGE>>>"
+    user_msg = f"<<<MESSAGE\n{content}\nMESSAGE>>>"
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user_msg},
@@ -220,7 +320,13 @@ async def run_text_action(tool: str, content: str, *, is_owner: bool, arg: str =
 
         from navig.llm.generate import llm_generate
 
-        out = await asyncio.to_thread(llm_generate, messages, mode="chat", timeout=60.0)
+        # `mode` is the router hint ("chat" → small_talk, the fast tier, right for
+        # reacting to one message); `model_override` bypasses the router entirely
+        # for callers whose content the operator may want pinned somewhere
+        # specific — the journal, whose `journal.model` key lands here.
+        out = await asyncio.to_thread(
+            llm_generate, messages, mode=mode, model_override=model_override, timeout=60.0
+        )
         out = (out or "").strip()
         if not out:
             return {"ok": False, "reason": "empty_result", "tool": tool}

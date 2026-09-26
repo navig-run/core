@@ -58,6 +58,11 @@ _LOGGERS_LOCK = threading.Lock()
 _ROOT_CONFIGURED = False
 _ROOT_CONFIG_LOCK = threading.Lock()
 
+#: Console (stderr) handler level chosen by the entry point — ``None`` = the root level.
+#: The CLI sets WARNING for an interactive command (``--verbose`` → INFO); the daemon
+#: leaves it at INFO because for a long-running process the console IS the log.
+_CONSOLE_LEVEL_OVERRIDE: int | None = None
+
 # Log format including the optional session tag injected by the record factory.
 LOG_FORMAT = "%(asctime)s [%(name)s]%(session_tag)s %(levelname)s: %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -320,8 +325,10 @@ def _configure_root_logger(
     console_handler = logging.StreamHandler(sys.stderr)
     use_color = _supports_color(sys.stderr) and "pytest" not in sys.modules
     console_handler.setFormatter(NavigConsoleFormatter(use_color=use_color))
-    console_handler.setLevel(level)
+    console_handler.setLevel(level if _CONSOLE_LEVEL_OVERRIDE is None else _CONSOLE_LEVEL_OVERRIDE)
+    console_handler.navig_console = True  # type: ignore[attr-defined]  — the ONE handler set_console_level governs
     root.addHandler(console_handler)
+    _bridge_loguru()
 
     if "pytest" not in sys.modules:
         try:
@@ -344,6 +351,72 @@ def _configure_root_logger(
         # File handler always captures DEBUG so post-mortem analysis is possible.
         file_handler.setLevel(logging.DEBUG)
         root.addHandler(file_handler)
+
+
+def set_console_level(level: int) -> None:
+    """Choose how much of the log stream reaches the terminal for THIS process.
+
+    The console handler on stderr defaulted to INFO for every process, so an interactive
+    command that merely loads plugins printed ~25 ``INFO plugins navig plugin loaded: …``
+    lines above its own output — on a fresh install, on every command (measured: 26
+    stderr lines before ``navig doctor``'s first line). Those records belong in
+    ``navig.log`` (the file handler keeps DEBUG); on a terminal they are noise unless
+    asked for. The CLI callback calls this with WARNING, or INFO under ``--verbose``.
+    Daemon entry points never call it, and ``gateway start`` sets its own levels.
+
+    Safe before or after the lazy root configuration: the level is remembered and
+    applied to the console handler when it is created, or immediately when it already
+    exists. Only the handler this module created is touched — a test's capture handler
+    is a StreamHandler too, and quieting it would hide the very records a test asserts.
+    """
+    global _CONSOLE_LEVEL_OVERRIDE
+    _CONSOLE_LEVEL_OVERRIDE = level
+    for handler in logging.getLogger("navig").handlers:
+        if getattr(handler, "navig_console", False):
+            handler.setLevel(level)
+
+
+_LOGURU_BRIDGED = False
+
+
+def _bridge_loguru() -> None:
+    """Route loguru records into the ``navig`` logging tree; drop loguru's own sink.
+
+    25 modules log through ``loguru`` (``skills.loader``, the blocks runner, the
+    self-heal patcher, …) and loguru ships with a default sink: **stderr at DEBUG**,
+    with its own ANSI colouring. Nothing ever removed it, so every ``logger.debug``
+    in those modules printed straight to the terminal past the console level, past
+    ``NO_COLOR``, past the redacting formatters — a raw ``DEBUG | navig.skills.loader
+    … loaded 113 skills`` line sat above ``navig doctor``'s report on a clean install.
+
+    The bridge re-emits each record through the stdlib logger of the same name, so
+    it obeys the console level, lands in ``navig.log`` and passes the redaction the
+    rest of the tree gets. loguru's level numbers (DEBUG 10 … CRITICAL 50) are the
+    stdlib's; SUCCESS (25) and TRACE (5) map to the nearest stdlib level by number.
+    Idempotent; a missing loguru is simply nothing to bridge.
+    """
+    global _LOGURU_BRIDGED
+    if _LOGURU_BRIDGED:
+        return
+    try:
+        from loguru import logger as _loguru
+    except ImportError:
+        return
+
+    def _sink(message) -> None:  # noqa: ANN001 — loguru Message
+        record = message.record
+        name = str(record["name"] or "loguru")
+        std = logging.getLogger(name if name == "navig" or name.startswith("navig.") else f"navig.{name}")
+        exc = record["exception"]
+        exc_info = (exc.type, exc.value, exc.traceback) if exc else None
+        std.log(int(record["level"].no), redact_sensitive_text(str(record["message"])), exc_info=exc_info)
+
+    try:
+        _loguru.remove()
+        _loguru.add(_sink, level="TRACE", format="{message}")
+    except Exception:  # noqa: BLE001 — logging must never take the process down
+        return
+    _LOGURU_BRIDGED = True
 
 
 # ---------------------------------------------------------------------------

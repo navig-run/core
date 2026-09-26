@@ -282,7 +282,7 @@ async def handle_deck_social_telegram_get(request: "web.Request") -> "web.Respon
     payload.setdefault("require_auth", True)
     payload.setdefault("reactions_enabled", True)
     payload.setdefault("inline_mode_enabled", True)
-    payload.setdefault("checklist_enabled", True)
+    payload.setdefault("checklist_enabled", False)   # opt-in; see telegram_checklist.py
     payload.setdefault("forum_routing_enabled", False)
     payload.setdefault("auto_pin_briefings", True)
     payload.setdefault("auto_pin_plans", False)

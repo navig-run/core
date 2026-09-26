@@ -198,6 +198,35 @@ def test_queue_list_shows_the_task_id(gw):
     assert "task-77" in result.output, "the task id was swallowed as Rich markup"
 
 
+def test_queue_list_limit_actually_limits(gw):
+    """`--limit` was parsed, shown in --help as 'Max tasks to show', and never applied:
+    `-n 2` against a queue of five printed all five."""
+    gw["resp"] = _Resp(200, _envelope({"tasks": [
+        {"id": f"task-{i}", "name": f"job{i}", "status": "queued"} for i in range(5)
+    ]}))
+
+    result = CliRunner().invoke(queue_app, ["list", "-n", "2"], obj={})
+
+    assert result.exit_code == 0, result.output
+    shown = [i for i in range(5) if f"task-{i}" in result.output]
+    assert shown == [0, 1], f"--limit 2 showed tasks {shown}; expected only the first two"
+    assert "showing 2 of 5" in result.output, (
+        "when the list is cut, say so — otherwise the count reads as the whole queue"
+    )
+
+
+def test_queue_list_without_limit_shows_everything_and_says_no_truncation(gw):
+    gw["resp"] = _Resp(200, _envelope({"tasks": [
+        {"id": f"task-{i}", "name": f"job{i}", "status": "queued"} for i in range(3)
+    ]}))
+
+    result = CliRunner().invoke(queue_app, ["list"], obj={})
+
+    assert result.exit_code == 0, result.output
+    assert all(f"task-{i}" in result.output for i in range(3))
+    assert "showing" not in result.output, "no truncation happened, so do not claim one"
+
+
 # ── anti-vacuity ─────────────────────────────────────────────────────────────
 
 

@@ -44,15 +44,21 @@ CATALOG = {
          "pricing": {"model": "tier", "includedInTier": "plus"}},
         {"slug": "buy-space", "kind": "space", "surfaces": ["deck"],
          "pricing": {"model": "buy_once", "priceUsd": 19, "includedInTier": "plus"}},
+        {"slug": "navig-social", "kind": "plugin", "surfaces": ["cli"], "pricing": {"model": "free"}},
+        {"slug": "navig-download", "kind": "plugin", "surfaces": ["cli"], "pricing": {"model": "free"}},
+        {"slug": "a-persona", "kind": "persona", "surfaces": ["cli"], "pricing": {"model": "free"}},
     ],
 }
 
 
-def _patch(monkeypatch, tmp_path, *, catalog=CATALOG, status=None, installed=frozenset()):
+def _patch(monkeypatch, tmp_path, *, catalog=CATALOG, status=None, installed=frozenset(),
+           installed_plugins=frozenset(), installed_skills=frozenset()):
     p = tmp_path / "bay-catalog.json"
     p.write_text(json.dumps(catalog), encoding="utf-8")
     monkeypatch.setattr(cat, "_bay_catalog_path", lambda: p)
     monkeypatch.setattr(cat, "_installed_space_ids", lambda: set(installed))
+    monkeypatch.setattr(cat, "_installed_plugin_ids", lambda: set(installed_plugins))
+    monkeypatch.setattr(cat, "_installed_skill_ids", lambda: set(installed_skills))
     import navig.license as lic
 
     monkeypatch.setattr(lic, "current_status", lambda: status or _FakeStatus())
@@ -69,7 +75,7 @@ async def test_free_tier_locks_priced_and_shows_free(monkeypatch, tmp_path):
     _patch(monkeypatch, tmp_path, status=_FakeStatus())
     data = _data(await cat.handle_deck_bay(_Req()))
     assert data["source"] == "bundled"
-    assert data["count"] == 3
+    assert data["count"] == 6
     by = {i["slug"]: i for i in data["items"]}
     assert by["free-skill"]["unlocked"] is True and by["free-skill"]["capability"] is None
     assert by["plus-space"]["unlocked"] is False  # tier-gated, free doesn't cover
@@ -91,12 +97,27 @@ async def test_covering_tier_unlocks(monkeypatch, tmp_path):
     assert by["buy-space"]["unlocked"] is True    # covered while subscribed
 
 
-async def test_installed_flag_only_on_spaces(monkeypatch, tmp_path):
-    _patch(monkeypatch, tmp_path, status=_FakeStatus(), installed={"plus-space"})
+async def test_installed_flag_on_spaces_plugins_and_skills(monkeypatch, tmp_path):
+    _patch(
+        monkeypatch, tmp_path, status=_FakeStatus(),
+        installed={"plus-space"}, installed_plugins={"social"}, installed_skills={"free-skill"},
+    )
     by = {i["slug"]: i for i in _data(await cat.handle_deck_bay(_Req()))["items"]}
     assert by["plus-space"]["installed"] is True
     assert by["buy-space"]["installed"] is False
-    assert "installed" not in by["free-skill"]  # non-space carries no installed flag
+    # Skills: matched by slug against the loader's ids.
+    assert by["free-skill"]["installed"] is True
+    # Plugins: the catalog slug is the package name; the host keys by bare id.
+    assert by["navig-social"]["installed"] is True
+    assert by["navig-download"]["installed"] is False
+    # Kinds the daemon cannot enumerate carry NO flag (unknown is not "false").
+    assert "installed" not in by["a-persona"]
+
+
+def test_plugin_id_of_strips_only_the_package_prefix():
+    assert cat._plugin_id_of("navig-social") == "social"
+    assert cat._plugin_id_of("vault") == "vault"
+    assert cat._plugin_id_of("navig-") == ""
 
 
 async def test_kind_and_surface_filters(monkeypatch, tmp_path):
@@ -104,7 +125,7 @@ async def test_kind_and_surface_filters(monkeypatch, tmp_path):
     spaces = _data(await cat.handle_deck_bay(_Req(kind="space")))
     assert spaces["count"] == 2 and all(i["kind"] == "space" for i in spaces["items"])
     cli = _data(await cat.handle_deck_bay(_Req(surface="cli")))
-    assert {i["slug"] for i in cli["items"]} == {"free-skill", "plus-space"}  # buy-space is deck-only
+    assert {i["slug"] for i in cli["items"]} == {"free-skill", "plus-space", "navig-social", "navig-download", "a-persona"}  # buy-space is deck-only
 
 
 async def test_missing_artifact_degrades_gracefully(monkeypatch, tmp_path):

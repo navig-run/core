@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.svg" alt="NAVIG" width="100" />
+  <img src="https://raw.githubusercontent.com/navig-run/core/main/logo.svg" alt="NAVIG" width="100" />
 </p>
 
 <h1 align="center">NAVIG</h1>
@@ -18,11 +18,38 @@
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey?style=flat-square" alt="Platform">
 </p>
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/navig-run/core/main/docs/showcase/hero.gif" alt="navig host list, a real navig run over SSH, and navig apply safe-deployment --dry-run" width="900" />
+</p>
+
 > [!NOTE]
 > **NAVIG 3.x is a stable release.** The CLI contract (`navig <resource> <action>`) is stable
 > and changes follow [semantic versioning](https://semver.org). Review the [CHANGELOG](CHANGELOG.md)
 > before upgrading across major versions. As with any tool that operates live infrastructure, use
 > read-only inspection and dry runs first in production-critical environments.
+
+---
+
+## See it in action
+
+Real sessions, recorded from the tapes in [`tools/showcase/`](tools/showcase) against lab hosts —
+nothing typed into the output, nothing edited out. All eleven scenes, the videos and how they were
+made: **[docs/showcase](docs/showcase/README.md)** · videos on the [showcase release](https://github.com/navig-run/core/releases/tag/showcase-2026-09-26).
+
+<table>
+<tr>
+<td width="50%"><b>Kraken dashboard</b> — <code>navig dashboard</code><br/><img src="https://raw.githubusercontent.com/navig-run/core/main/docs/showcase/dashboard.gif" alt="navig dashboard" /></td>
+<td width="50%"><b>Hosts &amp; safety</b> — <code>host test</code>, a second session refused, a destructive command declined<br/><img src="https://raw.githubusercontent.com/navig-run/core/main/docs/showcase/hosts-and-safety.gif" alt="navig host test, session lock, destructive confirmation" /></td>
+</tr>
+<tr>
+<td><b>Spaces</b> — <code>space init --dry-run</code> → <code>space init</code> → <code>space doctor</code><br/><img src="https://raw.githubusercontent.com/navig-run/core/main/docs/showcase/spaces.gif" alt="navig space init and space doctor" /></td>
+<td><b>Blocks</b> — <code>block show</code> → <code>apply --dry-run</code> with per-step risk<br/><img src="https://raw.githubusercontent.com/navig-run/core/main/docs/showcase/blocks.gif" alt="navig block show and apply --dry-run" /></td>
+</tr>
+<tr>
+<td><b>Ledger &amp; undo</b> — <code>ledger show</code> → <code>ledger verify</code> → <code>undo --list</code><br/><img src="https://raw.githubusercontent.com/navig-run/core/main/docs/showcase/ledger-and-undo.gif" alt="navig ledger show, verify and undo --list" /></td>
+<td><b>Your node</b> — <code>navig whoami</code><br/><img src="https://raw.githubusercontent.com/navig-run/core/main/docs/showcase/whoami.gif" alt="navig whoami sigil card" /></td>
+</tr>
+</table>
 
 ---
 
@@ -248,6 +275,8 @@ navig ask "what is consuming the most memory on this host?"
 ```
 
 That's it. Everything else builds from here.
+
+No server yet? [`examples/quickdemo.sh`](examples/quickdemo.sh) walks the same path on your own machine in 60 seconds.
 
 **Where to go next** — after that first `navig run`:
 

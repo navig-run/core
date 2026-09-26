@@ -12,7 +12,10 @@ the system.
 from __future__ import annotations
 
 import logging
+import os
 import random
+from datetime import datetime
+from typing import Any
 
 from . import autoreply, biz_commands, permissions, reply_actions
 
@@ -51,6 +54,256 @@ def _bot_id(channel) -> str:
         return tok.split(":", 1)[0] if ":" in tok else ""
     except Exception:  # noqa: BLE001
         return ""
+
+
+def _is_own_echo(channel, msg: dict) -> bool:
+    """True when *msg* is one of the bot's OWN business sends echoed back by
+    Telegram (``from`` = the bot, and/or ``sender_business_bot`` = the bot).
+
+    Only the bot's own id qualifies — ``from.is_bot`` alone does NOT, because the
+    owner also talks to *other* bots and those conversations belong in the
+    catalog. With no token to compare against we cannot tell an echo from another
+    bot, so nothing is skipped here and the ``is_bot`` branch keeps such a message
+    DATA-only (no auto-reply) — the safe side either way."""
+    own = _bot_id(channel)
+    if not own:
+        return False
+    frm = msg.get("from") or {}
+    if frm.get("id") is not None and str(frm.get("id")) == own:
+        return True
+    sbb = msg.get("sender_business_bot") or {}
+    return sbb.get("id") is not None and str(sbb.get("id")) == own
+
+
+def _extract_media(msg: dict) -> dict | None:
+    """Photo/video/voice/… descriptor (with ``file_id``) for a business message,
+    via the same extractor the regular catalog ingest uses; None for text-only."""
+    try:
+        from navig.gateway.channels.telegram_catalog_ingest import extract_media
+
+        return extract_media(msg)
+    except Exception:  # noqa: BLE001
+        logger.debug("business media extract failed", exc_info=True)
+        return None
+
+
+# What a deleted message is described as in the owner's alert, per media kind,
+# and the Bot API method + field that re-sends it by ``file_id``. ``video_note``
+# and ``sticker`` take no caption.
+MEDIA_ICON = {
+    "photo": "📷", "video": "🎬", "animation": "🎞", "voice": "🎤", "audio": "🎵",
+    "document": "📎", "video_note": "📹", "sticker": "🧩",
+}
+_MEDIA_SEND = {
+    "photo": ("sendPhoto", "photo", True), "video": ("sendVideo", "video", True),
+    "animation": ("sendAnimation", "animation", True), "voice": ("sendVoice", "voice", True),
+    "audio": ("sendAudio", "audio", True), "document": ("sendDocument", "document", True),
+    "video_note": ("sendVideoNote", "video_note", False), "sticker": ("sendSticker", "sticker", False),
+}
+_SNIPPET_MAX = 500
+_LINES_MAX = 40      # the notify sink truncates at Telegram's 4096 anyway; this keeps it readable
+_CAPTION_MAX = 1024  # Bot API limit
+
+
+def media_label(kind: str | None) -> str:
+    """"📷 photo" for a media kind — the ONE rendering of a file, shared by the
+    deletion DM and `navig telegram business deleted` so the two surfaces cannot
+    describe the same message differently."""
+    k = kind or "media"
+    return f"{MEDIA_ICON.get(k, '📎')} {k.replace('_', ' ')}"
+
+
+def _person_name(user: dict) -> str:
+    """Display name for a Telegram user: their name, else their handle.
+
+    One order for people everywhere in this module — the alert's chat label and
+    the stored ``sender_name`` disagreeing is what printed a hex handle next to a
+    human name in the same DM."""
+    name = " ".join(p for p in (user.get("first_name"), user.get("last_name")) if p).strip()
+    if name:
+        return name
+    if user.get("username"):
+        return f"@{user['username']}"
+    return str(user.get("id") or "")
+
+
+def _edit_stamp(msg: dict) -> str:
+    """ISO timestamp of an edit — Telegram's ``edit_date`` when present, else now."""
+    try:
+        if ts := msg.get("edit_date"):
+            return datetime.fromtimestamp(int(ts)).astimezone().isoformat(timespec="seconds")
+    except (TypeError, ValueError, OSError, OverflowError):
+        pass
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _chat_label(chat: dict, cached_title: str | None = None) -> str:
+    """Human name for the alert: a group title or the person's name — never the
+    bare ``username`` first (a private chat has no ``title``, so the old
+    ``title or username`` rendered a hex-looking handle instead of "Yck 🧢")."""
+    name = chat.get("title") or " ".join(
+        p for p in (chat.get("first_name"), chat.get("last_name")) if p
+    ).strip()
+    if not name:
+        name = cached_title or ""
+    if not name and chat.get("username"):
+        name = f"@{chat['username']}"
+    return name or str(chat.get("id"))
+
+
+# Non-file content a message can carry: no ``file_id``, so ``extract_media`` sees
+# nothing and the row lands with empty text. Naming them is what keeps a deleted
+# location or poll from reading as "(no text)" — an answer that looks like a bug.
+_CONTENT_KINDS: tuple[tuple[str, str, str], ...] = (
+    ("story", "📖", "shared story"), ("location", "📍", "location"),
+    ("venue", "📍", "venue"), ("contact", "👤", "contact"), ("poll", "📊", "poll"),
+    ("dice", "🎲", "dice"), ("game", "🎮", "game"), ("invoice", "🧾", "invoice"),
+    ("giveaway", "🎁", "giveaway"), ("gift", "🎁", "gift"), ("unique_gift", "🎁", "gift"),
+    ("paid_media", "💳", "paid media"), ("checklist", "☑️", "checklist"),
+    ("pinned_message", "📌", "pinned a message"),
+    ("video_chat_started", "📹", "video chat started"),
+    ("video_chat_ended", "📹", "video chat ended"),
+)
+
+
+def _content_kind(msg: dict) -> str | None:
+    """Name the non-file content of *msg* (``story`` / ``poll`` / …), or None.
+
+    Checked only after ``extract_media`` finds nothing, so a photo is never
+    mislabelled by a field that merely rides along with it."""
+    for field, _icon, _label in _CONTENT_KINDS:
+        if msg.get(field) is not None:
+            return field
+    return None
+
+
+def content_label(kind: str | None) -> str | None:
+    """"📊 poll" for a non-file content kind, or None when it is not one.
+
+    Public like :func:`media_label` and for the same reason: the deletion DM and
+    `navig telegram business deleted` must describe one message identically."""
+    for field, icon, label in _CONTENT_KINDS:
+        if field == kind:
+            return f"{icon} {label}"
+    return None
+
+
+def format_when(date_value: Any) -> str | None:
+    """Short local time for a stored ``date``: ``17:18`` today, ``21 Sep 17:18``
+    this year, ``21 Sep 2025`` before that.
+
+    Accepts BOTH shapes the catalog holds — the business path stores a unix
+    timestamp as a string, the regular ingest an ISO ``…Z`` string — because the
+    alert reads rows written by either."""
+    if date_value in (None, ""):
+        return None
+    dt: datetime | None = None
+    raw = str(date_value).strip()
+    try:
+        dt = datetime.fromtimestamp(int(raw))
+    except (TypeError, ValueError, OSError, OverflowError):
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            dt = parsed.astimezone() if parsed.tzinfo else parsed
+        except ValueError:
+            return None
+    if dt is None:
+        return None
+    now = datetime.now()
+    if dt.date() == now.date():
+        return dt.strftime("%H:%M")
+    if dt.year == now.year:
+        return dt.strftime("%-d %b %H:%M" if os.name != "nt" else "%#d %b %H:%M")
+    return dt.strftime("%-d %b %Y" if os.name != "nt" else "%#d %b %Y")
+
+
+def _seen_since(first_seen: str | None) -> str | None:
+    """Human date this chat entered the catalog, for the not-seen explanation."""
+    return format_when(first_seen)
+
+
+def _deleted_by(cached: dict | None, chat: dict, owner_id: int | None, chat_label: str) -> str:
+    """Who wrote the deleted message: "you", else a human name.
+
+    For a PRIVATE chat the counterparty IS the chat, so the chat's own label wins
+    over the stored ``sender_name`` — that is what rescues the rows written before
+    ``_person_name``, which hold a raw handle. A group keeps the per-sender name,
+    where the two are genuinely different people."""
+    if not cached:
+        return "?"
+    if owner_id is not None and cached.get("sender_id") == owner_id:
+        return "you"
+    is_private = (chat.get("type") or "private") == "private" or chat.get("title") is None
+    if is_private and chat_label:
+        return chat_label
+    return str(cached.get("sender_name") or "them")
+
+
+def _describe_deleted(
+    cached: dict | None,
+    media: dict | None,
+    *,
+    who: str,
+    message_id: Any = None,
+    first_seen: str | None = None,
+) -> str:
+    """One alert line for a deleted message.
+
+    Every branch carries WHEN the message was sent, because that single fact is
+    what tells the three "no text" cases apart — and without it the operator
+    reads a correct alert as a broken one (a deletion of yesterday's photo looks
+    identical to today's photo going missing).
+
+    Honest about why a line has no content: never seen at all · seen but
+    non-file content · a row from before media was kept."""
+    if cached is None:
+        head = f"• msg {message_id} · not seen" if message_id is not None else "• not seen"
+        since = _seen_since(first_seen)
+        if since:
+            return f"{head} — NAVIG has watched this chat since {since}, so this one is older"
+        return f"{head} — NAVIG never cataloged this chat (it was offline, or the chat is new to it)"
+    text = (cached.get("text") or "").strip()
+    if len(text) > _SNIPPET_MAX:
+        text = text[:_SNIPPET_MAX].rstrip() + "…"
+    stamp = format_when(cached.get("date"))
+    head = f"• {who}" + (f" · {stamp}" if stamp else "")
+    if cached.get("edited_at"):
+        head += " · edited"
+    if media:
+        kind = media.get("kind") or "media"
+        head += f" · {media_label(kind)}"
+        return f"{head} — {text}" if text else head
+    if content := content_label(cached.get("content")):
+        head += f" · {content}"
+        return f"{head} — {text}" if text else head
+    if text:
+        return f"{head} — {text}"
+    return f"{head} — (no copy kept: sent before NAVIG stored media, or a message type it cannot re-send)"
+
+
+async def _resend_media(channel, chat_id, media: dict, caption: str) -> bool:
+    """Re-send a cached media by ``file_id`` to the owner's DM. A file_id stays
+    valid for the bot after the original message is deleted, so the owner gets
+    the actual photo/voice/… back, not a placeholder. Best-effort: False when
+    the send failed (logged) — the summary alert already named the media."""
+    kind = media.get("kind") or ""
+    file_id = media.get("file_id")
+    spec = _MEDIA_SEND.get(kind)
+    if not (spec and file_id and channel is not None and chat_id is not None):
+        return False
+    method, field, takes_caption = spec
+    data: dict = {"chat_id": chat_id, field: file_id}
+    if takes_caption and caption:
+        data["caption"] = caption[:_CAPTION_MAX]
+    try:
+        res = await channel._api_call(method, data)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("deletion alert: could not re-send deleted %s to the owner: %s", kind, exc)
+        return False
+    if not res:
+        logger.warning("deletion alert: Telegram rejected re-sending the deleted %s", kind)
+        return False
+    return True
 
 
 # ── Business connection registry (owner id ← connection id) ──────────────────
@@ -233,13 +486,30 @@ async def handle_business_message(channel, msg: dict, *, edited: bool = False) -
     sender_id = frm.get("id")
     # ── Loop guard ──────────────────────────────────────────────────────────
     # Telegram echoes the bot's OWN business sends back as business_message
-    # updates (from = the bot). Without this, pro-mode auto-reply would answer its
-    # own replies forever. Skip anything the bot itself sent.
-    if frm.get("is_bot") or (sender_id is not None and str(sender_id) == _bot_id(channel)):
+    # updates (from = the bot, and/or ``sender_business_bot`` = the bot). Without
+    # this, pro-mode auto-reply would answer its own replies forever. Skip anything
+    # the bot itself sent.
+    if _is_own_echo(channel, msg):
         return
+    # Any OTHER bot is a counterparty the owner talks to (@some_bot chats). Its
+    # messages are DATA worth keeping — the deletion alert reads them back — but
+    # never a party we act on: no auto-reply (two bots answering each other never
+    # stops), no commands, no enrichment cards. The guard used to drop every
+    # ``is_bot`` sender here, so whole bot conversations were cataloged one-sided
+    # and every deleted bot message came back as "(content was not cached)".
+    is_other_bot = bool(frm.get("is_bot"))
     owner_id = resolve_owner(msg.get("business_connection_id"))
     is_owner = bool(owner_id and sender_id == owner_id)
     text = msg.get("text") or msg.get("caption") or ""
+    # Media descriptor (photo/video/voice/sticker/…): the file_id is what lets the
+    # deletion alert re-send the actual content to the owner instead of a
+    # placeholder. A caption-less photo used to be stored as text="" and nothing
+    # else, so its deletion alert read "(content was not cached)" for a message
+    # NAVIG had in fact seen.
+    media = _extract_media(msg)
+    # A message with neither text nor a file (a location, a poll, a shared story)
+    # would otherwise be stored as a blank row and read back as "(no text)".
+    content = None if media else _content_kind(msg)
     # Routing metadata only -- NOT the message body. This logged 50 chars of every
     # private business message at INFO, so `~/.navig/logs/gateway.log` accumulated a
     # plaintext transcript of the operator's conversations with third parties who
@@ -249,23 +519,55 @@ async def handle_business_message(channel, msg: dict, *, edited: bool = False) -
     # read it. `integrations/telegram_voice_bot.py` sets the precedent -- log the
     # LENGTH, not the content.
     logger.info(
-        "business message: chat=%s from=%s owner=%s is_owner=%s chars=%d",
-        chat_id, sender_id, owner_id, is_owner, len(text),
+        "business message: chat=%s from=%s owner=%s is_owner=%s bot=%s chars=%d media=%s content=%s",
+        chat_id, sender_id, owner_id, is_owner, is_other_bot, len(text),
+        (media or {}).get("kind") or "-", content or "-",
     )
     try:
-        _store().upsert_room(chat_id, type="business",
-                             title=chat.get("title") or chat.get("first_name") or "")
-        _store().upsert_message(
+        store = _store()
+        store.upsert_room(chat_id, type="business",
+                          title=chat.get("title") or chat.get("first_name") or "")
+        media_id: int | None = None
+        if media:
+            media_id = store.upsert_media(
+                chat_id, message_id=message_id,
+                file_id=media.get("file_id"), file_unique_id=media.get("file_unique_id"),
+                kind=media.get("kind"), mime=media.get("mime"), size=media.get("size"),
+                filename=media.get("filename"),
+            ) or None
+        raw = {"business": True, "from_owner": is_owner,
+               "connection_id": msg.get("business_connection_id")}
+        if media:
+            raw["media"] = media.get("kind")
+            if emoji := (msg.get("sticker") or {}).get("emoji"):
+                raw["emoji"] = emoji
+        if content:
+            raw["content"] = content
+        store.upsert_message(
             chat_id, message_id,
             sender_id=sender_id,
-            sender_name=(frm.get("username") or frm.get("first_name") or ""),
-            date=str(msg.get("date") or ""), text=text, kind="business",
-            edited_at=("yes" if edited else None),
-            raw={"business": True, "from_owner": is_owner,
-                 "connection_id": msg.get("business_connection_id")},
+            # Person first, handle last — the SAME order the chat label uses. The
+            # username came first here, so a deletion alert introduced the
+            # counterparty by their raw handle ("a646f6e747472…") while the very
+            # next line of the same DM called the chat "Yck 🧢".
+            sender_name=_person_name(frm),
+            date=str(msg.get("date") or ""),
+            # `or None`: an empty string OVERWRITES via upsert's COALESCE, so a
+            # caption-less edit or a re-delivered update would erase text the
+            # deletion alert is the last reader of. NULL preserves it.
+            text=text or None,
+            kind="business",
+            media_ref=media_id,
+            # A real timestamp — `edited_at` is a time everywhere else in this
+            # table (`update_message_text` writes `_utcnow()`), and "yes" made the
+            # column unsortable and unreadable by every other consumer.
+            edited_at=(_edit_stamp(msg) if edited else None),
+            raw=raw,
         )
     except Exception:  # noqa: BLE001
         logger.debug("business message catalog failed", exc_info=True)
+    if is_other_bot:
+        return  # cataloged as DATA; a bot never reaches the action pipeline below
     # Owner pro-mode control ("role … on/off") — owner-only; deletes the command
     # and toggles AI persona auto-reply for this conversation.
     try:
@@ -319,36 +621,117 @@ async def handle_business_message(channel, msg: dict, *, edited: bool = False) -
 
 
 async def handle_deleted_business_messages(channel, payload: dict) -> None:
-    """Owner-side deletion in a business conversation → DM the owner the cached
-    content (only the owner; never the deck/other channels)."""
+    """Deletion in a business conversation → DM the owner what was deleted (only
+    the owner; never the deck/other channels).
+
+    ONE alert per deletion event (Telegram sends one payload per chat, with every
+    id deleted at once), listing each message with who wrote it: its text, or
+    the media kind + caption — and each cached media is then re-sent by
+    ``file_id`` so the owner gets the actual photo/voice back. A line is honest
+    about why there is no text: never seen (sent before NAVIG watched the chat,
+    or while it was offline) is not the same as a caption-less photo."""
     if not (permissions.business_enabled() and deletion_alert_enabled()):
         return
     chat = payload.get("chat") or {}
     chat_id = chat.get("id")
-    ids = payload.get("message_ids") or []
-    chat_label = chat.get("title") or chat.get("username") or str(chat_id)
+    ids = [m for m in (payload.get("message_ids") or []) if m is not None]
+    if chat_id is None or not ids:
+        return
+    store = _store()
+    cached_title = None
+    try:
+        cached_title = (store.get_room(chat_id) or {}).get("title")
+    except Exception:  # noqa: BLE001
+        cached_title = None
+    chat_label = _chat_label(chat, cached_title)
+    owner_id = resolve_owner(payload.get("business_connection_id"))
+
+    # Asked once per event, not per id: it is the same answer for every message in
+    # this chat, and it is only consulted when a message is missing.
+    first_seen: str | None = None
+    try:
+        first_seen = store.first_message_at(chat_id)
+    except Exception:  # noqa: BLE001
+        first_seen = None
+
+    lines: list[str] = []
+    media_to_resend: list[tuple[dict, str]] = []   # (media row, caption)
     for mid in ids:
         cached = None
         try:
-            cached = _store().get_message_by_ref(chat_id, mid)
+            cached = store.get_message_by_ref(chat_id, mid)
         except Exception:  # noqa: BLE001
             cached = None
-        snippet = (cached or {}).get("text") if cached else None
-        body = f"In {chat_label}:\n{snippet or '(content was not cached)'}"
+        media = None
+        if cached and cached.get("media_ref"):
+            try:
+                media = store.get_media(int(cached["media_ref"]))
+            except Exception:  # noqa: BLE001
+                media = None
+        who = _deleted_by(cached, chat, owner_id, chat_label)
+        lines.append(_describe_deleted(cached, media, who=who,
+                                       message_id=mid, first_seen=first_seen))
+        if media and media.get("file_id"):
+            cap = f"🗑 Deleted in {chat_label} ({who})"
+            if text := (cached.get("text") or "").strip():
+                cap += f"\n{text}"
+            media_to_resend.append((media, cap))
+
+    title = "🗑 Message deleted" if len(ids) == 1 else f"🗑 {len(ids)} messages deleted"
+    if len(lines) > _LINES_MAX:   # a whole-chat clear: keep the DM readable
+        lines = lines[:_LINES_MAX] + [f"• … and {len(lines) - _LINES_MAX} more"]
+    body = f"In {chat_label}:\n" + "\n".join(lines)
+    delivered = False
+    try:
+        from navig.notify.router import NotificationRouter
+        res = await NotificationRouter().dispatch(
+            "message_deleted",   # a registered notify type (navig.notify.types)
+            title,
+            body,
+            priority="high",
+            only_channels=["telegram"],   # owner DM only — never deck/others
+            data={"chat_id": chat_id, "message_ids": list(ids), "message_id": ids[0]},
+        )
+        delivered = any(
+            r.get("channel") == "telegram" and r.get("ok")
+            for r in (res or {}).get("channels") or []
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug("deletion alert dispatch failed", exc_info=True)
+    # Re-send the media only when the summary itself went out: the router is
+    # where the owner's prefs (muted type, quiet hours, master off) are honoured,
+    # and the copies must not bypass them. Same DM target as the router's
+    # telegram sink, so the copies land next to the summary.
+    if delivered and media_to_resend:
+        target = None
         try:
-            from navig.notify.router import NotificationRouter
-            await NotificationRouter().dispatch(
-                "message_deleted",   # a registered notify type (navig.notify.types)
-                "🗑 Message deleted",
-                body,
-                priority="high",
-                only_channels=["telegram"],   # owner DM only — never deck/others
-                data={"chat_id": chat_id, "message_id": mid},
-            )
+            from navig.messaging.notify_operator import resolve_operator_chat_id
+
+            target = resolve_operator_chat_id()
         except Exception:  # noqa: BLE001
-            logger.debug("deletion alert dispatch failed", exc_info=True)
+            target = None
+        target = target or owner_id
+        failed = 0
+        for media, cap in media_to_resend:
+            if not await _resend_media(channel, target, media, cap):
+                failed += 1
+        # The summary above PROMISED a photo/voice that then did not arrive. Saying
+        # so is the whole doctrine of this file: an alert that silently delivers
+        # less than it announced trains the operator to distrust the ones that work.
+        if failed and target is not None and channel is not None:
+            kinds = ", ".join(sorted({(m.get("kind") or "media") for m, _ in media_to_resend}))
+            try:
+                await channel._api_call("sendMessage", {
+                    "chat_id": target,
+                    "text": (f"⚠️ Couldn't re-send {failed} of {len(media_to_resend)} deleted "
+                             f"file(s) from {chat_label} ({kinds}) — Telegram no longer serves "
+                             f"that file id. The summary above is all that survives."),
+                })
+            except Exception:  # noqa: BLE001
+                logger.debug("deletion alert: resend-failure note not delivered", exc_info=True)
+    for mid in ids:
         try:
-            _store().mark_message_deleted(chat_id, mid)
+            store.mark_message_deleted(chat_id, mid)
         except Exception:  # noqa: BLE001
             pass
 

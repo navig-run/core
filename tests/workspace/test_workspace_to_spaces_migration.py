@@ -80,3 +80,40 @@ def test_ensure_no_stale_spaces_registration_raises(monkeypatch):
 
     with pytest.raises(RuntimeError):
         ensure_no_stale_spaces_registration()
+
+
+def test_a_first_run_config_carries_the_schema_version(tmp_path):
+    """The migration creates config.yaml on a fresh install; it must not need migrating."""
+    from navig.core.migrations import CURRENT_VERSION, migrate_config
+    from navig.core.yaml_io import safe_load_yaml
+    from navig.migrations.workspace_to_spaces import migrate_workspace_to_spaces
+
+    navig_root = tmp_path / ".navig"
+    navig_root.mkdir()
+    migrate_workspace_to_spaces(navig_root, notify=lambda _m: None)
+
+    cfg = safe_load_yaml(navig_root / "config.yaml")
+    assert cfg["version"] == CURRENT_VERSION
+    _migrated, modified = migrate_config(dict(cfg))
+    assert modified is False, "a config navig just wrote must not trigger a migration"
+
+
+def test_an_unreadable_existing_config_is_never_overwritten(tmp_path, monkeypatch):
+    """The read-modify-write must refuse, not write a two-key config over real data."""
+    from navig.core import yaml_io
+    from navig.migrations.workspace_to_spaces import migrate_workspace_to_spaces
+
+    navig_root = tmp_path / ".navig"
+    navig_root.mkdir()
+    config_file = navig_root / "config.yaml"
+    original = "version: '1.0'\ndeck:\n  api_key: keep-me\nactive_space: default\n"
+    config_file.write_text(original, encoding="utf-8")
+
+    def _locked(_fp):
+        raise OSError("sharing violation")
+
+    monkeypatch.setattr(yaml_io, "read_text_retrying", _locked)
+    with pytest.raises(RuntimeError, match="migration failed"):
+        migrate_workspace_to_spaces(navig_root, notify=lambda _m: None)
+
+    assert config_file.read_text(encoding="utf-8") == original

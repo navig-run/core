@@ -118,9 +118,47 @@ def take(request_id: str) -> dict[str, Any] | None:
         return None
 
 
-def list_resumable() -> dict[str, Any]:
-    """Every record still awaiting a late answer — the enumerating read for status views."""
+#: A record older than this is dropped. Beyond `max_age_seconds()` a late answer is
+#: reported but not executed, and the record's only remaining job is to make that
+#: tap say "too old" rather than "unknown id"; a day covers any prompt still visible
+#: on a phone. The operator's store held 67 of these, up to 34 days old, and `doctor`
+#: listed every one — a row that could never go green.
+_KEEP_S = 24 * 3600.0
+
+
+def prune_stale(*, now: float | None = None, keep_s: float | None = None) -> int:
+    """Drop records older than *keep_s* (default a day). Returns how many were dropped."""
     try:
+        data = _load()
+    except Exception:  # noqa: BLE001
+        return 0
+    t = time.time() if now is None else now
+    horizon = _KEEP_S if keep_s is None else float(keep_s)
+    keep: dict[str, Any] = {}
+    for rid, entry in data.items():
+        try:
+            asked = float((entry or {}).get("asked_at") or 0.0)
+        except (TypeError, ValueError, AttributeError):
+            asked = 0.0
+        if asked and t - asked > horizon:
+            continue
+        keep[rid] = entry
+    dropped = len(data) - len(keep)
+    if dropped:
+        try:
+            _save(keep)
+        except Exception:  # noqa: BLE001
+            pass
+    return dropped
+
+
+def list_resumable() -> dict[str, Any]:
+    """Every record still awaiting a late answer — the enumerating read for status views.
+
+    Self-healing on read: records past their keep window are pruned first.
+    """
+    try:
+        prune_stale()
         return _load()
     except Exception:  # noqa: BLE001
         return {}

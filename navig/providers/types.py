@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
 
-from navig.providers._local_defaults import _OLLAMA_BASE_URL
+from navig.providers._local_defaults import ollama_base_url
 
 # Standard maximum output token limit shared by many modern LLMs.
 # Individual models with different capacities should override this explicitly.
@@ -249,13 +249,6 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
         api=ModelApi.OPENAI_COMPLETIONS,
         models=[
             ModelDefinition(
-                id="gpt-4-turbo-preview",
-                name="GPT-4 Turbo Preview",
-                context_window=128000,
-                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
-                cost=ModelCost(input=10, output=30, cache_read=2.5, cache_write=10),
-            ),
-            ModelDefinition(
                 id="gpt-4o",
                 name="GPT-4o",
                 input=[ModelInput.TEXT, ModelInput.IMAGE],
@@ -320,25 +313,11 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
         headers={"HTTP-Referer": "https://navig.run", "X-Title": "NAVIG"},
         models=[
             ModelDefinition(
-                id="anthropic/claude-3.5-sonnet",
-                name="Claude 3.5 Sonnet (OpenRouter)",
-                input=[ModelInput.TEXT, ModelInput.IMAGE],
-                context_window=200000,
-                max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
-            ),
-            ModelDefinition(
                 id="openai/gpt-4o",
                 name="GPT-4o (OpenRouter)",
                 input=[ModelInput.TEXT, ModelInput.IMAGE],
                 context_window=128000,
                 max_tokens=_LARGE_MAX_OUTPUT_TOKENS,
-            ),
-            ModelDefinition(
-                id="google/gemini-pro-1.5",
-                name="Gemini Pro 1.5 (OpenRouter)",
-                input=[ModelInput.TEXT, ModelInput.IMAGE],
-                context_window=2000000,
-                max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
             ),
             ModelDefinition(
                 id="meta-llama/llama-3.3-70b-instruct",
@@ -357,7 +336,7 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
     ),
     "ollama": ProviderConfig(
         name="ollama",
-        base_url=f"{_OLLAMA_BASE_URL}/v1",
+        base_url=f"{ollama_base_url()}/v1",
         api=ModelApi.OPENAI_COMPLETIONS,
         auth_header=False,  # Ollama doesn't need auth
         models=[],  # Discovered dynamically
@@ -367,17 +346,20 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
         name="groq",
         base_url="https://api.groq.com/openai/v1",
         api=ModelApi.OPENAI_COMPLETIONS,
+        # Both previous rows (llama-3.3-70b-versatile, mixtral-8x7b-32768) were
+        # DEAD when called on 2026-09-26 — and the first was also the credential
+        # probe and the substitution default. These two answered.
         models=[
             ModelDefinition(
-                id="llama-3.3-70b-versatile",
-                name="Llama 3.3 70B (Groq)",
-                context_window=128000,
+                id="openai/gpt-oss-120b",
+                name="GPT-OSS 120B (Groq)",
+                context_window=131072,
                 max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
             ),
             ModelDefinition(
-                id="mixtral-8x7b-32768",
-                name="Mixtral 8x7B (Groq)",
-                context_window=32768,
+                id="openai/gpt-oss-20b",
+                name="GPT-OSS 20B (Groq)",
+                context_window=131072,
                 max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
             ),
         ],
@@ -418,24 +400,20 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
         name="nvidia",
         base_url="https://integrate.api.nvidia.com/v1",
         api=ModelApi.OPENAI_COMPLETIONS,
+        # meta/llama-3.3-70b-instruct led this list until 2026-09-19; NVIDIA
+        # retired it 2026-08-26 (HTTP 410) and every probe kept sending it.
         models=[
             ModelDefinition(
-                id="meta/llama-3.3-70b-instruct",
-                name="Llama 3.3 70B (NVIDIA NIM)",
-                context_window=128000,
-                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
+                id="nvidia/nemotron-3-super-120b-a12b",
+                name="Nemotron 3 Super 120B",
+                context_window=131072,
+                max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
             ),
             ModelDefinition(
-                id="mistralai/mistral-7b-instruct-v0.3",
-                name="Mistral 7B (NVIDIA NIM)",
-                context_window=32768,
-                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
-            ),
-            ModelDefinition(
-                id="nvidia/llama-3.1-nemotron-70b-instruct",
-                name="Nemotron 70B (NVIDIA NIM)",
-                context_window=128000,
-                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
+                id="nvidia/nemotron-3.5-lightning-30b-a3b",
+                name="Nemotron 3.5 Lightning 30B",
+                context_window=131072,
+                max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
             ),
         ],
         priority=35,
@@ -444,18 +422,29 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
         name="xai",
         base_url="https://api.x.ai/v1",
         api=ModelApi.OPENAI_COMPLETIONS,
+        # grok-2-1212 / grok-2-vision-1212 were retired 2025-09-15 and sat here
+        # as the first rows until 2026-09-19 — every credential probe sent them.
+        # These three answered a 1-token call on that date (see the registry
+        # manifest, which is the audited list; this table only adds metadata).
         models=[
             ModelDefinition(
-                id="grok-2-1212",
-                name="Grok 2",
+                id="grok-4.6",
+                name="Grok 4.6",
+                input=[ModelInput.TEXT, ModelInput.IMAGE],
+                context_window=256000,
+                max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
+            ),
+            ModelDefinition(
+                id="grok-3",
+                name="Grok 3",
                 context_window=131072,
                 max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
             ),
             ModelDefinition(
-                id="grok-2-vision-1212",
-                name="Grok 2 Vision",
-                input=[ModelInput.TEXT, ModelInput.IMAGE],
-                context_window=32768,
+                id="grok-3-mini",
+                name="Grok 3 Mini",
+                reasoning=True,
+                context_window=131072,
                 max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
             ),
         ],
@@ -496,6 +485,118 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
             ),
         ],
         priority=45,
+    ),
+    # GitHub Models — Azure-hosted, free tier on a GitHub token. The model ids are
+    # the ones ``navig.providers.registry`` offers and ``GitHubModelsProvider``
+    # sends verbatim; cost stays at the free-tier default. Kept LAST so the
+    # by-model provider inference in ``fallback.py`` (a scan in dict order)
+    # resolves a shared id like ``gpt-4o`` to its native provider first.
+    "github_models": ProviderConfig(
+        name="github_models",
+        base_url="https://models.inference.ai.azure.com",
+        auth=AuthMode.TOKEN,
+        api=ModelApi.OPENAI_COMPLETIONS,
+        models=[
+            ModelDefinition(
+                id="gpt-4.1",
+                name="GPT-4.1",
+                input=[ModelInput.TEXT, ModelInput.IMAGE],
+                context_window=1047576,
+                max_tokens=_LARGE_MAX_OUTPUT_TOKENS,
+            ),
+            ModelDefinition(
+                id="gpt-4.1-mini",
+                name="GPT-4.1 Mini",
+                input=[ModelInput.TEXT, ModelInput.IMAGE],
+                context_window=1047576,
+                max_tokens=_LARGE_MAX_OUTPUT_TOKENS,
+            ),
+            ModelDefinition(
+                id="gpt-4o",
+                name="GPT-4o",
+                input=[ModelInput.TEXT, ModelInput.IMAGE],
+                context_window=128000,
+                max_tokens=_LARGE_MAX_OUTPUT_TOKENS,
+            ),
+            ModelDefinition(
+                id="gpt-4o-mini",
+                name="GPT-4o Mini",
+                input=[ModelInput.TEXT, ModelInput.IMAGE],
+                context_window=128000,
+                max_tokens=_LARGE_MAX_OUTPUT_TOKENS,
+            ),
+            ModelDefinition(
+                id="o4-mini",
+                name="o4-mini",
+                reasoning=True,
+                input=[ModelInput.TEXT, ModelInput.IMAGE],
+                context_window=200000,
+                max_tokens=_LARGE_MAX_OUTPUT_TOKENS,
+            ),
+            ModelDefinition(
+                id="o3-mini",
+                name="o3-mini",
+                reasoning=True,
+                context_window=200000,
+                max_tokens=_LARGE_MAX_OUTPUT_TOKENS,
+            ),
+            ModelDefinition(
+                id="phi-4",
+                name="Phi-4",
+                context_window=16384,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
+            ),
+            ModelDefinition(
+                id="phi-4-mini",
+                name="Phi-4 Mini",
+                context_window=128000,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
+            ),
+            ModelDefinition(
+                id="phi-3.5-mini-instruct",
+                name="Phi-3.5 Mini Instruct",
+                context_window=128000,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
+            ),
+            ModelDefinition(
+                id="meta-llama-3.1-405b-instruct",
+                name="Llama 3.1 405B Instruct",
+                context_window=128000,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
+            ),
+            ModelDefinition(
+                id="meta-llama-3.1-70b-instruct",
+                name="Llama 3.1 70B Instruct",
+                context_window=128000,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
+            ),
+            ModelDefinition(
+                id="mistral-large-2411",
+                name="Mistral Large 24.11",
+                context_window=128000,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
+            ),
+            ModelDefinition(
+                id="mistral-small-2503",
+                name="Mistral Small 25.03",
+                context_window=128000,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
+            ),
+            ModelDefinition(
+                id="deepseek-r1",
+                name="DeepSeek-R1",
+                reasoning=True,
+                context_window=128000,
+                max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
+            ),
+            ModelDefinition(
+                id="deepseek-v3-0324",
+                name="DeepSeek-V3 03.24",
+                context_window=128000,
+                max_tokens=_STANDARD_MAX_OUTPUT_TOKENS,
+            ),
+        ],
+        priority=25,
     ),
 }
 

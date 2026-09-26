@@ -24,10 +24,20 @@ from navig.core.language import (
 
 
 class _Cfg:
+    """A stand-in for `navig.core.Config`.
+
+    ⚠ Its `get` MUST keep the real signature, `scope` included. It did not, and the
+    consequence was silent: `resolve_language()` wraps its config read in a broad
+    `except Exception`, so when the caller began passing `scope="global"` the fake
+    raised `TypeError` and the resolver returned `None` — a passing-looking
+    "nothing pinned" instead of an error. `test_the_fake_matches_the_real_config`
+    below stops that drifting again.
+    """
+
     def __init__(self, value):
         self._value = value
 
-    def get(self, key, default=None):
+    def get(self, key, default=None, scope="merged"):
         return self._value if key == CFG_LANGUAGE else default
 
 
@@ -43,6 +53,26 @@ def test_auto_shaped_values_mean_detect(value):
 @pytest.mark.parametrize("value", ["Russian", "ru", "en-GB", " Spanish "])
 def test_a_real_language_is_kept(value):
     assert normalise_language(value) == value.strip()
+
+
+def test_the_fake_matches_the_real_config() -> None:
+    """A stub narrower than the object it replaces fails in the caller, not here.
+
+    `resolve_language()` swallows config errors by design — an unreadable config
+    must mean "auto", never a crash — so a fake missing a parameter turns a real
+    call into a silent `None` that reads exactly like "nothing pinned".
+    """
+    import inspect
+
+    from navig.core.shared_config import ConfigSingleton
+
+    real = set(inspect.signature(ConfigSingleton.get).parameters)
+    fake = set(inspect.signature(_Cfg.get).parameters)
+    missing = real - fake
+    assert not missing, (
+        f"_Cfg.get is missing {sorted(missing)} — a caller that passes it would "
+        f"raise TypeError, which resolve_language() swallows into None"
+    )
 
 
 def test_global_preference_is_used_when_no_override(monkeypatch):

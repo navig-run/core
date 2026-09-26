@@ -43,6 +43,22 @@ def _norm(p: str | Path) -> str:
         return str(p)
 
 
+def source_for(path: str | Path) -> str:
+    """``"root"`` for a space living directly under ``~/.navig/spaces``, else ``"external"``.
+
+    The one rule for the ``source`` column. Three callers each had their own: ``wire``
+    used a string prefix (fragile to case and separators on Windows), ``space init``
+    compared parents, and ``space doctor --fix`` hardcoded ``"root"`` — so an unregistered
+    project folder repaired by doctor was filed as a spaces-root resident. Compared on
+    normalised paths, direct children only: a space nested deeper is somebody's
+    sub-space, not a root one.
+    """
+    try:
+        return "root" if Path(_norm(path)).parent == Path(_norm(paths.spaces_dir())) else "external"
+    except Exception:  # noqa: BLE001
+        return "external"
+
+
 def _normalize(data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         return dict(_DEFAULT_REGISTRY)
@@ -95,6 +111,29 @@ def _find(reg: dict[str, Any], id_or_path: str) -> dict[str, Any] | None:
     return None
 
 
+def entry_for(path: str | Path) -> dict[str, Any] | None:
+    """The registry row for *path* (read-only view), or None when unregistered."""
+    rp = _norm(path)
+    return next((e for e in load_registry()["spaces"] if _norm(e.get("path", "")) == rp), None)
+
+
+def id_taken_by_another_path(space_id: str, path: str | Path) -> str | None:
+    """The path already registered under *space_id*, if it is not *path* — else None.
+
+    ``register`` keys on PATH, so a new folder that merely shares a NAME with an existing
+    space appended a second entry with the same id, and ``_find(id)`` then answered
+    whichever came first: ``cd ~/projects/homelab && navig space init`` silently made
+    ``navig space use homelab`` ambiguous and listed two ``homelab`` rows. Callers that
+    are about to register ask this first and refuse with the other path named.
+    """
+    reg = load_registry()
+    rp = _norm(path)
+    for e in reg.get("spaces", []):
+        if e.get("id") == space_id and _norm(e.get("path", "")) != rp:
+            return str(e.get("path", ""))
+    return None
+
+
 def register(
     path: str | Path,
     *,
@@ -103,7 +142,11 @@ def register(
     source: str = "root",
     enabled: bool = True,
 ) -> dict[str, Any]:
-    """Add or update a space in the registry. Existing ``enabled`` is preserved."""
+    """Add or update a space in the registry. Existing ``enabled`` is preserved.
+
+    Keys on PATH. It does not police id uniqueness — see ``id_taken_by_another_path``,
+    which every user-facing entry point (init, wire, doctor --fix) consults first.
+    """
     rp = _norm(path)
     entry = {
         "id": id or Path(rp).name,
@@ -189,6 +232,37 @@ def forget(id_or_path: str) -> bool:
         save_registry(reg)
         return True
     return False
+
+
+def rename(path: str | Path, new_id: str) -> str | None:
+    """Re-key the entry for *path* as *new_id*; returns the id it had, or None if unregistered.
+
+    The registry half of ``navig space rename``. Keys on PATH like ``register`` and
+    ``ensure_registered`` do, so an entry whose id had drifted from its manifest is
+    corrected rather than missed. Refuses (``ValueError``) when *new_id* already belongs
+    to a different path — the one-id-one-space rule that init, wire and doctor enforce on
+    the way in must hold on a rename too. The display ``name`` follows the id only when it
+    was the same string (a space named after its id keeps that property; a space with its
+    own display name keeps that instead). Never adds or drops a row.
+    """
+    reg = _load_for_mutation()
+    if reg is None:
+        return None  # registry locked — rename nothing rather than half of it
+    rp = _norm(path)
+    entry = next((e for e in reg["spaces"] if _norm(e.get("path", "")) == rp), None)
+    if entry is None:
+        return None
+    holder = next(
+        (e for e in reg["spaces"] if e.get("id") == new_id and e is not entry), None
+    )
+    if holder is not None:
+        raise ValueError(f"'{new_id}' is already the id of {holder.get('path', '?')}")
+    old_id = str(entry.get("id") or "")
+    if entry.get("name") in (old_id, None, ""):
+        entry["name"] = new_id
+    entry["id"] = new_id
+    save_registry(reg)
+    return old_id
 
 
 def is_enabled(path: str | Path) -> bool:

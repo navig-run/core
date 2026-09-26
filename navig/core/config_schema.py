@@ -257,7 +257,7 @@ if PYDANTIC_AVAILABLE:
             description="Override path to Deck SPA build (auto-detected if None)",
         )
         auth_max_age: int = Field(
-            default=3600,
+            default=86400,
             ge=60,
             le=86400,
             description="Max age for Telegram initData auth_date (seconds)",

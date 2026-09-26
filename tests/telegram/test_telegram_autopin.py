@@ -185,3 +185,112 @@ async def test_pin_cmd_in_dm_sends_error():
     # Should mention that pin only works in groups
     combined = " ".join(str(a) for a in args) + str(kwargs)
     assert "group" in combined.lower() or "pin" in combined.lower()
+
+
+# ---------------------------------------------------------------------------
+# Auto-pin /plans — the toggle that had a full Deck UI and no reader
+# ---------------------------------------------------------------------------
+#
+# `telegram.auto_pin_plans` shipped with a switch in social-section.tsx, a field in
+# lib/types.ts and an entry in the settings route — and nothing anywhere read it. The
+# operator could turn it on, it persisted, and no plan was ever pinned. Unlike
+# auto_pin_briefings it defaults to FALSE, so these tests pin both halves: that it works
+# when enabled, and that it stays off when nobody asked for it.
+
+
+@pytest.mark.asyncio
+async def test_auto_pin_plans_pins_when_enabled_in_a_group():
+    from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+    ch = MagicMock()
+    ch._api_call = AsyncMock(return_value=True)
+
+    with patch("navig.gateway.channels.telegram.TelegramChannel._is_group_chat_id", return_value=True):
+        with patch("navig.config.get_config_manager") as mock_cfg:
+            mock_cfg.return_value.get.return_value = {"auto_pin_plans": True}
+            with patch("navig.gateway.channels.telegram_sessions.get_session_manager") as mock_sm:
+                mock_sm.return_value.get_session_metadata.return_value = None
+                await TelegramCommandsMixin._auto_pin_plans(ch, -100, 7, {"message_id": 42})
+
+    assert "pinChatMessage" in [c.args[0] for c in ch._api_call.call_args_list]
+
+
+@pytest.mark.asyncio
+async def test_auto_pin_plans_is_off_unless_asked_for():
+    """It defaults to False — an untouched install must not start pinning plans."""
+    from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+    ch = MagicMock()
+    ch._api_call = AsyncMock(return_value=True)
+
+    with patch("navig.gateway.channels.telegram.TelegramChannel._is_group_chat_id", return_value=True):
+        with patch("navig.config.get_config_manager") as mock_cfg:
+            mock_cfg.return_value.get.return_value = {}          # nothing configured
+            with patch("navig.gateway.channels.telegram_sessions.get_session_manager") as mock_sm:
+                mock_sm.return_value.get_session_metadata.return_value = None
+                await TelegramCommandsMixin._auto_pin_plans(ch, -100, 7, {"message_id": 42})
+
+    assert "pinChatMessage" not in [c.args[0] for c in ch._api_call.call_args_list]
+
+
+@pytest.mark.asyncio
+async def test_the_string_false_still_disables_plans_pinning():
+    """`navig config set telegram.auto_pin_plans false` stores the STRING "false"."""
+    from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+    ch = MagicMock()
+    ch._api_call = AsyncMock(return_value=True)
+
+    with patch("navig.gateway.channels.telegram.TelegramChannel._is_group_chat_id", return_value=True):
+        with patch("navig.config.get_config_manager") as mock_cfg:
+            mock_cfg.return_value.get.return_value = {"auto_pin_plans": "false"}
+            with patch("navig.gateway.channels.telegram_sessions.get_session_manager") as mock_sm:
+                mock_sm.return_value.get_session_metadata.return_value = None
+                await TelegramCommandsMixin._auto_pin_plans(ch, -100, 7, {"message_id": 42})
+
+    assert "pinChatMessage" not in [c.args[0] for c in ch._api_call.call_args_list]
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_config_does_not_switch_an_opt_in_feature_on():
+    """Briefings fail OPEN (default True); plans must fail CLOSED (default False)."""
+    from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+    ch = MagicMock()
+    ch._api_call = AsyncMock(return_value=True)
+
+    with patch("navig.gateway.channels.telegram.TelegramChannel._is_group_chat_id", return_value=True):
+        with patch("navig.config.get_config_manager", side_effect=RuntimeError("config unreadable")):
+            with patch("navig.gateway.channels.telegram_sessions.get_session_manager") as mock_sm:
+                mock_sm.return_value.get_session_metadata.return_value = None
+                await TelegramCommandsMixin._auto_pin_plans(ch, -100, 7, {"message_id": 42})
+
+    assert "pinChatMessage" not in [c.args[0] for c in ch._api_call.call_args_list], (
+        "an unreadable config turned on a feature nobody enabled"
+    )
+
+
+@pytest.mark.asyncio
+async def test_plans_and_briefings_track_separate_pinned_messages():
+    """Distinct metadata keys — pinning a plan must not unpin the briefing."""
+    from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+    ch = MagicMock()
+    ch._api_call = AsyncMock(return_value=True)
+    seen = {}
+
+    with patch("navig.gateway.channels.telegram.TelegramChannel._is_group_chat_id", return_value=True):
+        with patch("navig.config.get_config_manager") as mock_cfg:
+            mock_cfg.return_value.get.return_value = {"auto_pin_plans": True, "auto_pin_briefings": True}
+            with patch("navig.gateway.channels.telegram_sessions.get_session_manager") as mock_sm:
+                mock_sm.return_value.get_session_metadata.return_value = None
+                mock_sm.return_value.set_session_metadata.side_effect = (
+                    lambda c, u, key, val, **kw: seen.__setitem__(key, val)
+                )
+                await TelegramCommandsMixin._auto_pin_plans(ch, -100, 7, {"message_id": 42})
+                await TelegramCommandsMixin._auto_pin_briefing(ch, -100, 7, {"message_id": 99})
+
+    assert seen.get("pinned_plans_msg_id") == 42
+    assert seen.get("pinned_briefing_msg_id") == 99, (
+        "sharing one metadata key would make each pin unpin the other"
+    )

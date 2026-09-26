@@ -532,10 +532,10 @@ def _ensure_dirs() -> None:
 def _migrate_legacy_documents_dir(target_dir: Path) -> None:
     """Move config files from the legacy Documents/.navig path to *target_dir*.
 
-    Raises :class:`click.exceptions.Exit` if a path conflict is detected so
+    Raises :class:`typer.Exit` if a path conflict is detected so
     that the caller can abort without clobbering existing data.
     """
-    import click
+    import typer
 
     source_dir = _legacy_documents_config_dir()
     if not source_dir.exists():
@@ -545,7 +545,7 @@ def _migrate_legacy_documents_dir(target_dir: Path) -> None:
     conflicts = [item.name for item in source_dir.iterdir() if (target_dir / item.name).exists()]
     if conflicts:
         _write_init_log(f"legacy migration failed: conflict detected in {', '.join(conflicts)}")
-        raise click.exceptions.Exit(1)
+        raise typer.Exit(1)
 
     # Move each top-level item from source to target
     for item in source_dir.iterdir():
@@ -1396,7 +1396,7 @@ def run_matrix_bridge_onboarding(
 
 def run_init(dry_run: bool = False, no_genesis: bool = False, name: str = "") -> None:
     """Initialize NAVIG global directories and run first-time setup."""
-    import click
+    import typer
 
     try:
         _ensure_dirs()
@@ -1404,7 +1404,7 @@ def run_init(dry_run: bool = False, no_genesis: bool = False, name: str = "") ->
         (_default_navig_dir() / "spaces" / "default").mkdir(parents=True, exist_ok=True)
     except PermissionError as e:
         _write_init_log(f"init failed: {e}")
-        raise click.exceptions.Exit(1) from e
+        raise typer.Exit(1) from e
 
 
 # ── CLI gateway functions (called by navig/cli/__init__.py thin wrappers) ────

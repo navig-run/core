@@ -194,7 +194,8 @@ def test_doctor_flags_records_too_old_to_resume():
 
     rows = check_pending_approvals()
 
-    assert any("Too old" in label for label, _ok, _d in rows), (
+    # rows are `_check()` results: (icon, ok, line) with `.label`/`.detail` attributes
+    assert any("Too old" in row.label for row in rows), (
         f"a stale resumable record was not surfaced: {rows}"
     )
 

@@ -210,6 +210,31 @@ def test_resolve_root_walks_up_from_the_invocation_dir(
     assert _resolve_root(None) == repo
 
 
+def test_resolve_root_is_the_checkout_you_stand_in_not_the_main_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """From a linked worktree the mirrors to write are the WORKTREE's. Through
+    `repo_root` (which resolves every worktree to the main tree, by design, for the
+    `navig repo` verbs) a sync run in .dev/worktrees/<x> rewrote the main checkout's
+    mirrors — another session's files — and left the worktree's stale."""
+    from navig.commands.sync import _resolve_root
+
+    main = _make_repo(tmp_path / "main")
+    _sp.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "add", "-A"], cwd=str(main), capture_output=True, check=True)
+    _sp.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base"], cwd=str(main), capture_output=True, check=True)
+    wt = main / ".dev" / "worktrees" / "x"
+    wt.parent.mkdir(parents=True)
+    _sp.run(["git", "worktree", "add", "-q", str(wt), "-b", "feat/x"], cwd=str(main), capture_output=True, check=True)
+    assert (wt / s.MASTER_REL).is_file(), "the worktree carries its own MASTER"
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("NAVIG_INVOCATION_CWD", str(wt))
+    assert _resolve_root(None) == wt
+
+    monkeypatch.setenv("NAVIG_INVOCATION_CWD", str(main))
+    assert _resolve_root(None) == main
+
+
 def test_resolve_root_still_uses_cwd_without_the_env_var(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

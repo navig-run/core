@@ -44,6 +44,11 @@ def _is_unavailable(exc: Exception) -> bool:
         from navig.llm.liveness import classify_probe_error
 
         status, _ = classify_probe_error(exc)
+        # `slow` is deliberately NOT here. It means the model answered the
+        # connection and ran past the cap, so the branch this gates — "No AI
+        # backend is configured or reachable, connect a provider" — would send an
+        # operator to configure a provider they already have working. A timeout
+        # takes the other branch and reports the real error.
         return status in ("nokey", "unreachable")
     except Exception:  # pragma: no cover — classifier is best-effort
         return False

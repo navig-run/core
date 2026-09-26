@@ -916,7 +916,14 @@ class TriggerManager:
             if path.suffix == ".py":
                 cmd = [sys.executable, str(path)]
             elif path.suffix == ".sh":
-                cmd = ["bash", str(path)]
+                # By full path: a bare "bash" on Windows is the WSL launcher (System32 beats
+                # PATH), which cannot run a script at a Windows path. navig.platform.process.
+                from navig.platform.process import posix_shell
+
+                shell = posix_shell()
+                if shell is None:
+                    return False, f"No POSIX shell found to run {path.name} (install Git Bash on Windows)"
+                cmd = [shell, str(path)]
             elif path.suffix in (".ps1", ".psm1"):
                 cmd = ["powershell", "-File", str(path)]
             else:

@@ -38,35 +38,6 @@ def test_the_idle_nudge_declares_the_command_that_answers_it() -> None:
     )
 
 
-def _keyboard_for(metadata: dict) -> list | None:
-    """Mirror of the delivery branch, exercised without booting a notifier."""
-    from navig.core import i18n
-
-    suggested = (metadata or {}).get("suggested_command")
-    if not suggested:
-        return None
-    label_key = "engagement.nudge_yes"
-    label = i18n.t(label_key)
-    if label == label_key:
-        label = "Yes, go ahead"
-    return [[{"text": label, "callback_data": f"slash:{suggested}"}]]
-
-
-def test_a_nudge_with_a_command_gets_a_button_that_runs_it() -> None:
-    kb = _keyboard_for({"idle_hours": 1.0, "suggested_command": "status"})
-    assert kb, "a nudge that proposes an action must offer a way to accept it"
-    assert kb[0][0]["callback_data"] == "slash:status", (
-        "the button must dispatch through the existing `slash:` prefix"
-    )
-    assert kb[0][0]["text"].strip(), "an empty button label renders as an unlabelled tap target"
-
-
-def test_a_plain_nudge_gets_no_button() -> None:
-    """Statements must not sprout buttons — only nudges that actually ask."""
-    assert _keyboard_for({"idle_hours": 1.0}) is None
-    assert _keyboard_for({}) is None
-
-
 def test_the_button_label_is_localised_in_every_shipped_locale() -> None:
     """A Russian nudge under an English button is the bug one layer down."""
     import json
@@ -88,3 +59,11 @@ def test_the_result_shape_still_carries_metadata() -> None:
     """Anti-vacuity floor: if metadata stopped existing the checks above are moot."""
     r = EngagementResult(action=EngagementAction.IDLE_NUDGE, message="x", metadata={"a": 1})
     assert r.metadata == {"a": 1}
+
+
+# NOTE: the button-shape assertions that used to live here re-implemented the
+# delivery branch inline ("mirror of the delivery branch"), so they could pass
+# while the shipped code was broken — the exact class this suite exists to catch.
+# They are replaced by tests/agent/test_nudge_button_dispatches.py, which drives
+# the real `_engagement_tick` and `_send_notification`, and additionally pins that
+# the command the button ships can actually be dispatched.

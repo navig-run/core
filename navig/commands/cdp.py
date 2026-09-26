@@ -445,7 +445,14 @@ def cdp_screenshot(
     from navig.browser import cdp_actions
 
     port = _resolve_port(None, port)
-    _emit(_run(cdp_actions.screenshot(port, out=out, full_page=full_page, tab=tab, url=url)), json_out)
+    result = _run(cdp_actions.screenshot(port, out=out, full_page=full_page, tab=tab, url=url))
+    # The OS fallback is documented, but a desktop capture returned as "the page" with a
+    # green tick is how a pixel gate baked a 7282x4320 desktop shot in as a baseline. Say it
+    # where a human reads it; --json readers get `fallback: true` and `via`.
+    if result.get("fallback") and not json_out:
+        ch.warning(result.get("note") or "no CDP target — captured the full screen, not a page")
+        result = {k: v for k, v in result.items() if k != "note"}
+    _emit(result, json_out)
 
 
 @cdp_app.command("record")
@@ -852,8 +859,42 @@ def profile_usage_cmd(json_out: bool = typer.Option(False, "--json")):
                       "—", "[dim]disposable[/dim]", f"[dim]{result['root']}\\sessions[/dim]")
     ch.console.print(table)
     ch.dim(f"total {_fmt_bytes(result['total_bytes'])} in {result['root']}")
-    ch.dim("reclaim: navig cdp profile prune            (throwaway sessions only)")
-    ch.dim("         navig cdp profile prune <name>     (a named profile you no longer need)")
+
+    # Data-driven, not a fixed block: a hint for something with nothing to reclaim is noise,
+    # and the fixed version omitted ORPHANS entirely — which on a real machine was 10 dirs /
+    # 1.6 GB, the largest safely-reclaimable chunk, visible in the table above and mentioned
+    # nowhere in the guidance. Each line carries its size so the payoff is visible before
+    # anyone deletes anything.
+    session_bytes = sum(r["bytes"] for r in sessions)
+    orphan_bytes = sum(r["bytes"] for r in orphans)
+    hints: list[str] = []
+    if sessions:
+        hints.append(f"navig cdp profile prune                  "
+                     f"— {_fmt_bytes(session_bytes)} in {len(sessions)} throwaway session(s)")
+    if orphans:
+        hints.append(f"navig cdp profile prune {orphans[0]['name']}"
+                     f"{' ' * max(1, 18 - len(orphans[0]['name']))}"
+                     f"— an orphaned dir no profile points at "
+                     f"({_fmt_bytes(orphan_bytes)} across {len(orphans)})")
+    reclaimable = [r for r in named if not r["real"] and not r["running"]]
+    # The biggest chunk on a real machine was neither sessions nor orphans nor logins: it was
+    # Chrome's 4 GB on-device AI model, downloaded into EACH profile. That is regenerable —
+    # a vacuum keeps every login — so it goes FIRST when it dominates, before the line that
+    # tells someone to delete a profile.
+    regen = sum(cdp_actions.regenerable_bytes(r["user_data_dir"]) for r in reclaimable)
+    if regen >= 64 * 1024 * 1024:
+        hints.insert(0, f"navig cdp profile vacuum --all           "
+                        f"— {_fmt_bytes(regen)} of caches + Chrome's on-device model; "
+                        f"every login is kept")
+    if reclaimable:
+        hints.append("navig cdp profile prune <name>           "
+                     "— a named profile you no longer need (its logins go too)")
+    if hints:
+        ch.dim("reclaim: " + hints[0])
+        for extra in hints[1:]:
+            ch.dim("         " + extra)
+    else:
+        ch.dim("nothing is safely reclaimable right now.")
 
 
 @profile_app.command("prune")
@@ -900,6 +941,61 @@ def profile_prune_cmd(
         ch.error(err)
     ch.success(f"Freed {_fmt_bytes(result['freed_bytes'])} "
                f"({len(result['deleted'])} director{'y' if len(result['deleted']) == 1 else 'ies'})")
+    if result["errors"]:
+        raise typer.Exit(1)
+
+
+@profile_app.command("vacuum")
+def profile_vacuum_cmd(
+    names: list[str] = typer.Argument(None, help="Named profile(s) to vacuum."),
+    all_: bool = typer.Option(False, "--all", help="Vacuum every named profile that is not running."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation."),
+    json_out: bool = typer.Option(False, "--json"),
+):
+    """Reclaim disk from a profile WITHOUT losing its logins: delete only what Chrome rebuilds.
+
+    Chrome downloads its on-device AI model (~4 GB) into every profile it is launched with,
+    plus caches. None of that is a login. Measured here: two profiles held 4 GB each of the
+    same model against 6 MB and 1 MB of actual login state. New launches no longer download
+    it; this reclaims what already landed. Running and real-Chrome profiles are refused.
+    """
+    from navig.browser import cdp_actions
+
+    if not names and not all_:
+        ch.error("name a profile, or pass --all")
+        raise typer.Exit(2)
+
+    plan = cdp_actions.profile_vacuum(list(names or []), all_profiles=all_, dry_run=True)
+    if json_out and not yes:
+        ch.console.print_json(_json.dumps(plan))
+        return
+
+    for ref in plan["refused"]:
+        ch.warning(f"skipped {ref.get('name')}: {ref['why']}")
+    if not plan["planned"]:
+        ch.info("Nothing to vacuum — no regenerable data found.")
+        return
+
+    for name, size in sorted(plan["per_profile"].items(), key=lambda kv: kv[1], reverse=True):
+        ch.info(f"  {_fmt_bytes(size):>9}  {name}")
+        for item in plan["planned"]:
+            if item["name"] == name:
+                ch.dim(f"             {_fmt_bytes(item['bytes']):>9}  {item['rel']}")
+    total = sum(item["bytes"] for item in plan["planned"])
+    ch.info(f"would free {_fmt_bytes(total)} — logins, cookies and site data are kept")
+
+    if not yes and not typer.confirm("Delete these regenerable directories?", default=False):
+        ch.dim("nothing deleted")
+        raise typer.Exit(1)
+
+    result = cdp_actions.profile_vacuum(list(names or []), all_profiles=all_, dry_run=False)
+    if json_out:
+        ch.console.print_json(_json.dumps(result))
+        raise typer.Exit(0 if result.get("ok") else 1)
+    for err in result["errors"]:
+        ch.error(err)
+    ch.success(f"Freed {_fmt_bytes(result['freed_bytes'])} across "
+               f"{len(result['per_profile'])} profile{'s' if len(result['per_profile']) != 1 else ''}")
     if result["errors"]:
         raise typer.Exit(1)
 

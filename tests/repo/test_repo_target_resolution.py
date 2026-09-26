@@ -283,3 +283,61 @@ def test_hint_shows_the_expansion_instead_of_echoing_the_flag(
 
     assert str(tmp_path) in hint, "must show what '.' expanded to"
     assert "pass --repo <path>," not in hint, "must not advise the flag just used"
+
+
+# ── a linked worktree resolves to the MAIN tree, never to itself ─────────────
+
+
+def test_repo_root_from_inside_a_worktree_is_the_main_tree(repo: Path) -> None:
+    """`rev-parse --show-toplevel` answers the worktree's own root from inside one.
+    `navig repo new b` run from `.dev/worktrees/a` therefore created
+    `.dev/worktrees/a/.dev/worktrees/b` — a worktree nested in a worktree, invisible
+    to `navig repo stale` at the main root and outside the lock's reach."""
+    from navig.commands.repo import repo_root
+
+    wt = repo / ".dev" / "worktrees" / "a"
+    _git("worktree", "add", str(wt), "-b", "feat/a", cwd=repo)
+    assert repo_root(wt).resolve() == repo.resolve()
+    (wt / "sub").mkdir()
+    assert repo_root(wt / "sub").resolve() == repo.resolve()  # from a subdir of it too
+
+
+def test_repo_root_from_the_main_tree_is_unchanged(repo: Path) -> None:
+    from navig.commands.repo import repo_root
+
+    assert repo_root(repo).resolve() == repo.resolve()
+    (repo / "deep" / "er").mkdir(parents=True)
+    assert repo_root(repo / "deep" / "er").resolve() == repo.resolve()
+
+
+def test_resolve_repo_root_from_a_worktree_cwd_is_the_main_tree(repo: Path, monkeypatch) -> None:
+    """The precedence chain's cwd step goes through repo_root, so every `navig repo`
+    verb run from inside a worktree keys on the main `.dev/`."""
+    from navig.commands.repo import resolve_repo_root
+
+    wt = repo / ".dev" / "worktrees" / "a"
+    _git("worktree", "add", str(wt), "-b", "feat/a", cwd=repo)
+    monkeypatch.chdir(wt)
+    assert resolve_repo_root().resolve() == repo.resolve()
+
+
+def test_navig_repo_new_from_inside_a_worktree_creates_a_sibling_not_a_nest(
+    repo: Path, monkeypatch
+) -> None:
+    """The user-visible half: the new worktree lands under the MAIN `.dev/worktrees/`."""
+    from typer.testing import CliRunner
+
+    from navig.commands import repo as repo_cmd
+
+    first = repo / ".dev" / "worktrees" / "first"
+    _git("worktree", "add", str(first), "-b", "feat/first", cwd=repo)
+    # `new` bases on origin/<default>; give the fixture repo a remote pointing at itself
+    _git("remote", "add", "origin", str(repo), cwd=repo)
+    _git("fetch", "-q", "origin", cwd=repo)
+    monkeypatch.chdir(first)
+    monkeypatch.setenv("NAVIG_INVOCATION_CWD", str(first))
+
+    r = CliRunner().invoke(repo_cmd.repo_app, ["new", "second"])
+    assert r.exit_code == 0, r.output
+    assert (repo / ".dev" / "worktrees" / "second").is_dir(), r.output
+    assert not (first / ".dev" / "worktrees" / "second").exists(), "nested inside the other worktree"

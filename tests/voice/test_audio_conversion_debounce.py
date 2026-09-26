@@ -42,7 +42,7 @@ def _handler(channel):
     h = CallbackHandler.__new__(CallbackHandler)   # skip __init__'s store wiring
     h.channel = channel
     h._answered_callback_ids = set()
-    h._audio_jobs_inflight = set()
+    h._jobs_inflight = set()
     h.answers = []
 
     async def _answer(cb_id, text="", show_alert=False):
@@ -109,7 +109,7 @@ def test_the_slot_is_released_so_a_later_press_works():
 
     ch, h = asyncio.run(run())
     assert len(ch.calls) == 2, "a press after the previous one finished must be honoured"
-    assert not h._audio_jobs_inflight, "the in-flight set leaked an entry"
+    assert not h._jobs_inflight, "the in-flight set leaked an entry"
 
 
 def test_a_raising_conversion_still_releases_the_slot():
@@ -128,7 +128,7 @@ def test_a_raising_conversion_still_releases_the_slot():
         return h
 
     h = asyncio.run(run())
-    assert not h._audio_jobs_inflight, "a raising conversion left the button wedged"
+    assert not h._jobs_inflight, "a raising conversion left the button wedged"
 
 
 def test_the_two_modes_are_independent():

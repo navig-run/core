@@ -168,9 +168,27 @@ async def _open_controller(stealth: bool, cdp_url: str | None = None) -> Any:
 
     if stealth:
         try:
-            from navig.browser.stealth import StealthController
+            from navig.browser.stealth import StealthConfig, StealthController
 
-            ctrl = StealthController()
+            # HEADFUL, but OFFSCREEN and MUTED — not headless.
+            #
+            # `StealthConfig.headless` defaults to False on purpose ("headless=False is
+            # harder to detect for most CAPTCHAs"), so forcing headless here would defeat
+            # the only reason to use this engine. But an agent has no screen, and a bare
+            # StealthController() put a real, visible, audible window on the operator's
+            # desktop on every stealth call — the same blank-window complaint the
+            # visibility work fixed everywhere else, arriving through the one path that
+            # legitimately cannot go headless.
+            #
+            # The engine already supports the answer: a large negative window position is
+            # "real enough to defeat headless bot-detection, invisible to the user".
+            # navig-download's TikTok path has run exactly this way for the same reason
+            # ("headless gets an empty comment body from TikTok's anti-bot"), so this is
+            # the house pattern rather than a new idea.
+            ctrl = StealthController(StealthConfig(
+                window_position=(-2400, -2400),
+                mute_audio=True,
+            ))
         except Exception:  # noqa: BLE001 - stealth optional; fall back to Tier-1
             ctrl = BrowserController(BrowserConfig(headless=True, timeout_ms=30_000))
     else:

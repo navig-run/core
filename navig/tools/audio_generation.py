@@ -3,6 +3,7 @@ NAVIG Audio Generation Tool
 
 AI audio via ElevenLabs (official free tier — music, sound effects, and TTS):
 - music : compose a track from a text prompt        (POST /v1/music)
+          or from a composition plan (timed sections), previewed for free (POST /v1/music/plan)
 - sfx   : generate a sound effect from a description (POST /v1/sound-generation)
 - tts   : text-to-speech in a chosen voice           (POST /v1/text-to-speech/{voice})
 
@@ -133,6 +134,10 @@ class GeneratedAudio:
     # existed nowhere, which made the client unusable to any caller assembling something
     # larger out of many clips.
     audio: bytes | None = None
+    # Music only: the composition plan the track was rendered from (None in prompt mode)
+    # and the seed, so a keeper can be re-rendered rather than re-rolled.
+    plan: dict[str, Any] | None = None
+    seed: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -145,6 +150,8 @@ class GeneratedAudio:
             "created_at": self.created_at.isoformat(),
             # A count, never the blob — this dict gets logged and JSON-serialised.
             "bytes": len(self.audio or b""),
+            "plan": self.plan,
+            "seed": self.seed,
         }
 
 
@@ -237,8 +244,19 @@ class AudioGenerator:
         previous_text: str | None = None,
         next_text: str | None = None,
         previous_request_ids: list[str] | None = None,
+        force_instrumental: bool = False,
+        composition_plan: dict[str, Any] | None = None,
+        seed: int | None = None,
     ) -> GeneratedAudio:
-        """Generate audio (music / sfx / tts) from a text prompt."""
+        """Generate audio (music / sfx / tts) from a text prompt.
+
+        Music has two request shapes and the API refuses to mix them: a free-text
+        ``prompt`` (with ``music_length_ms`` and ``force_instrumental``), or a
+        ``composition_plan`` — per-section styles and durations — which is the only way
+        to get a track with a known bar structure (intro → verse → hook …) and is what a
+        beat someone will rap on needs. In plan mode ``prompt`` is kept only as the
+        human-readable label on the result; ``seed`` makes a keeper re-renderable.
+        """
         if isinstance(kind, str):
             kind = AudioKind(kind)
         key = self._api_key()
@@ -247,11 +265,22 @@ class AudioGenerator:
         start = datetime.now()
 
         if kind == AudioKind.MUSIC:
-            body: dict[str, Any] = {"prompt": prompt, "model_id": self.config.music_model}
-            if duration_s:
-                body["music_length_ms"] = int(duration_s * 1000)
+            model = model_id or self.config.music_model
+            body: dict[str, Any] = {"model_id": model}
+            if composition_plan is not None:
+                body["composition_plan"] = composition_plan
+                # Honoured by music_v1 only; harmless elsewhere. Without it a 16-bar verse
+                # can come back as 12 and the rapper's count no longer fits the beat.
+                body["respect_sections_durations"] = True
+                if seed is not None:
+                    body["seed"] = int(seed)
+            else:
+                body["prompt"] = prompt
+                if duration_s:
+                    body["music_length_ms"] = int(duration_s * 1000)
+                if force_instrumental:
+                    body["force_instrumental"] = True
             resp = await client.post(f"{_ELEVEN_BASE}/music", headers=headers, json=body)
-            model = self.config.music_model
         elif kind == AudioKind.SFX:
             body = {"text": prompt}
             if duration_s:
@@ -285,6 +314,8 @@ class AudioGenerator:
             model=model,
             generation_time=generation_time,
             audio=audio_bytes,
+            plan=composition_plan if kind == AudioKind.MUSIC else None,
+            seed=seed if kind == AudioKind.MUSIC else None,
         )
 
         if save and self.config.save_locally:
@@ -296,6 +327,36 @@ class AudioGenerator:
             result.local_path = str(path)
 
         return result
+
+    async def music_plan(
+        self,
+        prompt: str,
+        duration_s: float | None = None,
+        *,
+        model_id: str | None = None,
+        source_plan: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Ask the provider to draft a composition plan for ``prompt`` — **costs no credits**.
+
+        The plan (global styles + timed sections) can be reviewed, edited and then passed
+        to :meth:`generate` as ``composition_plan``, so the paid render happens once, on
+        an arrangement that has already been read. ``source_plan`` refines an existing plan
+        instead of starting from the prompt alone.
+        """
+        client = await self._get_client()
+        body: dict[str, Any] = {"prompt": prompt, "model_id": model_id or self.config.music_model}
+        if duration_s:
+            body["music_length_ms"] = int(duration_s * 1000)
+        if source_plan is not None:
+            body["source_composition_plan"] = source_plan
+        resp = await client.post(
+            f"{_ELEVEN_BASE}/music/plan",
+            headers={"xi-api-key": self._api_key(), "Content-Type": "application/json"},
+            json=body,
+        )
+        _check(resp, "music plan")
+        payload = resp.json()
+        return payload if isinstance(payload, dict) else {}
 
     async def tts_with_timestamps(
         self,

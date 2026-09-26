@@ -38,6 +38,10 @@ class SkillInfo:
     commands: tuple = ()  # tuple[SkillCommand, ...]
     examples: tuple = ()  # tuple[dict, ...]
     entrypoint: str | None = None  # e.g. "index.js", "main.py"
+    # Set when the file loaded only because the parser TOLERATED it -- today, a frontmatter
+    # wrapped in a code fence. NAVIG reads it; every other loader discards every field.
+    # Surfaced as a glyph in `skill list` so the author learns without running `lint`.
+    warning: str | None = None
     raw_frontmatter: dict[str, Any] = field(default_factory=dict)
 
 
@@ -77,20 +81,17 @@ def _resolve_skills_dirs(explicit_dir: str | None) -> list[Path]:
 
 
 def _load_frontmatter(skill_file: Path) -> dict[str, Any]:
-    content = skill_file.read_text(encoding="utf-8")
-    if not content.startswith("---"):
-        return {}
+    """Frontmatter as a dict, via the ONE parser the runtime uses.
 
-    parts = content.split("---", 2)
-    if len(parts) < 3:
-        return {}
+    This was a second, independent copy of the loader's parser. Two parsers for one
+    format drift: when the loader learned to unwrap a fenced frontmatter, the agent
+    loaded a skill's description while `navig skill list` still showed it blank. The copy
+    also returned a non-mapping YAML value unchanged (`safe_load(...) or {}` passes a list
+    straight through), which `.get()` then crashes on. Delegating removes both.
+    """
+    from navig.skills.loader import read_frontmatter  # lazy -- navig help must stay <50ms
 
-    try:
-        import yaml
-
-        return yaml.safe_load(parts[1]) or {}
-    except Exception:
-        return {}
+    return read_frontmatter(skill_file)
 
 
 def _collect_skills(skills_dirs: Iterable[Path]) -> list[SkillInfo]:
@@ -110,6 +111,17 @@ def _collect_skills(skills_dirs: Iterable[Path]) -> list[SkillInfo]:
             category = parts[0] if len(parts) > 1 else "root"
             name = frontmatter.get("name") or skill_file.parent.name
             description = frontmatter.get("description") or ""
+            # Fields came back, but the file does not START with `---`: the parser unwrapped
+            # a code fence. Correct for NAVIG, wrong for every other loader -- say so here,
+            # in the listing the author actually looks at, not only in `lint`.
+            warning = None
+            if frontmatter:
+                try:
+                    raw_head = skill_file.read_bytes()[:16].lstrip()
+                except OSError:
+                    raw_head = b"---"
+                if not raw_head.startswith(b"---"):
+                    warning = "frontmatter wrapped in a code fence — see `navig skill lint`"
 
             # Parse navig-commands
             raw_cmds = frontmatter.get("navig-commands", [])
@@ -171,6 +183,7 @@ def _collect_skills(skills_dirs: Iterable[Path]) -> list[SkillInfo]:
                     commands=tuple(parsed_commands),
                     examples=parsed_examples,
                     entrypoint=entrypoint,
+                    warning=warning,
                     raw_frontmatter=frontmatter,
                 )
             )
@@ -200,6 +213,7 @@ def list_skills_cmd(options: dict[str, Any]) -> list[SkillInfo]:
                     "description": skill.description,
                     "category": skill.category,
                     "path": skill.rel_path,
+                    "warning": skill.warning,
                 }
                 for skill in skills
             ],
@@ -218,16 +232,29 @@ def list_skills_cmd(options: dict[str, Any]) -> list[SkillInfo]:
         ch.dim("  Add SKILL.md files under skills/<category>/<skill-name>/.")
         return skills
 
+    flagged = [s for s in skills if s.warning]
     table = ch.Table(title="NAVIG Skills")
+    if flagged:
+        table.add_column("", no_wrap=True)  # the glyph column only appears when it has content
     table.add_column("Category", style="cyan")
     table.add_column("Name", style="yellow")
     table.add_column("Description", style="green")
 
     for skill in skills:
-        table.add_row(skill.category, skill.name, skill.description)
+        row = [skill.category, skill.name, skill.description]
+        if flagged:
+            row.insert(0, "[yellow]![/yellow]" if skill.warning else "")
+        table.add_row(*row)
 
     ch.console.print(table)
     ch.dim(f"\nTotal: {len(skills)} skills")
+    if flagged:
+        ch.warning(
+            f"{len(flagged)} skill(s) loaded only because the parser tolerated the file — "
+            f"other loaders will discard their fields. Run `navig skill lint <dir>` for the fix."
+        )
+        for s in flagged:
+            ch.dim(f"  ! {s.category}/{s.name}: {s.warning}")
     return skills
 
 
@@ -771,10 +798,28 @@ def skills_lint(
         checks.append(("fail", "frontmatter",
                        "`---` block present but it parsed to no fields — invalid or empty YAML; "
                        "every field is discarded (guide §1). Check the YAML is well-formed."))
-    elif re.search(r"^\*\*(id|name|safety|description|tools)\s*:\*\*", raw, re.MULTILINE | re.IGNORECASE):
+    elif re.match(r"^```[^\n]*\n\s*---", raw):
+        # Fifteen builtin skills shipped this way (#1360): the frontmatter is real, but it
+        # sits inside a code fence, so the file does not START with `---`. NAVIG's loader
+        # now unwraps it and warns; every other loader discards every field. `fm` is
+        # populated here (the parser tolerates it), which is exactly why this must be
+        # decided on the RAW text -- the tolerance is not a pass.
         checks.append(("fail", "frontmatter",
-                       "`**key:** value` pseudo-keys with no YAML block — every field is silently "
-                       "discarded (guide §1). Wrap them in a real `---` frontmatter."))
+                       "frontmatter is wrapped in a code fence — the file must START with `---`. "
+                       "NAVIG unwraps it, but Claude Code and every other loader discard every "
+                       "field. Remove the ``` line above the frontmatter and its closing partner."))
+    elif re.search(
+        # Both spellings: `**id:** value` (colon inside the bold) AND `**id**: value`
+        # (colon outside). The detector matched only the first, and the one shipped skill
+        # written this way -- win-perf-tuner, five pseudo-keys and a Purpose paragraph
+        # for a description -- used the second and PASSED lint while the loader derived
+        # its name from the H1 ("Skill: win-perf-tuner") and left the description empty.
+        r"^\*\*(id|name|safety|description|tools|version|os|tool_id|cli)\s*(?::\*\*|\*\*\s*:)",
+        raw, re.MULTILINE | re.IGNORECASE,
+    ):
+        checks.append(("fail", "frontmatter",
+                       "`**key:** value` / `**key**: value` pseudo-keys with no YAML block — every "
+                       "field is silently discarded (guide §1). Wrap them in a real `---` frontmatter."))
     else:
         checks.append(("warn", "frontmatter",
                        "no frontmatter — parses as plain markdown; add `name` + `description` (guide §1)."))

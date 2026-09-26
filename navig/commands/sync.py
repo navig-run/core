@@ -25,15 +25,25 @@ def _resolve_root(repo: str | None) -> Path | None:
         root = Path(repo).expanduser().resolve()
         return root if (root / MASTER_REL).is_file() else None
 
-    from navig.commands.repo import invocation_cwd, repo_root
+    from navig.commands.repo import _git, invocation_cwd
 
     # Where the operator RAN navig, not the active space main.py chdir'd us into
     # — otherwise `navig sync instructions` reports "Could not find MASTER …
     # run inside a repo containing it" while standing in exactly that repo.
+    #
+    # And the CHECKOUT they ran it in, not the main tree. `repo_root` deliberately
+    # resolves a linked worktree to the MAIN checkout (every `navig repo` verb keys
+    # on the main tree's .dev/), so through it a sync run from .dev/worktrees/<x>
+    # read the main tree's MASTER and rewrote the main tree's mirrors — another
+    # session's files — and left the worktree's own mirrors stale for the drift
+    # gate to refuse (measured 2026-09-18). MASTER and its mirrors live in the tree
+    # you are standing in; `--show-toplevel` is that tree.
     for start in dict.fromkeys((invocation_cwd(), Path.cwd())):
-        root = repo_root(start)
-        if root and (root / MASTER_REL).is_file():
-            return root
+        res = _git(["rev-parse", "--show-toplevel"], start)
+        if res.returncode == 0:
+            root = Path(res.stdout.strip())
+            if (root / MASTER_REL).is_file():
+                return root
         for parent in [start, *start.parents]:
             if (parent / MASTER_REL).is_file():
                 return parent

@@ -36,12 +36,28 @@ from navig.vault import CredentialType, get_vault
 logger = logging.getLogger("navig.connectors.auth")
 
 
+DEFAULT_PROFILE = "connector"
+
+
+def profile_for(account: str | None) -> str:
+    """Vault profile id for a connector credential.
+
+    The first account of a connector lives in the ``connector`` profile (the shape
+    every existing install already has). A second account of the same connector —
+    a personal Gmail next to the studio's — gets ``connector:<email>`` so linking it
+    never overwrites the first. ``account`` is the email as Google reports it.
+    """
+    acct = (account or "").strip().lower()
+    return f"{DEFAULT_PROFILE}:{acct}" if acct else DEFAULT_PROFILE
+
+
 class ConnectorAuthManager:
     """
     Central auth manager for all connectors.
 
     Uses the NAVIG vault for encrypted token persistence and the OAuth
-    module for PKCE flows and token refresh.
+    module for PKCE flows and token refresh. Every token method takes an optional
+    ``account`` (email): ``None`` is the connector's default account.
     """
 
     # Class-level provider config registry (supplements OAUTH_PROVIDERS)
@@ -145,12 +161,51 @@ class ConnectorAuthManager:
         logger.info("Completed OAuth exchange for %s (account=%s)", connector_id, creds.email)
         return creds
 
-    def get_connected_account(self, connector_id: str) -> str | None:
+    def get_connected_account(self, connector_id: str, account: str | None = None) -> str | None:
         """Return the account email for a connected connector, or None."""
-        creds = self._load_from_vault(connector_id)
+        creds = self._load_from_vault(connector_id, account)
         return creds.email if creds else None
 
-    def is_connected(self, connector_id: str) -> bool:
+    def list_accounts(self, connector_id: str) -> list[str]:
+        """Every account email linked for *connector_id* — the default one first."""
+        out: list[str] = []
+        try:
+            for cred in self._vault.list(provider=connector_id) or []:
+                prof = str(getattr(cred, "profile_id", "") or "")
+                if prof != DEFAULT_PROFILE and not prof.startswith(DEFAULT_PROFILE + ":"):
+                    continue
+                meta = getattr(cred, "metadata", None) or {}
+                email = str(meta.get("email") or "").strip().lower()
+                if prof == DEFAULT_PROFILE:
+                    out.insert(0, email or "(default)")
+                elif email or prof.partition(":")[2]:
+                    out.append(email or prof.partition(":")[2])
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Vault list for %s accounts failed: %s", connector_id, exc)
+        return out
+
+    def resolve_account(self, connector_id: str, account: str | None) -> str | None:
+        """Map an ``--account`` email onto the profile that holds it.
+
+        ``None`` (no account asked) stays the default profile. An email that IS the
+        default profile's account also resolves to the default profile, so callers
+        may always pass the address they mean without knowing which slot it landed in.
+        Raises ``ConnectorAuthError`` when nothing is linked under that address.
+        """
+        if not account:
+            return None
+        wanted = account.strip().lower()
+        default_email = (self.get_connected_account(connector_id) or "").strip().lower()
+        if wanted == default_email:
+            return None
+        if self._load_from_vault(connector_id, wanted) is not None:
+            return wanted
+        linked = ", ".join(self.list_accounts(connector_id)) or "none"
+        raise ConnectorAuthError(
+            connector_id, f"no linked account {wanted!r} (linked: {linked}) — run `navig connector connect {connector_id} --account {wanted}`"
+        )
+
+    def is_connected(self, connector_id: str, account: str | None = None) -> bool:
         """Return True if a *usable* token exists in the vault.
 
         "Usable" deliberately includes an **expired access token that carries a refresh
@@ -165,12 +220,12 @@ class ConnectorAuthManager:
         ("Includes expired tokens (still 'connected', just needs refresh)"); the two
         surfaces previously disagreed.
         """
-        creds = self._load_from_vault(connector_id)
+        creds = self._load_from_vault(connector_id, account)
         if creds is None:
             return False
         return bool(creds.refresh) or not creds.is_expired
 
-    async def inject_token(self, connector) -> bool:
+    async def inject_token(self, connector, account: str | None = None) -> bool:
         """Load *connector*'s stored token from the vault into the instance.
 
         Connectors hold their access token in-memory (``set_access_token``) but
@@ -179,7 +234,7 @@ class ConnectorAuthManager:
         Transparently refreshes an expired token. Returns True on success.
         """
         try:
-            token = await self.get_access_token(connector.id)
+            token = await self.get_access_token(connector.id, account)
             connector.set_access_token(token)
             return True
         except Exception as exc:
@@ -220,6 +275,7 @@ class ConnectorAuthManager:
         connector_id: str,
         *,
         interactive: bool = True,
+        account: str | None = None,
     ) -> str:
         """
         Ensure a valid access token exists for *connector_id*.
@@ -231,6 +287,9 @@ class ConnectorAuthManager:
         4. Store new token in vault
         5. Return access_token string
 
+        ``account`` (email) asks for a specific linked account, or — when nothing is
+        linked under it yet — states which account the interactive flow must end on.
+
         Raises:
             ConnectorAuthError: If auth cannot be completed.
             ConnectorNotFoundError: If no provider config is registered.
@@ -239,8 +298,16 @@ class ConnectorAuthManager:
         if not config:
             raise ConnectorNotFoundError(connector_id)
 
+        wanted = (account or "").strip().lower() or None
+        slot: str | None = None
+        if wanted:
+            try:
+                slot = self.resolve_account(connector_id, wanted)
+            except ConnectorAuthError:
+                slot = wanted  # not linked yet — the flow below will link it
+
         # 1. Check vault for existing credentials
-        creds = self._load_from_vault(connector_id)
+        creds = self._load_from_vault(connector_id, slot)
         if creds and not creds.is_expired:
             logger.debug("Vault hit for %s — token valid", connector_id)
             return creds.access
@@ -249,7 +316,7 @@ class ConnectorAuthManager:
         if creds and creds.refresh:
             try:
                 new_creds = await refresh_oauth_tokens(config, creds)
-                self._save_to_vault(connector_id, new_creds)
+                self._save_to_vault(connector_id, new_creds, slot)
                 logger.info("Refreshed token for %s", connector_id)
                 return new_creds.access
             except Exception as exc:
@@ -274,17 +341,35 @@ class ConnectorAuthManager:
                 result.error or "OAuth flow failed",
             )
 
-        self._save_to_vault(connector_id, result.credentials)
+        got = (result.credentials.email or "").strip().lower()
+        if wanted and got and got != wanted:
+            raise ConnectorAuthError(
+                connector_id,
+                f"the browser signed in as {got}, not {wanted} — nothing was saved; retry and pick {wanted}",
+            )
+        self._save_to_vault(connector_id, result.credentials, self._slot_for_new(connector_id, result.credentials))
         logger.info("Authenticated %s via OAuth PKCE", connector_id)
         return result.credentials.access
 
-    async def get_access_token(self, connector_id: str) -> str:
+    def _slot_for_new(self, connector_id: str, creds: OAuthCredentials) -> str | None:
+        """Where a freshly linked account goes: the default slot unless it is already
+        taken by a DIFFERENT account — then ``connector:<email>``, so the first account
+        is never silently replaced by the second."""
+        got = (creds.email or "").strip().lower()
+        current = self._load_from_vault(connector_id)
+        current_email = (current.email or "").strip().lower() if current else ""
+        if current is None or not current_email or not got or current_email == got:
+            return None
+        return got
+
+    async def get_access_token(self, connector_id: str, account: str | None = None) -> str:
         """
         Return a valid access token, refreshing transparently if needed.
 
         This is the method connectors call before every API request.
         """
-        creds = self._load_from_vault(connector_id)
+        slot = self.resolve_account(connector_id, account)
+        creds = self._load_from_vault(connector_id, slot)
         if not creds:
             raise ConnectorAuthError(
                 connector_id, "No stored credentials — run authenticate() first"
@@ -303,16 +388,17 @@ class ConnectorAuthManager:
 
         try:
             new_creds = await refresh_oauth_tokens(config, creds)
-            self._save_to_vault(connector_id, new_creds)
+            self._save_to_vault(connector_id, new_creds, slot)
             return new_creds.access
         except Exception as exc:
             logger.error("Token refresh failed for %s: %s", connector_id, exc)
             raise ConnectorAuthError(connector_id, f"Token refresh failed: {exc}") from exc
 
-    async def revoke(self, connector_id: str) -> None:
-        """Remove stored credentials for *connector_id*."""
+    async def revoke(self, connector_id: str, account: str | None = None) -> None:
+        """Remove stored credentials for *connector_id* (one account, default when None)."""
         try:
-            cred = self._vault.get(connector_id, profile_id="connector")
+            slot = self.resolve_account(connector_id, account) if account else None
+            cred = self._vault.get(connector_id, profile_id=profile_for(slot))
             if cred:
                 self._vault.remove(cred.id)
                 logger.info("Revoked credentials for %s", connector_id)
@@ -325,17 +411,17 @@ class ConnectorAuthManager:
 
     # -- Vault helpers (private) -------------------------------------------
 
-    def _load_from_vault(self, connector_id: str) -> OAuthCredentials | None:
+    def _load_from_vault(self, connector_id: str, account: str | None = None) -> OAuthCredentials | None:
         """Load OAuth credentials from vault, or return None."""
         try:
-            cred = self._vault.get(connector_id, profile_id="connector")
+            cred = self._vault.get(connector_id, profile_id=profile_for(account))
             if cred and cred.credential_type == CredentialType.OAUTH:
                 return OAuthCredentials.from_dict(cred.data)
         except Exception as exc:
             logger.debug("Vault lookup for %s failed: %s", connector_id, exc)
         return None
 
-    def _save_to_vault(self, connector_id: str, creds: OAuthCredentials) -> None:
+    def _save_to_vault(self, connector_id: str, creds: OAuthCredentials, account: str | None = None) -> None:
         """Persist OAuth credentials to the vault.
 
         ``vault.add`` upserts by the unique ``(provider, profile)`` label — it updates the
@@ -345,12 +431,13 @@ class ConnectorAuthManager:
         a fresh id plus two audit entries on every hourly token refresh instead of one in-place
         update. A single ``add`` is atomic and preserves the id.
         """
+        profile = profile_for(account)
         self._vault.add(
             provider=connector_id,
             credential_type=CredentialType.OAUTH.value,
             data=creds.to_dict(),
-            profile_id="connector",
-            label=f"{connector_id} connector OAuth",
+            profile_id=profile,
+            label=f"{connector_id} connector OAuth" + (f" ({account})" if account else ""),
             metadata={
                 "email": creds.email,
                 "account_id": creds.account_id,

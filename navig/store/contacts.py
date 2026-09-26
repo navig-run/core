@@ -17,6 +17,7 @@ import json
 import logging
 import re
 import sqlite3
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -30,16 +31,112 @@ logger = logging.getLogger(__name__)
 # ── Helpers ───────────────────────────────────────────────────
 
 
+#: E.164 allows at most 15 digits after the country code prefix.  Anything
+#: longer is not a telephone number, and storing it produces a route no
+#: adapter can dial and that never de-duplicates against the real number.
+_E164_MAX_DIGITS = 15
+
+#: Where a subscriber number ends and dialling instructions begin: an
+#: extension ("ext. 99", "x99", "poste 12") or a DTMF pause ("," / ";").
+#: Concatenating those into the number produced "+1555123456799".
+_DIAL_SUFFIX_RE = re.compile(
+    r"(?i)(?:\s*\b(?:extension|extn|ext|poste|x)\.?\s*\d+\s*$|[,;].*$)"
+)
+
+
+def _fold_digits(text: str) -> str:
+    r"""Rewrite non-ASCII decimal digits as ASCII.
+
+    ``re.sub(r"\D", ...)`` is Unicode-aware, so Arabic-Indic "٠٦١٢" survived it
+    intact and was stored as a "phone number" no adapter could dial.  These are
+    decimal digits with an unambiguous value, so transliterate rather than drop.
+    """
+    out = []
+    for ch in text:
+        if ch.isdigit() and not ch.isascii():
+            try:
+                out.append(str(unicodedata.digit(ch)))
+                continue
+            except (TypeError, ValueError):
+                pass
+        out.append(ch)
+    return "".join(out)
+
+
 def normalize_phone(phone: str | None) -> str:
-    """Strip non-digits, preserve leading ``+``."""
+    """Canonicalise a phone number: digits only, ``+`` iff it is international.
+
+    Returns ``""`` for anything that is not a phone number, which every caller
+    already treats as "no phone".
+
+    A number counts as international when a ``+`` appears anywhere before the
+    first digit — ``"(+33)6…"`` and ``"tel:+33 6…"`` are as international as
+    ``"+33 6…"``, and the old leading-``+`` test silently dropped the country
+    code from both — or when it starts with the ``00`` international prefix.
+    A number with no such marker stays bare, so a stored national number is
+    never invented into a country it does not belong to.
+    """
     raw = str(phone or "").strip()
     if not raw:
         return ""
-    has_plus = raw.startswith("+")
-    digits = re.sub(r"\D", "", raw)
+
+    raw = _DIAL_SUFFIX_RE.sub("", _fold_digits(raw)).strip()
+    first_digit = next((i for i, ch in enumerate(raw) if ch.isdigit()), None)
+    if first_digit is None:
+        return ""
+
+    international = "+" in raw[:first_digit]
+    digits = re.sub(r"[^0-9]", "", raw)
+    if not international and digits.startswith("00"):
+        international = True
+        digits = digits[2:]
     if not digits:
         return ""
-    return f"+{digits}" if has_plus else digits
+    if len(digits) > _E164_MAX_DIGITS:
+        # Too long to be dialable either way; refuse rather than store junk.
+        return ""
+    return f"+{digits}" if international else digits
+
+
+#: Identifier kinds strong enough to prove two records are the same person.
+#: A phone number or an email address belongs to one human; a URL does not,
+#: because two people can share a company homepage.  The unique index in
+#: _create_schema is generated from this list, so what the schema enforces
+#: and what an importer treats as a merge key cannot drift apart.
+HARD_KINDS: tuple[str, ...] = (
+    "phone", "email", "skype", "telegram", "facebook", "vk",
+)
+
+
+def hard_kinds_sql() -> str:
+    """HARD_KINDS as a SQL list literal, for the partial unique index."""
+    return ", ".join("'" + kind + "'" for kind in HARD_KINDS)
+
+
+#: Which route network a hard identifier can be reached on.  Importing an
+#: address book writes both: the identifier is the truth, the route is what
+#: `dispatch send` looks up, so an imported contact is messageable rather
+#: than merely recorded.
+IDENTIFIER_ROUTE_NETWORK: dict[str, str] = {
+    "phone": "sms",
+    "email": "email",
+    "telegram": "telegram",
+}
+
+#: Which identifier a route address IS.  Several transports ride one
+#: address -- sms, whatsapp, signal and imessage are all a phone number --
+#: so this is many-to-one, the reverse of the map above.  Writing the
+#: identifier alongside the route is what lets an address-book import
+#: recognise a contact that was added by hand, instead of filing the same
+#: person twice.
+ROUTE_NETWORK_IDENTIFIER: dict[str, str] = {
+    "sms": "phone",
+    "whatsapp": "phone",
+    "signal": "phone",
+    "imessage": "phone",
+    "email": "email",
+    "telegram": "telegram",
+}
 
 
 # Networks whose address IS a phone number (E.164). Others (discord/matrix/email/
@@ -77,6 +174,217 @@ def _parse_route_string(route_str: str) -> tuple[str, str]:
 # ── Store ─────────────────────────────────────────────────────
 
 
+#: Columns added to `contacts` after v1 shipped. CREATE TABLE IF NOT EXISTS
+#: will not add a column to a table that already exists, so an existing
+#: routing book needs them applied by hand.
+V2_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("tier", "TEXT"),
+    ("primary_phone", "TEXT"),
+    ("primary_email", "TEXT"),
+    ("birthday", "TEXT"),
+    ("org", "TEXT"),
+    ("job_title", "TEXT"),
+    ("city", "TEXT"),
+    ("country", "TEXT"),
+    ("photo_path", "TEXT"),
+    ("source_profile", "TEXT"),
+    ("is_org", "INTEGER DEFAULT 0"),
+    ("is_deleted", "INTEGER DEFAULT 0"),
+    ("merged_into", "INTEGER"),
+    ("notes", "TEXT"),
+    ("merge_reviewed_at", "TEXT"),
+)
+
+
+def _split_statements(script: str) -> list[str]:
+    """Split a DDL script into statements.
+
+    Splitting on ";" is wrong: a semicolon inside a comment or a string
+    literal cuts a statement in half. ``sqlite3.complete_statement`` is the
+    parser SQLite itself uses to decide where one ends.
+    """
+    statements: list[str] = []
+    buffer = ""
+    for line in script.splitlines(keepends=True):
+        buffer += line
+        if sqlite3.complete_statement(buffer):
+            if buffer.strip():
+                statements.append(buffer)
+            buffer = ""
+    if buffer.strip():
+        statements.append(buffer)
+    return statements
+
+
+def create_schema(conn: sqlite3.Connection) -> None:
+    """Create or widen every contacts table, idempotently.
+
+    Module-level so everything that has to build these tables — the store,
+    and the migration that converts a pre-merge book — works from one
+    definition instead of two that can drift apart.
+    """
+    _SCHEMA_SQL = """
+        CREATE TABLE IF NOT EXISTS contacts (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            alias           TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            display_name    TEXT NOT NULL DEFAULT '',
+            default_network TEXT,
+            fallbacks_json  TEXT DEFAULT '[]',
+            created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+            updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+            -- Address-book columns. A contact is only as reachable as `tier`
+            -- says: 'verified' means a phone number actually validated, and
+            -- everything weaker is a lead. NULL means never classified, which
+            -- is what every row written before this schema shipped is.
+            tier            TEXT,
+            primary_phone   TEXT,
+            primary_email   TEXT,
+            birthday        TEXT,
+            org             TEXT,
+            job_title       TEXT,
+            city            TEXT,
+            country         TEXT,
+            photo_path      TEXT,
+            source_profile  TEXT,
+            is_org          INTEGER DEFAULT 0,
+            is_deleted      INTEGER DEFAULT 0,
+            merged_into     INTEGER,
+            notes           TEXT,
+            -- When a flagged merge was judged correct. The review report is
+            -- regenerated on every import; without this the same verdicts are
+            -- reprinted every time and a genuinely new one is lost among them.
+            merge_reviewed_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS contact_routes (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            contact_id  INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+            network     TEXT NOT NULL COLLATE NOCASE,
+            address     TEXT NOT NULL,
+            priority    INTEGER NOT NULL DEFAULT 0,
+            meta_json   TEXT DEFAULT '{}',
+            UNIQUE(contact_id, network, address)
+        );
+
+        -- Every address a person is reachable at, once. A route is a
+        -- TRANSPORT (sms, whatsapp and signal all ride the same number); an
+        -- identifier is the ADDRESS ITSELF, which is why the unique index
+        -- below can be the key that decides two records are one person.
+        CREATE TABLE IF NOT EXISTS contact_identifiers (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            contact_id  INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+            kind        TEXT NOT NULL,
+            value_norm  TEXT NOT NULL,
+            value_raw   TEXT,
+            is_primary  INTEGER DEFAULT 0,
+            source_file TEXT,
+            created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        );
+
+        -- Every name this person has been filed under. An imported address
+        -- book's whole problem is one human under eight spellings.
+        CREATE TABLE IF NOT EXISTS contact_aliases (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            contact_id  INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+            name        TEXT NOT NULL,
+            name_key    TEXT,
+            source_file TEXT,
+            is_primary  INTEGER DEFAULT 0,
+            created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        );
+
+        -- Provenance: which file, which record, and its original text, so an
+        -- import decision can be argued with later.
+        CREATE TABLE IF NOT EXISTS contact_sources (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            contact_id  INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+            source_file TEXT,
+            card_index  INTEGER,
+            raw_card    TEXT,
+            imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        );
+
+        -- One row per absorbed record, with a snapshot, so a merge that turns
+        -- out to be wrong can be taken back.
+        CREATE TABLE IF NOT EXISTS merge_log (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id   TEXT,
+            surviving_id INTEGER,
+            merged_alias TEXT,
+            reason       TEXT,
+            key_kind     TEXT,
+            key_value    TEXT,
+            payload      TEXT,
+            undone_at    TEXT,
+            created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        );
+
+        -- One row per import invocation, so "what did this import add" stays
+        -- answerable without the caller noting max(id) by hand.
+        CREATE TABLE IF NOT EXISTS contact_import_runs (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id            TEXT,
+            source                TEXT,
+            input_path            TEXT,
+            kind                  TEXT,
+            started_at            TEXT,
+            finished_at           TEXT,
+            max_contact_id_before INTEGER,
+            max_contact_id_after  INTEGER,
+            total                 INTEGER DEFAULT 0,
+            inserted              INTEGER DEFAULT 0,
+            duplicates            INTEGER DEFAULT 0,
+            errors                INTEGER DEFAULT 0,
+            photos_matched        INTEGER DEFAULT 0,
+            photos_unmatched      INTEGER DEFAULT 0
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_contact_alias
+            ON contacts (alias COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS idx_route_contact
+            ON contact_routes (contact_id, priority ASC);
+        CREATE INDEX IF NOT EXISTS idx_identifier_contact
+            ON contact_identifiers (contact_id);
+        CREATE INDEX IF NOT EXISTS idx_alias_key
+            ON contact_aliases (name_key);
+        CREATE INDEX IF NOT EXISTS idx_sources_contact
+            ON contact_sources (contact_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_alias_unique_name
+            ON contact_aliases (contact_id, name);
+    """
+    # One statement at a time, NOT executescript(): executescript issues a
+    # COMMIT before it runs, which would end a transaction the caller had
+    # open. The migration wraps its whole rebuild in one, so a failed
+    # verification can roll the book back untouched.
+    for statement in _split_statements(_SCHEMA_SQL):
+        conn.execute(statement)
+    # Columns before indexes that cover them.  CREATE TABLE IF NOT EXISTS
+    # will not widen a table that already exists, so on a routing book
+    # created at v1 the address-book columns are not there yet and
+    # "CREATE INDEX ... ON contacts (tier)" would fail with "no such
+    # column".  This runs on every open and is a no-op once applied.
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(contacts)")}
+    for column, decl in V2_COLUMNS:
+        if column not in existing:
+            conn.execute(f"ALTER TABLE contacts ADD COLUMN {column} {decl}")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_contacts_tier ON contacts (tier)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_contacts_phone "
+        "ON contacts (primary_phone)"
+    )
+    # A hard identifier belongs to exactly one person -- this index is what
+    # makes a second record carrying a known number attach to the existing
+    # contact instead of creating a twin. Built from HARD_KINDS so the index
+    # and whatever decides a merge cannot drift apart.
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_identifier_unique "
+        "ON contact_identifiers (kind, value_norm) "
+        f"WHERE kind IN ({hard_kinds_sql()})"
+    )
+
+
 class ContactStore(BaseStore):
     """
     Alias-based contact store with multi-network route resolution.
@@ -91,7 +399,7 @@ class ContactStore(BaseStore):
         assert contact.routes[0].network == "whatsapp"
     """
 
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
     PRAGMAS = {"cache_size": -2000}  # 2 MB — small dataset
 
     def __init__(self, db_path: Path | None = None):
@@ -102,36 +410,17 @@ class ContactStore(BaseStore):
     # ── Schema ────────────────────────────────────────────────
 
     def _create_schema(self, conn: sqlite3.Connection) -> None:
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS contacts (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                alias           TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                display_name    TEXT NOT NULL DEFAULT '',
-                default_network TEXT,
-                fallbacks_json  TEXT DEFAULT '[]',
-                created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-                updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS contact_routes (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                contact_id  INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
-                network     TEXT NOT NULL COLLATE NOCASE,
-                address     TEXT NOT NULL,
-                priority    INTEGER NOT NULL DEFAULT 0,
-                meta_json   TEXT DEFAULT '{}',
-                UNIQUE(contact_id, network, address)
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_contact_alias
-                ON contacts (alias COLLATE NOCASE);
-            CREATE INDEX IF NOT EXISTS idx_route_contact
-                ON contact_routes (contact_id, priority ASC);
-        """)
+        create_schema(conn)
 
     def _migrate(self, conn: sqlite3.Connection, from_version: int, to_version: int) -> None:
-        pass  # v1 is initial
+        """v1 -> v2 adds the address-book columns.
 
+        The widening itself happens in :meth:`_create_schema`, which runs
+        before this and on every open: the indexes there cover the new
+        columns, so they have to exist by then.  This stays as the version
+        contract, and as the place a v3 would hook into.
+        """
+        return None
     # ── Resolve ───────────────────────────────────────────────
 
     def resolve_alias(self, alias: str) -> Contact | None:
@@ -174,6 +463,29 @@ class ContactStore(BaseStore):
 
     # ── CRUD ──────────────────────────────────────────────────
 
+    def _record_identifier(self, contact_id: int, network: str,
+                           address: str) -> None:
+        """Record what a route address IS, alongside where it goes.
+
+        Best-effort and OR IGNORE on purpose. The unique index means an
+        address belongs to one contact, so when two contacts genuinely share
+        a number -- a household landline -- the first keeps the identifier
+        and the second still gets its route. Refusing the route over it would
+        break a case that is allowed.
+        """
+        kind = ROUTE_NETWORK_IDENTIFIER.get(network.lower())
+        if not kind:
+            return
+        value = normalize_phone(address) if kind == "phone" else address.strip()
+        if not value:
+            return
+        self._write(
+            "INSERT OR IGNORE INTO contact_identifiers "
+            "(contact_id, kind, value_norm, value_raw, is_primary, source_file) "
+            "VALUES (?, ?, ?, ?, 0, ?)",
+            (contact_id, kind, value.lower(), address, "route"),
+        )
+
     def add_contact(
         self,
         alias: str,
@@ -206,6 +518,8 @@ class ContactStore(BaseStore):
                 "VALUES (?, ?, ?, ?, ?)",
                 route_params,
             )
+            for _cid, network, address, _prio, _meta in route_params:
+                self._record_identifier(contact_id, network, address)
 
         return self.resolve_alias(alias)  # type: ignore[return-value]
 
@@ -280,6 +594,7 @@ class ContactStore(BaseStore):
             "VALUES (?, ?, ?, ?, '{}')",
             (contact_id, network, address, priority),
         )
+        self._record_identifier(contact_id, network, address)
         self._write(
             "UPDATE contacts SET updated_at = ? WHERE id = ?",
             (_utcnow(), contact_id),

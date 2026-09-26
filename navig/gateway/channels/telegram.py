@@ -11,6 +11,7 @@ Provides integration with Telegram Bot API for:
 """
 
 import asyncio
+import contextvars
 import hmac
 import html
 import logging
@@ -165,6 +166,20 @@ except ImportError:
     HAS_FORUM = False
 
 logger = logging.getLogger(__name__)
+
+# Forum topic routing. Set once per slash command by _process_update, read by _api_call, which
+# injects it as ``message_thread_id`` on every send-family method that did not set its own.
+# ONE injection point rather than a parameter threaded through every send surface: handlers
+# call send_message / send_photo / send_document / sendChecklist from dozens of sites and
+# would each have needed the thread carried by hand. Reset to None at the top of every
+# message so nothing leaks from one update into the next.
+_FORUM_THREAD: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "navig_telegram_forum_thread", default=None
+)
+_THREADED_SEND_METHODS = frozenset({
+    "sendMessage", "sendPhoto", "sendDocument", "sendAudio", "sendVoice", "sendVideo",
+    "sendAnimation", "sendChecklist", "sendMediaGroup", "sendSticker", "sendPoll",
+})
 
 # ---------------------------------------------------------------------------
 # Module-level retry / timing constants
@@ -343,6 +358,24 @@ def _audio_file_payload(message: dict) -> dict | None:
     if mime.startswith("audio/") or name.endswith(_AUDIO_DOC_EXTS):
         return doc
     return None
+
+
+def _command_output_language_directive() -> str:
+    """The AI-rewrite prompt's language sentence. Never raises — falling back to
+    plain text is this path's contract, and so is never breaking a send."""
+    try:
+        from navig.core.language import language_directive
+
+        return language_directive("reply", "the same language as the command output above")
+    except Exception:  # noqa: BLE001
+        return "Write the reply in the same language as the command output above."
+
+
+#: How long a poller sleeps between checks while a webhook is registered for
+#: the bot. Telegram refuses getUpdates for as long as the webhook exists, so
+#: polling in that state is a guaranteed 409 — the poller parks and asks again
+#: at this interval instead. See ``_poll_updates``.
+_WEBHOOK_RECHECK_S = 10 * 60.0
 
 
 class TelegramChannel:
@@ -771,6 +804,14 @@ class TelegramChannel:
         url = f"{self.base_url}/{method}"
         data = _strip_disabled_buttons(data)
 
+        # Forum routing: an explicit message_thread_id always wins; otherwise the thread
+        # resolved for the current slash command (if any) is applied here, once, for every
+        # send surface. See _FORUM_THREAD.
+        thread = _FORUM_THREAD.get()
+        if thread is not None and method in _THREADED_SEND_METHODS:
+            data = dict(data or {})
+            data.setdefault("message_thread_id", thread)
+
         try:
             async with self._session.post(url, json=data or {}) as resp:
                 # Handle rate limiting (HTTP 429)
@@ -879,6 +920,19 @@ class TelegramChannel:
             logger.error("Telegram API call failed: %s", e)
             return None
 
+    async def _registered_webhook_url(self) -> str | None:
+        """The webhook URL Telegram currently holds for this bot, or ``None``.
+
+        ``None`` also covers "could not ask" — a network outage makes
+        getWebhookInfo fail exactly like getUpdates does, and in that case the
+        caller must keep backing off rather than park, because nothing is known.
+        """
+        info = await self._api_call("getWebhookInfo", {})
+        if not isinstance(info, dict):
+            return None
+        url = info.get("url")
+        return url if isinstance(url, str) and url else None
+
     async def _poll_updates(self):
         """Long-poll for updates from Telegram."""
         from navig.retry_policy import TELEGRAM_POLLING
@@ -905,8 +959,45 @@ class TelegramChannel:
                 )
 
                 if updates is None:
-                    await asyncio.sleep(TELEGRAM_POLLING.delay_s(fail_attempts))
                     fail_attempts += 1
+                    # ⚠ Not every failure is transient. A 409 Conflict means a
+                    # webhook is registered for this token, and Telegram will
+                    # refuse getUpdates for exactly as long as it stays
+                    # registered — so the backoff below can never succeed; it
+                    # only fixes the error rate at one per ceiling, forever.
+                    # Measured on the operator's machine: ~300 ERRORs a day
+                    # for eight days, from a channel that delivered nothing
+                    # while the webhook path delivered everything.
+                    #
+                    # `_api_call` swallows the status, so ask Telegram which
+                    # case this is — on the first failure of a streak and
+                    # then every third, so a webhook registered mid-outage is
+                    # still noticed without doubling traffic during one.
+                    if fail_attempts % 3 == 1:
+                        url = await self._registered_webhook_url()
+                        if url:
+                            logger.info(
+                                "Telegram webhook is registered (%s), so this "
+                                "process will not poll — updates arrive through "
+                                "the webhook. Re-checking every %ds.",
+                                url,
+                                int(_WEBHOOK_RECHECK_S),
+                            )
+                            # PARK. Only the probe runs in here — getUpdates is
+                            # not touched again until the webhook is gone,
+                            # because every such call is a guaranteed 409.
+                            # (The first draft `continue`d to the top of the
+                            # loop after one sleep, which re-issued getUpdates
+                            # once per park: the test caught it.)
+                            while self._running and url:
+                                await asyncio.sleep(_WEBHOOK_RECHECK_S)
+                                url = await self._registered_webhook_url()
+                            if not self._running:
+                                break
+                            logger.info("Telegram webhook is gone; resuming polling.")
+                            fail_attempts = 0
+                            continue
+                    await asyncio.sleep(TELEGRAM_POLLING.delay_s(fail_attempts - 1))
                     continue
                 fail_attempts = 0
 
@@ -1319,6 +1410,7 @@ class TelegramChannel:
 
     async def _process_update(self, update: dict):
         """Process a single update from Telegram."""
+        _FORUM_THREAD.set(None)   # a clean slate per update; see the contextvar's comment
         # ── Network-manager catalog ingestion ── best-effort, never blocks dispatch.
         #    Also captures channel_post updates the assistant flow ignores below.
         try:
@@ -1639,6 +1731,20 @@ class TelegramChannel:
                     return
             # If we can't identify it and there's no text, just ignore
             if not text:
+                return
+
+        # A photographed LETTER is not a picture to describe: `/courrier` as the caption
+        # (or `mailroom.photos: courrier` for every bare photo) files it into the paperwork
+        # space with local OCR — and must be decided BEFORE the vision branches below, or
+        # the page goes to a cloud vision model first. Only DMs: a group photo is not mail.
+        if not is_group and (message.get("photo") or message.get("document")):
+            from navig.gateway.channels.telegram_courrier import (
+                handle_courrier_intake,
+                wants_intake,
+            )
+
+            if wants_intake(message):
+                await handle_courrier_intake(self, chat_id, user_id, message)
                 return
 
         # Use caption as text for media with captions (photos, videos with text)
@@ -1987,7 +2093,7 @@ class TelegramChannel:
                     reply_to_message_id=reply_to_message_id,
                     # A voice note reaches here already transcribed: the voice
                     # branch above replaces `text` with the transcript and falls
-                    # through, so dictating the three lines works with no extra
+                    # through, so dictating the day's entry works with no extra
                     # plumbing — it only needs to be recorded as dictation.
                     dictated=bool(message.get("voice")),
                 ):
@@ -2050,6 +2156,18 @@ class TelegramChannel:
                 # bypass BOTH this gate and the extension gate below.
                 if cmd.startswith("/"):
                     _cmd_bare = cmd.split(" ", 1)[0][1:].split("@", 1)[0]
+                    # Forum topic routing (opt-in: telegram.forum_routing_enabled). Resolved
+                    # here, before either the registry path or the CLI path, so every send
+                    # that follows for this command lands in its topic. The mixin returns
+                    # None for every "no" -- disabled, not a forum, unmapped command -- and
+                    # None means "General", i.e. exactly today's behaviour.
+                    if _cmd_bare and HAS_FORUM:
+                        try:
+                            _FORUM_THREAD.set(
+                                await self._get_thread_for_command(_cmd_bare, chat_id)
+                            )
+                        except Exception as _fx:  # noqa: BLE001 -- routing must never block a reply
+                            logger.debug("forum routing skipped for /%s: %r", _cmd_bare, _fx)
                     if _cmd_bare:
                         from .telegram_commands import (
                             LOCKED_COMMANDS as _LOCKED,
@@ -4342,6 +4460,45 @@ class TelegramChannel:
                 except OSError:
                     pass  # best-effort cleanup
 
+    # ── the two helpers the delegated voice methods reach for ───────────────────
+    #
+    # `_transcribe_audio_file` below hands `self` to TelegramVoiceMixin, and TelegramChannel
+    # does NOT inherit that mixin (runtime MRO is [TelegramChannel, object]). So every
+    # `self._helper()` inside the mixin resolves HERE, not on the mixin -- and these two were
+    # missing. The mixin caught the AttributeError, logged it at WARN and returned, so the
+    # Telegram transcribe action silently produced nothing:
+    #
+    #   WARN  _transcribe_audio_file: get_file_path failed:
+    #         'TelegramChannel' object has no attribute '_get_file_path'
+    #
+    # Same shape as the BUG-22 stub below: the mixin owns the implementation, this class owns
+    # a binding for it. Adding them here fixes every mixin method that calls them, rather than
+    # one call site.
+
+    async def _handle_courrier(self, chat_id: int, text: str = "", **_: Any) -> None:
+        """`/courrier` typed alone — explain the gesture (the intake itself runs on the
+        captioned photo/document, see ``telegram_courrier``)."""
+        from navig.gateway.channels.telegram_courrier import help_text, paper_space
+
+        await self.send_message(chat_id, help_text(paper_space()), parse_mode="HTML")
+
+    async def _get_file_path(self, file_id: str) -> str:
+        """Telegram file_path for *file_id* — delegated to TelegramVoiceMixin."""
+        from navig.gateway.channels.telegram_voice import TelegramVoiceMixin
+
+        return await TelegramVoiceMixin._get_file_path(self, file_id)
+
+    def _build_file_url(self, file_path: str) -> str:
+        """Download URL for a Telegram file_path.
+
+        Deliberately NOT delegated to the mixin, unlike its sibling above. The mixin's copy
+        reads ``self._bot_token``, and this class stores the token as ``self.bot_token`` --
+        so delegating would resolve the method and then fail one step later on the attribute.
+        Built here from the channel's own attribute, the same way lines ~3781 and ~4252
+        already do it.
+        """
+        return f"https://api.telegram.org/file/bot{self.bot_token}/{file_path}"
+
     async def _transcribe_audio_file(
         self,
         chat_id: int,
@@ -4392,6 +4549,41 @@ class TelegramChannel:
             order = [_P.EDGE]  # last resort; errors cleanly if edge-tts isn't installed
         return order[0], order[1:]
 
+    async def _maybe_send_as_checklist(
+        self,
+        chat_id: int,
+        markdown: str,
+        original_query: str,
+        keyboard: list | dict | None,
+    ) -> dict | None:
+        """Send *markdown* as a native checklist if enabled and it qualifies, else None.
+
+        None means "not sent -- use the ordinary path", covering: feature off, the reply
+        is not a list, or ``sendChecklist`` failed. The caller falls through to HTML in
+        every one of those cases, so an unavailable API costs one debug line, never a
+        lost reply.
+        """
+        from navig.core.coerce import coerce_bool
+        from navig.gateway.channels.telegram_checklist import (
+            TelegramChecklistMixin,
+            _derive_checklist_title,
+            extract_task_list,
+            should_send_as_checklist,
+        )
+
+        cfg = TelegramChecklistMixin._get_checklist_config(self)
+        if not coerce_bool(cfg.get("checklist_enabled", False), default=False):
+            return None
+        if not should_send_as_checklist(markdown):
+            return None
+        tasks = extract_task_list(markdown)
+        if not tasks:
+            return None
+        title = _derive_checklist_title(markdown, original_query)
+        return await TelegramChecklistMixin._try_send_checklist(
+            self, chat_id, title, tasks, keyboard=keyboard
+        )
+
     async def _maybe_send_voice(
         self,
         chat_id: int,
@@ -4406,17 +4598,37 @@ class TelegramChannel:
         if not HAS_VOICE or is_group:
             return
 
-        # Honour the /voiceon toggle (session metadata set by _handle_voiceon_cmd).
-        # Default OFF — never surprise a user with audio they didn't enable.
+        # Two surfaces set this and they used to disagree. `/voiceon` writes SESSION
+        # metadata (per chat); the Deck's audio toggle and the natural-language path
+        # ("turn on voice replies") write AudioConfig (per user). Only session metadata was
+        # ever read here, so flipping the Deck switch did nothing -- and the Deck reads its
+        # own store back, so it showed ON and looked applied.
+        #
+        # Tri-state, mirroring the precedent in telegram_commands.py's settings summary: a
+        # per-chat override WINS when it exists, and the per-user preference is the default
+        # underneath it. `False` as the metadata default cannot express that -- it makes
+        # "explicitly off" and "never set" the same value.
+        #
+        # Default is still OFF: AudioConfig.voice_replies_enabled defaults to False, so a
+        # user who has touched neither surface is never surprised by audio.
         if not HAS_SESSIONS:
             return
         try:
             sm = get_session_manager()
             voice_on = sm.get_session_metadata(
-                chat_id, user_id, "voice_replies_enabled", False, is_group=is_group
+                chat_id, user_id, "voice_replies_enabled", None, is_group=is_group
             )
         except Exception:  # noqa: BLE001
             return
+        if voice_on is None:
+            try:
+                from navig.gateway.channels.audio_menu.state import load_config
+
+                # Cached per user after the first read, so this is a dict lookup on the
+                # per-message path rather than disk I/O.
+                voice_on = load_config(user_id).voice_replies_enabled
+            except Exception:  # noqa: BLE001
+                return
         if not voice_on:
             return
 
@@ -4606,12 +4818,34 @@ class TelegramChannel:
                     if is_last:
                         last_result = r
             else:
-                # Single send. send_message's length guard splits an over-length HTML
-                # body tag-safely at the 4096 limit (keyboard rides the last part), so
-                # no naive character slicing that could sever a <pre>/<blockquote> tag.
-                last_result = await self._send_html_with_fallback(
-                    chat_id, response, keyboard=keyboard
-                )
+                # Native-checklist path: a single reply that is mostly list items goes up
+                # as a tappable checklist, the same shape as the rich path above -- gated,
+                # tried, and falling through to the HTML send on any failure. Detection
+                # runs on the RAW MARKDOWN (bullets / "1." numbering), not the HTML
+                # render. The reply's keyboard rides along; dropping it was the reason
+                # this could not be a plain call to the mixin's _send_smart_reply.
+                #
+                # This was unreachable from the day it was written: HAS_CHECKLIST was set
+                # and never read, TelegramChecklistMixin had no method on this class, and
+                # the Deck rendered a toggle for it. Opt-in now (see the mixin's config).
+                checklist_sent = False
+                if HAS_CHECKLIST:
+                    try:
+                        r = await self._maybe_send_as_checklist(
+                            chat_id, response_md, original_text, keyboard
+                        )
+                        if r is not None:
+                            last_result = r
+                            checklist_sent = True
+                    except Exception as exc:  # noqa: BLE001 -- never let it break the reply
+                        logger.debug("checklist upgrade failed, using HTML: %r", exc)
+                if not checklist_sent:
+                    # Single send. send_message's length guard splits an over-length HTML
+                    # body tag-safely at the 4096 limit (keyboard rides the last part), so
+                    # no naive character slicing that could sever a <pre>/<blockquote> tag.
+                    last_result = await self._send_html_with_fallback(
+                        chat_id, response, keyboard=keyboard
+                    )
 
         # Record (sent_msg_id → original_query, reply_text) for reaction lookups
         if HAS_SESSIONS and last_result and isinstance(last_result, dict) and original_text:
@@ -5183,19 +5417,30 @@ class TelegramChannel:
         if confirmation is None:
             return False
 
-        # Rewrite the prompt itself rather than posting a second message. The
-        # prompt was sent with force_reply, and Telegram clients re-arm that
-        # reply box after a restart — quoting the original text. While that text
-        # is still a question, an already-answered check-in looks like it is
-        # being asked again. Settling it in place removes the ambiguity.
-        settled = False
+        # Settling the prompt is CLEANUP, not the receipt. The two were one step,
+        # and that is what made an answered weigh-in look ignored.
+        #
+        # The prompt is sent with force_reply, and Telegram clients re-arm that
+        # reply box after a restart, quoting the original text — so while that
+        # text is still a question, an already-answered check-in looks like it is
+        # being asked again. Rewriting it in place removes that ambiguity, and
+        # that is the ONLY job it has.
+        #
+        # ⚠ It cannot double as the acknowledgement, because an edit is invisible
+        # in every client that matters: it raises no notification and does not
+        # move the message to the bottom of the chat. Measured on the operator's
+        # own chat — they answered 125, the edit did not land, and the next thing
+        # they saw was an unrelated cron reminder five minutes later; the reply
+        # read as discarded. Their weight WAS recorded. The same silence occurs
+        # when the edit SUCCEEDS and anything arrives afterwards, which #1318 did
+        # not cover: it only rescued the failing edit.
         try:
             from navig.spaces import body_metrics as _bm  # noqa: PLC0415
             from navig.telegram import body_actions as _ba  # noqa: PLC0415
 
             latest = _bm.latest(_bm.resolve_target(chat_id))
             if _kind == "weigh" and latest is not None:
-                settled = await _ba.settle_prompt(
+                await _ba.settle_prompt(
                     self,
                     chat_id,
                     prompt_id,
@@ -5204,11 +5449,10 @@ class TelegramChannel:
         except Exception as exc:  # noqa: BLE001
             logger.debug("settling the weigh-in prompt failed: %s", exc)
 
-        # Falls through to a normal message whenever the edit did not land — an
-        # answer that produces no visible acknowledgement is the failure this
-        # whole disk-backed prompt exists to prevent.
-        if not settled:
-            await self.send_message(chat_id, f"✅ {confirmation}")
+        # ALWAYS acknowledge, whatever the edit did. One new message per answer —
+        # the same receipt the "note" branch has always produced, since it never
+        # had an edit to hide behind.
+        await self.send_message(chat_id, f"✅ {confirmation}")
         return True
 
     async def _handle_eve_pending_reply(
@@ -5640,7 +5884,7 @@ class TelegramChannel:
 
         return TelegramCommandsMixin._get_deck_url(self)
 
-    async def send_command_output(
+    async def send_command_output(  # noqa: PLR0913 — a send surface, not a model
         self,
         chat_id: int,
         plain_text: str,
@@ -5691,7 +5935,10 @@ class TelegramChannel:
             "friendly, no bullet bloat. Preserve every fact (numbers, IDs, file paths, "
             "names, timestamps) EXACTLY. Use at most one emoji. Do NOT add fabricated "
             "detail. If the input is already a single short sentence, you may return "
-            "it unchanged."
+            "it unchanged. "
+            # A rewrite that silently changes the language of a command's output is
+            # a worse answer than the raw text it replaced.
+            + _command_output_language_directive()
         )
         if ai_hint:
             system_prompt += f" Hint: {ai_hint}"
@@ -6743,7 +6990,7 @@ def create_telegram_channel(gateway, config: dict[str, Any]) -> TelegramChannel 
         verdict = "✅ Approved" if approved else "❌ Denied"
         return True, f"{verdict} ({resolved_id})"
 
-    return TelegramChannel(
+    channel = TelegramChannel(
         bot_token=bot_token,
         allowed_users=config.get("allowed_users"),
         allowed_groups=config.get("allowed_groups"),
@@ -6751,5 +6998,174 @@ def create_telegram_channel(gateway, config: dict[str, Any]) -> TelegramChannel 
         on_approval_response=handle_approval_response,
         require_auth=config.get("require_auth", True),
     )
+    # The gateway was only ever captured in the `handle_message` closure above, so the
+    # channel itself could not reach it. `_refresh_ai_runtime_after_router_update` needs it:
+    # after a provider/model switch it flushes the cached ConversationalAgent, and its
+    # documented fallback for "self is not a ChannelRouter subclass" is exactly
+    # `getattr(self, "gateway", None)` -- which was always None here, so the flush silently
+    # did nothing and the next message kept answering through the OLD provider.
+    channel.gateway = gateway
+    return channel
 
 
+
+
+# ── commands-mixin methods the callback layer reaches through the channel ─────────────────
+#
+# `CallbackHandler` is built as `CallbackHandler(self)`, so its `self.channel` IS this class.
+# It calls eight private handlers that live on TelegramCommandsMixin -- and this class does
+# NOT inherit that mixin (runtime MRO is TelegramChannel then object; the inheritance shown in
+# the module docstrings is TYPE_CHECKING prose). Command dispatch works because it builds
+# `functools.partial(mixin_fn, self)` at call time, which puts nothing on the instance, so
+# `self.channel._handle_providers(...)` was an AttributeError the moment a button was pressed:
+# the AI provider and models menus, the voice/audio menus, and the API-key paste flow.
+#
+# Bound explicitly from a NAMED list rather than a `__getattr__` fallback. A fallback would
+# make every typo resolve silently and would defeat
+# tests/gateway/test_telegram_channel_calls_resolve.py, which exists to catch exactly this.
+#
+# The two trailing entries are not called from the callback layer directly -- they are what
+# `_handle_models_command` and `_handle_voice_menu` reach for internally, and inside a mixin
+# method `self._sibling()` also resolves HERE. Binding the entry point without them just moves
+# the AttributeError one frame deeper.
+from navig.gateway.channels.telegram_api import (  # noqa: E402 - after the class by necessity
+    TelegramApiMixin as _TelegramApiMixin,
+)
+from navig.gateway.channels.telegram_autoheal import (  # noqa: E402 - after the class by necessity
+    AutoHealMixin as _AutoHealMixin,
+)
+from navig.gateway.channels.telegram_commands import (  # noqa: E402 - after the class by necessity
+    TelegramCommandsMixin as _TelegramCommandsMixin,
+)
+from navig.gateway.channels.telegram_features import (  # noqa: E402 - after the class by necessity
+    TelegramFeaturesMixin as _TelegramFeaturesMixin,
+)
+from navig.gateway.channels.telegram_voice import (  # noqa: E402 - after the class by necessity
+    TelegramVoiceMixin as _TelegramVoiceMixin,
+)
+
+_CALLBACK_REACHABLE_COMMAND_METHODS = (
+    "_deactivate_provider",
+    "_handle_models_command",
+    "_handle_provider_hybrid",
+    "_handle_provider_reset",
+    "_handle_provider_show",
+    "_handle_provider_vision",
+    "_handle_providers",
+    "_handle_voice_menu",
+    "_handle_audio_menu",     # reached by _handle_voice_menu
+    "_handle_tier_command",   # reached by _handle_models_command
+    # Reached through `getattr(self.channel, "<name>", None)` rather than an attribute
+    # access, so the callback layer degrades SILENTLY when they are missing instead of
+    # raising -- which is strictly worse to diagnose:
+    "_handle_kill_confirm_callback",  # the kill-confirm button answered "Killing…" and
+                                      # then fell through `if handler:` and returned,
+                                      # so nothing was ever killed
+    "_handle_ai_command",             # the /ai panel never re-rendered after a tier pick,
+                                      # so the choice looked like it had not registered
+    # The settings-menu navigation table (`_NAV` in telegram_keyboards.py) maps a callback to a
+    # method NAME and resolves it with `getattr(self.channel, method_name, None)`. A variable
+    # name, so no static scan can follow it -- and the same `if method:` fallthrough, after
+    # `self._answer(cb_id, "")` has already dismissed the spinner. These four are live, rendered
+    # buttons that did nothing at all:
+    "_handle_settings_hub",           # "⚙️ All settings"
+    "_handle_providers_and_models",   # "🤖 Providers & Models"
+    "_handle_provider_voice",         # "🎤 Voice API Keys"
+    "_handle_mode",                   # "🎯 Focus"
+)
+
+# The audio speed / slow buttons (⏩ 🐢) on an audio card. Same shape as above: the
+# callback layer calls `self.channel._edit_audio_and_reply(...)`, and the three names
+# under it are what that method reaches for internally -- the download, the upload, and
+# the size ceiling it refuses above. `_api_call_multipart` comes from a THIRD mixin and
+# is the only thing `_send_audio_document` needs; the file-URL pair it also uses
+# (`_get_file_path`, `_build_file_url`) already has explicit definitions on the class.
+_CALLBACK_REACHABLE_AUDIO_METHODS = (
+    "_edit_audio_and_reply",
+    "_download_telegram_file",   # reached by _edit_audio_and_reply
+    "_send_audio_document",      # reached by _edit_audio_and_reply
+    "TELEGRAM_DOWNLOAD_LIMIT",   # read by _edit_audio_and_reply before it downloads
+)
+
+_CALLBACK_REACHABLE_API_METHODS = (
+    "_api_call_multipart",       # reached by _send_audio_document
+)
+
+# Auto-heal. `/autoheal on` is a documented, user-facing toggle, and the AUTOMATIC path it
+# turns on never ran: the trigger in _handle_cli_command is
+# `if _heal_ctx is not None and hasattr(self, "_heal_failure")`, and the channel had no
+# `_heal_failure`, so the condition was False for every failure the detector ever found.
+# `_get_session_manager_safe` had the same shape one level down -- it reads
+# `hasattr(self, "_has_feature")`, which was also False, so it always returned None and
+# `_record_heal_event` returned early, meaning `/autoheal status` could never show an event
+# either. Both degrade silently by construction; nothing was ever logged.
+#
+# The whole transitive closure is listed, computed to a fixed point rather than guessed: a
+# mixin method's own `self._sibling()` resolves HERE too, so binding only the entry point
+# moves the failure one frame deeper. `_active_heals` and `_pending_heal_ctx` are NOT here --
+# `_heal_failure` already self-initialises them via `_init_autoheal_state`.
+_AUTOHEAL_METHODS = (
+    "_heal_failure",               # the entry point the failure detector calls
+    "_autofix_with_report",
+    "_build_heal_keyboard",
+    "_edit_or_send",
+    "_extract_missing_cmd",
+    "_get_navig_config_path",
+    "_get_session_manager_safe",
+    "_handle_unknown_failure",
+    "_init_autoheal_state",
+    "_record_heal_event",
+    "_report_heal_result",
+    "_run_autofix",
+    "_send_failure_with_keyboard",
+    "_send_progress_message",
+    # The heal keyboard's own buttons. This one at least SAID so -- the dispatch falls back
+    # to "⚠️ Auto-Heal not available" -- but it is the same dead branch: the message is
+    # honest and the feature still does nothing.
+    "_dispatch_heal_callback",
+    "_answer_callback",            # reached by _dispatch_heal_callback
+    "_run_explain",                # reached by _dispatch_heal_callback
+    "_run_investigate",            # reached by _dispatch_heal_callback
+)
+
+# `_features` is a CLASS attribute holding the feature set, not a method -- binding
+# `_has_feature` without it resolves the method and then fails on the attribute it reads.
+_FEATURE_METHODS = (
+    "_has_feature",
+    "_features",
+)
+
+# Forum topic routing: the whole closure of _get_thread_for_command, computed to a fixed
+# point. `_forum_group_cache` / `_forum_topic_cache` are NOT listed -- `_ensure_forum_caches`
+# creates them lazily, and the guard's lazy-init recogniser already knows the shape.
+_FORUM_METHODS = (
+    "_get_thread_for_command",   # the entry point _process_update calls
+    "_get_forum_config",
+    "_ensure_forum_caches",
+    "_is_forum_group",
+    "_ensure_topic",
+    "_find_existing_topic",
+    "_create_topic",
+)
+
+_MIXIN_BINDINGS = (
+    (_TelegramCommandsMixin, _CALLBACK_REACHABLE_COMMAND_METHODS),
+    # The forum mixin is imported under try/except at the top of this module; bind it only
+    # when that import succeeded, or a missing optional module would NameError here.
+    *(((_TelegramForumMixin, _FORUM_METHODS),) if HAS_FORUM else ()),
+    (_TelegramVoiceMixin, _CALLBACK_REACHABLE_AUDIO_METHODS),
+    (_TelegramApiMixin, _CALLBACK_REACHABLE_API_METHODS),
+    (_AutoHealMixin, _AUTOHEAL_METHODS),
+    (_TelegramFeaturesMixin, _FEATURE_METHODS),
+)
+
+for _mixin, _names in _MIXIN_BINDINGS:
+    for _name in _names:
+        _impl = getattr(_mixin, _name, None)
+        if _impl is None:  # pragma: no cover - a rename should fail loudly, not silently unbind
+            raise AttributeError(
+                f"{_mixin.__name__} has no {_name!r}; the binding list is stale and the "
+                f"callback layer would AttributeError on that button."
+            )
+        setattr(TelegramChannel, _name, _impl)
+del _mixin, _names, _name, _impl

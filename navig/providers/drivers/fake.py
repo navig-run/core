@@ -36,7 +36,14 @@ class FakeDriver(ProviderDriver):
         detectable: list[dict[str, Any]] | None = None,
         healthy: bool = True,
         models: list[str] | None = None,
+        failure_health: str = HealthState.INVALID.value,
     ):
+        # `failure_health` lets a test exercise the branches that DIFFER on health:
+        # connect_provider and revalidate treat INVALID (needs_reauth, drop
+        # INFERENCE, roll the key back) very differently from DEGRADED / UNREACHABLE
+        # (stay CONNECTED, surface "unhealthy"). With only INVALID producible, the
+        # transient branches were reachable by no test.
+        self._failure_health = failure_health
         self._flow = flow
         self._detectable = detectable or []
         self._healthy = healthy
@@ -88,7 +95,7 @@ class FakeDriver(ProviderDriver):
     # ── validate / discovery ────────────────────────────────────────────────
     async def validate(self, *, secret_ref, endpoint=None, model=None) -> ValidationResult:
         if not self._healthy:
-            return ValidationResult(ok=False, health=HealthState.INVALID.value,
+            return ValidationResult(ok=False, health=self._failure_health,
                                     error_code="validation_error",
                                     error_message="Fake validation failure")
         return ValidationResult(

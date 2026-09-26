@@ -16,6 +16,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+import typer
 
 import navig.cli.middleware as middleware_mod
 
@@ -89,17 +90,14 @@ def test_bare_help_is_skipped(monkeypatch):
     assert "_operation_record" not in obj
 
 
-# Note: bare `navig -h`, `navig --help`, and `navig --version` are NOT tested
-# here for the skip-record behavior because:
-#   1. `-h` is a value-consuming global flag (short form of --host).  When used
-#      alone with no value, extract_non_global_tokens returns [] → empty
-#      _cmd_str_for_skip → no skip.  This is benign: Typer intercepts those
-#      invocations and exits before the atexit op-recorder fires.
-#   2. `--help` and `--version` start with `--`, so extract_non_global_tokens
-#      strips them → empty _cmd_str_for_skip → no skip.  Again benign for the
-#      same reason.
-# The entries "-h", "--help", "--version", "-v" in the skip list are now
-# effectively dead code but are kept for documentation of intent.
+# ⚠ The note that used to sit here claimed `--help` skipping was "dead code but
+# benign, because Typer exits before the atexit op-recorder fires". It is not
+# benign: the ROOT callback starts the record (and writes the in-flight marker)
+# before Click's eager help handler runs on the SUBCOMMAND, so `navig apply
+# --help` landed in the ledger as a red-risk operation. Measured in a fresh
+# sandbox — `navig ledger show` listed it. The flags are now matched as whole
+# tokens of the raw argv, which is the only place they still exist by the time
+# the skip check runs.
 
 
 def test_prefixed_help_is_skipped(monkeypatch):
@@ -112,3 +110,136 @@ def test_history_is_skipped(monkeypatch):
     """``navig history list`` must be skipped."""
     obj = _invoke_recorder(["history", "list"], monkeypatch)
     assert "_operation_record" not in obj
+
+
+# ---------------------------------------------------------------------------
+# Whole-token matching — a remote payload must never be mistaken for a flag
+# ---------------------------------------------------------------------------
+#
+# The skip list used to be a SUBSTRING scan of the joined command, so every
+# `navig run` whose shell payload contained `-h`, `-v`, `help`, `dashboard`, …
+# was silently dropped from the audit ledger: two consecutive `navig run`s,
+# both exit 0, one line on the chain. `df -h`, `free -h`, `ls -lh`, `grep -v`
+# are the flags admins type most — the hole was shaped exactly like real use.
+
+
+@pytest.mark.parametrize(
+    "payload",
+    ["df -h /", "free -h", "ls -lh /var/log", "grep -v noise app.log", "cat helper.log", "open dashboard"],
+)
+def test_a_remote_payload_containing_a_keyword_is_still_recorded(monkeypatch, payload):
+    obj = _invoke_recorder(["run", payload], monkeypatch)
+    assert "_operation_record" in obj, payload
+
+
+def test_help_on_a_subcommand_is_skipped(monkeypatch):
+    """`navig apply --help` is a help screen, not an executed (red) operation."""
+    obj = _invoke_recorder(["apply", "--help"], monkeypatch)
+    assert "_operation_record" not in obj
+
+
+def test_root_version_flag_is_skipped(monkeypatch):
+    obj = _invoke_recorder(["--version"], monkeypatch)
+    assert "_operation_record" not in obj
+
+
+def test_short_h_is_the_host_flag_not_help(monkeypatch):
+    """`-h` consumes a host name on this CLI; the command behind it is real and recorded."""
+    obj = _invoke_recorder(["-h", "prod", "run", "uptime"], monkeypatch)
+    assert "_operation_record" in obj
+
+
+def test_ledger_reads_are_skipped_by_resource_not_substring(monkeypatch):
+    assert "_operation_record" not in _invoke_recorder(["ledger", "show"], monkeypatch)
+    assert "_operation_record" not in _invoke_recorder(["audit", "tail"], monkeypatch)
+    assert "_operation_record" not in _invoke_recorder(["trigger", "test", "x"], monkeypatch)
+    # ...but `trigger fire` is a real operation
+    assert "_operation_record" in _invoke_recorder(["trigger", "fire", "x"], monkeypatch)
+
+
+def test_a_dry_run_is_recorded_as_read_only(monkeypatch):
+    """A dry run writes nothing; the ledger must not paint it with the real command's risk."""
+    from navig.operation_recorder import OperationType
+
+    monkeypatch.setattr(middleware_mod.sys, "argv", ["navig", "apply", "server-health", "--dry-run"])
+    fake_recorder = MagicMock()
+    fake_recorder.start_operation.return_value = object()
+    ctx = MagicMock()
+    ctx.obj = {}
+    with patch("navig.operation_recorder.get_operation_recorder", return_value=fake_recorder):
+        middleware_mod.init_operation_recorder(ctx=ctx, host=None, app=None, verbose=False)
+    assert "_operation_record" in ctx.obj
+    kwargs = fake_recorder.start_operation.call_args.kwargs
+    assert kwargs["operation_type"] == OperationType.READ_QUERY
+
+
+# ---------------------------------------------------------------------------
+# A command wrapped in RecordedOperation must enrich the middleware record, not
+# write a sibling — `navig apply` produced two ledger lines per run.
+# ---------------------------------------------------------------------------
+
+
+def test_recorded_operation_adopts_the_middleware_record_when_asked(monkeypatch):
+    from typer.testing import CliRunner
+
+    from navig.operation_recorder import OperationRecord, OperationType, RecordedOperation
+
+    app = typer.Typer()
+    seen: dict[str, object] = {}
+    started: list[str] = []
+
+    @app.callback()
+    def _root(ctx: typer.Context) -> None:
+        ctx.ensure_object(dict)
+        ctx.obj["_operation_record"] = OperationRecord(
+            id="op-mw", timestamp="t", command="navig apply x --dry-run",
+            operation_type=OperationType.READ_QUERY,
+        )
+
+    @app.command()
+    def apply(ctx: typer.Context) -> None:
+        with RecordedOperation(
+            command="navig apply x --dry-run",
+            op_type=OperationType.WORKFLOW_RUN,
+            tags=["block", "x"],
+            claim=("apply",),
+        ) as rec:
+            seen["id"] = rec._record.id
+            seen["type"] = rec._record.operation_type
+            seen["detached"] = "_operation_record" not in ctx.obj
+            seen["tags"] = list(rec._record.tags or [])
+
+    import navig.operation_recorder as orec
+
+    real_start = orec.OperationRecorder.start_operation
+
+    def _spy(self, *a, **k):
+        started.append(k.get("command", "?"))
+        return real_start(self, *a, **k)
+
+    monkeypatch.setattr(orec.OperationRecorder, "start_operation", _spy)
+    monkeypatch.setattr(orec.OperationRecorder, "complete_operation", lambda self, *a, **k: None)
+
+    result = CliRunner().invoke(app, ["apply"])
+    assert result.exit_code == 0, result.output
+    assert seen["id"] == "op-mw", "the middleware record was not adopted"
+    assert seen["detached"] is True
+    assert seen["type"] == OperationType.READ_QUERY, "a dry run must stay read-only"
+    assert "block" in seen["tags"]
+    assert started == [], f"a second record was started: {started}"
+
+
+def test_recorded_operation_without_claim_still_records_on_its_own(monkeypatch):
+    import navig.operation_recorder as orec
+    from navig.operation_recorder import OperationType, RecordedOperation
+
+    started: list[str] = []
+    real_start = orec.OperationRecorder.start_operation
+    monkeypatch.setattr(
+        orec.OperationRecorder, "start_operation",
+        lambda self, *a, **k: (started.append(k.get("command")), real_start(self, *a, **k))[1],
+    )
+    monkeypatch.setattr(orec.OperationRecorder, "complete_operation", lambda self, *a, **k: None)
+    with RecordedOperation(command="navig lib call", op_type=OperationType.OTHER):
+        pass
+    assert started == ["navig lib call"]

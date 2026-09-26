@@ -317,3 +317,53 @@ def normalize(
     afilter = f"loudnorm=I={i:g}:TP={tp:g}:LRA={lra:g}"
     _run_ffmpeg(src, dst, afilter, timeout)
     return EditResult(path=dst, rate=1.0, pitch_shifted=False, filters=afilter)
+
+
+def excerpt(
+    src: Path, dst: Path, start: float, end: float | None = None, *,
+    timeout: int = DEFAULT_TIMEOUT_S,
+) -> EditResult:
+    """Cut ``[start, end)`` out of ``src`` — one passage of a longer track.
+
+    This is what lets a single song become several short videos without four derivative
+    mp3s appearing next to it: the shotlist names the source file and the timecode, and
+    the passage is cut at render time.
+
+    **The output is WAV, deliberately.** Everything downstream measures the excerpt with
+    ffprobe and fits picture to what it measures, so an encoder that adds its own padding
+    does not merely waste bytes — it moves the last frame. MP3 has exactly that padding,
+    and re-compressing an already-lossy track to throw it away is the worst of both. WAV
+    is sample-exact and this file is a working intermediate, not a deliverable.
+
+    A stream copy is not used for the same reason: it can only cut on a frame boundary, so
+    the passage would start up to ~26ms from where the caller asked and every later cut
+    would inherit the drift.
+    """
+    if start < 0:
+        raise ValueError(f"start must be zero or positive, got {start}")
+    if end is not None and end <= start:
+        raise ValueError(f"end ({end}) must be after start ({start})")
+    if not Path(src).exists():
+        raise AudioEditError(f"audio not found: {src}")
+
+    total = probe_duration(Path(src), timeout=min(timeout, 30))
+    if start >= total:
+        raise AudioEditError(
+            f"start {start:g}s is at or past the end of {Path(src).name} ({total:.2f}s) — "
+            f"there is nothing there to cut"
+        )
+    stop = total if end is None else min(float(end), total)
+
+    exe = _require_ffmpeg()
+    cmd = [
+        exe, "-nostdin", "-y",
+        # -ss BEFORE -i seeks by index and is sample-accurate on a decoded stream; after
+        # -i it decodes and discards everything up to `start`, which on a two-minute track
+        # is the difference between instant and slow for an identical result.
+        "-ss", f"{start:.3f}", "-i", str(src),
+        "-t", f"{stop - start:.3f}",
+        "-vn", "-c:a", "pcm_s16le", str(dst),
+    ]
+    _exec_ffmpeg(cmd, Path(dst), timeout, f"{Path(src).name} [{start:g}s–{stop:g}s]")
+    return EditResult(path=Path(dst), rate=1.0, pitch_shifted=False,
+                      filters=f"excerpt={start:g}:{stop:g}")

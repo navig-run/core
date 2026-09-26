@@ -1,6 +1,8 @@
 """Tests for store/contacts.py — pure helpers and ContactStore CRUD."""
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from navig.store.contacts import (
@@ -38,6 +40,51 @@ class TestNormalizePhone:
 
     def test_plain_digits_unchanged(self):
         assert normalize_phone("0612345678") == "0612345678"
+
+    # -- a "+" that is not the very first character ------------------------
+    # These used to lose the country code entirely: the old test was
+    # `raw.startswith("+")`, so "(+33)6…" normalised to "336…" — a different,
+    # undialable number that also never de-duplicated against "+336…".
+
+    def test_plus_inside_parentheses_is_still_international(self):
+        assert normalize_phone("(+33)612345678") == "+33612345678"
+
+    def test_tel_uri_prefix_is_still_international(self):
+        assert normalize_phone("tel:+33612345678") == "+33612345678"
+
+    def test_double_zero_international_prefix_becomes_plus(self):
+        """"00" is the international prefix; storing "0033…" made a duplicate
+        of "+33…" that could never be recognised as the same number."""
+        assert normalize_phone("00 33 6 12 34 56 78") == "+33612345678"
+
+    # -- dialling instructions are not part of the number ------------------
+
+    def test_extension_is_dropped(self):
+        assert normalize_phone("+1-555-123-4567 ext. 99") == "+15551234567"
+
+    def test_x_extension_is_dropped(self):
+        assert normalize_phone("+1 555 1234 x99") == "+15551234"
+
+    def test_dtmf_pause_is_dropped(self):
+        assert normalize_phone("+33612345678,123") == "+33612345678"
+
+    # -- digits that are not ASCII -----------------------------------------
+
+    def test_non_ascii_digits_are_transliterated(self):
+        r"""`re.sub(r"\D", ...)` is Unicode-aware, so Arabic-Indic numerals
+        passed straight through and were stored as an undialable "number"."""
+        assert normalize_phone("٠٦١٢") == "0612"
+
+    # -- E.164 has a maximum length ----------------------------------------
+
+    def test_too_long_is_refused(self):
+        assert normalize_phone("+123456789012345678901") == ""
+
+    def test_the_longest_valid_number_is_kept(self):
+        assert normalize_phone("+" + "1" * 15) == "+" + "1" * 15
+
+    def test_a_letters_only_string_is_refused(self):
+        assert normalize_phone("not a phone") == ""
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -229,3 +276,86 @@ class TestContactStoreUpdate:
     def test_update_nonexistent_returns_false(self, store):
         updated = store.update_contact("ghost_user", display_name="X")
         assert updated is False
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# routes record what they ARE, not only where they go
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class TestRouteIdentifiers:
+    """
+    A route says where a message goes; an identifier says what the address IS.
+    Recording both is what lets an address-book import recognise a contact that
+    was added by hand, instead of filing the same person a second time.
+    """
+
+    def _store(self, tmp_path):
+        return ContactStore(db_path=tmp_path / "contacts.db")
+
+    def test_add_contact_records_an_identifier_per_route(self, tmp_path):
+        store = self._store(tmp_path)
+        store.add_contact(alias="alice", routes=["sms:+33612345678",
+                                                 "email:alice@example.com"])
+        conn = sqlite3.connect(tmp_path / "contacts.db")
+        got = sorted(conn.execute(
+            "SELECT kind, value_norm FROM contact_identifiers").fetchall())
+        assert got == [("email", "alice@example.com"), ("phone", "+33612345678")]
+
+    def test_add_route_records_one_too(self, tmp_path):
+        store = self._store(tmp_path)
+        store.add_contact(alias="alice")
+        store.add_route("alice", "telegram:alice_tg")
+        conn = sqlite3.connect(tmp_path / "contacts.db")
+        assert conn.execute(
+            "SELECT kind, value_norm FROM contact_identifiers").fetchall() == [
+                ("telegram", "alice_tg")]
+
+    def test_transports_sharing_one_number_make_one_identifier(self, tmp_path):
+        """sms, whatsapp, signal and imessage are all the same phone number."""
+        store = self._store(tmp_path)
+        store.add_contact(alias="alice", routes=[
+            "sms:+33 6 12 34 56 78", "whatsapp:+33612345678",
+            "signal:+33612345678"])
+        conn = sqlite3.connect(tmp_path / "contacts.db")
+        assert conn.execute(
+            "SELECT COUNT(*) FROM contact_routes").fetchone()[0] == 3
+        assert conn.execute(
+            "SELECT kind, value_norm FROM contact_identifiers").fetchall() == [
+                ("phone", "+33612345678")], "one address, however many transports"
+
+    def test_a_network_that_is_not_an_address_kind_makes_no_identifier(self, tmp_path):
+        """A discord tag identifies someone on discord, not an address we model."""
+        store = self._store(tmp_path)
+        store.add_contact(alias="alice", routes=["discord:alice#1234"])
+        conn = sqlite3.connect(tmp_path / "contacts.db")
+        assert conn.execute(
+            "SELECT COUNT(*) FROM contact_identifiers").fetchone()[0] == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM contact_routes").fetchone()[0] == 1
+
+    def test_two_contacts_may_share_a_number_and_both_keep_their_route(self, tmp_path):
+        """
+        A household landline is legitimate. The identifier belongs to one of them
+        — that is what makes it a merge key — but the route must not be refused,
+        or a real case breaks to protect a bookkeeping rule.
+        """
+        store = self._store(tmp_path)
+        store.add_contact(alias="alice", routes=["sms:+33612345678"])
+        store.add_contact(alias="bob", routes=["sms:+33612345678"])
+
+        assert [(r.network, r.address) for r in store.resolve_alias("bob").routes] == [
+            ("sms", "+33612345678")]
+        conn = sqlite3.connect(tmp_path / "contacts.db")
+        owners = conn.execute(
+            "SELECT c.alias FROM contact_identifiers i JOIN contacts c "
+            "ON c.id = i.contact_id WHERE i.value_norm = '+33612345678'").fetchall()
+        assert owners == [("alice",)], "the first to claim it keeps it"
+
+    def test_an_unusable_phone_makes_no_identifier(self, tmp_path):
+        store = self._store(tmp_path)
+        store.add_contact(alias="alice")
+        store.add_route("alice", "sms:notaphone")
+        conn = sqlite3.connect(tmp_path / "contacts.db")
+        assert conn.execute(
+            "SELECT COUNT(*) FROM contact_identifiers").fetchone()[0] == 0

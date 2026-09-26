@@ -257,7 +257,19 @@ def web_hestia_list(
 ):
     """List HestiaCP resources (users, domains)."""
     ctx.obj["plain"] = plain
-    if users:
+    # The two flags were crossed: `--users` called list_domains_cmd, and `--domains` was
+    # never read so it fell through to the users listing. `--domains` (or a `--user`
+    # filter, which only makes sense for domains) lists domains; everything else lists
+    # users, which keeps the no-flag default unchanged.
+    if users and domains:
+        from navig import console_helper as _ch
+
+        _ch.error("--users and --domains are mutually exclusive; pick one.")
+        raise typer.Exit(2)
+    # `--users` is the default view, so it is kept only as an explicit statement of intent
+    # (and it must not be broken -- removing a flag is a CLI break). A `--user` filter only
+    # makes sense for domains, so on its own it selects them.
+    if domains or (user_filter and not users):
         from navig.commands.hestia import list_domains_cmd
 
         list_domains_cmd(user_filter, ctx.obj)

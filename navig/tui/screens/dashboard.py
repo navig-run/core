@@ -280,7 +280,7 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
 
     def action_show_help(self) -> None:
         self.notify(
-            "[i] Wizard  [s] Settings  [r] Refresh  [q] Quit\n"
+            "\\[i] Wizard  \\[s] Settings  \\[r] Refresh  \\[q] Quit\n"
             "Highlighted row [e] → open scoped settings",
             title="Keyboard Shortcuts",
         )

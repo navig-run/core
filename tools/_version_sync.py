@@ -29,8 +29,6 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from navig.core.proc_text import decode_console_result
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 LATEST_JSON_PATH = REPO_ROOT / "latest.json"
@@ -53,27 +51,74 @@ def read_pyproject_version() -> str:
     return match.group("v")
 
 
-def build_manifest(version: str) -> dict:
+# The one schema. Every writer of latest.json — this tool (hand releases), release.yml
+# (tag releases), and web/www's copy — produces exactly these keys. They used to differ:
+# the workflow dropped three of them and wrote a datetime where this wrote a date.
+MANIFEST_KEYS = ("version", "channel", "pypi", "download_url", "changelog_url", "released_at")
+
+
+def _asset_exists(url: str, timeout: float = 5.0) -> bool:
+    """HEAD the GitHub Release asset. False on 404, timeout, or offline - a URL that
+    could not be verified is not emitted (a link that 404s is worse than none)."""
+    if os.environ.get("NAVIG_VERSION_SYNC_OFFLINE"):
+        return False
+    import urllib.request  # noqa: PLC0415
+
+    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "navig-version-sync"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - fixed https host
+            return 200 <= resp.status < 400
+    except Exception:  # noqa: BLE001 - any failure means "not verifiable", never "exists"
+        return False
+
+
+def _previous_released_at(version: str) -> str | None:
+    """The date already on record for this version, so a re-sync does not move it."""
+    try:
+        prev = json.loads(LATEST_JSON_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if prev.get("version") != version:
+        return None
+    value = prev.get("released_at")
+    return value[:10] if isinstance(value, str) and value else None
+
+
+def build_manifest(
+    version: str,
+    *,
+    released_at: str | None = None,
+    verify=_asset_exists,
+) -> dict:
     """The published release manifest.
 
-    Carries BOTH URLs on purpose. `download_url` points at a GitHub Release asset on
-    navig-run/core, which exists only once that release has been cut — and when navig is
-    published by hand (org Actions are billing-blocked, so the tag workflow never fires)
-    it has NOT been, so the field 404s. Measured on 3.25.0.
+    `pypi` always resolves — publishing to PyPI is the step no release path skips.
+    `download_url` is a GitHub Release asset on navig-run/core, which exists only once
+    that release has been cut; a hand release (org Actions billing-blocked, tag workflow
+    never fires) has NOT cut one, and the template URL 404'd on 3.25.0 from a public
+    manifest for two weeks. So it is VERIFIED (HEAD) and written as null when absent —
+    the workflow path, running after it created the release, gets the real URL.
 
-    `pypi` is the field release.yml writes and always resolves, because publishing to PyPI
-    is the step that cannot be skipped. Emitting both means a consumer has a working URL
-    regardless of which path produced the release, and the two writers of this file no
-    longer disagree about its shape.
+    `released_at` is preserved for an already-recorded version (a re-sync is not a new
+    release) and may be given explicitly to backfill; date only, the same shape in every
+    writer.
     """
-    return {
+    url = DOWNLOAD_URL_TEMPLATE.format(version=version)
+    exists = verify(url)
+    if not exists:
+        print(f"  [info] no GitHub Release asset at {url} - download_url written as null")
+    when = released_at or _previous_released_at(version) or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    manifest = {
         "version": version,
         "channel": "stable",
         "pypi": PYPI_URL_TEMPLATE.format(version=version),
-        "download_url": DOWNLOAD_URL_TEMPLATE.format(version=version),
+        "download_url": url if exists else None,
         "changelog_url": CHANGELOG_URL,
-        "released_at": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "released_at": when[:10],
     }
+    if tuple(manifest) != MANIFEST_KEYS:  # the schema IS the contract; never ship a drift
+        raise RuntimeError(f"manifest keys drifted from MANIFEST_KEYS: {tuple(manifest)}")
+    return manifest
 
 
 def write_json(path: Path, data: dict, dry_run: bool) -> None:
@@ -87,11 +132,11 @@ def write_json(path: Path, data: dict, dry_run: bool) -> None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(payload, encoding="utf-8")
-    print(f"  \u2705 wrote {display}")
+    print(f"  [ok] wrote {display}")
 
 
 def maybe_sync_www(version: str, dry_run: bool) -> None:
-    """Best-effort sync of the website-visible version — content/copy.ts's
+    """Best-effort sync of the website-visible version - content/copy.ts's
     siteConfig.version + public/latest.json — via the canonical Node script. Targets
     the in-repo ``web/www`` (monorepo) or a legacy sibling ``navig-www``. Non-fatal:
     a missing web/www or Node is skipped with a warning, never failing the release.
@@ -106,13 +151,13 @@ def maybe_sync_www(version: str, dry_run: bool) -> None:
     www_root = next((p for p in candidates if p.is_dir()), None)
     if www_root is None:
         if env_sync == "1":
-            print("  ⚠️  NAVIG_DEV_SYNC=1 but no web/www (or navig-www) found — "
+            print("  [warn] NAVIG_DEV_SYNC=1 but no web/www (or navig-www) found - "
                   "site sync skipped", file=sys.stderr)
         return
 
     sync_script = www_root / "scripts" / "sync-site-version.mjs"
     if not sync_script.is_file():
-        print(f"  ⚠️  {sync_script} missing — site version sync skipped", file=sys.stderr)
+        print(f"  [warn] {sync_script} missing - site version sync skipped", file=sys.stderr)
         return
 
     try:
@@ -125,26 +170,30 @@ def maybe_sync_www(version: str, dry_run: bool) -> None:
 
     node = shutil.which("node")
     if not node:
-        print("  ⚠️  node not on PATH — website version sync skipped "
+        print("  [warn] node not on PATH - website version sync skipped "
               "(run: npm --prefix web/www run sync:version)", file=sys.stderr)
         return
     try:
+        # Lazy: release.yml runs this tool from a bare checkout where `navig` is not
+        # installed, and only this www step needs it.
+        from navig.core.proc_text import decode_console_result  # noqa: PLC0415
+
         result = decode_console_result(subprocess.run(
             [node, str(sync_script)], capture_output=True, timeout=120
         ))
     except Exception as exc:  # noqa: BLE001
-        print(f"  ⚠️  website version sync skipped: {exc}", file=sys.stderr)
+        print(f"  [warn] website version sync skipped: {exc}", file=sys.stderr)
         return
     if result.returncode == 0:
-        print("  ✅ synced website version (content/copy.ts + public/latest.json)")
+        print("  [ok] synced website version (content/copy.ts + public/latest.json)")
     else:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
-        print(f"  ⚠️  website version sync failed: {detail}", file=sys.stderr)
+        print(f"  [warn] website version sync failed: {detail}", file=sys.stderr)
 
 
-def run(version: str | None = None, dry_run: bool = False) -> str:
+def run(version: str | None = None, dry_run: bool = False, released_at: str | None = None) -> str:
     resolved = version or read_pyproject_version()
-    manifest = build_manifest(resolved)
+    manifest = build_manifest(resolved, released_at=released_at)
 
     print(f"Syncing version {resolved} to manifests:")
     write_json(LATEST_JSON_PATH, manifest, dry_run)
@@ -166,13 +215,20 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Preview what would be written without making changes",
     )
+    parser.add_argument(
+        "--released-at",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="Release date to record (default: the date already on record for this "
+             "version, else today)",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     try:
-        resolved = run(version=args.version, dry_run=args.dry_run)
+        resolved = run(version=args.version, dry_run=args.dry_run, released_at=args.released_at)
         if args.dry_run:
             print(f"\nDry-run complete. Version: {resolved} (no files changed)")
         return 0

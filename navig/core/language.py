@@ -45,9 +45,30 @@ def resolve_language(override: object = "") -> str | None:
     try:
         from navig.core import Config
 
-        return normalise_language(Config().get(CFG_LANGUAGE, ""))
+        # scope="global" deliberately, not the default "merged". `user.language` is
+        # THE durable global preference — a per-feature override arrives as this
+        # function's argument, never as project config — so consulting a project
+        # file cannot change the answer and costs a second `stat()` on a path this
+        # is called from once per localized string.
+        return normalise_language(Config().get(CFG_LANGUAGE, "", scope="global"))
     except Exception:  # noqa: BLE001 — config unreadable → auto, never a crash
         return None
+
+
+def language_directive(noun: str, mirror: str) -> str:
+    """One sentence telling a model which language to answer in.
+
+    ``user.language`` set → ``"Write the {noun} in Russian."``
+    unset (auto)          → ``"Write the {noun} in {mirror}."``
+
+    A prompt that says nothing does not produce "auto" — it produces ENGLISH,
+    because that is what an unprompted model defaults to. That is not a
+    hypothetical: `/start` sent an English greeting and then an away summary in
+    Russian, from the same handler, because one prompt carried this sentence and
+    the other did not. *mirror* is per-site because "the same language as" needs
+    a different object in each ("the conversation", "the command output").
+    """
+    return f"Write the {noun} in {resolve_language() or mirror}."
 
 
 # ── names vs codes ────────────────────────────────────────────────────────────

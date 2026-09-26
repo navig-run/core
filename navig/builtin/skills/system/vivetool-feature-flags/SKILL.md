@@ -1,4 +1,3 @@
-```skill
 ---
 name: vivetool-feature-flags
 description: Enable, disable, or query Windows 11 feature experiments using ViVeTool
@@ -64,4 +63,3 @@ Returns enabled/disabled status and current payload value.
 - Changes take effect after a **reboot** or Explorer restart
 - Always note which feature IDs you change so you can roll back
 - Feature IDs vary by Windows build — verify IDs from community wikis
-```

@@ -321,3 +321,82 @@ def test_config_health_is_silent_and_green_when_there_were_no_incidents(monkeypa
     icon, ok, text = incident_rows[0]
     assert ok is True and icon == doctor._OK
     assert "none" in text
+
+
+# ---------------------------------------------------------------------------
+# Pending approvals render as ⚠ rows — not as bare text, not as failures
+# ---------------------------------------------------------------------------
+#
+# The two rows in check_pending_approvals() were raw `(label, False, text)` tuples.
+# The renderer prints `row[2]` verbatim and `_shape_report` reads the glyph from
+# `row[0]`, so on a terminal they appeared with no ⚠, no indent and no label — and
+# `navig doctor --json` counted them as FAILED with an empty label. Seen on the
+# maintainer's own doctor output. Every other section builds rows with `_check`.
+
+
+def _fake_approval_modules(monkeypatch, *, pending: int, stale: int):
+    import time as _time
+    import types
+
+    journal = types.SimpleNamespace(
+        list_pending=lambda: {f"p{i}": {"asked_at": _time.time() - 120} for i in range(pending)}
+    )
+    resume = types.SimpleNamespace(
+        list_resumable=lambda: {f"s{i}": {} for i in range(stale)},
+        is_too_old=lambda e: True,
+        max_age_seconds=lambda: 3600,
+    )
+    pkg = types.SimpleNamespace(journal=journal, resume=resume)
+    monkeypatch.setitem(__import__("sys").modules, "navig.approval", pkg)
+    monkeypatch.setitem(__import__("sys").modules, "navig.approval.journal", journal)
+    monkeypatch.setitem(__import__("sys").modules, "navig.approval.resume", resume)
+
+
+def test_pending_approvals_are_warning_rows_with_a_label_and_a_glyph(monkeypatch):
+    _fake_approval_modules(monkeypatch, pending=2, stale=1)
+    rows = doctor.check_pending_approvals()
+    assert len(rows) == 2
+    for row in rows:
+        assert row[0] == doctor._WARN, row
+        assert row[1] is False
+        assert row[2].startswith(f"  {doctor._WARN} "), row[2]
+    assert rows[0].label == "Waiting on you"
+    assert rows[1].label == "Too old to resume"
+    assert "2 approval(s) unanswered" in rows[0].detail
+
+
+def test_pending_approvals_count_as_warnings_in_the_json_report(monkeypatch):
+    _fake_approval_modules(monkeypatch, pending=1, stale=0)
+    report = doctor._shape_report([("Approvals", doctor.check_pending_approvals())])
+    (section,) = report["sections"]
+    (check,) = section["checks"]
+    assert check["label"] == "Waiting on you"
+    assert check["warn"] is True and check["ok"] is False
+    assert report["summary"]["failed"] == 0 if "summary" in report else True
+
+
+# ---------------------------------------------------------------------------
+# The Skills row asks the loader, not a directory that stopped existing
+# ---------------------------------------------------------------------------
+#
+# `check_skills` looked for `<core>/skills`, gone since the builtin skills moved under
+# navig/builtin/skills and navig/skills/builtin — so every install warned "Skills dir
+# not found (non-fatal)" forever, one command before `navig skill tree` listed 50+.
+
+
+def test_skills_row_is_green_when_the_loader_finds_skills():
+    rows = doctor.check_skills()
+    assert len(rows) == 1
+    (row,) = rows
+    assert row[1] is True, row
+    assert row.label == "Skills"
+    assert "found across" in row.detail and int(row.detail.split()[0]) > 0
+
+
+def test_skills_row_warns_when_the_loader_itself_fails(monkeypatch):
+    import navig.skills.loader as loader
+
+    monkeypatch.setattr(loader, "get_skill_dirs", lambda: (_ for _ in ()).throw(OSError("nope")))
+    (row,) = doctor.check_skills()
+    assert row[1] is False and row[0] == doctor._WARN
+    assert "COULD NOT VERIFY" in row.detail

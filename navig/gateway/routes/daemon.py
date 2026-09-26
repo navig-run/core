@@ -67,6 +67,13 @@ async def _run_service_action(action: str, *, timeout_seconds: float = 30.0) -> 
     return (False, f"Unsupported action: {action}", "unsupported_action")
 
 
+def _run_restart_task() -> tuple[bool, str]:
+    """`schtasks /run` the on-demand restart task (Windows). Seam for tests."""
+    from navig.daemon.service_manager import task_scheduler_run_restart
+
+    return task_scheduler_run_restart()
+
+
 def _daemon_start(gw):
     async def h(request):
         auth = require_bearer_auth(request, gw)
@@ -200,6 +207,41 @@ def _daemon_restart(gw):
             return block
 
         logger.info("Daemon restart requested via /api/daemon/restart by actor=%s", actor)
+        if sys.platform == "win32":
+            # This process is INSIDE the daemon's tree, and `navig service restart`
+            # kills that tree with `taskkill /T` — a restarter spawned from here dies
+            # mid-stop (measured), after disabling autostart and before re-enabling
+            # it: daemon dead, autostart off, no response. The restart must run from
+            # outside the tree; on Windows that is the on-demand scheduled task.
+            ok, message = await asyncio.to_thread(_run_restart_task)
+            if ok:
+                resp = json_ok(
+                    {
+                        "ok": True,
+                        "status": "restarting",
+                        "message": "Restart handed to the scheduled task; the daemon will be replaced in a few seconds",
+                        "result_code": "restart_requested_via_task",
+                    }
+                )
+                resp.headers["Access-Control-Allow-Origin"] = "*"
+                return resp
+            # Refuse rather than half-do it: killing the daemon from in here leaves
+            # nothing to bring it back.
+            resp = json_error_response(
+                "Cannot restart the daemon from inside its own process tree",
+                status=409,
+                code="daemon_restart_needs_task",
+                details={
+                    "message": (
+                        f"the on-demand restart task is not available ({message}). "
+                        "Register it once with `navig service install`, or restart from a "
+                        "terminal: `navig service restart`"
+                    ),
+                    "result_code": "restart_task_unavailable",
+                },
+            )
+            resp.headers["Access-Control-Allow-Origin"] = "*"
+            return resp
         ok, message, result_code = await _run_service_action("restart")
         if ok:
             resp = json_ok({"ok": True, "status": "restarted", "message": message, "result_code": result_code})

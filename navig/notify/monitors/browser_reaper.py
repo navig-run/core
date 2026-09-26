@@ -101,7 +101,12 @@ async def run_browser_reaper(poll_s: float = POLL_S) -> None:
     """Sweep leaked debug browsers forever. Silent on a healthy machine."""
     logger.info("[browser_reaper] started (poll=%ss)", poll_s)
     while True:
-        result = sweep_once()
+        # Off the loop. A sweep probes ports (1s HTTP timeouts), asks each idle browser to
+        # close and waits up to GRACEFUL_CLOSE_S for it, then kills and re-probes — all
+        # synchronous, several seconds per browser. Inline, that froze the WHOLE daemon
+        # for the duration; `tests/gateway/test_no_loop_blocking.py` cannot see it because
+        # the blocking is inside a sync callee, not in this coroutine's own body.
+        result = await asyncio.to_thread(sweep_once)
         reaped = result.get("reaped") or []
         if reaped:
             logger.info("[browser_reaper] closed idle browser(s) on port(s): %s", reaped)

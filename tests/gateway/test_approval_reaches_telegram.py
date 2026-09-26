@@ -43,6 +43,7 @@ class _Req:
     user_id: str = "system"          # exactly what the live incidents carry
     level: Any = field(default_factory=lambda: _Level("confirm"))
     expires_at: Any = None
+    description: str = ""
 
 
 class _Manager:
@@ -177,3 +178,31 @@ def test_the_handler_does_not_depend_on_python_telegram_bot() -> None:
         "anti-vacuity floor: no keyword named `keyboard` is passed anywhere, so the "
         "check above is comparing against a send that does not exist"
     )
+
+
+async def test_the_prompt_shows_what_is_being_approved_not_just_the_tool_name() -> None:
+    """Six prompts reading only `tool bash_exec` — the operator tapped Approve
+    six times without knowing what would run. The description carries the tool
+    AND its arguments; it must be on the card, HTML-escaped."""
+    ch = _Channel()
+    h = TelegramApprovalHandler(_Manager(), bot=ch, owner_chat_id=1)
+    await h.on_approval_request(
+        _Req(
+            command="tool bash_exec",
+            channel="telegram",
+            user_id="1",
+            description="Agent tool call: `bash_exec` (moderate) — command=navig doctor <all>",
+        )
+    )
+
+    text = ch.sent[0]["text"]
+    assert "navig doctor" in text, "the command text IS the decision"
+    assert "&lt;all&gt;" in text, "HTML-escaped: a crafted argument must not become markup"
+
+
+async def test_a_description_that_merely_repeats_the_command_adds_no_line() -> None:
+    ch = _Channel()
+    h = TelegramApprovalHandler(_Manager(), bot=ch, owner_chat_id=1)
+    await h.on_approval_request(_Req(command="deploy prod", description="Execute: deploy prod"))
+
+    assert "What:" not in ch.sent[0]["text"]

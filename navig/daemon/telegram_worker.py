@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import errno
 import os
 import signal
 import sys
@@ -78,7 +79,7 @@ def _deck_config() -> dict:
         # dev_mode gates the local auth bypass; configure_deck_auth also coerces it
         # (#532), but keep the builder dict honest too.
         "dev_mode": coerce_bool(deck_cfg.get("dev_mode", False), default=False),
-        "auth_max_age": deck_cfg.get("auth_max_age", 3600),
+        "auth_max_age": deck_cfg.get("auth_max_age", 86400),
         # These two were MISSING, and this dict is a hand-written whitelist, so the
         # consumer just saw defaults. `register_deck_routes` reads both:
         #
@@ -196,7 +197,37 @@ async def _start_gateway_http(gateway: NavigGateway, tg_config: dict, deck_cfg: 
     host = gateway.config.host
     port = gateway.config.port
     site = web.TCPSite(gateway._runner, host, port)
-    await site.start()
+    try:
+        await site.start()
+    except OSError as exc:
+        # EADDRINUSE is not this child's problem to die of.
+        #
+        # This worker's JOB is the Telegram bot; the deck HTTP server is an extra.
+        # When the daemon also runs a dedicated `gateway` child (daemon config
+        # `gateway: true`, which is what carries the Lighthouse uplink), BOTH try to
+        # bind gateway.config.port and the loser raised here — taking the whole
+        # telegram-bot process down with it. Measured on the operator's install:
+        # "telegram-bot exited with code 1 - restarting in 120s", attempt 536, a
+        # crash loop every two minutes for 18 hours, while the bot itself was
+        # perfectly capable of running.
+        #
+        # Skipping is deliberately better than retrying on a free port: a second
+        # deck API on a DIFFERENT port is a split brain (both 8789 and 5176 answered
+        # /api/deck/status during that window), and clients resolve one address via
+        # gateway.json. Whoever bound first is already serving; this child just runs
+        # the bot.
+        if getattr(exc, "errno", None) not in (errno.EADDRINUSE, 10048):
+            raise
+        logger.warning(
+            "Deck HTTP server not started: %s:%d is already served by another "
+            "process (usually the daemon's own `gateway` child). The Telegram bot "
+            "continues; the deck API is reachable on the existing listener.",
+            host,
+            port,
+        )
+        await gateway._runner.cleanup()
+        gateway._runner = None
+        return
 
     logger.info(
         "Gateway HTTP server started on %s:%d (Deck: %s)",
@@ -485,7 +516,17 @@ def main() -> None:
         help="Run Telegram bot without gateway HTTP server",
     )
     args = parser.parse_args()
-    asyncio.run(_run(port=args.port, enable_gateway=not args.no_gateway))
+    # Identity for a STANDALONE worker (navig bot start --background with no service
+    # installed): `navig service pids` lists it and a sweeper that follows the
+    # contract spares it. Under the supervisor it is already a descendant of
+    # supervisor.pid and is not listed twice. Best-effort, removed on clean exit.
+    from navig.daemon.launch import remove_worker_pid, write_worker_pid
+
+    write_worker_pid()
+    try:
+        asyncio.run(_run(port=args.port, enable_gateway=not args.no_gateway))
+    finally:
+        remove_worker_pid()
 
 
 if __name__ == "__main__":

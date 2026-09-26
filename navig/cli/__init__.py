@@ -315,6 +315,21 @@ def main(
     ctx.obj["app"] = app
     ctx.obj["verbose"] = verbose
     ctx.obj["quiet"] = quiet
+
+    # An interactive command shows WARNING and up on stderr; INFO/DEBUG stay in navig.log
+    # unless --verbose. Without this the console handler defaulted to INFO for every
+    # process, so loading the installed plugins printed ~25 log lines above the output of
+    # `navig doctor`, `navig store status`, `navig skill list`, … on every run. The daemon
+    # never passes through this callback (`-m navig.daemon.*`), and `gateway start` sets
+    # its own console level after the boot story — this is the CLI's policy only.
+    try:
+        import logging as _logging
+
+        from navig.core.logging import set_console_level
+
+        set_console_level(_logging.INFO if verbose else _logging.WARNING)
+    except Exception as _log_exc:  # noqa: BLE001 — a logging policy must never block a command
+        _log.debug("console log level not applied: %s", _log_exc)
     ctx.obj["dry_run"] = dry_run
     ctx.obj["yes"] = yes
     ctx.obj["confirm"] = confirm

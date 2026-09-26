@@ -46,6 +46,14 @@ _SINKS = frozenset({"info", "success", "warning", "error", "dim", "print"})
 # worse than no guard — it teaches you to delete it.
 _BRACKETED_VALUE = re.compile(r"(?<!\\)\[\{")
 
+# A single-letter key hint that IS a Rich style tag: `[s] Skip` renders as "Skip" with a
+# strikethrough and the key gone; `[i]`/`[b]`/`[u]`/`[d]`/`[r]` italicise, embolden,
+# underline, dim or reverse the rest of the line. The onboarding wizard printed
+# "[s] Skip for now" this way at three prompts (the operator saw a struck-through
+# "Skip for now" and no key to press), and the TUI help bar lost three of its four keys.
+# Digits and multi-letter names are not style tags, so `[1] Anthropic` is untouched.
+_STYLE_TAG_HINT = re.compile(r"(?<!\\)\[[sbiudr]\] ")
+
 
 def _is_console_sink(call: ast.Call) -> bool:
     fn = call.func
@@ -68,6 +76,10 @@ def _offenders(path: Path) -> list[str]:
         if not (isinstance(node, ast.Call) and _is_console_sink(node)):
             continue
         for arg in node.args:
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                if _STYLE_TAG_HINT.search(arg.value):
+                    out.append(f"{path.name}:{node.lineno}")
+                continue
             if not isinstance(arg, ast.JoinedStr):
                 continue
             # Rebuild only the LITERAL parts, marking where interpolations sit, so
@@ -84,7 +96,7 @@ def _offenders(path: Path) -> list[str]:
             # code is how a guard gets deleted instead of obeyed (#729).
             if "[/{" in sketch:
                 continue
-            if _BRACKETED_VALUE.search(sketch):
+            if _BRACKETED_VALUE.search(sketch) or _STYLE_TAG_HINT.search(sketch):
                 out.append(f"{path.name}:{node.lineno}")
     return out
 
@@ -138,3 +150,27 @@ def test_rich_really_drops_an_unescaped_bracketed_value() -> None:
     out2 = Console(file=None, width=80, record=True, markup=True)
     out2.print("x: \\[job_8] y")
     assert "job_8" in out2.export_text(), "the escape stopped working"
+
+
+def test_a_single_letter_key_hint_is_a_style_tag_and_is_flagged() -> None:
+    import tempfile
+
+    bad = 'ch.dim("    [s] Skip for now")\nch.info(f"    [s] Skip{hint}")\n'
+    good = 'ch.dim("    \\\\[s] Skip for now")\nch.info("  [1] Anthropic")\nch.info("[bold]x[/bold]")\n'
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "probe.py"
+        p.write_text(bad, encoding="utf-8")
+        assert len(_offenders(p)) == 2, _offenders(p)
+        p.write_text(good, encoding="utf-8")
+        assert _offenders(p) == [], _offenders(p)
+
+
+def test_rich_really_strikes_through_an_s_hint() -> None:
+    from rich.console import Console
+
+    out = Console(file=None, width=80, record=True, markup=True)
+    out.print("    [s] Skip for now")
+    assert "[s]" not in out.export_text(), "Rich no longer eats this; the guard can go"
+    out2 = Console(file=None, width=80, record=True, markup=True)
+    out2.print("    \\[s] Skip for now")
+    assert "[s] Skip" in out2.export_text()

@@ -226,14 +226,41 @@ class HardenedController(CDPBridge):
         self._terminate_proc()
 
     def _terminate_proc(self) -> None:
-        if self._proc is not None:
+        """Kill the browser we launched — the REAL one, not just the handle we hold.
+
+        Same shape as ``system_chrome._terminate_proc``, and fixed for the same reason:
+        on Windows a Chromium ``chrome.exe`` is frequently a **launcher** that starts the
+        real browser as a separate process and exits within ~100 ms, so ``self._proc`` is
+        a corpse by teardown and ``terminate()`` reaps nothing while the browser — window,
+        debug port and profile dir — keeps running. ``targets.py`` learned this and
+        re-resolves the PID from the debug port; these two engine classes never did.
+
+        Both signals or nothing: OUR port AND OUR profile dir, exactly as
+        ``_debug_browser_pids`` requires. That pairing is what makes a process ours rather
+        than the operator's own browser, and the helper returns [] when it can attribute
+        neither — so an unattributable process is left alone rather than guessed at.
+
+        Harmless when ``self._proc`` IS the real process (a hardened build that does not
+        use a launcher shim): the port scan finds that same PID, kills it, and the handle
+        terminate below simply no-ops on an already-dead process.
+        """
+        port, udd, proc = self.debug_port, self._user_data_dir, self._proc
+        self._proc = None
+        try:
+            from navig.browser import targets as t  # noqa: PLC0415 — lazy, as everywhere here
+
+            if port and udd:
+                for pid in t._debug_browser_pids(int(port), udd):
+                    t._terminate_pid(pid)
+        except Exception as exc:  # noqa: BLE001 — fall through to the handle below
+            logger.debug("[hardened] port-scoped teardown: %s", exc)
+
+        if proc is not None:
             try:
-                self._proc.terminate()
+                proc.terminate()
                 try:
-                    self._proc.wait(timeout=5)
+                    proc.wait(timeout=5)
                 except Exception:  # noqa: BLE001
-                    self._proc.kill()
+                    proc.kill()
             except Exception as exc:  # noqa: BLE001
                 logger.debug("[hardened] process teardown: %s", exc)
-            finally:
-                self._proc = None

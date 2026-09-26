@@ -232,6 +232,16 @@ def file_list(
     json: bool = typer.Option(False, "--json", help="Output JSON"),
 ):
     """List remote directory contents."""
+    # These two never did anything here: a FILE listing has no tables or containers to
+    # show. They are template leftovers, but removing a flag is a CLI break, so they are
+    # read and answered honestly instead of ignored.
+    if tables or containers:
+        from navig import console_helper as _ch
+
+        what = "Database tables" if tables else "Containers"
+        cmd = "navig db tables" if tables else "navig docker ps"
+        _ch.error(f"{what} are not part of a file listing. Use '{cmd}'.")
+        raise typer.Exit(2)
     if json:
         ctx.obj["json"] = True
     if tree:

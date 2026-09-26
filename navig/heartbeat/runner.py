@@ -22,6 +22,12 @@ if TYPE_CHECKING:
 
 logger = get_debug_logger()
 
+#: How long an UNCHANGED heartbeat issue set stays quiet. The sibling remediate
+#: mission uses a 1h→72h backoff (#1322); a passive notification is cheaper than an
+#: approval prompt, so a flat 6h is proportionate — about four a day for a standing
+#: problem, instead of one per beat. A CHANGED set is never delayed.
+_ISSUE_DEDUPE_S = 6 * 60 * 60.0
+
 
 @dataclass
 class HeartbeatConfig:
@@ -274,10 +280,48 @@ class HeartbeatRunner:
             return
 
         try:
-            from navig.llm.liveness import dead_modes, probe_modes
+            from navig.llm.liveness import (
+                dead_modes,
+                probe_catalog_heads,
+                probe_routes,
+                retired_catalog_entries,
+            )
 
             # Sync probe (makes real 1-token calls) → run off the event loop.
-            results = await asyncio.to_thread(probe_modes)
+            #
+            # TIERS are included because they are LIVE routing paths: the hybrid
+            # router dials them directly, so a dead one is breakage. All three of
+            # one install's answered 410 GONE for weeks and only the PULL side
+            # (`navig mode doctor`, run by hand) could see it — the heartbeat is
+            # the push side and knew nothing.
+            #
+            # FALLBACKS are excluded on purpose: a dead fallback breaks nothing
+            # today, and alerting on one would fire on every machine that simply
+            # does not run ollama. That is the same split `navig mode doctor`
+            # applies to its exit code, so the two surfaces cannot disagree about
+            # what counts as broken.
+            # ONE cache across both probes: a model reached as a route AND as a
+            # catalog head costs a single call, and cannot come back with two
+            # statuses in the same beat.
+            shared: dict[tuple[str, str], tuple[str, str]] = {}
+            results = await asyncio.to_thread(
+                probe_routes, include_fallbacks=False, include_tiers=True,
+                probed_cache=shared,
+            )
+            # Each provider's models[0] too — the credential probe and the
+            # routing substitution default, which no ROUTE probe touches. Only a
+            # RETIRED head is reported: a bad key or a slow endpoint is a
+            # different fact, and the route rows above already carry it.
+            # Measured 2026-09-26: groq's models[0] (and its other ten ids) were
+            # gone, so `--test groq` and every substitution broke while the
+            # operator's configured routes stayed green and nothing alerted.
+            try:
+                heads = await asyncio.to_thread(
+                    probe_catalog_heads, probed_cache=shared
+                )
+                results = results + retired_catalog_entries(heads)
+            except Exception as exc:  # noqa: BLE001 — never break the beat
+                logger.debug("catalog-head probe skipped: %s", exc)
         except Exception as exc:  # noqa: BLE001 — a probe failure must never break the beat
             logger.debug("llm-mode liveness probe skipped: %s", exc)
             return
@@ -292,10 +336,29 @@ class HeartbeatRunner:
         if result.issues_found is None:
             result.issues_found = []
         for b in bad:
+            # `probe_routes` rows carry `kind`/`label`; `probe_modes` rows carry
+            # `mode`. Read both so either shape works — and so swapping the probe
+            # cannot KeyError inside the daemon's own alarm.
+            kind = b.get("kind", "mode")
+            name = b.get("label") or b.get("mode") or "?"
+            if kind == "catalog":
+                # NOT a route: nothing to re-point. The catalog itself is wrong,
+                # and the fix is the sweep that prints the denylist entry.
+                subject = f"{name}'s first catalog model"
+                fix = f"navig ai models --check --provider {name}"
+            elif kind == "tier":
+                # A tier is NOT a mode. `navig mode set small …` would be wrong
+                # advice twice over: wrong command, and "small" is not a mode name,
+                # so the mode-set guard rejects it. `coder_big` is accepted verbatim
+                # by _normalize_route_tier.
+                subject = f"routing tier '{name}'"
+                fix = f"navig mode route set {name} --provider <p> --model <m>"
+            else:
+                subject = f"LLM mode '{name}'"
+                fix = f"navig mode set {name} --provider <p> --model <m>"
             result.issues_found.append(
-                f"[HIGH] LLM mode '{b['mode']}' → {b['provider']}:{b['model']} is "
-                f"{b['status']} ({b['detail']}). Fix: "
-                f"navig mode set {b['mode']} --provider <p> --model <m>"
+                f"[HIGH] {subject} → {b['provider']}:{b['model']} is "
+                f"{b['status']} ({b['detail']}). Fix: {fix}"
             )
 
     def _build_heartbeat_prompt(self) -> str:
@@ -528,41 +591,95 @@ Begin the health check now. Be thorough but efficient.
                 logger.error("Complete callback error: %s", e)
 
     async def _notify_issue(self, message: str) -> None:
-        """Send notification about an issue."""
-        # Get notification settings from config
-        config = self.gateway.config_manager.global_config
-        notify_config = config.get("notifications", {})
+        """Tell the operator their daemon found something. Best-effort, never raises.
 
-        # Get primary channel
-        channel = notify_config.get("channel", "telegram")
-        recipient = notify_config.get("recipient")
+        ⚠ This is the alarm for "NAVIG itself is broken", and it could not ring.
+        Three independent defects, measured on the operator's own daemon, which had
+        4 HIGH findings outstanding (an expired API key, a retired model) and told
+        nobody:
 
-        if not recipient:
-            # One-shot: warn loudly on the first heartbeat tick after
-            # boot, then drop to DEBUG. The user is told once that they
-            # have un-deliverable notifications, then we stop nagging.
-            if not getattr(self, "_warned_no_recipient", False):
-                logger.warning(
-                    "No notification recipient configured — heartbeat issues won't be delivered. "
-                    "Set `notifications.recipient` in ~/.navig/config.yaml. (This warning is shown once.)"
-                )
-                self._warned_no_recipient = True
-            else:
-                logger.debug("No notification recipient configured (suppressed; one-shot)")
+        1. It required ``notifications.recipient``, a key **nothing in this repo
+           writes** — read here and nowhere else, documented only as a manual
+           ``navig config set``. Unset, it returned early. That is the line the
+           operator actually saw: *"No notification recipient configured"*, six
+           times.
+        2. Setting it did not help: the delivery call was
+           ``self.gateway.send_notification(...)`` and **NavigGateway has no such
+           method** (verified: ``hasattr`` is False, MRO is [NavigGateway, object],
+           so no mixin supplies it). Following the HANDBOOK's own advice would have
+           raised AttributeError instead of delivering.
+        3. The ``notification_filter`` branch was dead too — that attribute is
+           never set on the gateway either, so the ``hasattr`` guard silently
+           skipped it. Harmless, but it is the same class.
+
+        Now it goes through the notify router every other producer uses.
+        ``system_alert`` fans out to ``["deck", "telegram"]`` by default, so the
+        alarm reaches the same places every other notification does and needs **no
+        second copy of "who is the operator"** — which is what the missing
+        ``recipient`` key was. (Seven sites already resolve that identity from
+        ``telegram.allowed_users``; this one no longer needs to.)
+        """
+        import hashlib  # noqa: PLC0415
+        import time as _time  # noqa: PLC0415
+
+        first, _, rest = (message or "").partition("\n")
+        title = first.strip() or "Heartbeat"
+        body = rest.strip()
+
+        # ⚠ Making the alarm ring is only half a fix. `_handle_result` calls this on
+        # EVERY beat that has issues, and the operator's findings are standing ones
+        # (an expired key, a retired model) — their log shows the same 4 issues
+        # found 7 times in 3 days. Un-throttled, this change would have turned
+        # silence into a notification every ~30 minutes, which is the "cries wolf"
+        # pattern #1322 had just removed from the sibling approval surface.
+        #
+        # Keyed on the ISSUE SET, so a CHANGED set notifies immediately — that is
+        # the whole point of an alert — while an unchanged one waits. The router
+        # applies quiet hours and a master toggle but does NO de-duplication, so
+        # this is not a second layer of the same thing.
+        throttle = getattr(self, "_issue_throttle", None)
+        if throttle is None:
+            from navig.notify.producers.self_errors import _Throttle  # noqa: PLC0415
+
+            throttle = self._issue_throttle = _Throttle(cooldown_s=_ISSUE_DEDUPE_S)
+        key = hashlib.sha256(f"{title}\n{body}".encode()).hexdigest()[:16]
+        now = _time.time()
+        if not throttle.allow(key, now):
+            logger.debug("heartbeat issues unchanged since the last alert — not resending")
             return
 
-        # Use smart notification filter if available
-        if hasattr(self.gateway, "notification_filter"):
-            from navig.gateway.system_events import EventPriority
+        # A suppressed count rides along with the next alert that does go out:
+        # a reporter that quietly drops records looks exactly like a system with
+        # only a handful of problems.
+        suppressed = throttle.drain_suppressed()
+        if suppressed:
+            body = f"{body}\n\n({suppressed} identical alert(s) suppressed since the last one)".strip()
 
-            should_send = await self.gateway.notification_filter.should_notify(
-                "heartbeat_issue", message, EventPriority.HIGH
-            )
-            if not should_send:
-                return
+        try:
+            from navig.notify.delivery import all_channels_failed  # noqa: PLC0415
+            from navig.notify.router import dispatch  # noqa: PLC0415
 
-        # Send via channel
-        await self.gateway.send_notification(channel=channel, recipient=recipient, message=message)
+            outcome = await dispatch("system_alert", title, body)
+            if all_channels_failed(outcome):
+                # Nothing was delivered, so give the budget back: otherwise this
+                # alert burns the cooldown AND a window slot, and the next
+                # identical occurrence is suppressed too — losing the event twice.
+                throttle.rollback(key)
+                logger.warning(
+                    "heartbeat issues reached NO channel (every configured one "
+                    "failed): %s",
+                    title,
+                )
+        except Exception as exc:  # noqa: BLE001
+            # A failed alarm must not take down the heartbeat that raised it —
+            # but it must not be silent either, because silence here is
+            # indistinguishable from a healthy daemon.
+            #
+            # The outcome check lives INSIDE this guard deliberately: it was
+            # outside in the first draft, and a probe with a malformed outcome
+            # propagated straight out of _notify_issue — rebuilding the very
+            # class this change exists to remove.
+            logger.warning("heartbeat issues could not be delivered: %s", exc)
 
     def get_status(self) -> dict[str, Any]:
         """Get heartbeat status."""

@@ -842,6 +842,12 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "task", "Capture a task (short for /todo)",
         handler="_handle_todo", category="todo", visible=False,
     ),
+    # --- Paper mail (the mailroom) ---------------------------------------------
+    # The verb is the caption of a photo/PDF; typed alone it explains the gesture.
+    SlashCommandEntry(
+        "courrier", "Classer une lettre : envoie sa photo ou son PDF avec la l\u00e9gende /courrier",
+        handler="_handle_courrier", category="paperwork", usage="/courrier (l\u00e9gende d'une photo/PDF)",
+    ),
     # --- Bot Identity ---
     SlashCommandEntry("about", "Learn about NAVIG", handler="_handle_about", category="core"),
     SlashCommandEntry(
@@ -1696,6 +1702,34 @@ class TelegramCommandsMixin:
 
     # -- Core slash handlers ---------------------------------------------------
 
+    @staticmethod
+    def _start_system_prompt(tod: str, name_hint: str, ctx_hint: str) -> str:
+        """The greeting prompt, assembled. Pure — no LLM call, no I/O.
+
+        It is a function rather than an inline string so a test can assert what is
+        actually SENT. The first regression test here checked the language helper
+        instead and passed with the directive deleted from the prompt, which is the
+        same defect one level up.
+        """
+        try:
+            from navig.core.language import language_directive
+
+            directive = language_directive("greeting", "the same language the user writes in")
+        except Exception:  # noqa: BLE001 — a greeting must never fail to send
+            directive = "Write the greeting in the same language the user writes in."
+        return (
+            "You are NAVIG, the user's personal AI operator. "
+            "The user just sent /start to open the chat. "
+            f"It is {tod}. {name_hint}{ctx_hint} "
+            "Reply with ONE warm, conversational greeting — 1 to 2 short sentences. "
+            "Use at most a single emoji, only if it feels natural. "
+            "Do NOT list commands. Do NOT mention reminders, models, settings, or help. "
+            "If context suggests something specific, reference it; otherwise keep it open. "
+            # Without this the model answers in ENGLISH, while the away summary sent
+            # moments later by this same handler answers in Russian.
+            + directive
+        )
+
     async def _handle_start(
         self,
         chat_id: int,
@@ -1708,7 +1742,9 @@ class TelegramCommandsMixin:
         Settings, reminders, model state, and help all live in the Navig Deck.
         Falls back to a fixed line when the LLM is unavailable.
         """
-        fallback_text = "Hi 👋 I'm here. What's on your mind?"
+        from navig.core import i18n as _i18n
+
+        fallback_text = _i18n.t("start.fallback")
 
         # Operator-side narrator trace: show what the daemon is doing when
         # /start hits. Silent on non-TTY (systemd journal stays clean).
@@ -1754,15 +1790,7 @@ class TelegramCommandsMixin:
             else "There is no prior context."
         )
 
-        system_prompt = (
-            "You are NAVIG, the user's personal AI operator. "
-            "The user just sent /start to open the chat. "
-            f"It is {tod}. {name_hint}{ctx_hint} "
-            "Reply with ONE warm, conversational greeting — 1 to 2 short sentences. "
-            "Use at most a single emoji, only if it feels natural. "
-            "Do NOT list commands. Do NOT mention reminders, models, settings, or help. "
-            "If context suggests something specific, reference it; otherwise keep it open."
-        )
+        system_prompt = self._start_system_prompt(tod, name_hint, ctx_hint)
 
         greeting: str | None = None
         try:
@@ -1849,17 +1877,40 @@ class TelegramCommandsMixin:
     # -- Help Encyclopedia (interactive, in-place editing) -------------------
 
     @staticmethod
+    def _t(key: str, **fields: object) -> str:
+        """A shared-locale string. Never raises — a help screen that fails to
+        render is worse than one rendered in the wrong language."""
+        try:
+            from navig.core import i18n  # noqa: PLC0415
+
+            return i18n.t(key, **fields)
+        except Exception:  # noqa: BLE001
+            return key
+
+    @staticmethod
+    def _help_label(kind: str, key: str, fallback: str) -> str:
+        """A category/subcategory name in the operator's language.
+
+        *fallback* is the catalog's English label, which stays authoritative: it
+        is what `/help <topic>` matches on, and what renders if a locale entry is
+        missing rather than a raw `help.cat.*` key leaking onto the screen.
+        """
+        value = TelegramCommandsMixin._t(f"help.{kind}.{key}")
+        return fallback if value == f"help.{kind}.{key}" else value
+
+    @staticmethod
     def _build_help_home() -> tuple[str, list[list[dict[str, str]]]]:
         """Build the Help Encyclopedia home screen (text + keyboard).
 
         Returns (text, keyboard) for send_message / edit_message.
         """
+        _t = TelegramCommandsMixin._t
         lines = [
-            "📋  <b>NAVIG Command Center</b>",
+            _t("help.home.title"),
             "",
-            "Tap a category to explore commands.",
-            "Type naturally any time — no commands needed.",
-            "Reply a keyword (translate · summarize · music …) to any message — 🎛 below.",
+            _t("help.home.tap"),
+            _t("help.home.natural"),
+            _t("help.home.keywords_hint"),
         ]
         text = "\n".join(lines)
 
@@ -1872,7 +1923,8 @@ class TelegramCommandsMixin:
                 continue
             row.append(
                 {
-                    "text": f"{cat.emoji} {cat.label}",
+                    "text": f"{cat.emoji} "
+                    + TelegramCommandsMixin._help_label("cat", cat.key, cat.label),
                     "callback_data": f"help:c:{cat.key}",
                 }
             )
@@ -1882,12 +1934,12 @@ class TelegramCommandsMixin:
         if row:
             rows.append(row)
         # Reply-keyword actions (translate / summarize / music / … — not slash commands)
-        rows.append([{"text": "🎛 Reply keywords", "callback_data": "help:t"}])
+        rows.append([{"text": _t("help.btn.keywords"), "callback_data": "help:t"}])
         # The switch for every other switch — how a user learns their /help list
         # is shorter than someone else's.
-        rows.append([{"text": "🧩 Extensions", "callback_data": "xt:r"}])
+        rows.append([{"text": _t("help.btn.extensions"), "callback_data": "xt:r"}])
         # Close button
-        rows.append([{"text": "✕ Close", "callback_data": "help:close"}])
+        rows.append([{"text": _t("help.btn.close"), "callback_data": "help:close"}])
         return text, rows
 
     @staticmethod
@@ -1895,7 +1947,9 @@ class TelegramCommandsMixin:
         """The reply-keyword actions screen (/help transforms) — sourced from reply_actions."""
         from navig.telegram import reply_actions
 
-        return reply_actions.help_text(), [[{"text": "◀ Back", "callback_data": "help:home"}]]
+        return reply_actions.help_text(), [
+            [{"text": TelegramCommandsMixin._t("help.btn.back"), "callback_data": "help:home"}]
+        ]
 
     @staticmethod
     def _build_help_category(cat_key: str) -> tuple[str, list[list[dict[str, str]]]] | None:
@@ -1913,13 +1967,14 @@ class TelegramCommandsMixin:
             return None
 
         idx = _ensure_help_cmd_index()
+        cat_label = TelegramCommandsMixin._help_label("cat", cat.key, cat.label)
 
         # -- Category with subcategories → show sub-buttons ----------------
         if cat.subcategories:
             lines = [
-                f"{cat.emoji}  <b>{cat.label}</b>",
+                f"{cat.emoji}  <b>{cat_label}</b>",
                 "",
-                "Choose a section:",
+                TelegramCommandsMixin._t("help.choose_section"),
             ]
             rows: list[list[dict[str, str]]] = []
             for sub in cat.subcategories:
@@ -1928,15 +1983,22 @@ class TelegramCommandsMixin:
                 rows.append(
                     [
                         {
-                            "text": f"{sub.emoji} {sub.label}",
+                            "text": f"{sub.emoji} "
+                            + TelegramCommandsMixin._help_label("sub", sub.key, sub.label),
                             "callback_data": f"help:s:{cat_key}:{sub.key}",
                         }
                     ]
                 )
             rows.append(
                 [
-                    {"text": "◀ Categories", "callback_data": "help:home"},
-                    {"text": "✕ Close", "callback_data": "help:close"},
+                    {
+                        "text": TelegramCommandsMixin._t("help.btn.categories"),
+                        "callback_data": "help:home",
+                    },
+                    {
+                        "text": TelegramCommandsMixin._t("help.btn.close"),
+                        "callback_data": "help:close",
+                    },
                 ]
             )
             return "\n".join(lines), rows
@@ -1944,13 +2006,13 @@ class TelegramCommandsMixin:
         # -- Category with direct commands ---------------------------------
         cmds = _live_help_commands(cat.commands)
         lines = [
-            f"{cat.emoji}  <b>{cat.label}</b>",
+            f"{cat.emoji}  <b>{cat_label}</b>",
             "",
         ]
         for cmd_name in cmds:
             entry = idx.get(cmd_name)
             if entry:
-                desc = entry.description or "No description"
+                desc = entry.description or TelegramCommandsMixin._t("help.no_description")
                 lines.append(f"• /{cmd_name} — {desc}")
             else:
                 lines.append(f"• /{cmd_name}")
@@ -1974,8 +2036,14 @@ class TelegramCommandsMixin:
             rows.append(row)
         rows.append(
             [
-                {"text": "◀ Categories", "callback_data": "help:home"},
-                {"text": "✕ Close", "callback_data": "help:close"},
+                {
+                    "text": TelegramCommandsMixin._t("help.btn.categories"),
+                    "callback_data": "help:home",
+                },
+                {
+                    "text": TelegramCommandsMixin._t("help.btn.close"),
+                    "callback_data": "help:close",
+                },
             ]
         )
         return text, rows
@@ -1998,16 +2066,21 @@ class TelegramCommandsMixin:
         idx = _ensure_help_cmd_index()
         # HTML: no escape needed — use element tags instead
 
+        sub_label = TelegramCommandsMixin._help_label("sub", sub.key, sub.label)
+        cat_label = TelegramCommandsMixin._help_label("cat", cat.key, cat.label)
         lines = [
-            f"{sub.emoji}  <b>{sub.label}</b>",
-            f"<i>{cat.emoji} {cat.label}</i>",
+            f"{sub.emoji}  <b>{sub_label}</b>",
+            f"<i>{cat.emoji} {cat_label}</i>",
             "",
         ]
         for cmd_name in live:
             entry = idx.get(cmd_name)
             if entry:
                 import html as _html
-                desc = _html.escape(entry.description or "No description", quote=False)
+                desc = _html.escape(
+                    entry.description or TelegramCommandsMixin._t("help.no_description"),
+                    quote=False,
+                )
                 lines.append(f"• /{cmd_name} — {desc}")
             else:
                 lines.append(f"• /{cmd_name}")
@@ -2030,8 +2103,14 @@ class TelegramCommandsMixin:
             rows.append(row)
         rows.append(
             [
-                {"text": f"◀ {cat.emoji} {cat.label}", "callback_data": f"help:c:{cat_key}"},
-                {"text": "✕ Close", "callback_data": "help:close"},
+                {
+                    "text": f"◀ {cat.emoji} {cat_label}",
+                    "callback_data": f"help:c:{cat_key}",
+                },
+                {
+                    "text": TelegramCommandsMixin._t("help.btn.close"),
+                    "callback_data": "help:close",
+                },
             ]
         )
         return text, rows
@@ -2053,17 +2132,28 @@ class TelegramCommandsMixin:
             return None
 
         import html as _html
-        desc = _html.escape(entry.description or "No description", quote=False)
+        desc = _html.escape(
+            entry.description or TelegramCommandsMixin._t("help.no_description"), quote=False
+        )
         lines = [
             f"<b>/{entry.command}</b>",
             "",
             f"📄 {desc}",
         ]
         if entry.usage:
-            lines.append(f"\n💡 <b>Usage:</b>  <code>{entry.usage}</code>")
+            lines.append(
+                f"\n💡 <b>{TelegramCommandsMixin._t('help.detail.usage')}</b>"
+                f"  <code>{entry.usage}</code>"
+            )
         if entry.cli_template:
-            lines.append(f"🔗 <b>CLI:</b>  <code>{entry.cli_template}</code>")
-        lines.append(f"\n📁 <b>Category:</b>  {entry.category}")
+            lines.append(
+                f"🔗 <b>{TelegramCommandsMixin._t('help.detail.cli')}</b>"
+                f"  <code>{entry.cli_template}</code>"
+            )
+        lines.append(
+            f"\n📁 <b>{TelegramCommandsMixin._t('help.detail.category')}</b>"
+            f"  {entry.category}"
+        )
 
         text = "\n".join(lines)
 
@@ -2074,9 +2164,15 @@ class TelegramCommandsMixin:
             back_data = f"help:c:{back_cat}"
         keyboard = [
             [
-                {"text": "◀ Back", "callback_data": back_data},
-                {"text": "🏠 Categories", "callback_data": "help:home"},
-                {"text": "✕ Close", "callback_data": "help:close"},
+                {"text": TelegramCommandsMixin._t("help.btn.back"), "callback_data": back_data},
+                {
+                    "text": TelegramCommandsMixin._t("help.btn.home"),
+                    "callback_data": "help:home",
+                },
+                {
+                    "text": TelegramCommandsMixin._t("help.btn.close"),
+                    "callback_data": "help:close",
+                },
             ],
         ]
         return text, keyboard
@@ -2144,11 +2240,22 @@ class TelegramCommandsMixin:
                 result = TelegramCommandsMixin._build_help_category(topic.lower())
                 if result is None:
                     # Unknown topic — try matching by label (case-insensitive)
+                    # Both names resolve: the English catalog label keeps working in
+                    # every language, and the localized one starts working too —
+                    # otherwise localizing the button would break `/help <that button>`
+                    # for exactly the operator who can now read it.
+                    wanted = topic.lower()
                     result = next(
                         (
                             TelegramCommandsMixin._build_help_category(cat.key)
                             for cat in _HELP_CATEGORIES
-                            if cat.label.lower() == topic.lower()
+                            if wanted
+                            in {
+                                cat.label.lower(),
+                                TelegramCommandsMixin._help_label(
+                                    "cat", cat.key, cat.label
+                                ).lower(),
+                            }
                         ),
                         None,
                     )
@@ -2659,7 +2766,12 @@ class TelegramCommandsMixin:
                 chat_id, message_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard
             )
         else:
-            await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+            sent = await self.send_message(
+                chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard
+            )
+            # Only the fresh-send path pins. The edit path above re-renders a message that
+            # is already whatever it was, so pinning there would re-pin on every press.
+            await TelegramCommandsMixin._auto_pin_plans(self, chat_id, user_id, sent)
 
     async def _handle_plan_cmd(
         self,
@@ -3745,7 +3857,7 @@ class TelegramCommandsMixin:
         reply_to_message_id: int | None,
         dictated: bool = False,
     ) -> bool:
-        """Capture the three lines owed to the journal after the day was closed.
+        """Capture the entry owed to the journal after the day was closed.
 
         ``dictated`` marks a reply that arrived as a voice note — by then *text*
         is already the transcript, because the voice pipeline transcribes and
@@ -3772,7 +3884,7 @@ class TelegramCommandsMixin:
             habit_tracker.clear_journal_prompt(chat_id)
             await self.send_message(
                 chat_id,
-                f"Fine — {day} stays without the three lines. The marks are already saved.",
+                f"Fine — {day} stays without an entry. The marks are already saved.",
                 parse_mode=None,
             )
             return True
@@ -3786,7 +3898,7 @@ class TelegramCommandsMixin:
             logger.warning("journal write failed (chat=%s): %s", chat_id, exc)
             await self.send_message(
                 chat_id,
-                "⚠️ Could not write the journal file. The three lines are still in this chat.",
+                "⚠️ Could not write the journal file. Your entry is still in this chat.",
                 parse_mode=None,
             )
             return True
@@ -3800,7 +3912,100 @@ class TelegramCommandsMixin:
             f"✅ {note} journal/{path.name}. The day is recorded.",
             parse_mode=None,
         )
+
+        # Reading the entry back — strictly AFTER the write is confirmed, and
+        # strictly best-effort. The entry is the thing that must never be lost;
+        # a reflection is a bonus on top of it, so nothing here may raise into a
+        # path that has already told the operator their day was recorded.
+        #
+        # ⚠ The CALL is guarded, not just the method body. The first version
+        # guarded only the body, which left the attribute lookup itself
+        # unprotected — and that is not hypothetical: every test double that
+        # drives this handler is a plain object, so `self._maybe_reflect_on_journal`
+        # raised AttributeError one line after "✅ … The day is recorded."
+        # A promise that the entry survives has to cover reaching the code that
+        # makes it, not only running it.
+        try:
+            await self._maybe_reflect_on_journal(chat_id, text, day=day, tracker=tracker)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("journal reflection skipped (chat=%s): %s", chat_id, exc)
         return True
+
+    async def _maybe_reflect_on_journal(
+        self, chat_id: int, entry: str, *, day: str | None = None, tracker=None
+    ) -> None:
+        """Send a reflective read-back of *entry*, if the operator asked for one.
+
+        ⚠ OPT-IN, and deliberately so. This hands a private journal to a model;
+        that is a choice someone makes, not one they discover after the fact.
+        `journal.reflect` defaults to OFF and the prompt says nothing about it
+        until it is on. Enable with:
+
+            navig config set journal.reflect true
+
+        Read through `coerce_bool` because `navig config set … false` stores the
+        STRING "false", which is truthy — the documented-toggle footgun this repo
+        gates on (`test_config_booleans_are_coerced.py`).
+        """
+        from navig.spaces import journal_reflection  # noqa: PLC0415
+
+        # The toggle is read in ONE place (still through `coerce_bool`), so the
+        # CLI's `navig habit review` and this hook cannot disagree about it.
+        if not journal_reflection.is_enabled():
+            return
+
+        # Below roughly a sentence there is nothing to read back, and saying
+        # something anyway is how a reflection becomes noise.
+        if len((entry or "").strip()) < 40:
+            return
+
+        try:
+            from navig.telegram import ai_actions  # noqa: PLC0415
+            from navig.telegram.habit_actions import _t  # noqa: PLC0415
+
+            res = await ai_actions.run_text_action(
+                "reflect",
+                entry,
+                is_owner=True,
+                max_chars=journal_reflection.DAY_MAX_CHARS,
+                mode=journal_reflection.DEFAULT_MODE,
+                model_override=journal_reflection.model_override(),
+            )
+            body = (res.get("result") or "").strip() if res.get("ok") else ""
+            if not body:
+                # Say so rather than going quiet: silence here is
+                # indistinguishable from "the feature is off", and the operator
+                # turned it on.
+                logger.info("journal reflection unavailable: %s", res.get("reason") or "empty")
+                await self.send_message(
+                    chat_id, _t("habit.journal.reflect.failed"), parse_mode=None
+                )
+                return
+            heading = _t("habit.journal.reflect.heading")
+            await self.send_message(chat_id, f"{heading}\n\n{body}", parse_mode=None)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("journal reflection failed (chat=%s): %s", chat_id, exc)
+
+        # The week, on the day it closes — AFTER the day's own read-back and in
+        # its own guard, so a failure here can cost neither the entry nor the
+        # daily reflection already sent. Sunday is the trigger because the card
+        # asks for the day in the evening, so the week's read-back naturally
+        # follows Sunday's entry rather than needing a schedule of its own.
+        if not (day and tracker is not None and journal_reflection.closes_a_week(day)):
+            return
+        try:
+            from datetime import date as _date  # noqa: PLC0415
+
+            week_body = await journal_reflection.week(tracker, _date.fromisoformat(day))
+            if not week_body:
+                # Fewer than two entries this week, or the model declined:
+                # nothing to say is said with silence here, because the daily
+                # read-back a moment ago already proved the feature is on.
+                return
+            week_heading = _t("habit.journal.reflect.week_heading")
+            await self.send_message(chat_id, f"{week_heading}\n\n{week_body}", parse_mode=None)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("weekly journal reflection failed (chat=%s): %s", chat_id, exc)
 
     async def _handle_eve_pending_reply(self, chat_id: int, user_id: int, text: str) -> bool:
         """Capture user replies to eve:log_shipped and eve:plan_tomorrow prompts.
@@ -5497,7 +5702,12 @@ class TelegramCommandsMixin:
             return {"small": small, "big": big, "coder_big": coder}
 
         big = _pick(("405b", "120b", "90b", "72b", "70b", "67b", "34b", "32b"), models[0])
-        small = _pick(("mini", "8b", "7b", "3b", "2b", "1b"), models[-1])
+        # "small" earns its place next to "mini": without it mistral fell all the
+        # way to `models[-1]` — pixtral-large-latest, a LARGE VISION model — as
+        # the small-talk tier, while `mistral-small-latest` sat in the same list.
+        # Measured across every provider: this token changes mistral and nothing
+        # else (the ones with a dedicated branch never reach this line).
+        small = _pick(("mini", "small", "8b", "7b", "3b", "2b", "1b"), models[-1])
         coder = _pick(("coder", "code", "deepseek-coder"), big)
         return {"small": small, "big": big, "coder_big": coder}
 
@@ -5569,7 +5779,11 @@ class TelegramCommandsMixin:
                 # Try via gateway reference (when self is not a ChannelRouter subclass)
                 gw = getattr(self, "gateway", None)
                 if gw is not None:
-                    flush_fn = getattr(getattr(gw, "channel_router", None), "flush_conv_agents", None)
+                    # `router`, not `channel_router`: NavigGateway does `self.router =
+                    # ChannelRouter(self)`. "channel_router" appeared as an attribute name
+                    # in exactly this one line and nowhere else in the tree, so this lookup
+                    # returned None even when a gateway WAS reachable.
+                    flush_fn = getattr(getattr(gw, "router", None), "flush_conv_agents", None)
             if callable(flush_fn):
                 flush_fn()
         except Exception:  # noqa: BLE001
@@ -9280,11 +9494,53 @@ class TelegramCommandsMixin:
     async def _auto_pin_briefing(
         self, chat_id: int, user_id: int, send_result: dict | None
     ) -> None:
-        """Pin the just-sent briefing message in group chats (best-effort).
+        """Pin the just-sent briefing message in group chats (best-effort)."""
+        await TelegramCommandsMixin._auto_pin_message(
+            self, chat_id, user_id, send_result,
+            config_key="auto_pin_briefings",
+            metadata_key="pinned_briefing_msg_id",
+            default_enabled=True,
+            label="briefing",
+        )
 
-        Unpins the previous briefing before pinning the new one so the pinned
-        slot doesn't pile up.  Stores the message_id in session metadata so we
-        can unpin it next time.
+    async def _auto_pin_plans(
+        self, chat_id: int, user_id: int, send_result: dict | None
+    ) -> None:
+        """Pin the just-sent plans message in group chats (best-effort).
+
+        `telegram.auto_pin_plans` had a COMPLETE Deck toggle -- a switch in
+        social-section.tsx, a field in lib/types.ts, an entry in the settings route -- and no
+        reader anywhere in the tree. The operator could turn it on, it persisted, and nothing
+        was ever pinned. It defaults to False, so wiring it changes nothing until somebody
+        opts in.
+        """
+        await TelegramCommandsMixin._auto_pin_message(
+            self, chat_id, user_id, send_result,
+            config_key="auto_pin_plans",
+            metadata_key="pinned_plans_msg_id",
+            default_enabled=False,
+            label="plans",
+        )
+
+    async def _auto_pin_message(
+        self,
+        chat_id: int,
+        user_id: int,
+        send_result: dict | None,
+        *,
+        config_key: str,
+        metadata_key: str,
+        default_enabled: bool,
+        label: str,
+    ) -> None:
+        """Pin a just-sent message in a group chat, unpinning the previous one (best-effort).
+
+        Shared by /briefing and /plans. Only three things ever differed between them -- the
+        config key, the session-metadata key that tracks what to unpin next time, and the
+        default -- so they are parameters rather than a second copy of this method.
+
+        Every step is best-effort on purpose: failing to pin must not turn a message the user
+        already received into an error.
         """
         if not send_result or not isinstance(send_result, dict):
             return
@@ -9292,19 +9548,20 @@ class TelegramCommandsMixin:
         if not msg_id:
             return
 
-        # Check config
         try:
             from navig.config import get_config_manager
             from navig.core.coerce import coerce_bool
 
             tg = get_config_manager().get("telegram") or {}
-            # coerce_bool: `navig config set telegram.auto_pin_briefings false` stores the
-            # STRING "false" (truthy in Python) — without this, setting it false never
-            # disabled pinning.
-            if not coerce_bool(tg.get("auto_pin_briefings", True), default=True):
+            # coerce_bool: `navig config set telegram.<key> false` stores the STRING "false"
+            # (truthy in Python) -- without this, setting it false never disabled pinning.
+            if not coerce_bool(tg.get(config_key, default_enabled), default=default_enabled):
                 return
         except Exception:  # noqa: BLE001
-            pass  # default: enabled
+            # An unreadable config must not switch an OPT-IN feature on. The briefing key
+            # keeps its long-standing fail-open behaviour because its default is True.
+            if not default_enabled:
+                return
 
         # Only pin in group / supergroup chats
         try:
@@ -9316,18 +9573,18 @@ class TelegramCommandsMixin:
             if chat_id >= 0:
                 return  # positive chat_ids are DMs
 
-        # Unpin previous briefing if tracked
+        # Unpin the previous one if tracked
         try:
             from navig.gateway.channels.telegram_sessions import get_session_manager
 
             sm = get_session_manager()
-            prev_id = sm.get_session_metadata(chat_id, 0, "pinned_briefing_msg_id", is_group=True)
+            prev_id = sm.get_session_metadata(chat_id, 0, metadata_key, is_group=True)
             if prev_id:
                 await self._api_call("unpinChatMessage", {"chat_id": chat_id, "message_id": prev_id})
         except Exception:  # noqa: BLE001
             pass  # best-effort
 
-        # Pin the new briefing
+        # Pin the new one
         try:
             pin_result = await self._api_call(
                 "pinChatMessage",
@@ -9337,11 +9594,9 @@ class TelegramCommandsMixin:
                 from navig.gateway.channels.telegram_sessions import get_session_manager
 
                 sm = get_session_manager()
-                sm.set_session_metadata(
-                    chat_id, 0, "pinned_briefing_msg_id", msg_id, is_group=True
-                )
+                sm.set_session_metadata(chat_id, 0, metadata_key, msg_id, is_group=True)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("auto_pin_briefing failed for chat=%s: %s", chat_id, exc)
+            logger.debug("auto_pin %s failed for chat=%s: %s", label, chat_id, exc)
 
     async def _handle_pin_cmd(
         self, chat_id: int, user_id: int, metadata: "MessageMetadata"

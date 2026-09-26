@@ -6,10 +6,457 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-<!-- Add entries here until the next release, then move them under a new version heading. -->
+<!-- Do NOT add entries here by hand: drop a fragment in changelog.d/<slug>.<kind>.md (see changelog.d/README.md) -->
+<!-- and fold them in with `npm run changelog:assemble`. Direct edits of this block collide on every rebase. -->
+<!-- This file merges by UNION (.gitattributes): two branches inserting at the same line keep both entries on rebase. -->
 <!-- Run: git log v3.25.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
+### Added
+- **One policy for "run the bot in the background".** `navig bot start --background`,
+  `navig start` and `navig agent telegram` each inlined the same detached `Popen` of the
+  telegram worker — orphan-shaped the moment the CLI exited, with no pid file, invisible to
+  `navig service pids` and to the sweeper that reads it. `navig.daemon.launch` now prefers
+  the running daemon (nothing to start — says so), then the installed service (`navig
+  service start`: a living parent, autostart, the pid contract), then the direct spawn —
+  and the worker writes `~/.navig/worker.pid` from inside itself, so `service pids` lists it
+  and the operator's sweep spares it. A test fails if any command under `navig/commands`
+  ever spawns the worker outside the policy again.
+- **The supervisor pages when it becomes orphan-shaped.** `doctor`'s Daemon-parent row was
+  a pull; the supervisor now checks its parent on every heartbeat and records
+  `daemon_orphan_shaped` once — pushed by the config-incidents producer with the remedy —
+  so a fallback spawn, a closed tray, or a machine that never installed the task is
+  reported before a process sweep acts on it, not after.
+- **`navig repo sweep` sees finished worktrees.** A worktree whose checked-out branch is
+  provably on main was invisible to sweep (that branch is protected) — measured: one sat 904
+  commits behind for eight weeks, merged and clean, still running scripts fixed days earlier.
+  Listed with the same three proofs; `--yes` removes only those proven merged **and** clean
+  **and** ≥ 50 behind, because a brand-new worktree sits at the tip and is trivially an
+  ancestor with zero commits — the first run would have deleted five other sessions' fresh
+  ones. One remover shared with `repo remove`, never `--force`; dirty ones point at it.
+
+- **`navig service pids` — the pids an external process sweeper must spare.** To a cleanup
+  script a navig daemon and a leaked helper look the same (python, parent gone); the
+  operator's hourly sweep killed the daemon twice on 2026-09-14 for exactly that reason,
+  and the sweeper-side fix was hand-patched into their script. Now a contract: every
+  navig-owned tree, rooted at the pid files navig writes (`daemon/supervisor.pid`,
+  `gateway.pid`, `agent/agent.pid`), identity-verified (a pid file names a NUMBER — only a
+  process older than the file is its owner, so a recycled pid is never listed), expanded to
+  descendants. Table for humans, `--plain` (one pid per line) for an exclusion list,
+  `--json` with the file paths for a sweeper that must not depend on navig being runnable.
+  Documented in the HANDBOOK under "Process sweepers: what to spare".
+- **`navig doctor` → Daemon parent, and `service status` → `Launched by:`.** The process
+  SHAPE the sweep kills on is now visible before the next :01 instead of recorded after
+  it: ✓ names the parent (`svchost.exe` — the task/service host), ⚠ **orphan-shaped** when
+  the parent pid is gone (a detached spawn: "relaunch through the task: navig service
+  restart"), ⚠ unknown when it cannot be read — never ✓ over an unknown. psutil's
+  reuse-aware `parent()` means a recycled ppid reads as gone, not alive.
+- **`navig repo stale` and the session briefing say how far behind main each worktree's
+  base is.** "Last commit 5 days ago" says when a worktree was touched, nothing about how much
+  of main it has never seen — every safety fix merged since included. A `Behind main` column
+  (⚠ rebase at 50+, `?` when it cannot be computed — never a guessed 0) and a per-worktree
+  briefing line with the rebase command. Measured before this existed: two worktrees 900 and
+  1,178 commits behind, still running scripts fixed days earlier.
+
+- **A worktree whose `add` died is named as such by `navig repo stale` and the session
+  briefing — never listed as a normal place to work.** `git worktree list` shows a partial
+  checkout from a killed `worktree add` as an ordinary worktree; the only tell is git's own
+  `locked: initializing`, which nothing read. Both surfaces now read it: `stale` marks the row
+  `⚠ dead add`, carries `locked`/`dead_add` in `--json`, and prints the one command that clears
+  it (`navig repo remove <slug> --force`) on its own line — not inside the wrapping nudge, where
+  a command split across two lines is a command the operator pastes broken. The briefing puts
+  the same warning on the worktree's line. A lock with any other reason is shown as a lock
+  (`locked: <reason>`), never as a dead add.
+- **`navig doctor` → Browsers now reports profile disk you can reclaim WITHOUT losing a
+  login.** Over 512 MB of regenerable data (Chrome's on-device model, caches) shows ⚠ with
+  `navig cdp profile vacuum --all`; orphaned dirs show ⚠ with `prune <name>`. Quiet on a lean
+  store. Real and running profiles are not counted, because `vacuum` refuses them.
+
+- **The daemon keeps a heartbeat, so a death is DATED and a wedged supervisor is
+  VISIBLE.** The supervisor touches `state.json` every 30 s (an `os.utime`, no rewrite);
+  its mtime is "last seen alive". Two things read it. The `daemon_died_ungracefully`
+  incident now carries `last_seen_alive` and `doctor` prints it (*"last alive 18:01:40Z"*)
+  — before, the only timestamp belonged to the DETECTION, which the scheduled task's
+  5-minute relaunch could put minutes after the death — and the incident's neighbour
+  window closes one interval after that beat, so a command run against an already-dead
+  daemon is no longer listed as a suspect. And a new `doctor` → Daemon row, **Daemon
+  heartbeat**: every other liveness check asks "is the pid alive?", which a supervisor
+  stuck in a blocking call answers yes to while it restarts nothing — a dead bot child
+  stays dead with every light green. ✓ only for a fresh beat; ⚠ *wedged* after three
+  missed ones, ⚠ *predates heartbeat tracking* for an older daemon (unknown is not fine).
+  The interval is declared in the state file, never hardcoded by a reader.
+- **A classic Windows console is a terminal identity.** PowerShell 5.1, cmd and VS Code's
+  ConPTY set no `WT_SESSION`, so two console windows on one account were both `user@host`
+  in the audit — the exact "who ran `cdp stop` at the second the daemon died" question.
+  `host_lock.session_id()` now uses the conhost window handle (`con:<hwnd>`), the Windows
+  analogue of the POSIX tty: one per console, shared by every process in it, and 0 for a
+  windowless process, so a daemon-spawned subprocess stays honestly in the weak tier.
+- **`navig repo land <branch>` — finish a merged branch completely.** The
+  merge-and-delete contract has four steps (merge · delete remote · delete local ·
+  remove worktree) and only the merge is reliable: `gh pr merge --delete-branch` run
+  from a linked worktree merges, then fails its remote delete (it can't check out the
+  default branch a worktree holds), leaving the branch on `origin` and its worktree
+  behind — measured on four consecutive PRs, 13 in a week elsewhere. `land` makes the
+  other three steps one verb that always completes. It does NOT merge (the reviewed,
+  gated step) and REFUSES a branch not provably on `origin/main` — ancestor tip,
+  identical tree, or a MERGED PR that landed exactly this tip, the same `_prove_merged`
+  proofs `sweep` uses — so it can never delete unmerged work. Dry-run by default; the
+  reflog and `refs/pull/N/head` keep both sides recoverable.
+  (`core/tests/repo/test_repo_land.py`, 11 tests; the refusal is mutation-tested.)
+- **The session-start briefing warns when local `main` is behind `origin/main`.** The
+  staleness at the root of the shared-checkout class: agents merge through GitHub, so
+  `origin/main` advances while a checkout's local `main` sits still (measured 107 PRs
+  behind). It reads the tracking ref already on disk — free, offline, ASCII — and points
+  at `git checkout main && git pull --ff-only`. (`test_session_briefing_lag.py`, 5 tests.)
+
+- **`navig cdp profile vacuum [name…] | --all` — reclaim a profile's disk without losing
+  its logins.** Of the 11.7 GB under `~/.navig/cdp-profiles`, **8.4 GB was Chrome's on-device
+  AI model** (`OptGuideOnDeviceModel`, 4,072 MB), downloaded separately into each of two named
+  profiles — against 6 MB and 1 MB of actual login state; 1.6 GB was orphaned dirs, ~0.6 GB
+  caches. The only tool was `prune`, which deletes a whole profile, so the size read as
+  "logins we can't touch" for months. `vacuum` deletes an ALLOWLIST of directories Chrome
+  rebuilds — the model, caches, shader and CRX caches — and nothing a person did; running and
+  real-Chrome profiles are refused. Ran here: **9.3 GB freed across 5 profiles, 11.7 GB →
+  734 MB after pruning the orphans, every login intact.** `profile usage` now names it first
+  when it dominates, ahead of the line that says to delete a profile.
+
+- **`navig repo sweep` — delete local branches whose work is provably already on
+  `origin/main`.** `stale` reported unmerged branches; nothing cleared the merged ones.
+  Measured in this repo: 8 → 20 branches in eleven days, 37 at the worst, 28 of them
+  already on `main` — each deleted by hand after proving it, twice, a week apart. Three
+  proofs, any one sufficient: an **ancestor** tip; an **identical tree** (a squash-merged
+  branch has commits main lacks and contents main already has, so ancestry alone cannot
+  see it); or a **merged PR** on GitHub that landed exactly this tip — `headRefOid` is what
+  makes that a proof rather than a hint, since a branch reused after its PR merged has a tip
+  that no longer matches and is kept with the note "commits after its merged PR". Everything
+  unproven is kept and listed with its ahead-count and PR state. Dry-run by default; `--yes`
+  deletes, printing each sha (the reflog keeps the commit); never touches the default branch
+  or a branch checked out in any worktree. Every failure mode — no remote, a failed fetch, no
+  `gh` — can only make it keep MORE. (`core/tests/repo/test_repo_sweep.py`, 16 tests, each
+  safety property mutation-tested.)
+- **Repo guard: a path-scoped commit that would DISCARD a staged deletion is blocked.**
+  `git commit -- <paths>` builds the commit from the WORKING TREE for the named paths,
+  not from the index — so when a path carries a staged `git rm --cached` and the file is
+  still on disk, the commit keeps the file tracked (and, if it was modified, commits
+  working-tree content the author never staged). Measured in a scratch repo; #1423 lost
+  `web/www/next-env.d.ts`'s deletion exactly this way and merged half-done, leaving the
+  file tracked AND gitignored. The PreToolUse hook now runs
+  `git diff --cached --diff-filter=D` before such a commit and exits 2 naming the paths,
+  with the safe shape (commit the deletion WITHOUT a pathspec, verify with
+  `git show --stat HEAD`). Honours `git -C <dir>`; fails open on anything it cannot
+  resolve. Both copies — `scripts/agent-hooks/` (this repo's live hook) and
+  `navig/guard/` (what `navig repo guard install` ships) — carry it.
+- **`navig doctor` → Desktop Apps: which Anchor is installed, and whether login starts
+  THAT one.** For weeks the Anchor that started at every login was a development binary
+  (`target/debug/navig-anchor.exe`) whose frontend is a dev server that is never up at
+  boot — every window was a browser error page — and nothing on the machine could say so:
+  version cannot tell two builds apart (every rebuild is "0.2.0"), and the `Run` key is
+  the kind of thing nobody opens. Windows-only, silent elsewhere. Three rows: **installed**
+  (path + build stamp, so "is this the one I just built?" is a glance), **running**
+  (matched by PATH, not process name — a `navig-anchor.exe` from any other directory is a
+  ⚠, because that is the outage), and **at login** (the `Run` entry judged: a binary that
+  is not the installed one is a ⚠ with a "development build" hint when it points into
+  `target/debug`; an unquoted path is a ⚠ — `C:\Program.exe` can win the race under a
+  directory with spaces; absent is a green "off"). Every could-not-verify branch is a ⚠,
+  never a tick over an unknown (`tests/cli/test_doctor_desktop_apps.py`).
+
 ### Fixed
+- **`navig doctor` counted approvals nobody could answer any more.** *"Waiting on you: 6
+  approval(s) unanswered (most recent 20192m ago)"* and *"67 approved-too-late record(s)"* —
+  the six had expired 14–26 days earlier (a gateway that dies or restarts mid-wait never
+  reaches the `finally` that clears its record) and nothing pruned either journal. Both
+  now prune on read: `approvals/pending.json` drops entries 15 min past their deadline
+  (a moment-late tap is still recognised; an entry with no deadline is unknown, not
+  expired) and `approvals/resumable.json` drops records older than a day (between
+  `resume_max_age_seconds` and a day they still turn a late tap into "too old to resume"
+  rather than "unknown id"). The rows now go quiet on a clean install and warn only on
+  something that can still be answered.
+- **The mission grant holds at the gate, for every caller.** #1507 put it in the agent-loop
+  helper only; an MCP tool the mission's agent invoked (`mcp/registry.py` calls the gate
+  directly) or the sync bridge (`check_sync`, whose worker thread starts with an empty
+  context) would still have paged the operator from inside a mission. `ApprovalGate.check`
+  now decides under the grant itself — read-only shell / pre-authorised pattern → approved
+  and audited, else denied — and `check_sync` copies the context into its worker thread.
+- **The remediation prompt states the rules up front.** The agent no longer burns its eight
+  turns asking for writes it cannot have (cbad7281: six approved commands, then *"reached
+  the 8-turn limit without a final answer"*): read-only diagnostics only, refused commands
+  are not retried, and it must finish with root cause + evidence + the exact command(s) for
+  the operator. `missions.allowed_commands` are named in the prompt when set.
+- **An autonomous mission paged the operator seven times in nine minutes — and never
+  said what for.** 2026-09-19 20:31: the heartbeat found ONE issue (an LLM endpoint
+  503'ing), raised a "Remediate health issues" mission, which asked for approval, and the
+  agent then asked six more times — one per `bash_exec`, each prompt reading only
+  `tool bash_exec`. The operator's store held 84 such missions: 80 cancelled on timeout,
+  every issue line a provider condition (expired key 158, retired model 75, 503 ×2), and the
+  3 that ran had **rewritten the LLM routing** (`big_tasks → local:default`) and told nobody.
+  Four fixes, one shape — a mission gets a *grant*, not a pager:
+  · **Heartbeat triage** (`navig.heartbeat.triage`): provider/model findings are
+    informational — the heartbeat alert covers them (deduped 6 h), the router falls back at
+    request time, and **no mission is raised**. A host down, a disk filling, a crashed
+    service still raise one.
+  · **Mission grant** (`navig.tools.approval.MissionGrant`, a ContextVar that follows the
+    mission's task and nothing else): inside a mission a **read-only** shell command (a
+    conservative classifier, `navig.tools.shell_readonly` — unknown → not read-only) runs
+    unprompted and is audited as auto-approved naming the mission; a command matching
+    `missions.allowed_commands` likewise; **everything else is denied with a reason the
+    agent reads** and told to report the command as a recommendation. Concurrent
+    interactive chat keeps its prompts (pinned by a sibling-task test).
+  · **`remediate` runs AUTO by default** (`missions.<capability>.autonomy` overrides) — under
+    the grant it can only diagnose and report, so the mission-level prompt bought nothing but
+    a 15-minute timeout.
+  · **A finished system mission is pushed as `mission_complete`** — a registered type
+    nothing had ever dispatched. And the Telegram approval prompt (for the prompts that
+    remain) shows the description — the tool *and its arguments*, HTML-escaped — not just
+    `tool bash_exec`.
+- **The tray's Start/Stop Daemon fought the service.** Start spawned the daemon as the
+  TRAY's own child — close the tray and the daemon is orphan-shaped (the shape an hourly
+  process sweep killed twice on 2026-09-14), with no task env and no autostart. Stop sent
+  CTRL_BREAK to a windowless process (a no-op), force-killed the tree after 8 s, deleted
+  the pid file itself and never disabled the scheduled task — the daemon was back within
+  five minutes. When the service is installed the tray now runs `navig service start|stop`
+  (task-launched with a living parent; graceful, task disabled, stays stopped); the direct
+  paths remain the fallback and a failed service start still gets you a daemon.
+- **`navig bot --background` / `--gateway` now work** — the flags lived on `bot start` only
+  and the shorthand people reach for first failed with "No such option". The handbook had
+  documented `navig bot --gateway` all along (it sat in the known-missing ratchet).
+- **`navig gateway start --background` ran in the FOREGROUND** ("Background mode not yet
+  implemented") — the opposite of what the flag asked for. It now follows the same ladder
+  as the bot: the running daemon (nothing to start), the installed service when its config
+  runs a gateway, else a detached `gateway start` — which already writes `gateway.pid`, so
+  `service pids` and the sweeper contract cover it.
+- **`navig gateway stop` under the daemon said "stopped" and the supervisor restarted the
+  gateway seconds later.** It now refuses (exit 1) and names the two real options:
+  `navig service stop` to stop everything, `navig service restart` to reload the gateway.
+- **`navig bot stop` force-killed the daemon and cried wolf.** Its pattern sweep matches
+  `navig.daemon.entry`, so on a service install it took the SUPERVISOR down with no
+  `_shutdown` — pid file left behind (recorded as an ungraceful death) — and the scheduled
+  task relaunched everything within five minutes: the stop undid itself. When the daemon
+  owns the bot, `bot stop` now stops the daemon the way it wants to be stopped (`service
+  stop`: task disabled, graceful, stays down) and `bot status` names the supervisor and
+  points at `service status`.
+- **An install that predates the on-demand restart task had to be re-installed to get it.**
+  `service start` — the one command every install runs — registers it in its autostart
+  repair step (idempotent, one `schtasks /query` when present), so the deck's Restart works
+  without anyone remembering `navig service install`.
+- **`navig repo sweep`'s GitHub index read only the last 500 PRs — 138 merged remote refs sat
+  unrecognised as "no PR" for ten weeks.** Merged is the only state that proves a branch
+  redundant, so the index now fetches merged PRs completely (measured: all 1,491 in 7.4 s) and
+  reports itself truncated if it ever hits the limit. Live: origin/* redundant went 59 → 194.
+  A plain `sweep` also no longer says "nothing redundant" over origin/* refs it never judged.
+  Remote deletes go out in batches of 40 (one push each), retried one-by-one on a failure.
+
+- **The session briefing now tells a FINISHED worktree from a stale one** — HEAD already on
+  `origin/main` and a clean tree means there is no work to land; it says so with
+  `navig repo sweep --yes` and counts them. Sweep also reads the branch reflog: a worktree
+  created ≥ 14 days ago whose branch has never moved is unused whatever the behind-count says
+  (an empty reflog is unknown, never a claim).
+
+- **`navig doctor` → Repo Guard rendered ✓ over hook scripts of any age.** It checked the
+  wiring and the lock, never whether the installed scripts were current — a repo fully wired
+  to the pre-#1481 `agent_lock.py` (the one that blocked `navig repo new` from a worktree)
+  read "active". It now says ⚠ when any hook script is outdated or missing, naming which,
+  with `navig repo guard install` as the remedy. `guard status` always knew.
+
+- **`POST /api/daemon/restart` killed the daemon and never restarted it — and left autostart
+  DISABLED (Windows).** The route ran `navig service restart` as a child of the gateway,
+  which is a child of the supervisor; `stop_running_daemon` kills the supervisor with
+  `taskkill /T` — the whole tree — so the restarter died mid-stop, after
+  `task_scheduler_disable()` and before `task_scheduler_enable()`. **Measured** with a
+  three-process probe (a child of a child issues the tree kill and never gets to report).
+  End state: daemon dead, scheduled task off, no HTTP response. A restart must run from
+  OUTSIDE the tree: `navig service install` now also registers an on-demand sibling task,
+  **"NAVIG Daemon Restart"** (no triggers; parent = the Task Scheduler service; stdout to
+  `daemon/restart.log`), the route `/run`s it and answers at once
+  (`restart_requested_via_task`), and when the task is not registered the route REFUSES
+  with HTTP 409 and the two remedies (`navig service install` once, or restart from a
+  terminal) rather than half-doing it. `service status` names a missing restart task.
+  POSIX is unchanged (a SIGTERM to the gateway does not reach a new session). Pinned by a
+  Windows-only test that re-runs the measurement, so the route cannot be "simplified"
+  back. ⚠ Existing installs: run `navig service install` once to get the task.
+- **`sys.stdin.isatty()` under `pythonw` is an AttributeError, not False.** The scheduled
+  tasks and the tray run `service start|restart` with no console (`sys.stdin` is None), so
+  the "retry as Administrator?" guard on a failed stop tracebacked instead of skipping the
+  prompt. Four sites now go through a None-safe `_stdin_is_tty()`; an AST test keeps it so.
+- **`tests/service/test_template_manager.py` was order-dependent under xdist (~1 run in 3).**
+  `Template.is_enabled` consults the per-install overlay `store_dir()/templates/enabled.json`
+  first, and every test in a worker shared it: `disable_template` wrote `test-template:
+  false`, and a later `apply_template_config` in the same worker found its `enabled: True`
+  template disabled and died on `KeyError: 'app_root'`. Serially the enable → disable →
+  toggle → apply order happened to net out to "enabled". Each test now gets its own
+  `NAVIG_STORE_DIR`; the directory fixture also moved off `id(object())` (the same number
+  in every worker) onto `tmp_path`.
+- **The Telegram push for a config incident dropped every fact.** The `config_incidents`
+  producer rendered `DESCRIPTIONS[event]` alone, so the phone got *"the daemon died WITHOUT
+  shutting down … check what else ran at that moment"* — while the last heartbeat, the
+  navig commands just before, and a corrupt file's preserved-backup path all stayed in the
+  JSONL for a `doctor` run that might come a day later. One renderer now
+  (`incidents.summarize(event, data)`): `describe()` stamps it for doctor, the producer
+  pushes it, and a test pins that the two can never drift.
+- **`service status` said `ALIVE (unverified)` without saying why or how.** It reads like a
+  broken child; it means the pid could not be checked — an elevated daemon seen from a
+  plain shell. The line now says *"run from an elevated shell to check"*.
+- **Both repo-guard hooks mistook a linked worktree for the repo — and the lock hook blocked
+  `navig repo new` from any worktree session.** A worktree's `.git` is a FILE and `.exists()`
+  accepts it, so `repo_root()` stopped there. From a session in `.dev/worktrees/x`, the exact
+  worktree-add `navig repo new` runs was refused as "a sibling OUTSIDE this repo", and the
+  briefing called the main checkout and every sibling a forbidden sibling. Both hooks now read
+  the `.git` file's `gitdir` up to the main tree — stdlib only, no subprocess. `navig repo`
+  itself was fixed in #1443; the hooks gating it were not.
+
+- **The idle browser reaper announced "closed idle browser on port N" for browsers that had
+  already died.** A dead entry came back from `stop_launched` as ok (the final probe was dark)
+  and was counted as a reap. `stop_launched` now reports `already_closed` and says which of
+  the two happened in its note; the reaper files those as housekeeping, not reaps; `stop --all`
+  separates `closed_ports` from `already_gone_ports` and prints one honest line.
+
+- **The image-name-kill guard now reads `.ps1`/`.psm1`/`.sh` too** (PowerShell's
+  `Stop-Process -Name` form included). Measured first: 142 shell scripts, one image-name kill,
+  and it is correct (a context-menu script restarting `explorer.exe`) — allowlisted with the
+  reason. Closure of the class across languages, not a finding.
+
+- **Two scripts killed every `node.exe` on the machine by image name.** `apps/echo`'s
+  `predev` hook — before EVERY `npm run dev` — fell back to `taskkill /F /IM node.exe` when
+  its port scan found nothing (usually a Windows reserved port range, where killing anything
+  frees nothing); the OS Windows build did the same for node, npm, electron and
+  electron-builder to "release file locks", including the `npm run` parent of the build.
+  On a box running a dozen agent sessions that is every other session's CI gate, every
+  VS Code extension host, and Claude Code itself. The fallback is gone; the build kill is
+  scoped to processes referencing THIS checkout's `apps/os` with its own ancestry excluded.
+  A new gate guard (`no-image-name-kill.test.mjs`) closes the class for the JS/TS tree —
+  the Python tree has had it closed since #669.
+
+- **Every NAVIG close left `exit_type = "Crashed"`, so the next headed launch raised the
+  "Restore pages?" bubble.** Measured after a clean CDP `Browser.close` on both a headless and
+  a headed profile: Chrome rewrites "Normal" only on a shutdown path `Browser.close` does not
+  take. `--hide-crash-restore-bubble` is Chrome's own switch for it; it is now in the quiet
+  launch set.
+
+- **`navig repo new` reported "timed out after 15s" over a checkout that then FINISHED, and
+  `repo remove` refused the result hours later blaming "uncommitted changes".** `git
+  worktree add` is not a query — it checks out the whole tree (13.6k files here, measured
+  7.6–8.2 s with other sessions' gates running) — but it ran under the 15 s query budget.
+  Worse, the timeout only killed `git` itself: the checkout is git's **child** process, it
+  held the inherited pipes, `subprocess.run` blocked on those pipes until the child
+  finished populating the tree, and git's own `initializing` lock stayed on the worktree.
+  Reproduced on the real repo with a 2 s ceiling: "returned after 7.1 s, rc 124, 16,242
+  files, status clean, lock left". Three fixes: `worktree add` gets a checkout-sized
+  ceiling (300 s, like the delete); a timed-out `_git` now kills the process **tree** via
+  the shared `terminate_process_tree_sync` and returns *at* the timeout (teeth: a batch
+  shim spawning a child — the old kill blocked 60 s on the orphan); and `repo remove`
+  reads the worktree's lock reason — a leftover `initializing` lock (an add that died) is
+  cleared, any other lock is **named** with `git worktree unlock`, and the "add --force"
+  hint appears only when git actually said "modified or untracked". A timed-out `new` now
+  says a PARTIAL checkout is on disk and how to clear it.
+- **Both daemon deaths of 2026-09-14 — ROOT CAUSE FOUND, and closed from the navig side.**
+  The operator's hourly process sweep (`Homelab-ProcCleanup`, a scheduled task in their
+  homelab space) kills orphaned dev-tool processes, `pythonw` included, every hour at :01;
+  its log holds the line: `KILL pythonw.exe 118488 ppid=62344 gone`. A daemon spawned by
+  `navig service start|restart` (and `gateway restart`) was detached from a CLI that exited
+  a second later — no living parent, the exact shape of an orphan — while the login-boot
+  daemon, whose parent is the Task Scheduler service, survived 147 sweeps. The CLI now
+  starts the daemon **through the scheduled task** (`schtasks /run`) when it is installed,
+  confirms it came up, and only then falls back to the direct spawn. The task-launched
+  daemon carries the task's env, working directory and RestartOnFailure — the boot-time
+  process shape from every launch path (#1419 made the cwd match; this makes the parent
+  match). `start`/`restart` enable the task BEFORE launching, because `schtasks /run`
+  refuses a disabled task and both flows disable it around the stop. The success line says
+  which path was used (`via scheduled task` / `via direct spawn`).
+- **`navig service status` printed a dead child as ALIVE.** The children lines came
+  from the SNAPSHOT in `state.json` — written at boot and after a restart, never in
+  between — so a child that died and sat in its restart back-off read `ALIVE` with its
+  dead pid. The pid is verified now (`ALIVE` / `DEAD`, and `ALIVE (unverified)` when it
+  cannot be checked — an elevated daemon from a plain shell — never a plain ALIVE over a
+  guess). Status also prints `Since:` (boot time + uptime) and `Heartbeat:` — `STALE …
+  the supervisor may be wedged` when the loop has stopped ticking.
+- **A stale-pid reap could delete a RELAUNCHING daemon's pid file.** `_reap_stale_pid_file`
+  unlinked whatever file was there once handed a dead number; between the caller's read and
+  the unlink the scheduled task can start a new daemon that writes its own pid there. The
+  reap then removed a live daemon's file — it kept running, `is_running()` said no, and the
+  next start booted a second one. It re-reads first: only the number it judged dead is its
+  to reap, and a file already gone (reaped by a concurrent status check) records nothing,
+  so one death is never reported twice.
+- **The dashboard's daemon "since HH:MM" moved every time a child restarted.**
+  `state.json["started_at"]` was stamped at every `_write_state` call, and the supervisor
+  loop calls it after every child restart. Captured once at boot now.
+
+- **Every NAVIG-launched browser downloaded a 4 GB AI model into its profile.** Playwright
+  disables `OptimizationGuideModelDownloading` (and three siblings) by default; NAVIG's raw
+  launch never did, because its base argument list could not carry a `--disable-features`:
+  Chrome keeps only the LAST such switch, and the extension loader needs its own. Every
+  `--disable-features` is now merged into one switch, so the base set finally includes the
+  four Playwright disables. Verified on a live launch: one switch, all five features, and the
+  model does not come back.
+
+- **A close could lose the login it had just made.** Every close path — `cdp stop`,
+  `stop --all`, `profile close`, the idle reaper — was a process kill, and a kill discards
+  whatever Chrome has not flushed (cookies persist on a ~30 s timer plus a final flush on clean
+  shutdown). Measured on a real profile, a cookie set ONE SECOND before close: `Browser.close`
+  → persisted; `taskkill` → gone. `stop_launched` now asks via CDP `Browser.close` and waits for
+  the port to go dark before the unchanged, identity-checked kill — which is still what proves
+  closure. `system_chrome`/`hardened` already asked through Playwright.
+
+- **The idle reaper froze the daemon for the length of every sweep.** Its coroutine called
+  the synchronous sweep inline — port probes with 1 s timeouts, the close-and-wait above,
+  `taskkill` — several seconds per browser on the gateway's own event loop. The loop-blocking
+  guard could not see it because the blocking lives inside a sync callee, not the coroutine's
+  body. Now `asyncio.to_thread`; a behavioural test shows the 0.30 s hole without it.
+
+- **The profile allocator could hand a profile the desktop app's dev CDP port.** The dev
+  WebView2 port moved to 9400 to sit outside every NAVIG band, and the cross-language guard
+  proves it is outside the *nominal* profile band (9280–9339). But the allocator keeps scanning
+  200 ports past the band when it is full or reserved, and 9400 is in that overflow; measured,
+  with 9280–9399 reserved it returned 9400. Skipped in the allocator (like the pane band), with
+  a parity test pinning the mirror to `tauri-dev.ts`.
+
+- **The session-start briefing vanished silently in the one case it exists for — a broken
+  venv.** `scripts/agent-hooks/session_start.py` promises "stdlib + git only, never imports
+  navig, must work even when the venv is broken", and imported `navig.platform.process`
+  unguarded inside `_git_rc`. With navig un-importable the ImportError escaped the `except`,
+  `briefing()` died, `main()` swallowed it: exit 0, **zero bytes**. Measured. The spawn flags
+  are now optional — used when importable, `{}` when not; the only cost without them is a
+  possible console flash. Pinned by a subprocess test that runs the hook with navig shadowed.
+- **The briefing judged "not merged" against LOCAL `main`** — the same defect as `repo stale`
+  above, on the surface every session actually reads. Now `origin/main` when it exists.
+- **The briefing now counts what `navig repo sweep` would delete** — branches provably on the
+  base by ancestor tip or identical tree (the two proofs that need no network), named, with
+  the command — instead of the hedge "(remote gone - merged remotely? verify then delete)".
+  Worktree-held branches and the default are never counted, mirroring the sweep's protected
+  set. Both copies (`scripts/agent-hooks/` and the packaged `navig/guard/` template) updated
+  together; the sync test pins them.
+- **`navig repo stale` judged "merged" against LOCAL `main`, which is exactly the ref that
+  goes stale in a shared checkout.** Agents merge through GitHub, so `origin/main` advances
+  while the local branch does not — measured 5 and then 107 PRs behind within one week. A
+  branch merged on the remote read as "not merged". `stale` (and the new `sweep`) now judge
+  against the remote default via `merge_base_ref`, falling back to the local branch only when
+  no remote exists; the JSON gains `base_ref` so the base is visible.
+- **34 commands NAVIG serves were missing from the shipped command manifest, and two more
+  surfaced right behind them.** `generated/commands.json` and its three siblings are what
+  ship — the completion source, the markdown reference, and anything reading the manifest
+  instead of importing the CLI. They had drifted, so `navig contacts` (15), `navig mobile ui`
+  (17), `navig paperwork` (6) and `navig pipeline` (8) were absent from tab-completion and
+  the reference despite working. Separately, `navig plugin list` / `navig plugins list` had
+  gained a `--json` flag that was documented nowhere.
+
+  The drift accumulated across four independent work areas, none of which regenerated,
+  because the freshness check's plugin half **could not fail**. It was uniformly lenient —
+  correct in intent (contributors have different first-party plugin sets, so a wholesale
+  diff false-fails) but applied to a variance that is **asymmetric**: a smaller or older
+  plugin set can only ever produce commands the manifest has and your tree lacks. The
+  reverse — *your tree registers a command the manifest does not ship* — is real staleness on
+  any machine, and now fails the check. A partial plugin set still cannot false-fail it.
+
+- **A named profile could be handed a port the desktop app's in-app browser panes own.**
+  Profiles allocate from 9280–9339 and the panes take `PANE_CDP_PORT + slot` (9333, 8 slots),
+  so the top seven ports belonged to both — and neither allocator knew the other existed.
+  Whoever bound second failed, silently on Windows. The profile allocator now skips the pane
+  band; no existing profile moves, and the mirrored Rust constant is pinned by a test.
+
+- **`navig cdp profile usage` hid the disk you could most safely reclaim.** Its reclaim hints
+  never mentioned *orphaned* profile directories — entries under `cdp-profiles/named/` that no
+  registry entry points at, and the only ones whose deletion costs no login anybody still has
+  a pointer to. It also suggested pruning throwaway sessions when there were none. The hints
+  are now data-driven: a line appears only when that category has something, each carries its
+  size, and the orphan line names a real directory so it is runnable as printed.
+
 - **A debug port with nothing listening is not necessarily a port anything can USE, and
   three places assumed it was.** Windows reserves port ranges for Hyper-V/WSL/Docker; inside
   one, `bind()` fails with `PermissionError(13)` while nothing owns the port, nothing is
@@ -65,6 +512,17 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   browser, and returned down three paths without closing it — so a blank window
   accumulated on every scheduled run.
 
+  Two more routes to the same blank window, neither of which the reaper can cover.
+  The gateway launches Chromium lazily inside the daemon on `POST /browser/navigate`,
+  and only an explicit `POST /browser/stop` ever closed it — so a daemon restart
+  orphaned a live browser with its window still up. It is launched by Playwright
+  rather than by NAVIG's own CDP path, so it never appears in the launched registry
+  the reaper sweeps; shutdown is the only layer that can own it, and now does.
+  Separately, the agent's stealth browser cannot go headless without defeating the
+  anti-detection engine that is its whole purpose, so it stayed visible on every
+  call; it now renders far offscreen and muted, the pattern the engine already
+  documents and navig-download's TikTok path already uses.
+
   *Flashing console windows.* The daemon is correctly windowless (`pythonw.exe`), and that
   is precisely why its children flashed: a process with no console cannot lend one, so
   Windows allocates a **brand-new console** for each console child (`git`, `icacls`,
@@ -72,7 +530,10 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A windowless process now installs a default that suppresses the window for its children,
   applied only when the process genuinely has no console and never overriding a caller that
   chose otherwise — so an ordinary CLI run is untouched and the tray's deliberate "open a
-  terminal" items still open one. Set `NAVIG_SHOW_CONSOLES=1` to opt out while debugging.
+  terminal" items still open one. The tray is itself a windowless parent — it is
+  documented to run under `pythonw` — and was missing from the set of entry points that
+  install this, so its children flashed like the daemon's did. Set
+  `NAVIG_SHOW_CONSOLES=1` to opt out while debugging.
   The highest-frequency offender was `icacls`, which runs **three times per secured file**
   on every credential write.
 
@@ -5587,7 +6048,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Embedding cache & Memory Manager atomic rewrite hardening** (bug 128): CachedEmbeddingProvider._save_cache() in 
 avig/memory/embeddings.py and MemoryManager.add_file() in 
 avig/memory/manager.py now rewrite JSON and text files via a shared _atomic_write_text() helper in 
-avig/memory/_util.py. This uses temp-file + os.replace() atomic writes (with Windows permission-retry handling), eliminating truncate-at-open corruption risk during embedding caching and memory writes. Added focused regression coverage in 	ests/test_memory.py.
+avig/memory/_util.py. This uses temp-file + os.replace() atomic writes (with Windows permission-retry handling), eliminating truncate-at-open corruption risk during embedding caching and memory writes. Added focused regression coverage in tests/test_memory.py.
 - **CLI entry-chain audit — Batch 1 fixes** (`navig/cli/__init__.py`, `navig/main.py`, `navig/platform/paths.py`):
   - **NL-query false-fire on `--host`/`--app` values** (`navig/cli/__init__.py`): The `non_flag_args` filter that routes bare tokens to AI chat did not skip the _values_ of value-consuming flags (`--host myserver`, `--app myapp`). Running `navig --host myserver` with no subcommand would launch `run_ai_chat("myserver", …)` instead of showing help. Fixed by iterating with a `_skip_next` sentinel so the token immediately following `--host`/`-h`/`--app`/`-p` is always consumed.
   - **CLI arg-source wiring fix for embedded invocations** (`navig/cli/__init__.py`): Natural-language auto-routing previously read `sys.argv` unconditionally, which could misroute host-process arguments during in-process execution (`app([...])`, tests, embedders). The callback now only trusts `sys.argv` when the executable is NAVIG, otherwise it ignores host argv to prevent false chat dispatch.

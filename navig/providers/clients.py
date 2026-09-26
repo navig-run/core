@@ -7,6 +7,7 @@ Based on multi-provider architecture.
 
 import json
 import logging
+import re
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass
@@ -28,6 +29,30 @@ from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
 from .types import BUILTIN_PROVIDERS, ModelApi, ModelDefinition, ProviderConfig
 
 logger = logging.getLogger(__name__)
+
+
+# OpenAI's reasoning models reject TWO parameters the rest of the API requires, and
+# both are hard 400s — so navig could not call ANY of them. Measured 2026-09-08:
+#   max_tokens=1                     -> "'max_tokens' is not supported with this
+#                                        model. Use 'max_completion_tokens' instead."
+#   max_completion_tokens=64, temp=.7 -> "'temperature' does not support 0.7 with
+#                                        this model. Only the default is supported."
+#   max_completion_tokens=64, no temp -> LIVE
+# `navig mode doctor` therefore reported o3 and gpt-5 as "error" while both were
+# live, and the openai manifest ships four o-series ids that could never be used.
+# ⚠ Fixing only the first parameter gets halfway and still 400s — the second is
+# what actually unblocks the call.
+#
+# ⚠ `ProviderConfig.max_tokens_field` exists for exactly this and is read NOWHERE
+# (written, never wired). It is also per-PROVIDER, and the requirement is
+# per-MODEL — gpt-4.1 needs `max_tokens` while gpt-5 needs the other, on the same
+# provider — so it could not have expressed this rule anyway.
+#
+# Scoped to provider "openai": OpenRouter serves `openai/gpt-5` and accepts the
+# ordinary shape, and NVIDIA's OpenAI-compatible endpoint does too.
+# ⚠ `gpt-5-chat*` variants DO accept temperature; dropping it there costs a
+# sampling setting, whereas leaving this unfixed costs the whole model family.
+_OPENAI_REASONING_MODEL_RE = re.compile(r"^(?:o\d|gpt-5)", re.IGNORECASE)
 
 
 def _sanitize_openai_body(body: dict[str, Any], provider_name: str) -> dict[str, Any]:
@@ -54,6 +79,12 @@ def _sanitize_openai_body(body: dict[str, Any], provider_name: str) -> dict[str,
 
     # Universal: never send None values (some servers expect omission, not null).
     out = {k: v for k, v in out.items() if v is not None}
+
+    if provider_name == "openai" and _OPENAI_REASONING_MODEL_RE.match(str(out.get("model") or "")):
+        if "max_tokens" in out:
+            out.setdefault("max_completion_tokens", out.pop("max_tokens"))
+        # Only the default temperature is accepted; any explicit value is a 400.
+        out.pop("temperature", None)
 
     if provider_name == "nvidia":
         # NIM rejects `stream: false` on some deployments; omit when defaulted.
@@ -260,6 +291,26 @@ class CompletionResponse:
     @property
     def has_tool_calls(self) -> bool:
         return bool(self.tool_calls)
+
+
+def _transport_error_text(exc: BaseException) -> str:
+    """The message a transport failure is wrapped with.
+
+    ``str(httpx.ReadTimeout(...))`` is the EMPTY STRING — every httpx timeout
+    class stringifies to nothing — so ``ProviderError(message=str(e))`` produced
+    ``"[nvidia]  (status=None)"``: the exception TYPE, the only thing that said
+    "this was a timeout", was discarded. `classify_probe_error` then found no
+    timeout text, filed it as an unclassified ``error``, did not retry, and
+    `navig mode doctor` exited 1 on a model that was merely slow. Measured
+    2026-09-19: 6/6 ReadTimeouts on a model that answered in 0.69s four days
+    earlier, every one rendered as an empty message.
+
+    Keep the type in front so both taxonomies can classify it — they key on the
+    words "timeout" / "connect", which the class name carries.
+    """
+    text = str(exc).strip()
+    kind = type(exc).__name__
+    return f"{kind}: {text}" if text else kind
 
 
 @dataclass
@@ -574,7 +625,7 @@ class OpenAIClient(BaseProviderClient):
 
         except httpx.HTTPError as e:
             raise ProviderError(
-                message=str(e),
+                message=_transport_error_text(e),
                 provider=self.name,
                 retryable=True,
             ) from e
@@ -674,7 +725,7 @@ class OpenAIClient(BaseProviderClient):
 
         except httpx.HTTPError as e:
             raise ProviderError(
-                message=str(e),
+                message=_transport_error_text(e),
                 provider=self.name,
                 retryable=True,
             ) from e
@@ -869,7 +920,7 @@ class AnthropicClient(BaseProviderClient):
 
         except httpx.HTTPError as e:
             raise ProviderError(
-                message=str(e),
+                message=_transport_error_text(e),
                 provider=self.name,
                 retryable=True,
             ) from e
@@ -1035,7 +1086,7 @@ class AnthropicClient(BaseProviderClient):
 
         except httpx.HTTPError as e:
             raise ProviderError(
-                message=str(e),
+                message=_transport_error_text(e),
                 provider=self.name,
                 retryable=True,
             ) from e

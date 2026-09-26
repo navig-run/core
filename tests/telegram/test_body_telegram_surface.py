@@ -262,10 +262,29 @@ class _Editable(_Chan):
         return await super()._api_call(method, payload)
 
 
-async def test_answering_rewrites_the_prompt_instead_of_posting_a_second_message(metrics):
-    """The prompt is force_reply, and clients re-arm that box after a restart —
+async def test_answering_rewrites_the_prompt_and_still_confirms(metrics):
+    """Both halves, because they are different jobs.
+
+    The prompt is force_reply, and clients re-arm that box after a restart —
     quoting the original text. While it reads as a question, an answered
-    check-in looks like it is being asked again."""
+    check-in looks like it is being asked again, so it must be rewritten.
+
+    ⚠ This test used to also assert that NO confirmation message was sent
+    ("rewrites the prompt INSTEAD OF posting a second message"). That assertion
+    encoded the defect. An edit is invisible in the clients that matter: it
+    raises no notification and does not move the message to the bottom of the
+    chat — so once anything arrives afterwards, the answer reads as discarded.
+    Measured on the operator's own chat: they answered the weigh-in, a cron
+    reminder landed five minutes later, and they reported the weight as not
+    counted. It had been recorded correctly; only the receipt was missing.
+
+    The sibling `test_a_failed_edit_still_confirms_by_message` already stated
+    the right principle — "an answer that produces no visible acknowledgement is
+    the exact failure the disk-backed prompt exists to prevent" — but applied it
+    only when the edit FAILED. It is just as true when the edit succeeds.
+
+    Retiring the stale question is CLEANUP; telling the human is a MESSAGE.
+    """
     bm.set_prompt(CHAT, "weigh", date.today().isoformat(), 99)
     ch = _Editable()
 
@@ -274,11 +293,17 @@ async def test_answering_rewrites_the_prompt_instead_of_posting_a_second_message
     )
 
     assert handled is True
+    # The cleanup still happens, exactly as before.
     assert len(ch.edits) == 1
     assert ch.edits[0]["message_id"] == 99
     assert "87.4" in ch.edits[0]["text"]
-    # and NOT a separate confirmation message
-    assert not [s for s in ch.sent if s.get("text", "").startswith("✅")]
+    # ...and the operator is told, which is the part that was missing.
+    receipts = [s for s in ch.sent if s.get("text", "").startswith("✅")]
+    assert len(receipts) == 1, (
+        "a successful edit produced no visible acknowledgement — the operator "
+        "answers the weigh-in and sees nothing new"
+    )
+    assert "87.4" in receipts[0]["text"]
 
 
 async def test_the_settled_prompt_no_longer_reads_as_a_question(metrics):

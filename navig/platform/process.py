@@ -35,8 +35,10 @@ into a silent hang, which is strictly worse.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 __all__ = [
@@ -208,3 +210,37 @@ def install_windowless_spawn_default(*, force: bool = False) -> bool:
     subprocess.Popen.__init__ = _windowless_init  # type: ignore[method-assign]
     _default_installed = True
     return True
+
+
+# ── a POSIX shell that can run a script by path ──────────────────────────────
+
+
+def posix_shell() -> str | None:
+    r"""Absolute path of a bash (or sh) that can run a script by path on this host, or None.
+
+    On Windows a bare ``["bash", ...]`` is a trap: ``CreateProcess`` searches ``System32``
+    BEFORE ``PATH``, so it runs ``C:\Windows\System32\bash.exe`` — the WSL launcher — even
+    when ``shutil.which("bash")`` (PATH only) reports Git Bash. The launcher cannot take an
+    ``E:\...`` path (``/bin/bash: E:projectsapps...: No such file``) and translates every
+    argument through WSL, so a ``.sh`` trigger script simply did not run, or ran against
+    paths that do not exist there. Git Bash is derived from ``git`` itself, which lives in
+    one of several places (Program Files, scoop, a portable install); a hardcoded
+    ``C:\Program Files\Git\bin`` probe missed a scoop git entirely.
+    """
+    if sys.platform != "win32":
+        return shutil.which("bash") or shutil.which("sh")
+    git = shutil.which("git")
+    if git:
+        exe = Path(git).resolve()
+        # <install>/cmd/git.exe or <install>/mingw64/bin/git.exe → <install>/{bin,usr/bin}/bash.exe
+        bases = [exe.parents[1]]
+        if len(exe.parents) > 2:
+            bases.append(exe.parents[2])
+        for base in bases:
+            for cand in (base / "bin" / "bash.exe", base / "usr" / "bin" / "bash.exe"):
+                if cand.is_file():
+                    return str(cand)
+    found = shutil.which("bash")
+    if found and "system32" not in found.lower():
+        return found
+    return None

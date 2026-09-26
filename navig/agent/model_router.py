@@ -55,11 +55,48 @@ logger = logging.getLogger(__name__)
 # allowlist. A valid model the user configured (e.g. ``openrouter:mistralai/
 # mistral-large``) is frequently absent from that subset, so it must NOT be
 # "corrected" to the provider default — that silently ignores the operator's
-# choice. Registry-based model substitution below only applies to providers with
-# a FIXED catalog (nvidia, ollama, …), which is what it was written for.
+# choice.
+#
+# ⚠ ``nvidia`` is in this set because the premise that it has a FIXED catalog is
+# FALSE, and believing it caused the exact harm the substitution exists to
+# prevent. Measured 2026-09-08: NVIDIA NIM served 81 models while the manifest
+# listed 20, and all 20 were uncallable — so a slot the operator had explicitly
+# pointed at a LIVE model was rejected as "not in the provider registry" and
+# silently substituted with the manifest's first entry, which was itself
+# 410 GONE. `navig mode route set` printed "✓ Updated" and the value never took
+# effect. Substituting is only safe when the replacement is known-good; against
+# a rotating catalog a static list cannot promise that, and an honest 404 naming
+# the operator's own model beats a silent switch to a dead one.
 _OPEN_CATALOG_PROVIDERS: frozenset[str] = frozenset(
-    {"openrouter", "openai-compat", "openai_compat", "custom"}
+    {"openrouter", "openai-compat", "openai_compat", "custom", "nvidia"}
 )
+
+
+def manifest_rejects(provider: str | None, model: str | None) -> bool:
+    """Is a configured ``provider:model`` REJECTED by the provider manifest?
+
+    The one decision both routers share. `RoutingConfig.from_dict` (this module)
+    substitutes the manifest default; `llm/routing/router.py` clears the model
+    and lets `_execute` choose. Their remediations differ for good reasons; the
+    decision must not, or an operator's model survives one router and is dropped
+    by the other — which is exactly what happened before #1446.
+
+    Rejects only when the manifest is an ALLOWLIST, i.e. the provider has a fixed
+    catalog. For an open one the manifest is a curated subset, and rejecting a
+    model absent from it discards the operator's explicit choice. Never raises:
+    a lookup failure means "cannot say", and nothing is rejected on a guess.
+    """
+    try:
+        pid = (provider or "").strip().lower()
+        if not pid or not model or pid in _OPEN_CATALOG_PROVIDERS:
+            return False
+        from navig.providers.registry import get_provider  # noqa: PLC0415
+
+        manifest = get_provider(pid)
+        known = list(manifest.models) if manifest and getattr(manifest, "models", None) else []
+        return bool(known) and model not in known
+    except Exception:  # noqa: BLE001 — best-effort; never block routing
+        return False
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -266,15 +303,15 @@ class RoutingConfig:
         # model instead of failing every time.
         for slot in (cfg.small, cfg.big, cfg.coder_big):
             pid = str(slot.provider or "").strip().lower()
-            if not slot.model or not pid or pid in _OPEN_CATALOG_PROVIDERS:
+            if not manifest_rejects(pid, slot.model):
                 continue
             try:
                 from navig.providers.registry import get_provider as _get_prov
 
                 manifest = _get_prov(pid)
                 known = list(manifest.models) if manifest and getattr(manifest, "models", None) else []
-                if known and slot.model not in known:
-                    replacement = getattr(manifest, "default_model", "") or known[0]
+                replacement = getattr(manifest, "default_model", "") or (known[0] if known else "")
+                if replacement:
                     logger.warning(
                         "model_router: %s model '%s' is not in the provider registry "
                         "(%d known) — substituting '%s'. Re-select via /provider or the "

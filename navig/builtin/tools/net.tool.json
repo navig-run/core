@@ -1,4 +1,5 @@
 {
+  "$schema": "./tool.schema.json",
   "id": "tool:net",
   "name": "navig_net",
   "description": "Execute NAVIG net operations.",

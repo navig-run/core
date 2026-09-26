@@ -58,6 +58,86 @@ def test_allocate_port_still_avoids_taken_and_serving_ports(registry, reserved, 
     assert second != taken
 
 
+# ── the in-app pane band ──────────────────────────────────────────────────────
+
+
+def test_allocate_port_never_lands_on_a_pane_port(registry, reserved):
+    """Profiles and the desktop app's in-app panes must not claim the same port.
+
+    The panes own ``PANE_CDP_PORT_DEFAULT + slot`` (9450+, 8 slots). They used to start at
+    9333, INSIDE the profile band (9280-9339); the band moved on 2026-09-15, but this
+    allocator overflows upward past the profile band (+200, to 9539) and would still walk
+    into the pane band — two subsystems, one port, and whoever binds second fails with no
+    indication why. So the skip stays, now pinned against the new base.
+    """
+    band = set(range(p._PANE_PORT_BASE, p._PANE_PORT_BASE + p._PANE_PORT_COUNT))
+    # Force the scan into the pane band by reserving everything below it.
+    reserved.update(range(p.PROFILE_PORT_BASE, p._PANE_PORT_BASE))
+    got = p.allocate_port()
+    assert got not in band, f"allocated {got}, which a pane slot owns"
+    assert got == p._PANE_PORT_BASE + p._PANE_PORT_COUNT
+
+
+def test_allocate_port_never_lands_on_the_os_dev_cdp_port(registry, reserved):
+    """The desktop app's dev WebView2 listens on a fixed CDP port; a profile must not take it.
+
+    `tauri-dev.ts` moved that port to 9400 to get OUT of every NAVIG band — and the
+    cross-language guard (`test_cdp_port_bands_do_not_collide.py`) proves it is outside
+    the NOMINAL profile band, 9280-9339. But the allocator's fallback keeps scanning
+    UPWARD for 200 more ports when the band is full or reserved, and 9400 sits inside
+    that overflow. `taken` did not include it, and `probe_port` only notices the dev app
+    if it happens to be RUNNING at allocation time; otherwise the profile is handed 9400
+    and the next `npm run dev:os` binds second and silently gets no CDP at all.
+
+    Same class as the pane overlap, same fix: the allocator knows the port, one file, no
+    migration. A guard over the nominal band is a guard over a path; the allocator's
+    reachable range is the surface.
+    """
+    # Force the scan past the pane band and right up to the dev port.
+    reserved.update(range(p.PROFILE_PORT_BASE, p._OS_DEV_CDP_PORT))
+    got = p.allocate_port()
+    assert got != p._OS_DEV_CDP_PORT, (
+        f"allocated {got}, the desktop app's dev CDP port — whoever binds second loses"
+    )
+    assert got == p._OS_DEV_CDP_PORT + 1
+
+
+def test_the_os_dev_cdp_port_matches_tauri_dev_ts():
+    """Parity: a hand-copied mirror of the TypeScript default, so pin it — cross-language,
+    like the pane constant. If someone moves the dev port and not this, the allocator
+    silently stops protecting the port that is actually in use."""
+    import re
+    from pathlib import Path
+
+    ts = Path(__file__).resolve().parents[3] / "apps" / "os" / "scripts" / "tauri-dev.ts"
+    if not ts.is_file():  # a checkout without apps/os
+        pytest.skip("apps/os not present in this checkout")
+    m = re.search(r"NAVIG_OS_CDP_PORT\s*\?\?\s*[\"'](\d+)[\"']", ts.read_text(encoding="utf-8"))
+    assert m, "could not find the NAVIG_OS_CDP_PORT default in tauri-dev.ts — update this parser"
+    assert int(m.group(1)) == p._OS_DEV_CDP_PORT, (
+        f"tauri-dev.ts defaults to {m.group(1)} but profiles.py mirrors {p._OS_DEV_CDP_PORT}"
+    )
+
+
+def test_the_pane_band_matches_the_rust_constant():
+    """Parity: this is a hand-copied mirror of `webview_pane.rs`, so pin it.
+
+    A silent drift here re-opens the overlap in one direction while the test that is
+    supposed to prove it closed keeps passing.
+    """
+    import re
+    from pathlib import Path
+
+    rs = Path(__file__).resolve().parents[3] / "apps" / "os" / "src-tauri" / "src" / "webview_pane.rs"
+    if not rs.is_file():  # a checkout without apps/os
+        pytest.skip(f"{rs} not present")
+    m = re.search(r"PANE_CDP_PORT_DEFAULT:\s*u16\s*=\s*(\d+)", rs.read_text(encoding="utf-8"))
+    assert m, "could not find PANE_CDP_PORT_DEFAULT — update this parser rather than deleting the check"
+    assert int(m.group(1)) == p._PANE_PORT_BASE, (
+        f"webview_pane.rs says {m.group(1)}, profiles.py assumes {p._PANE_PORT_BASE}"
+    )
+
+
 def test_port_is_bindable_is_true_for_a_free_port():
     """Anti-vacuity: if this helper always returned False the guards above would 'pass'."""
     free = t._os_assigned_port()

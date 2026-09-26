@@ -1,4 +1,5 @@
 {
+  "$schema": "./tool.schema.json",
   "id": "tool:host",
   "name": "navig_host",
   "description": "Execute NAVIG host operations.",

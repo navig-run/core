@@ -11,7 +11,6 @@ blueprint show ops-lead
 boot edit
 boot init
 boot log
-bot --gateway
 bridge matrix
 bridge matrix bench
 bridge matrix deploy
@@ -102,17 +101,6 @@ security-scan
 security-updates
 service config --edit
 software list --format
-space apply
-space clear
-space diff
-space jump
-space pack
-space pack devops-prod
-space publish
-space show
-space unapply
-space validate
-space workspace generate
 sql
 sqlfile
 ssh production

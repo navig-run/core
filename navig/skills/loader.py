@@ -158,6 +158,36 @@ class Skill:
 # ---------------------------------------------------------------------------
 
 
+_FENCE_OPEN = re.compile(r"^```[^\n]*\n")
+
+
+def _unwrap_fenced_frontmatter(text: str) -> tuple[str, bool]:
+    """Strip a code fence that wraps the whole file when frontmatter sits inside it.
+
+    Fifteen builtin skills shipped with the whole file inside a triple-backtick ``skill`` fence
+    and every declared field was silently discarded: ``_load_frontmatter`` reads
+    frontmatter only at byte 0, so the loader fell through to deriving id/name from the
+    folder. The file is valid Markdown and valid YAML once unwrapped, and a ``Skill`` was
+    returned rather than an error -- the degraded result IS the documented plain-Markdown
+    fallback. So a user who makes the same mistake in their own skill gets one that lists
+    as present and has no description, with nothing to tell them why.
+
+    Only fires when the line after the fence opens a frontmatter block, so a file that
+    merely begins with a code sample is untouched. Returns ``(text, unwrapped)``; the
+    caller owns the warning, because it has the path.
+    """
+    m = _FENCE_OPEN.match(text)
+    if not m:
+        return text, False
+    inner = text[m.end() :]
+    if not inner.lstrip().startswith("---"):
+        return text, False
+    lines = inner.rstrip().splitlines()
+    if lines and lines[-1].strip() == "```":
+        inner = "\n".join(lines[:-1]) + "\n"
+    return inner.lstrip(), True
+
+
 def _load_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     """Return (frontmatter_dict, body_markdown) from a SKILL.md string.
 
@@ -185,6 +215,29 @@ def _load_frontmatter(text: str) -> tuple[dict[str, Any], str]:
         fm = {}
 
     return fm, parts[2].lstrip()
+
+
+def read_frontmatter(path: Path) -> dict[str, Any]:
+    """The frontmatter of a skill file as a dict -- the ONE parser every surface uses.
+
+    `commands/skills.py` carried its own copy of `_load_frontmatter` for `skill list`
+    and `skill lint`. Two parsers for one format drift: when this module learned to
+    unwrap a fenced frontmatter, the runtime loaded a skill's description while
+    `navig skill list` still showed it blank -- the CLI and the agent disagreeing about
+    the same file. The copy also let a non-mapping YAML value through (`safe_load(...)
+    or {}` returns a list unchanged), which `fm.get()` then crashes on.
+
+    Unreadable file -> ``{}``, like the plain-Markdown fallback. Callers that need to
+    know WHETHER the file is well-formed (lint) should inspect the raw text themselves;
+    this answers "what does the loader see", tolerance included.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    text, _ = _unwrap_fenced_frontmatter(text)
+    fm, _body = _load_frontmatter(text)
+    return fm
 
 
 def _extract_examples(body: str) -> list[str]:
@@ -357,6 +410,14 @@ def parse_skill_file(path: Path) -> Skill | None:
     except OSError as exc:
         logger.warning("skills.loader: cannot read {}: {}", path, exc)
         return None
+
+    text, unwrapped = _unwrap_fenced_frontmatter(text)
+    if unwrapped:
+        logger.warning(
+            "skills.loader: {} wraps its frontmatter in a code fence -- unwrapped it, but "
+            "the file should begin with `---`; other loaders will discard every field",
+            path,
+        )
 
     fm, body = _load_frontmatter(text)
 

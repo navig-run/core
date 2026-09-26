@@ -148,6 +148,24 @@ def main() -> None:
     except Exception:  # noqa: BLE001 — cosmetic; must never block daemon boot
         pass
 
+    # Bind to the daemon's HOME before anything resolves a path. `ConfigManager.base_dir`
+    # follows the cwd into a project's `.navig/`, and `navig.log` is attached at
+    # `base_dir / "navig.log"` — so a daemon started by `navig gateway restart` from
+    # inside a project logged to `<project>/.navig/navig.log` while `~/.navig/navig.log`
+    # went silent, and a daemon started by the scheduled task (WorkingDirectory =
+    # config_dir()) did not. Same module, two process shapes, decided by where the
+    # operator's shell was standing. One chdir here makes every launch path match the
+    # task's. The children inherit it (they are spawned with cwd=None).
+    #
+    # ⚠ This is NOT the chdir main.py forbids for the daemon. That rule is about the
+    # ACTIVE SPACE — a long-lived process must not bind to a space the operator can switch
+    # under it, so its tools resolve the space per call. config_dir() is the daemon's own
+    # home, not a space. Best-effort: an unresolvable home must not block a boot.
+    try:
+        os.chdir(paths.config_dir())
+    except Exception:  # noqa: BLE001
+        pass
+
     # Respect stop-intent flag written by `navig service stop`.
     # Any external watcher (tray app, startup script, RestartOnFailure) that
     # tries to spawn the daemon after a deliberate stop will hit this guard

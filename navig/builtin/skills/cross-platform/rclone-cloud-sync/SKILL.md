@@ -1,4 +1,3 @@
-```skill
 ---
 name: rclone-cloud-sync
 description: List, sync, and copy files between rclone remotes (S3, Drive, Dropbox, SFTP, etc.)
@@ -72,4 +71,3 @@ navig cloud rclone copy --src /local/docs --dst b2:archive/docs
 
 - Always use `--dry-run` before a `sync` to a destination that may have unique files
 - Credentials live in the rclone config file — never passed as flags
-```

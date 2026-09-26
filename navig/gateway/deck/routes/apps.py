@@ -57,6 +57,23 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _habit_run_stamp() -> datetime:
+    """The clock a habit's ``last_run`` is stamped with — LOCAL, deliberately.
+
+    Every reader asks "was this done today?" by string-prefixing last_run with a
+    LOCAL date (``date.today()``, three call sites here), and the scheduler -- the
+    other writer -- stamps a naive local ``datetime.now()``
+    (cron_service._run_job_locked). A UTC stamp here disagreed with all of them:
+    marking a habit done from the deck between local midnight and UTC midnight
+    recorded yesterday, so the habit read back as NOT done immediately after the
+    user ticked it. Do not "fix" this to UTC without moving the scheduler and all
+    three readers with it -- last_run answers a calendar-day question, and the
+    calendar the user lives in is the local one. ``created_at`` stays UTC via
+    :func:`_utcnow`: that is an instant, not a day.
+    """
+    return datetime.now()
+
+
 def _navig_dir() -> Path:
     """The NAVIG dir this install actually uses.
 
@@ -369,7 +386,7 @@ async def handle_deck_apps_habits_toggle(request: "web.Request") -> "web.Respons
                 await asyncio.get_event_loop().run_in_executor(
                     None,
                     functools.partial(
-                        svc.update_job, job.id, last_run=datetime.now(timezone.utc)
+                        svc.update_job, job.id, last_run=_habit_run_stamp()
                     ),
                 )
                 return _ok({"ok": True, "id": habit_id})
@@ -384,7 +401,7 @@ async def handle_deck_apps_habits_toggle(request: "web.Request") -> "web.Respons
         jid = str(j.get("id", ""))
         jname = name[len(HABIT_NAME_PREFIX):]
         if jid == habit_id or jname == habit_id:
-            j["last_run"] = _utcnow()
+            j["last_run"] = _habit_run_stamp().isoformat()
             matched = True
             break
 

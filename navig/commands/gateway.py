@@ -267,21 +267,21 @@ def _free_port(
         theirs = read_dir(pid)
         if theirs is None:
             _logger.warning(
-                "Port %d is held by PID %d, which we cannot identify — NOT killing it. "
+                "Port {} is held by PID {}, which we cannot identify — NOT killing it. "
                 "The gateway will bind to a free port instead.",
                 port, pid,
             )
             continue
         if theirs != ours:
             _logger.info(
-                "Port %d is held by PID %d from a DIFFERENT config dir (%s) — that is "
+                "Port {} is held by PID {} from a DIFFERENT config dir ({}) — that is "
                 "another brain, leaving it alone. Binding elsewhere.",
                 port, pid, theirs,
             )
             continue
         kill(pid)
         killed.append(pid)
-        _logger.info("Freed port %d — superseded our own stale gateway (PID %d)", port, pid)
+        _logger.info("Freed port {} — superseded our own stale gateway (PID {})", port, pid)
 
     return killed
 
@@ -329,9 +329,9 @@ def _supersede_other_gateways() -> None:
 
         killed = kill_other_instances(GATEWAY_PATTERNS, config_dir=paths.config_dir())
         if killed:
-            _logger.info("Superseded %d stale gateway process(es): %s", len(killed), killed)
+            _logger.info("Superseded {} stale gateway process(es): {}", len(killed), killed)
     except Exception as exc:  # noqa: BLE001
-        _logger.debug("gateway supersede sweep skipped: %s", exc)
+        _logger.debug("gateway supersede sweep skipped: {}", exc)
 
 
 def _write_gateway_pid() -> None:
@@ -345,7 +345,7 @@ def _write_gateway_pid() -> None:
         pid_file.parent.mkdir(parents=True, exist_ok=True)
         pid_file.write_text(str(os.getpid()), encoding="utf-8")
     except Exception as exc:  # noqa: BLE001
-        _logger.debug("could not write gateway.pid: %s", exc)
+        _logger.debug("could not write gateway.pid: {}", exc)
 
 
 gateway_app = typer.Typer(
@@ -400,6 +400,16 @@ def gateway_start(
     """
     import asyncio
 
+    if background:
+        # This used to print "Background mode not yet implemented" and run in the
+        # FOREGROUND — the opposite of what the flag asked for. Same ladder as the
+        # bot (navig.daemon.launch): the running daemon, the installed service,
+        # else a detached `gateway start` that writes gateway.pid itself.
+        from navig.daemon.launch import start_gateway_in_background
+
+        start_gateway_in_background(port=port, host=host, ch=ch)
+        return
+
     # Fill port/host from config if not explicitly passed
     default_port, default_host = _load_gateway_cli_defaults()
     if port is None:
@@ -420,8 +430,13 @@ def gateway_start(
 
     from navig.core import narrator as _narrator
     from navig.core.logging import get_logger as _get_logger
+    from navig.core.logging import set_console_level as _set_console_level
 
     _get_logger("gateway")  # force root-logger config before we tweak handlers
+    # The CLI callback quiets the console to WARNING for interactive commands; for the
+    # daemon the console IS the log (systemd / the supervisor capture stderr), so opt
+    # back in before the boot-story tweaks below. --debug wants everything.
+    _set_console_level(_logging.DEBUG if debug else _logging.INFO)
     _navig_root = _logging.getLogger("navig")
     _console_handlers = [
         _h
@@ -458,22 +473,42 @@ def gateway_start(
         ch.dim("Log streaming enabled (all gateway + daemon output).")
 
     try:
+        from navig.config import get_config_manager
         from navig.gateway import GatewayConfig, NavigGateway
 
-        # Build config dict for GatewayConfig
-        raw_config = {
-            "gateway": {
-                "enabled": True,
-                "port": port,
-                "host": host,
-            }
-        }
+        # Start from the operator's REAL config, then overlay what this
+        # invocation decided.
+        #
+        # ⚠ This used to be a three-key literal — `{"gateway": {"enabled", "port",
+        # "host"}}` — and this is the process the supervisor runs, so every other
+        # `gateway.*` setting was invisible to the live daemon:
+        #
+        #   · `gateway.auth.token` — `start()` guards the mint with
+        #     `if not self.config.auth_token`, which was ALWAYS falsy here. So
+        #     `_ensure_auth_token` minted a fresh token and persisted it over
+        #     config.yaml on EVERY boot, while a valid token sat in that file.
+        #     Observed three times in one evening on the operator's machine; the
+        #     "no auth token was configured" warning fired every start and
+        #     nothing read it.
+        #   · `gateway.policy` — `PolicyGate.from_config` reads its rules from
+        #     this same dict, so configured DENY rules resolved to the default
+        #     gate. That direction fails OPEN, which is the one direction a
+        #     policy gate must not fail in.
+        #   · `gateway.storage_dir` — silently ignored.
+        #
+        # It also left the two gateway processes disagreeing: the telegram worker
+        # builds `NavigGateway()` with no config, which DOES read the real one.
+        #
+        # port/host are already resolved from config above when not passed, so
+        # overlaying them keeps "CLI wins, else config, else the fallback".
+        # dict() copies so the config singleton is never mutated by this overlay.
+        raw_config = dict(get_config_manager().global_config or {})
+        gateway_section = dict(raw_config.get("gateway") or {})
+        gateway_section.update({"enabled": True, "port": port, "host": host})
+        raw_config["gateway"] = gateway_section
 
         gateway_config = GatewayConfig(raw_config)
         gateway = NavigGateway(config=gateway_config)
-
-        if background:
-            ch.warning("Background mode not yet implemented. Running in foreground.")
 
         asyncio.run(gateway.start())
 
@@ -565,7 +600,7 @@ def gateway_stop():
         theirs = config_dir_of(pid)
         if theirs is None or theirs != ours:
             _logger.warning(
-                "gateway stop: pid %s is not our brain (%s != %s) — leaving it alone",
+                "gateway stop: pid {} is not our brain ({} != {}) — leaving it alone",
                 pid, theirs, ours,
             )
             return False
@@ -592,6 +627,21 @@ def gateway_stop():
         if killed:
             pid_file.unlink(missing_ok=True)
         return killed
+
+    from navig.daemon.launch import supervisor_runs_the_gateway
+
+    sup = supervisor_runs_the_gateway()
+    if sup:
+        # The supervisor restarts a stopped child within seconds, so "stopped"
+        # here was a lie that lasted one back-off. Say what is true and what to
+        # run; exit 1 because the gateway will NOT be stopped.
+        ch.error(
+            f"The gateway runs under the daemon (supervisor pid={sup}) and would be "
+            "restarted the moment it stops"
+        )
+        ch.info("  Stop everything:   navig service stop")
+        ch.info("  Reload the gateway: navig service restart")
+        raise typer.Exit(1)
 
     try:
         import requests
@@ -1051,12 +1101,24 @@ bot_app = typer.Typer(
 )
 
 
-@bot_app.callback()
-def bot_callback(ctx: typer.Context):
-    """Bot commands - run without subcommand to start bot."""
+@bot_app.callback(invoke_without_command=True)
+def bot_callback(
+    ctx: typer.Context,
+    background: bool = typer.Option(
+        False, "--background", "-b", help="Run in background (same as `bot start --background`)"
+    ),
+    gateway: bool = typer.Option(
+        False, "--gateway", "-g", help="Start with gateway (same as `bot start --gateway`)"
+    ),
+):
+    """Bot commands - run without subcommand to start bot.
+
+    `navig bot --background` is the spelling people reach for first; it used to
+    fail with "No such option" because the flag lived on `bot start` only.
+    """
     if ctx.invoked_subcommand is None:
-        # Default action: start bot in direct mode
-        ctx.invoke(bot_start)
+        # Default action: start bot (direct mode unless --gateway)
+        ctx.invoke(bot_start, gateway=gateway, port=None, background=background)
 
 
 @bot_app.command("start")
@@ -1084,7 +1146,6 @@ def bot_start(
         navig bot -g -p 9000         # Gateway on custom port
     """
     import os
-    import subprocess
     import sys
 
     # Check for telegram token (vault-first, env/config fallback)
@@ -1096,6 +1157,16 @@ def bot_start(
         ch.info("  Get token from @BotFather on Telegram")
         ch.info("  Add to .env file: TELEGRAM_BOT_TOKEN=your-token")
         raise typer.Exit(1)
+
+    if background:
+        # One policy for every background bot launch (navig.daemon.launch): the
+        # running daemon if it has the bot, else the installed service (a living
+        # parent), else a detached worker that writes worker.pid. A bare detached
+        # spawn here was orphan-shaped and invisible to `service pids`.
+        from navig.daemon.launch import start_bot_in_background
+
+        start_bot_in_background(gateway=gateway, port=port, ch=ch)
+        return
 
     if gateway:
         if port is None:
@@ -1110,47 +1181,13 @@ def bot_start(
             "--port",
             str(port),
         ]
-        if background:
-            if sys.platform == "win32":
-                subprocess.Popen(
-                    cmd,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                subprocess.Popen(
-                    cmd,
-                    start_new_session=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            ch.success("Started in background")
-        else:
-            os.execv(sys.executable, cmd)
+        os.execv(sys.executable, cmd)
     else:
         ch.info("Starting NAVIG Telegram Bot (direct mode)...")
         ch.warning("⚠️  Conversations reset on bot restart")
         ch.info("   Use 'navig bot --gateway' for session persistence")
         cmd = [sys.executable, "-m", "navig.daemon.telegram_worker", "--no-gateway"]
-        if background:
-            if sys.platform == "win32":
-                subprocess.Popen(
-                    cmd,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                subprocess.Popen(
-                    cmd,
-                    start_new_session=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            ch.success("Started in background")
-        else:
-            os.execv(sys.executable, cmd)
+        os.execv(sys.executable, cmd)
 
 
 @bot_app.command("status")
@@ -1162,6 +1199,7 @@ def bot_status():
     ``bot stop``, killed). See ``single_instance`` / the gateway supersede guard.
     """
     try:
+        from navig.daemon.launch import supervisor_runs_the_bot
         from navig.daemon.single_instance import (
             DAEMON_PATTERNS,
             GATEWAY_PATTERNS,
@@ -1169,6 +1207,14 @@ def bot_status():
             process_table,
         )
         from navig.platform import paths
+
+        sup = supervisor_runs_the_bot()
+        if sup:
+            # The daemon owns it: say so, and point at the surface that knows
+            # the children, the heartbeat and the parent.
+            ch.success(f"Bot is running — under the daemon (supervisor pid={sup})")
+            ch.dim("  Details: navig service status · reload: navig service restart")
+            return
 
         mine = paths.config_dir().resolve()
         pats = tuple(p.lower() for p in DAEMON_PATTERNS + GATEWAY_PATTERNS)
@@ -1199,12 +1245,26 @@ def bot_stop():
     hand-rolled ``pkill -f`` / ``taskkill`` swept machine-wide, unscoped).
     """
     try:
+        from navig.daemon.launch import supervisor_runs_the_bot
         from navig.daemon.single_instance import (
             DAEMON_PATTERNS,
             GATEWAY_PATTERNS,
             kill_other_instances,
         )
         from navig.platform import paths
+
+        sup = supervisor_runs_the_bot()
+        if sup:
+            # The daemon owns the bot. Force-killing the supervisor here (what the
+            # pattern sweep below does — DAEMON_PATTERNS matches it) left its pid
+            # file behind (a recorded "ungraceful death"), skipped its _shutdown,
+            # and the scheduled task relaunched it within five minutes: `bot stop`
+            # undid itself and cried wolf. Stop it the way it wants to be stopped.
+            ch.info(f"The bot runs under the daemon (supervisor pid={sup}) — stopping the daemon")
+            from navig.commands.service import service_stop
+
+            service_stop()
+            return
 
         killed = kill_other_instances(
             DAEMON_PATTERNS + GATEWAY_PATTERNS, config_dir=paths.config_dir()
@@ -1534,8 +1594,15 @@ def queue_list(
         ch.info("No tasks in queue")
         return
 
-    ch.info(f"Tasks ({len(tasks)}):")
-    for task in tasks:
+    # `--limit` was parsed, documented as "Max tasks to show", and never applied: a queue of
+    # 500 tasks printed all 500 with `-n 10`. Say when the list is cut so the count is not
+    # mistaken for the whole queue.
+    shown = tasks[:limit] if limit and limit > 0 else tasks
+    if len(shown) < len(tasks):
+        ch.info(f"Tasks (showing {len(shown)} of {len(tasks)} — raise --limit for more):")
+    else:
+        ch.info(f"Tasks ({len(tasks)}):")
+    for task in shown:
         status_color = {
             "pending": "blue",
             "queued": "cyan",

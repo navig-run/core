@@ -132,12 +132,41 @@ def _profiles_node(data: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
+#: Ports the desktop app's in-app browser PANES own (`webview_pane.rs`:
+#: `PANE_CDP_PORT + slot`, 8 slots). They overlap the top of the profile band, so an
+#: allocator that only counted "not assigned to a profile" could hand a profile a port a
+#: pane takes later — two subsystems, one port, and whoever binds second silently fails.
+#:
+#: Skipped HERE as well as by moving the pane band. The panes moved to 9450 on 2026-09-15
+#: (they are runtime-only ports; profiles are persisted USER state whose contract is that a
+#: port is stable), which takes them out of the profile band proper — but this allocator
+#: overflows UPWARD past the band (+200) and would walk straight into 9450-9457, so the skip
+#: stays. The value is a hand-copied mirror of `webview_pane::PANE_CDP_PORT_DEFAULT`
+#: (pinned by tests/browser/test_reserved_port_handling.py); the shell may resolve a
+#: different base at runtime (`NAVIG_PANE_CDP_PORT`, bind-probed fallbacks 9550/9650), which
+#: the +200 overflow never reaches.
+_PANE_PORT_BASE = 9450
+_PANE_PORT_COUNT = 8
+
+#: The desktop app's dev-mode WebView2 CDP port (`apps/os/scripts/tauri-dev.ts`,
+#: `NAVIG_OS_CDP_PORT ?? "9400"`). It was moved to 9400 to sit outside every band NAVIG
+#: allocates from — and it does sit outside the NOMINAL profile band. But the scan below
+#: keeps going 200 ports past the band when it is full or reserved, and 9400 is inside that
+#: overflow. Measured: with 9280–9399 reserved, `allocate_port()` returned 9400. `probe_port`
+#: only saves it if the dev app is RUNNING at that instant; otherwise `npm run dev:os` binds
+#: second and silently gets no CDP. Same class as the panes, same fix; parity with the TS
+#: default is pinned by `test_the_os_dev_cdp_port_matches_tauri_dev_ts`.
+_OS_DEV_CDP_PORT = 9400
+
+
 def allocate_port(data: dict | None = None) -> int:
     """Return a free port in the reserved band, not already assigned or serving CDP."""
     from navig.browser import targets as t  # noqa: PLC0415
 
     data = data if data is not None else _read()
     taken = {int(p.get("port", 0)) for p in _profiles_node(data).values()}
+    taken |= set(range(_PANE_PORT_BASE, _PANE_PORT_BASE + _PANE_PORT_COUNT))
+    taken.add(_OS_DEV_CDP_PORT)
     # Scan the reserved band and keep going upward if it's full — always avoiding
     # ports already assigned to a profile OR served by a live foreign browser, so
     # the fallback can never hand back a colliding port.

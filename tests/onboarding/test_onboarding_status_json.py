@@ -37,10 +37,20 @@ def _invoke_cli(args: list[str], capsys) -> tuple[int, str, str]:
 
 @pytest.fixture
 def isolated_project(tmp_path: Path, monkeypatch):
-    """Isolated working dir + HOME for CLI/config singletons."""
+    """Isolated working dir + HOME for CLI/config singletons.
+
+    The project lives in a SUBFOLDER of the fake home. The fixture used to make
+    ``tmp_path`` both the home and the project, so its "project" ``.navig`` was
+    literally ``~/.navig`` — the global config dir. That only worked because the
+    app-root walk once mistook ``~/.navig`` for a project (#1385 closed that: it is
+    how a sandbox leaked the operator's real hosts). A real project is a folder with
+    its own ``.navig`` somewhere under the home, which is what this builds now.
+    """
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
-    monkeypatch.chdir(tmp_path)
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
 
     # Reset ConfigManager singleton between tests.
     from navig.config import reset_config_manager
@@ -54,7 +64,7 @@ def isolated_project(tmp_path: Path, monkeypatch):
     cli._NO_CACHE = False
     cli._register_external_commands(register_all=True)
 
-    return tmp_path
+    return project
 
 
 def _write_host_config(project_root: Path, host_name: str = "testhost") -> None:

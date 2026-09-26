@@ -14,6 +14,20 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from navig.core.yaml_io import atomic_write_text, safe_load_yaml
 
+
+class UnresolvableActiveHost(RuntimeError):
+    """An explicitly configured active host could not be verified.
+
+    Raised inside :meth:`ContextManager.get_active_host` to stop the resolution chain:
+    the operator NAMED a host, so the only honest answers are that host or "no host" —
+    never whichever lower-priority host happens to verify.
+    """
+
+    def __init__(self, host: str, source: str) -> None:
+        super().__init__(f"active host '{host}' (from {source}) could not be verified")
+        self.host = host
+        self.source = source
+
 if TYPE_CHECKING:
     pass
 
@@ -81,42 +95,71 @@ class ContextManager:
         Returns:
             Active host name or None (or tuple if return_source=True)
         """
-        # Priority 1: Check NAVIG_ACTIVE_HOST environment variable
-        env_host = os.environ.get("NAVIG_ACTIVE_HOST", "").strip()
-        if env_host and self._config.host_exists(env_host):
-            return (env_host, "env") if return_source else env_host
+        # An EXPLICIT choice (env var, project config, legacy file, `navig host
+        # use`) that names a host is the operator's answer. If that host cannot
+        # be verified right now, the answer is "stop", never "the next machine
+        # down the list". This chain used to fall through: on 2026-09-15 a
+        # transient failure to stat hosts/cybesis-vps.yaml (another navig
+        # process was writing the config at that second) made every explicit
+        # source come back False, and `navig run` executed a read-only docker
+        # command on the global config's `active_host` — a different LAN box —
+        # printing its output as if it were the production server's. A
+        # mutating command would have gone the same way, silently.
+        def _explicit(name: str | None, source: str):
+            """Return (name, source) if it verifies; refuse if named but unverifiable."""
+            name = (name or "").strip()
+            if not name:
+                return None
+            if self._config.host_exists(name):
+                return (name, source)
+            raise UnresolvableActiveHost(name, source)
 
-        # Priority 2: Check .navig/config.yaml for project-local active_host
-        local_navig_dir = Path.cwd() / ".navig"
-        if local_navig_dir.exists() and local_navig_dir.is_dir():
-            local_config = self._config.get_local_config()
-            local_host = local_config.get("active_host")
-            if local_host and self._config.host_exists(local_host):
-                return (local_host, "project") if return_source else local_host
+        try:
+            # Priority 1: Check NAVIG_ACTIVE_HOST environment variable
+            hit = _explicit(os.environ.get("NAVIG_ACTIVE_HOST"), "env")
+            if hit:
+                return hit if return_source else hit[0]
 
-        # Priority 3: Check for .navig file (legacy format) - deprecated
-        local_navig = Path.cwd() / ".navig"
-        if local_navig.exists() and local_navig.is_file():
-            try:
-                content = local_navig.read_text(encoding="utf-8").strip()
-                if ":" in content:
-                    host_name, _ = content.split(":", 1)
-                else:
-                    host_name = content
+            # Priority 2: Check .navig/config.yaml for project-local active_host
+            local_navig_dir = Path.cwd() / ".navig"
+            if local_navig_dir.exists() and local_navig_dir.is_dir():
+                local_config = self._config.get_local_config()
+                hit = _explicit(local_config.get("active_host"), "project")
+                if hit:
+                    return hit if return_source else hit[0]
 
-                if host_name and self._config.host_exists(host_name):
-                    return (host_name, "legacy") if return_source else host_name
-            except (PermissionError, OSError):
-                pass  # best-effort cleanup; ignore access/IO errors
+            # Priority 3: Check for .navig file (legacy format) - deprecated
+            local_navig = Path.cwd() / ".navig"
+            if local_navig.exists() and local_navig.is_file():
+                try:
+                    content = local_navig.read_text(encoding="utf-8").strip()
+                except (PermissionError, OSError):
+                    content = ""  # unreadable legacy file: nothing was named
+                host_name = content.split(":", 1)[0] if ":" in content else content
+                hit = _explicit(host_name, "legacy")
+                if hit:
+                    return hit if return_source else hit[0]
 
-        # Priority 4: Check global cache (set by `navig host use`)
-        if self._config.active_host_file.exists():
-            try:
-                host_name = self._config.active_host_file.read_text(encoding="utf-8").strip()
-                if host_name and self._config.host_exists(host_name):
-                    return (host_name, "user") if return_source else host_name
-            except (PermissionError, OSError):
-                pass  # best-effort cleanup; ignore access/IO errors
+            # Priority 4: Check global cache (set by `navig host use`)
+            if self._config.active_host_file.exists():
+                try:
+                    cached = self._config.active_host_file.read_text(encoding="utf-8")
+                except (PermissionError, OSError):
+                    cached = ""
+                hit = _explicit(cached, "user")
+                if hit:
+                    return hit if return_source else hit[0]
+        except UnresolvableActiveHost as exc:
+            from navig import console_helper as ch
+
+            ch.error(
+                f"Active host '{exc.host}' (from {exc.source}) could not be verified — refusing "
+                "to fall back to another host.",
+                "Its host file is missing or unreadable at this moment. Re-run in a second; if it "
+                f"persists: navig host list · navig host use <name>. Never proceeding on a host "
+                "the operator did not name.",
+            )
+            return (None, "unresolvable") if return_source else None
 
         # Priority 5: Compatibility fallback to global config active_host
         configured_active_host = self._config.global_config.get("active_host")

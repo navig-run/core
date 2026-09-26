@@ -1,4 +1,3 @@
-```skill
 ---
 name: procmon-capture
 description: Capture Windows process activity (file, registry, network events) to a PML file using Sysinternals Process Monitor
@@ -73,4 +72,3 @@ navig sys procmon capture --output trace.pml --duration 10 --dry-run
 - Capture automatically terminates after `--duration` seconds (default: 15)
 - PML files can be large for long captures — set duration conservatively
 - Use `--filter` with a PMC file to reduce noise and file size
-```

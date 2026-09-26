@@ -10,6 +10,21 @@ pytestmark = pytest.mark.integration
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def _own_registry(tmp_path: Path, monkeypatch):
+    """Every test here gets its own spaces registry.
+
+    The session fixture isolates ONE config dir per xdist worker, so these tests shared a
+    registry — and `init`'d the same names (`studio` ×6, `proj` ×3) into different tmp
+    folders. That only ever worked because `register` keyed on path and silently created
+    six `studio` entries: the very defect `space init` now refuses ("one id, one space").
+    A registry per test is what the tests always meant.
+    """
+    cfg = tmp_path / "_cfg"
+    (cfg / "spaces").mkdir(parents=True)
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(cfg))
+
+
 class _FakeConfigManager:
     def __init__(self, base: Path, global_config: dict | None = None):
         self.global_config_dir = str(base)

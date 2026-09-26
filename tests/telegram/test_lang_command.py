@@ -34,7 +34,10 @@ class _Cfg:
 
     store: dict = {}
 
-    def get(self, key, default=None):
+    # NOTE: `scope` mirrors the real `ConfigSingleton.get`. Without it a caller
+    # that passes `scope="global"` raises TypeError, which the resolver swallows
+    # into a silent "nothing pinned" — see tests/core/test_language_resolution.py.
+    def get(self, key, default=None, scope="merged"):
         return type(self).store.get(key, default)
 
     def set_global(self, key, value):

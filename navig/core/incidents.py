@@ -55,6 +55,9 @@ STORE_WRITE_FAILED = "store_write_failed"
 APPROVAL_EXPIRED = "approval_expired"
 APPROVAL_ANSWERED_TOO_LATE = "approval_answered_too_late"
 BROKER_REGISTER_FAILED = "broker_register_failed"
+DAEMON_DIED_UNGRACEFULLY = "daemon_died_ungracefully"
+DAEMON_ORPHAN_SHAPED = "daemon_orphan_shaped"
+SHARED_KEY_ROLLBACK_FAILED = "shared_key_rollback_failed"
 
 # Human-readable, operator-facing summaries (doctor prints these, not the raw ids).
 DESCRIPTIONS: dict[str, str] = {
@@ -70,6 +73,21 @@ DESCRIPTIONS: dict[str, str] = {
     BROKER_REGISTER_FAILED: (
         "the broker never learned this daemon's address, so the Mini App resolves to "
         "whatever was registered LAST — typically a dead tunnel from a previous session"
+    ),
+    SHARED_KEY_ROLLBACK_FAILED: (
+        "a failed `navig connect add` could NOT put the previous provider key back — "
+        "`navig ai` may now be using an unverified key. Set the key again, or re-run "
+        "`navig connect add`"
+    ),
+    DAEMON_DIED_UNGRACEFULLY: (
+        "the daemon died WITHOUT shutting down — no stop was issued and its pid file was "
+        "left behind. If the scheduled task relaunched it the bot was deaf for a few "
+        "minutes; check what else ran at that moment"
+    ),
+    DAEMON_ORPHAN_SHAPED: (
+        "the daemon has NO living parent (it was launched detached, or its launcher "
+        "exited) — the shape an orphan-reaping process sweep kills, as one did twice on "
+        "2026-09-14. Relaunch it through the scheduled task: navig service restart"
     ),
     LOAD_FAILED: "config.yaml could not be read",
     RECOVERED_FROM_CACHE: "config was recovered from the last known-good cache",
@@ -187,13 +205,19 @@ def recent(limit: int = 5, *, max_age_days: float | None = 30.0) -> list[dict[st
         return []
 
 
-def describe(entry: dict[str, Any]) -> str:
-    """A one-line, operator-facing rendering of one incident."""
-    event = str(entry.get("event") or "?")
+def summarize(event: str, data: dict[str, Any] | None = None) -> str:
+    """The operator-facing text for one incident, WITH its facts — no timestamp.
+
+    This is the one renderer. ``describe()`` stamps it for `doctor`; the
+    `config_incidents` producer pushes it to Telegram. It used to be two: the
+    push rendered ``DESCRIPTIONS[event]`` alone, so the phone said "the daemon
+    died — check what else ran at that moment" while the last heartbeat, the
+    commands just before, and a corrupt file's backup path all stayed in the
+    JSONL for a `doctor` run that might come a day later.
+    """
     text = DESCRIPTIONS.get(event, event)
     # Several stores share STORE_WRITE_REFUSED, so the description alone leaves the
     # operator with a problem and no address. Name the file they have to fix.
-    data = entry.get("data")
     if isinstance(data, dict):
         target = data.get("path") or data.get("store")
         if target:
@@ -207,6 +231,32 @@ def describe(entry: dict[str, Any]) -> str:
         backup = data.get("backup")
         if backup:
             text = f"{text} — original preserved at {backup}"
+        # A daemon death names what ran around it: the one fact an investigation
+        # starts from, and the one nothing wrote down on 2026-09-14.
+        # …and WHEN: the last heartbeat is the one timestamp that belongs to the
+        # death rather than to its detection.
+        alive = data.get("last_seen_alive")
+        if isinstance(alive, str) and len(alive) >= 19:
+            text = f"{text} (last alive {alive[11:19]}Z)"
+        nearby = data.get("nearby_commands")
+        if isinstance(nearby, list) and nearby:
+            bits = []
+            for c in nearby[:4]:
+                if not isinstance(c, dict):
+                    continue
+                who = f" ({c['session']})" if c.get("session") else ""
+                when = str(c.get("at") or "")[11:19]
+                bits.append(f"{c.get('command') or '?'}{who} @ {when}Z")
+            if bits:
+                text = f"{text}. navig commands just before: " + " · ".join(bits)
+    return text
+
+
+def describe(entry: dict[str, Any]) -> str:
+    """A one-line, operator-facing rendering of one logged incident (stamped)."""
+    event = str(entry.get("event") or "?")
+    data = entry.get("data")
+    text = summarize(event, data if isinstance(data, dict) else None)
     try:
         stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(float(entry.get("ts") or 0)))
     except Exception:  # noqa: BLE001

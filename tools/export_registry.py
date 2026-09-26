@@ -13,6 +13,14 @@ Usage:
     # match what the gate produces or it fails on a diff you did not cause.
     python tools/export_registry.py --format both --deprecations-report --output-dir generated
 
+    # Is the committed manifest fresh? Writes NOTHING: exit 0 = every artifact matches
+    # a regen (timestamp aside), exit 1 = stale, each stale file named.
+    python tools/export_registry.py --check --format both --deprecations-report
+
+    # ⚠ --validate is NOT a dry run. It validates the metadata AND THEN WRITES the
+    # artifacts like any other invocation (2026-09-19: run "to check", it regenerated all
+    # four tracked files under a session that then had to revert them). --check is the
+    # read-only verb.
     python tools/export_registry.py --validate --format both --deprecations-report
     # override the interpreter guard (must equal the running major.minor):
     python tools/export_registry.py --allow-interpreter 3.14 --format both
@@ -65,14 +73,74 @@ def _emit_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _emit_completions(path: Path, manifest: dict) -> None:
+def _completions_text(manifest: dict) -> str:
     commands = [
         str(c.get("path", "")).strip()
         for c in manifest.get("commands", [])
         if isinstance(c, dict)
     ]
     commands = sorted(c for c in commands if c)
-    _emit_text(path, "\n".join(commands) + ("\n" if commands else ""))
+    return "\n".join(commands) + ("\n" if commands else "")
+
+
+def _emit_completions(path: Path, manifest: dict) -> None:
+    _emit_text(path, _completions_text(manifest))
+
+
+def _render_artifacts(manifest: dict, fmt: str, deprecations: bool) -> dict[str, str]:
+    """Every artifact a run with these flags would write, keyed by path relative to the
+    output dir — the ONE place that knows the set, so the writer and ``--check`` cannot
+    disagree about what "the artifacts" are."""
+    out: dict[str, str] = {}
+    if fmt in {"json", "both"}:
+        out["commands.json"] = json.dumps(manifest, indent=2, sort_keys=True)
+    if fmt in {"markdown", "both"}:
+        out["commands.md"] = render_markdown(manifest)
+    out["completions/commands.txt"] = _completions_text(manifest)
+    if deprecations:
+        out["deprecations.json"] = json.dumps(deprecations_report(manifest), indent=2, sort_keys=True)
+    return out
+
+
+def _check_artifacts(output_dir: Path, manifest: dict, fmt: str, deprecations: bool) -> int:
+    """Compare what a regen WOULD write against ``output_dir``; write nothing.
+
+    The clock is the one thing a regen always changes (``generated_at`` in the JSON, the
+    ``_Generated …_`` line in the markdown, the deprecations report), so the committed
+    timestamp is carried over before rendering: ``--check`` answers "would a regen change
+    anything real", not "was it regenerated just now". Returns 0 when every artifact
+    matches, 1 when any is missing or differs — each one named, with the regenerate
+    command. Never writes.
+    """
+    stamp = None
+    try:
+        stamp = json.loads((output_dir / "commands.json").read_text(encoding="utf-8")).get("generated_at")
+    except (OSError, ValueError):
+        pass
+    if stamp:
+        manifest = dict(manifest, generated_at=stamp)
+    stale: list[str] = []
+    for rel, want in _render_artifacts(manifest, fmt, deprecations).items():
+        path = output_dir / rel
+        try:
+            have = path.read_text(encoding="utf-8")
+        except OSError:
+            stale.append(f"{path}: missing")
+            continue
+        if have.replace("\r\n", "\n") != want.replace("\r\n", "\n"):
+            stale.append(f"{path}: differs from a fresh regen")
+    if not stale:
+        print(f"[OK] {output_dir} matches a fresh regen ({manifest.get('total', 0)} commands); nothing written")
+        return 0
+    print(f"[STALE] {len(stale)} artifact(s) under {output_dir} would change on a regen:", file=sys.stderr)
+    for line in stale:
+        print(f"  ! {line}", file=sys.stderr)
+    print(
+        "  Regenerate & commit: python tools/export_registry.py --format both --deprecations-report"
+        f" --output-dir {output_dir}",
+        file=sys.stderr,
+    )
+    return 1
 
 
 def _plugin_command_count(manifest: dict) -> int:
@@ -176,7 +244,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--validate",
         action="store_true",
-        help="Exit non-zero if command metadata validation fails.",
+        help=(
+            "Exit non-zero if command metadata validation fails. NOT a dry run: the "
+            "artifacts are still written afterwards — use --check for a no-write compare."
+        ),
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "Compare what this run WOULD write against --output-dir and write nothing: "
+            "exit 0 when every artifact matches a fresh regen (timestamp aside), 1 when any "
+            "is missing or differs. Combine with --validate to validate first."
+        ),
     )
     parser.add_argument(
         "--format",
@@ -233,6 +313,12 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     output_dir = Path(args.output_dir)
+
+    # --check never writes, so it never reaches the interpreter guard either: it compares
+    # THIS interpreter's catalog with the committed one, and a shrunken catalog simply
+    # reads as stale (which it is, from where this interpreter stands).
+    if args.check:
+        return _check_artifacts(output_dir, manifest, args.format, args.deprecations_report)
 
     # Guard the tracked catalog only: a write to core/generated from an interpreter that
     # would shrink the manifest is refused unless explicitly acknowledged. Runs AFTER

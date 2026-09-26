@@ -68,19 +68,32 @@ class HostManager:
         """
         config_dirs = self._config.get_config_directories()
 
-        for config_dir in config_dirs:
-            try:
-                # Check new format
-                host_file = config_dir / "hosts" / f"{host_name}.yaml"
-                if host_file.exists():
-                    return True
+        # A stat that RAISES is not a file that is missing. On Windows another
+        # navig process rewriting the config directory can make `exists()` throw
+        # PermissionError for a moment, and "raised → continue → False" is how
+        # an existing host came back as absent — and the active-host chain fell
+        # through to a different machine (see context.get_active_host). Retry
+        # the transient case briefly before concluding anything.
+        import time
 
-                # Check legacy format (backward compatibility)
-                legacy_file = config_dir / "apps" / f"{host_name}.yaml"
-                if legacy_file.exists():
-                    return True
-            except (PermissionError, OSError):
-                continue
+        for config_dir in config_dirs:
+            for attempt in range(3):
+                try:
+                    # Check new format
+                    host_file = config_dir / "hosts" / f"{host_name}.yaml"
+                    if host_file.exists():
+                        return True
+
+                    # Check legacy format (backward compatibility)
+                    legacy_file = config_dir / "apps" / f"{host_name}.yaml"
+                    if legacy_file.exists():
+                        return True
+                    break  # a clean "not here"; try the next directory
+                except (PermissionError, OSError):
+                    if attempt < 2:
+                        time.sleep(0.05)
+                        continue
+                    break  # still unreadable: treated as not here in THIS dir
 
         return False
 

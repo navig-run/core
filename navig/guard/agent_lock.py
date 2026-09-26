@@ -9,10 +9,11 @@ edits (this happened; see memory ``navig-shared-tree-rebase-hazard``).
 What this does (stdlib-only, fail-open — any internal error allows the call):
 
 * PreToolUse (Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell): the first session to
-  edit claims ``.dev/agent.lock``; every later edit refreshes it. A DIFFERENT
-  live session gets **exit 2** (blocked) with instructions to work in a
-  worktree under ``.dev/worktrees/`` instead. Locks unrefreshed for
-  ``TTL_MINUTES`` count as dead and are taken over silently.
+  edit claims ``.dev/agent.lock``; every later edit refreshes it, and so does
+  ANY tool call by the holder (a read, a test run, a patch script) — activity
+  is activity. A DIFFERENT live session gets **exit 2** (blocked) with
+  instructions to work in a worktree under ``.dev/worktrees/`` instead. Locks
+  unrefreshed for ``TTL_MINUTES`` count as dead and are taken over silently.
 * Sibling worktrees are blocked for EVERY session (independent of the lock):
   ``git worktree add`` targeting a path OUTSIDE the repo violates the house
   hard rule — worktrees live inside ``.dev/worktrees/``.
@@ -72,16 +73,45 @@ _CD_TARGET = re.compile(
 )
 _WORKTREE_ADD = re.compile(r"\bgit\b[^\n|&;]*?\bworktree\s+add\s+([^\n|&;]+)")
 
+# A `git commit` that names paths after a standalone `--`. Everything after it is the
+# pathspec; `--amend`/`--no-verify` do not match because the `--` must stand alone.
+_PATHSPEC_COMMIT = re.compile(r"\bgit\b[^\n|&;]*?\bcommit\b[^\n|&;]*?\s--\s+([^\n|&;]+)")
+
 # `git worktree add` flags that consume the following token as their value.
 _WT_VALUE_FLAGS = {"-b", "-B", "--reason", "--orphan"}
 
 
 def repo_root() -> Path:
-    """This checkout's root — nearest ancestor of this file containing .git."""
+    """The MAIN working tree's root — even when this hook runs from a linked worktree.
+
+    A linked worktree's ``.git`` is a FILE (``gitdir: <main>/.git/worktrees/<name>``), and
+    ``.exists()`` is true for a file, so the old walk stopped at the worktree and treated
+    it as the repo. Measured 2026-09-19 from a session opened in ``.dev/worktrees/x``: the
+    exact command ``navig repo new y`` runs — a worktree add with the ABSOLUTE main-tree
+    path — was BLOCKED as "OUTSIDE this repo (a sibling folder)", because outside worktree
+    x it is; and the block message recommended the relative form, which would have nested
+    a worktree inside the worktree. ``navig repo`` has anchored on the main tree since
+    #1443; the hook that gates it must resolve the same root.
+
+    Stdlib only, no subprocess: this hook runs on EVERY tool call, and the ``.git`` file
+    already says where the main tree is.
+    """
     here = Path(__file__).resolve()
     for parent in here.parents:
-        if (parent / ".git").exists():
-            return parent
+        dot = parent / ".git"
+        if dot.is_dir():
+            return parent  # the main working tree
+        if dot.is_file():
+            try:
+                text = dot.read_text(encoding="utf-8", errors="replace").strip()
+            except OSError:
+                return parent
+            if text.startswith("gitdir:"):
+                gitdir = Path(text[len("gitdir:"):].strip())
+                # <main>/.git/worktrees/<name>  ->  <main>
+                if gitdir.parent.name == "worktrees" and gitdir.parent.parent.name == ".git":
+                    return gitdir.parent.parent.parent
+            return parent  # some other gitdir shape (a submodule): this tree is the root
     return here.parents[1]  # fallback: <root>/<dir>/agent_lock.py -> root
 
 
@@ -158,6 +188,99 @@ def worktree_add_target(args_text: str) -> str | None:
             continue
         return tok.strip("\"'")
     return None
+
+
+def _pathspec_covers(spec: str, path: str) -> bool:
+    """Does one pathspec token name ``path`` -- exactly, as a directory prefix, or as a glob."""
+    spec = spec.strip("\"'").replace("\\", "/").rstrip("/")
+    path = path.replace("\\", "/")
+    if spec in ("", "."):
+        return True
+    if path == spec or path.startswith(spec + "/"):
+        return True
+    from fnmatch import fnmatch
+
+    return fnmatch(path, spec)
+
+
+def pathspec_commit_discards(payload: dict, root: Path) -> list[str]:
+    """Staged deletions a `git commit -- <paths>` would silently DISCARD.
+
+    A pathspec commit builds the commit from the WORKING TREE for the named paths, not
+    from the index. Measured in a scratch repo:
+
+        staged D, file on disk, unmodified  ->  deletion committed
+        staged D, file on disk, ignored     ->  deletion committed
+        staged D, file on disk, MODIFIED    ->  the modification is committed and the
+                                                deletion discarded (still tracked)
+
+    That third row is how #1423 merged half-done: `git rm --cached` on two generated
+    files, a pathspec commit naming both, one deletion landed and the other quietly
+    turned into "still tracked, now also gitignored" -- dirty in every checkout and
+    refused by `git add`. The house style here IS the pathspec commit, so every session
+    is one `rm --cached` away from it.
+
+    Conservative on purpose: any staged deletion that the pathspec covers and whose file
+    is still on disk is reported, whether or not it is modified -- the unmodified case
+    happened to work in the scratch repo but did not in #1423, and the cost of the false
+    block is one re-run without a pathspec. A file removed from disk (a real `git rm`) is
+    not reported: the working tree agrees with the index there.
+    """
+    if payload.get("tool_name", "") not in SHELL_TOOLS:
+        return []
+    cmd = str((payload.get("tool_input") or {}).get("command", ""))
+    m = _PATHSPEC_COMMIT.search(cmd)
+    if not m:
+        return []
+    specs = [t for t in m.group(1).split() if not t.startswith("-")]
+    if not specs:
+        return []
+
+    # Which repo? Honour `-C`, else the shell's cwd. Unexpandable `-C $var`: fail open --
+    # we cannot inspect a repo we cannot name, and a wrong guess would block the wrong tree.
+    repo = Path(payload.get("cwd") or root)
+    c = _GIT_C_TARGET.search(cmd)
+    if c:
+        target = c.group(1).strip("\"'")
+        if _SHELL_VAR.search(target):
+            return []
+        t = Path(target)
+        repo = t if t.is_absolute() else repo / t
+
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "diff", "--cached", "--diff-filter=D", "--name-only", "-z"],
+            capture_output=True, timeout=10, check=True,
+        ).stdout
+        top = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--show-toplevel"],
+            capture_output=True, timeout=10, check=True, text=True, encoding="utf-8", errors="replace",
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return []
+    staged = [p for p in out.decode("utf-8", "replace").split("\0") if p]
+    return sorted(
+        p for p in staged
+        if any(_pathspec_covers(s, p) for s in specs) and (Path(top) / p).exists()
+    )
+
+
+def pathspec_message(discarded: list[str]) -> str:
+    return (
+        "BLOCKED: this `git commit -- <paths>` would silently DISCARD a staged deletion.\n"
+        "A pathspec commit is built from the WORKING TREE for the named paths, not the\n"
+        "index -- and these are `git rm --cached` (staged as deleted, still on disk):\n"
+        + "".join(f"  {p}\n" for p in discarded)
+        + "Measured: if the file is modified on disk, the MODIFICATION is committed instead\n"
+        "and the file stays tracked (#1423 merged half-done exactly this way).\n"
+        "Do ONE of:\n"
+        "  1. Commit without a pathspec, after `git diff --cached --name-only` shows only\n"
+        "     what you mean to commit.\n"
+        "  2. If the file should go from disk too, `git rm <path>` (not --cached) first.\n"
+        "Then verify with `git show --stat HEAD`.\n"
+    )
 
 
 def classify_tool(payload: dict, root: Path) -> str:
@@ -302,6 +425,20 @@ def write_lock(root: Path, session_id: str, previous: dict | None) -> None:
     os.replace(tmp, path)
 
 
+def heartbeat(root: Path, session_id: str) -> None:
+    """Refresh the lock if THIS session already holds it — never claim.
+
+    An exempt call (read-only Bash, a python patch script, a jest run) is still a
+    live session at work. Before this, a session that edited through Bash for an
+    hour never touched ``updated_at``, the claim went stale, a second session
+    took it over mid-round, and the first session's own ``git commit`` was then
+    blocked by a lock it had held all along.
+    """
+    lock = read_lock(root)
+    if lock and lock.get("session_id") == session_id:
+        write_lock(root, session_id, lock)
+
+
 def block_message(lock: dict, root: Path) -> str:
     # ASCII only: the Windows hook pipe garbles non-ASCII characters.
     session = str(lock.get("session_id", "?"))[:8]
@@ -353,8 +490,16 @@ def main() -> int:
                     pass
             return 0
 
+        # Checked BEFORE the lock and regardless of it: the footgun is identical in a
+        # worktree, and it is a correctness rule, not a coordination one.
+        discarded = pathspec_commit_discards(payload, root)
+        if discarded:
+            print(pathspec_message(discarded), file=sys.stderr)
+            return 2
+
         verdict = classify_tool(payload, root)
         if verdict == "exempt":
+            heartbeat(root, session_id)
             return 0
         if verdict == "block-sibling":
             print(sibling_message(root), file=sys.stderr)

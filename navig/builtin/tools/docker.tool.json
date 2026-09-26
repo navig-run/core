@@ -1,4 +1,5 @@
 {
+  "$schema": "./tool.schema.json",
   "id": "tool:docker",
   "name": "navig_docker",
   "description": "Execute NAVIG docker operations.",

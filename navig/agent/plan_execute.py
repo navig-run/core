@@ -166,6 +166,7 @@ class PlanExecuteAgent:
         dry_run: bool = False,
         auto_approve: bool = False,
         max_retries: int = 1,
+        max_steps: int | None = None,
     ) -> ExecutionPlan:
         """Run the full plan-execute cycle.
 
@@ -188,6 +189,18 @@ class PlanExecuteAgent:
             plan.total_elapsed_ms = (time.monotonic() - t0) * 1000
             logger.info("Plan-execute: empty plan for task %r", task)
             return plan
+
+        # `navig agent plan --max-steps N` promised "maximum number of plan steps to
+        # execute" and was never honoured -- the flag was parsed and never reached here.
+        # The plan is made in full so the model reasons over the whole task, then cut;
+        # the cut is logged because a truncated plan can be incoherent (a later step may
+        # have depended on one that was dropped) and the user asked for it knowingly.
+        if max_steps is not None and max_steps > 0 and len(plan.steps) > max_steps:
+            logger.warning(
+                "Plan-execute: --max-steps %d cut a %d-step plan; steps %d..%d will not run",
+                max_steps, len(plan.steps), max_steps + 1, len(plan.steps),
+            )
+            plan.steps = plan.steps[:max_steps]
 
         if dry_run:
             plan.total_elapsed_ms = (time.monotonic() - t0) * 1000

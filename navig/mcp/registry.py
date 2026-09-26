@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 from navig.debug_logger import get_debug_logger
@@ -17,6 +18,16 @@ logger = get_debug_logger()
 # reader task dies) and nothing pushes that to the manager — is_connected() is a pull, so
 # somebody has to look.
 _HEALTH_INTERVAL_S = 60.0
+
+#: How long to wait before retrying a client that keeps failing, and the ceiling.
+#: The sweep itself never backed off — only the 3 attempts INSIDE one sweep did —
+#: so a server that is simply not running (a closed editor, a machine that is off)
+#: cost 5 log lines every 60s for as long as the daemon lived. Measured on the
+#: operator's own daemon: 12,420 of 20,964 lines, 59.2% of the entire log, all
+#: from ONE unreachable client. That is the "noise trains you to skim past the row
+#: that mattered" failure this tree already documents for `navig doctor`.
+_BACKOFF_BASE_S = 60.0
+_BACKOFF_MAX_S = 30 * 60.0
 
 
 class MCPClientManager:
@@ -49,6 +60,10 @@ class MCPClientManager:
         self.config: dict[str, Any] = config or {}
         self._clients: dict[str, MCPClient] = {}
         self._reconnect_tasks: dict[str, asyncio.Task[None]] = {}
+        #: client id -> consecutive failed reconnect rounds (cleared on success).
+        self._reconnect_failures: dict[str, int] = {}
+        #: client id -> monotonic time before which the sweep must not retry.
+        self._reconnect_not_before: dict[str, float] = {}
         # Strong references to fire-and-forget background tasks.
         self._bg_tasks: set[asyncio.Task[None]] = set()
         self._started = False
@@ -339,6 +354,8 @@ class MCPClientManager:
         if task is not None:
             task.cancel()
 
+        self._forget_backoff(client_id)
+
     async def start(self) -> None:
         """Start the manager and auto-connect all configured clients.
 
@@ -394,6 +411,8 @@ class MCPClientManager:
                 return_exceptions=True,
             )
         self._clients.clear()
+        self._reconnect_failures.clear()
+        self._reconnect_not_before.clear()
 
         logger.info("MCP Client Manager stopped")
 
@@ -402,7 +421,9 @@ class MCPClientManager:
         client = self._clients.get(client_id)
         if client is None:
             raise ValueError(f"Client not found: {client_id!r}")
+        self._forget_backoff(client_id)
         await self._connect_with_retry(client, max_attempts=1)
+        self._note_reconnect_result(client)
         return client.is_connected
 
     async def disconnect_client(self, client_id: str) -> bool:
@@ -424,7 +445,9 @@ class MCPClientManager:
         if client is None:
             raise ValueError(f"Client not found: {client_id!r}")
         await client.disconnect()
+        self._forget_backoff(client_id)
         await self._connect_with_retry(client, max_attempts=1)
+        self._note_reconnect_result(client)
         return client.is_connected
 
     # ------------------------------------------------------------------
@@ -484,6 +507,27 @@ class MCPClientManager:
             max_attempts,
         )
 
+    def _note_reconnect_result(self, client: MCPClient) -> None:
+        """Grow or clear this client's backoff after one reconnect round.
+
+        Reads `is_connected` rather than a return value, so no caller has to
+        thread a bool it does not use.
+        """
+        if client.is_connected:
+            self._reconnect_failures.pop(client.id, None)
+            self._reconnect_not_before.pop(client.id, None)
+            return
+        failures = self._reconnect_failures.get(client.id, 0) + 1
+        self._reconnect_failures[client.id] = failures
+        # 1m, 2m, 4m, 8m, 16m, then 30m forever.
+        wait = min(_BACKOFF_BASE_S * (2 ** (failures - 1)), _BACKOFF_MAX_S)
+        self._reconnect_not_before[client.id] = time.monotonic() + wait
+
+    def _forget_backoff(self, client_id: str) -> None:
+        """Drop a client's backoff bookkeeping (deregistration, explicit connect)."""
+        self._reconnect_failures.pop(client_id, None)
+        self._reconnect_not_before.pop(client_id, None)
+
     async def _schedule_reconnect(
         self, client: MCPClient, delay: float = 30.0
     ) -> None:
@@ -502,6 +546,7 @@ class MCPClientManager:
                 # so registration is the accurate "should be connected" signal.
                 if not client.is_connected and client.id in self._clients:
                     await self._connect_with_retry(client)
+                    self._note_reconnect_result(client)
             finally:
                 # Always release the dedupe slot — otherwise one raising reconnect
                 # (or a cancel) would leave the id parked in _reconnect_tasks and
@@ -541,8 +586,19 @@ class MCPClientManager:
                     # kill the sweep for every other client.
                     try:
                         if client.config.auto_connect and not client.is_connected:
-                            logger.info(
-                                "MCP client %s is down — scheduling reconnect", client.id
+                            if time.monotonic() < self._reconnect_not_before.get(
+                                client.id, 0.0
+                            ):
+                                continue  # still inside this client's backoff
+                            failures = self._reconnect_failures.get(client.id, 0)
+                            # The first few rounds are news; after that the client is
+                            # simply absent and saying so every minute is what buried
+                            # the log. The retry itself continues, quietly.
+                            say = logger.info if failures < 3 else logger.debug
+                            say(
+                                "MCP client %s is down — scheduling reconnect%s",
+                                client.id,
+                                f" (consecutive failures: {failures})" if failures else "",
                             )
                             await self._schedule_reconnect(client, delay=0.0)
                     except Exception as exc:  # noqa: BLE001

@@ -49,17 +49,12 @@ def _recap_system_prompt() -> str:
     Follows ``user.language``; mirrors the conversation when nothing is pinned.
     """
     try:
-        from navig.core.language import resolve_language
+        from navig.core.language import language_directive
 
-        language = resolve_language()
+        directive = language_directive("summary", "the same language the conversation is in")
     except Exception:  # noqa: BLE001 — a recap is not worth failing over
-        language = None
-    if language:
-        return f"{_RECAP_SYSTEM_PROMPT} Write the summary in {language}."
-    return (
-        f"{_RECAP_SYSTEM_PROMPT} Write the summary in the same language the "
-        "conversation is in."
-    )
+        directive = "Write the summary in the same language the conversation is in."
+    return f"{_RECAP_SYSTEM_PROMPT} {directive}"
 
 
 def _truncate_history(

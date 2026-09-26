@@ -46,6 +46,9 @@ def classify(argv_tail: list[str]) -> OperationType:
     [
         # "get " substring → FILE_DOWNLOAD for pure reads
         (["config", "get", "log_level"], OperationType.READ_QUERY, "file_download"),
+        (["skill", "tree"], OperationType.READ_QUERY, "local_command"),
+        (["skill", "lint"], OperationType.READ_QUERY, "local_command"),
+        (["block", "verify-receipt", "r1"], OperationType.READ_QUERY, "local_command"),
         (["vault", "get", "github"], OperationType.READ_QUERY, "file_download"),
         # "get " inside a free-text payload argument
         (["run", "apt-get update"], OperationType.REMOTE_COMMAND, "file_download"),

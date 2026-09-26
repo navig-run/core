@@ -466,3 +466,47 @@ def test_an_unknown_motion_is_refused_rather_than_silently_static(tmp_path) -> N
     art.write_bytes(b"\x89PNG")
     with pytest.raises(ValueError, match="unknown motion"):
         still(art, tmp_path / "o.mp4", secs=1.0, motion="ken-burns")
+
+
+class TestTimeoutScalesWithLength:
+    """A flat ffmpeg timeout fits one clip length and fails the other.
+
+    Found the expensive way: a nine-minute full-song render died on its first grade pass
+    at the flat 600s limit, AFTER every paid image-to-video call had already been made.
+    """
+
+    def test_a_short_clip_keeps_the_old_budget(self):
+        from navig.media.video_edit import DEFAULT_TIMEOUT_S, timeout_for
+
+        assert timeout_for(15.0) == DEFAULT_TIMEOUT_S
+        assert timeout_for(60.0) == DEFAULT_TIMEOUT_S
+
+    def test_a_long_clip_gets_proportionally_more(self):
+        from navig.media.video_edit import DEFAULT_TIMEOUT_S, timeout_for
+
+        # 8:54 -- the track that exposed this
+        budget = timeout_for(534.0)
+        assert budget > DEFAULT_TIMEOUT_S
+        # x264 medium at 1080x1920 runs near 0.7x realtime; the budget must clear that
+        # with room for a slower machine.
+        assert budget > 534.0 / 0.7
+
+    def test_it_never_returns_less_than_the_floor(self):
+        from navig.media.video_edit import timeout_for
+
+        assert timeout_for(0.0, floor=900) == 900
+        assert timeout_for(-1.0, floor=900) == 900
+        assert timeout_for(10.0, floor=900) == 900
+
+    def test_an_explicit_caller_timeout_raises_the_floor_not_lowers_it(self):
+        # A caller passing a bigger timeout must not have it silently reduced by the
+        # per-second maths on a short clip.
+        from navig.media.video_edit import timeout_for
+
+        assert timeout_for(20.0, floor=5000) == 5000
+
+    def test_the_budget_grows_monotonically(self):
+        from navig.media.video_edit import timeout_for
+
+        budgets = [timeout_for(s) for s in (30, 120, 300, 600, 1200)]
+        assert budgets == sorted(budgets)

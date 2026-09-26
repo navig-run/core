@@ -322,3 +322,219 @@ def test_read_lock_corrupt_json_is_none(hook, root: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{not json", encoding="utf-8")
     assert hook.read_lock(root) is None
+
+
+# ── pathspec commit vs a staged `rm --cached` ────────────────────────────────
+#
+# A pathspec commit is built from the WORKING TREE for the named paths, not the index, so
+# a staged deletion whose file is still on disk can be discarded -- and if the file is
+# modified, the modification is committed INSTEAD. #1423 merged half-done that way. These
+# drive the real function against a real scratch repo; nothing is mocked.
+
+
+def _scratch_repo(tmp_path: Path) -> Path:
+    import subprocess
+
+    repo = tmp_path / "scratch"
+    repo.mkdir()
+    g = ["git", "-C", str(repo)]
+    subprocess.run([*g, "init", "-q"], check=True)
+    subprocess.run([*g, "config", "user.email", "t@t"], check=True)
+    subprocess.run([*g, "config", "user.name", "t"], check=True)
+    (repo / "gen.txt").write_text("generated\n", encoding="utf-8")
+    (repo / "other.txt").write_text("other\n", encoding="utf-8")
+    subprocess.run([*g, "add", "."], check=True)
+    subprocess.run([*g, "commit", "-qm", "init"], check=True)
+    return repo
+
+
+def _rm_cached(repo: Path, name: str) -> None:
+    import subprocess
+
+    subprocess.run(["git", "-C", str(repo), "rm", "--cached", "-q", name], check=True)
+
+
+def test_pathspec_commit_naming_a_staged_rm_cached_is_blocked(hook, tmp_path: Path) -> None:
+    repo = _scratch_repo(tmp_path)
+    _rm_cached(repo, "gen.txt")  # staged as deleted, still on disk
+    payload = _bash('git commit -m "untrack" -- gen.txt', cwd=str(repo))
+    assert hook.pathspec_commit_discards(payload, repo) == ["gen.txt"]
+
+
+def test_the_block_names_the_file_and_the_fix(hook) -> None:
+    msg = hook.pathspec_message(["gen.txt"])
+    assert "gen.txt" in msg
+    assert "without a pathspec" in msg
+    assert "#1423" in msg
+
+
+def test_pathspec_commit_is_fine_when_the_deletion_is_not_named(hook, tmp_path: Path) -> None:
+    """A staged deletion OUTSIDE the pathspec is simply left staged -- normal git."""
+    repo = _scratch_repo(tmp_path)
+    _rm_cached(repo, "gen.txt")
+    payload = _bash('git commit -m "x" -- other.txt', cwd=str(repo))
+    assert hook.pathspec_commit_discards(payload, repo) == []
+
+
+def test_commit_without_a_pathspec_is_never_blocked(hook, tmp_path: Path) -> None:
+    repo = _scratch_repo(tmp_path)
+    _rm_cached(repo, "gen.txt")
+    for cmd in ('git commit -m "untrack"', "git commit -F msg.txt", 'git commit --amend -m "x"'):
+        assert hook.pathspec_commit_discards(_bash(cmd, cwd=str(repo)), repo) == [], cmd
+
+
+def test_a_real_git_rm_is_not_blocked(hook, tmp_path: Path) -> None:
+    """File gone from disk: the working tree agrees with the index, the deletion commits."""
+    import subprocess
+
+    repo = _scratch_repo(tmp_path)
+    subprocess.run(["git", "-C", str(repo), "rm", "-q", "gen.txt"], check=True)
+    payload = _bash('git commit -m "delete" -- gen.txt', cwd=str(repo))
+    assert hook.pathspec_commit_discards(payload, repo) == []
+
+
+def test_pathspec_covers_directories_and_globs(hook) -> None:
+    assert hook._pathspec_covers("web/www", "web/www/next-env.d.ts")
+    assert hook._pathspec_covers("web/www/", "web/www/next-env.d.ts")
+    assert hook._pathspec_covers("*.d.ts", "next-env.d.ts")
+    assert hook._pathspec_covers(".", "anything/at/all")
+    assert not hook._pathspec_covers("web/www", "web/wwwx/file")
+    assert not hook._pathspec_covers("apps/deck", "web/www/next-env.d.ts")
+
+
+def test_honours_a_dash_C_target_and_fails_open_on_a_variable(hook, tmp_path: Path) -> None:
+    repo = _scratch_repo(tmp_path)
+    _rm_cached(repo, "gen.txt")
+    # -C names the scratch repo explicitly, from an unrelated cwd.
+    payload = _bash(f'git -C "{repo}" commit -m "x" -- gen.txt', cwd=str(tmp_path))
+    assert hook.pathspec_commit_discards(payload, tmp_path) == ["gen.txt"]
+    # -C $var cannot be expanded: fail open rather than inspect the wrong tree.
+    payload = _bash('git -C $WT commit -m "x" -- gen.txt', cwd=str(repo))
+    assert hook.pathspec_commit_discards(payload, repo) == []
+
+
+def test_the_full_hook_returns_2_for_the_footgun(hook, tmp_path: Path, monkeypatch) -> None:
+    """End to end through main(): stdin payload in, exit 2 and the message on stderr."""
+    import io
+    import json
+
+    repo = _scratch_repo(tmp_path)
+    _rm_cached(repo, "gen.txt")
+    payload = _bash('git commit -m "untrack" -- gen.txt', cwd=str(repo))
+    payload["session_id"] = "s-test"
+    payload["hook_event_name"] = "PreToolUse"
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+    monkeypatch.setattr(hook, "repo_root", lambda: repo)
+    err = io.StringIO()
+    monkeypatch.setattr("sys.stderr", err)
+    assert hook.main() == 2
+    assert "DISCARD" in err.getvalue() and "gen.txt" in err.getvalue()
+
+
+# ── heartbeat: an exempt call by the holder keeps the claim alive ───────────
+
+
+def _run_main(hook, monkeypatch, repo: Path, payload: dict) -> int:
+    import io
+    import json
+
+    payload.setdefault("hook_event_name", "PreToolUse")
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+    monkeypatch.setattr(hook, "repo_root", lambda: repo)
+    monkeypatch.setattr("sys.stderr", io.StringIO())
+    return hook.main()
+
+
+def test_an_exempt_call_by_the_holder_refreshes_the_lock(hook, tmp_path: Path, monkeypatch) -> None:
+    """A Bash-only hour is still an hour of work: the holder's read-only call
+    bumps updated_at, so the claim cannot go stale under a live session."""
+    repo = _scratch_repo(tmp_path)
+    old = datetime.now(timezone.utc) - timedelta(minutes=hook.TTL_MINUTES - 5)
+    hook.lock_path(repo).parent.mkdir(parents=True, exist_ok=True)
+    hook.lock_path(repo).write_text(
+        __import__("json").dumps(_lock("s-holder", old)), encoding="utf-8"
+    )
+    payload = _bash("ls -la", cwd=str(repo))
+    payload["session_id"] = "s-holder"
+    assert _run_main(hook, monkeypatch, repo, payload) == 0
+    refreshed = hook.read_lock(repo)
+    assert refreshed["session_id"] == "s-holder"
+    assert datetime.fromisoformat(refreshed["updated_at"]) > old
+
+
+def test_an_exempt_call_by_a_stranger_never_claims_or_touches(hook, tmp_path: Path, monkeypatch) -> None:
+    """Reading is not claiming: another session's read-only call leaves the
+    holder's lock byte-identical, and with no lock at all none appears."""
+    repo = _scratch_repo(tmp_path)
+    payload = _bash("git status", cwd=str(repo))
+    payload["session_id"] = "s-reader"
+    assert _run_main(hook, monkeypatch, repo, payload) == 0
+    assert hook.read_lock(repo) is None
+
+    now = datetime.now(timezone.utc)
+    hook.lock_path(repo).parent.mkdir(parents=True, exist_ok=True)
+    hook.lock_path(repo).write_text(
+        __import__("json").dumps(_lock("s-holder", now)), encoding="utf-8"
+    )
+    before = hook.lock_path(repo).read_text(encoding="utf-8")
+    assert _run_main(hook, monkeypatch, repo, dict(payload)) == 0
+    assert hook.lock_path(repo).read_text(encoding="utf-8") == before
+
+
+# ── repo_root from inside a linked worktree ──────────────────────────────────
+
+
+def _git(*args: str, cwd: Path) -> None:
+    import subprocess
+    subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, check=True)
+
+
+def _real_repo_with_worktree(tmp_path: Path) -> tuple[Path, Path]:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git("init", "-q", "-b", "main", cwd=repo)
+    _git("config", "user.email", "t@navig.local", cwd=repo)
+    _git("config", "user.name", "t", cwd=repo)
+    (repo / "f.txt").write_text("x", encoding="utf-8")
+    _git("add", "f.txt", cwd=repo)
+    _git("commit", "-q", "-m", "base", cwd=repo)
+    wt = repo / ".dev" / "worktrees" / "x"
+    wt.parent.mkdir(parents=True)
+    _git("worktree", "add", "-q", str(wt), "-b", "feat/x", cwd=repo)
+    return repo, wt
+
+
+def _hook_loaded_from(dir_: Path):
+    """The hook as a checkout would carry it: a copy living INSIDE `dir_`."""
+    import shutil
+    dest = dir_ / "scripts" / "agent-hooks"
+    dest.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(_HOOK, dest / "agent_lock.py")
+    spec = importlib.util.spec_from_file_location(f"agent_lock_from_{dir_.name}", dest / "agent_lock.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_repo_root_from_a_linked_worktree_is_the_main_tree(tmp_path: Path) -> None:
+    """A linked worktree's `.git` is a FILE; `.exists()` accepted it and the walk stopped
+    there, so a hook running from a worktree session treated the worktree as the repo."""
+    repo, wt = _real_repo_with_worktree(tmp_path)
+    assert _hook_loaded_from(wt).repo_root().resolve() == repo.resolve()
+    assert _hook_loaded_from(repo).repo_root().resolve() == repo.resolve()
+
+
+def test_from_a_worktree_session_a_sibling_worktree_add_in_the_main_tree_is_not_a_sibling(tmp_path: Path) -> None:
+    """THE regression. `navig repo new y` runs a worktree add with the ABSOLUTE main-tree
+    path. From a session in `.dev/worktrees/x` that path is outside worktree x — and the
+    old root made the hook BLOCK it as 'a worktree OUTSIDE this repo', while its message
+    recommended the relative form that would have nested a worktree inside the worktree."""
+    repo, wt = _real_repo_with_worktree(tmp_path)
+    mod = _hook_loaded_from(wt)
+    root = mod.repo_root()
+    target = (repo / ".dev" / "worktrees" / "y").as_posix()
+    verdict = mod.classify_tool(_bash(f"git worktree add {target} -b feat/y", cwd=str(wt)), root)
+    assert verdict != "block-sibling", verdict
+    # and a genuinely outside path is still caught, from the same session
+    outside = (tmp_path / "elsewhere").as_posix()
+    assert mod.classify_tool(_bash(f"git worktree add {outside} -b feat/z", cwd=str(wt)), root) == "block-sibling"

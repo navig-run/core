@@ -189,3 +189,149 @@ class TestGmailConnector:
         }
         body = connector._extract_body(payload)
         assert body == "Body text"
+
+
+# ── Mailroom read/label/draft API ────────────────────────────────────────
+
+
+class TestGmailMailroomApi:
+    @pytest.fixture
+    def connector(self):
+        from navig.connectors.gmail.connector import GmailConnector
+
+        c = GmailConnector()
+        c.set_access_token("fake-token-123")
+        return c
+
+    def test_iter_message_ids_paginates_until_limit(self, connector):
+        pages = {
+            None: {"messages": [{"id": "a", "threadId": "t1"}, {"id": "b", "threadId": "t1"}],
+                   "nextPageToken": "p2"},
+            "p2": {"messages": [{"id": "c", "threadId": "t2"}], "nextPageToken": "p3"},
+            "p3": {"messages": [{"id": "d", "threadId": "t3"}]},
+        }
+        seen_params = []
+
+        async def mock_get(path, params=None):
+            seen_params.append(dict(params or {}))
+            return pages[(params or {}).get("pageToken")]
+
+        connector._api_get = mock_get
+        entries = asyncio.run(connector.iter_message_ids("in:sent", limit=3))
+        assert [e["id"] for e in entries] == ["a", "b", "c"]
+        assert seen_params[0]["q"] == "in:sent"
+
+        # No limit → walks every page.
+        seen_params.clear()
+        entries = asyncio.run(connector.iter_message_ids("in:sent"))
+        assert [e["id"] for e in entries] == ["a", "b", "c", "d"]
+
+    def test_get_many_skips_failures_and_keeps_order(self, connector):
+        from navig.connectors.errors import ConnectorAPIError
+
+        async def mock_get(path, params=None):
+            mid = path.rsplit("/", 1)[-1]
+            if mid == "bad":
+                raise ConnectorAPIError("gmail", 404, "gone")
+            return {"id": mid}
+
+        connector._api_get = mock_get
+        out = asyncio.run(connector.get_many(["m1", "bad", "m2"]))
+        assert [m["id"] for m in out] == ["m1", "m2"]
+
+    def test_ensure_label_creates_nested_parents(self, connector):
+        created = []
+
+        async def mock_get(path, params=None):
+            return {"labels": [{"id": "SPAM", "name": "SPAM", "type": "system"},
+                               {"id": "L1", "name": "Cybesis"}]}
+
+        async def mock_post(path, json_body=None):
+            created.append(json_body["name"])
+            return {"id": f"id-{json_body['name']}", "name": json_body["name"]}
+
+        connector._api_get = mock_get
+        connector._api_post = mock_post
+        assert asyncio.run(connector.ensure_label("SPAM")) == "SPAM"
+        assert asyncio.run(connector.ensure_label("cybesis")) == "L1"
+        lid = asyncio.run(connector.ensure_label("Cybesis/PirateBay/2026"))
+        assert created == ["Cybesis/PirateBay", "Cybesis/PirateBay/2026"]
+        assert lid == "id-Cybesis/PirateBay/2026"
+
+    def test_modify_thread_posts_label_changes(self, connector):
+        calls = []
+
+        async def mock_post(path, json_body=None):
+            calls.append((path, json_body))
+            return {}
+
+        connector._api_post = mock_post
+        res = asyncio.run(connector.modify_thread("t9", add=["L1"], remove=["UNREAD"]))
+        assert res.success
+        assert calls == [("/users/me/threads/t9/modify",
+                          {"addLabelIds": ["L1"], "removeLabelIds": ["UNREAD"]})]
+        assert asyncio.run(connector.modify_thread("", add=["L1"])).success is False
+
+    def test_create_draft_threads_the_reply(self, connector):
+        import base64
+
+        calls = []
+
+        async def mock_post(path, json_body=None):
+            calls.append((path, json_body))
+            return {"id": "d1"}
+
+        connector._api_post = mock_post
+        connector._user_email = "me@gmail.com"
+        out = asyncio.run(connector.create_draft(
+            to="spam@x.com", subject="Re: Offer", body="No.", thread_id="t1",
+            in_reply_to="<orig@x.com>",
+        ))
+        assert out["id"] == "d1"
+        path, body = calls[0]
+        assert path == "/users/me/drafts"
+        assert body["message"]["threadId"] == "t1"
+        raw = base64.urlsafe_b64decode(body["message"]["raw"]).decode()
+        assert "In-Reply-To: <orig@x.com>" in raw
+        assert "References: <orig@x.com>" in raw
+        assert "From: me@gmail.com" in raw
+
+    def test_extract_body_html_fallback(self, connector):
+        import base64
+
+        html = "<html><style>p{}</style><body><p>Hello&nbsp;<b>world</b></p><br>Bye</body></html>"
+        encoded = base64.urlsafe_b64encode(html.encode()).decode()
+        payload = {"mimeType": "multipart/alternative",
+                   "parts": [{"mimeType": "text/html", "body": {"data": encoded}}]}
+        assert connector._extract_body(payload) == "Hello world\n\nBye"
+
+    def test_extract_body_prefers_plain_over_html(self, connector):
+        import base64
+
+        plain = base64.urlsafe_b64encode(b"plain wins").decode()
+        html = base64.urlsafe_b64encode(b"<p>html loses</p>").decode()
+        payload = {"mimeType": "multipart/alternative", "parts": [
+            {"mimeType": "text/html", "body": {"data": html}},
+            {"mimeType": "text/plain", "body": {"data": plain}},
+        ]}
+        assert connector._extract_body(payload) == "plain wins"
+
+    def test_list_history_raises_api_error_when_stale(self, connector):
+        from navig.connectors.errors import ConnectorAPIError
+
+        async def mock_get(path, params=None):
+            raise ConnectorAPIError("gmail", 404, "startHistoryId too old")
+
+        connector._api_get = mock_get
+        with pytest.raises(ConnectorAPIError) as exc:
+            asyncio.run(connector.list_history("123"))
+        assert exc.value.status_code == 404
+
+    def test_mapper_exposes_internal_date_and_in_reply_to(self):
+        msg = {"id": "m", "threadId": "t", "internalDate": "1700000000000",
+               "payload": {"headers": [{"name": "In-Reply-To", "value": "<x@y>"},
+                                       {"name": "Cc", "value": "c@c.com"}]}}
+        r = gmail_message_to_resource(msg)
+        assert r.metadata["internal_date"] == "1700000000000"
+        assert r.metadata["in_reply_to"] == "<x@y>"
+        assert r.metadata["cc"] == "c@c.com"

@@ -612,29 +612,6 @@ class TestRouteRemovalIsHonest:
         )
         store.close()
 
-    def test_the_cli_does_not_announce_a_removal_it_did_not_make(self, tmp_path, monkeypatch):
-        from typer.testing import CliRunner
-
-        from navig.commands.dispatch import contacts_app
-        from navig.store import contacts as contacts_mod
-
-        store = self._store(tmp_path)
-        store.add_contact(alias="alice")
-        store.add_route("alice", "telegram:111")
-        monkeypatch.setattr(contacts_mod, "get_contact_store", lambda: store)
-
-        runner = CliRunner()
-        result = runner.invoke(contacts_app, ["route", "alice", "remove", "telegram:999999"])
-
-        assert result.exit_code != 0, (
-            f"removing a non-existent route exited 0:\n{result.output}"
-        )
-        assert "removed from" not in result.output, (
-            f"the CLI announced a removal it did not make:\n{result.output}"
-        )
-
-        # The honest path must still work, or the guard above is bought with a broken feature.
-        ok = runner.invoke(contacts_app, ["route", "alice", "remove", "telegram:111"])
-        assert ok.exit_code == 0, f"a real removal now fails:\n{ok.output}"
-        assert "removed from" in ok.output
-        store.close()
+    # The CLI half of this guard moved with the command: `navig contacts route`
+    # is the navig-contacts plugin's now, and its suite asserts the same thing.
+    # The store-level assertions above are what core still owns.

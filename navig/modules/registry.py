@@ -25,6 +25,7 @@ now live in `navig.proactive` — this package is the module platform only.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
@@ -243,7 +244,8 @@ BUILTIN_MODULES: list[ModuleDef] = [
         capability=None,
         # Deck code deleted 2026-07-12 (deck→OS); renders as the Contacts tab
         # inside the desktop Messages app (merged_into keeps deep-links alive).
-        surfaces=[],
+        # The CLI half lives in navig-contacts, a hard dependency of core.
+        surfaces=["cli:contacts"],
         requires=["gateway"], default_enabled=True, app_category="Comms",
         hidden=True, merged_into="messages",
     ),
@@ -630,13 +632,53 @@ def reset_entry_points() -> None:
         pass
 
 
+def _log_dropped_builtin_fields(module: ModuleDef) -> None:
+    """Say so when a registration silently drops a field its builtin twin had set.
+
+    Replacing a builtin is legitimate and deliberate — ``navig-blackbox`` upgrades the
+    builtin ``blackbox`` entry with a better description and an ``app_category``. But the
+    replace is TOTAL, not a merge, so a field the builtin sets and the plugin omits
+    vanishes with nothing logged anywhere.
+
+    That is not hypothetical in shape: a def losing ``merged_into`` presents as a deck
+    surface quietly forgetting which app hosts it, and the only evidence is a value that
+    reads ``None`` several layers away, in a serialized payload. This line turns hours of
+    bisecting into one grep.
+
+    Deliberately silent for the healthy case — only fields that go from a set value to an
+    empty one are reported, so a plugin that merely CHANGES a value (which is the whole
+    point of overriding) logs nothing.
+    """
+    builtin = next((m for m in BUILTIN_MODULES if m.id == module.id), None)
+    if builtin is None:
+        return
+    dropped = [
+        f.name
+        for f in dataclasses.fields(ModuleDef)
+        if getattr(builtin, f.name, None) and not getattr(module, f.name, None)
+    ]
+    if dropped:
+        logger.warning(
+            "module registry: %r replaces the builtin def and drops %s — a total replace, "
+            "not a merge; copy the field(s) into the plugin's ModuleDef if that was not "
+            "intended",
+            module.id,
+            ", ".join(sorted(dropped)),
+        )
+
+
 def register_module(module: ModuleDef) -> None:
     """Register a plugin-provided module in the catalog (idempotent by id).
 
     Called from a plugin's ``register()`` at gateway boot (mirrors how
     ``navig-harbor`` wires its routes). Appears immediately even if the registry
     singleton was already discovered, AND is re-applied on any later rediscovery.
+
+    ⚠ A registration REPLACES any existing def with that id — including a BUILTIN, and
+    including across a fresh ``ModuleRegistry`` (``_EXTERNAL_DEFS`` is module-scope and
+    re-applied on every rediscovery). See ``_log_dropped_builtin_fields``.
     """
+    _log_dropped_builtin_fields(module)
     _EXTERNAL_DEFS[:] = [m for m in _EXTERNAL_DEFS if m.id != module.id] + [module]
     if _REGISTRY is not None:
         _REGISTRY._defs[module.id] = module

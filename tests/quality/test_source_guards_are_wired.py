@@ -62,7 +62,15 @@ TESTS_ROOT = CORE_TESTS
 #
 # Err toward noise: a false positive costs one line in `sourceGuardArgs` or one documented
 # exemption. A false negative is a guard that silently never runs.
-_WALKS_PY = re.compile(r"\b(rglob|glob)\s*\(")
+# Widened past `glob`/`rglob` after a third guard hid behind a different idiom. Seven
+# whole-tree guards here enumerate with `os.walk`, and one delegates to `git ls-files`
+# in a subprocess -- none matched, so the detector could not have demanded their
+# wiring; all seven happened to be wired by hand. Measured when widening: 7 newly
+# detected files, ALL already wired, and exactly one that was not (the guard added in
+# the same change). Zero false positives, which is why this is a widening and not a
+# repoint -- what decides wiring is what a change to the tree can break, not which
+# idiom the file happens to use to read it.
+_WALKS_PY = re.compile(r"\b(rglob|glob)\s*\(|\bos\.walk\s*\(|\bls-files\b")
 _DERIVES_A_ROOT = re.compile(r'/\s*"(navig|plugins)"|parents\[\d+\]')
 
 
@@ -195,11 +203,20 @@ def test_the_transcribed_detector_still_matches_the_runner() -> None:
 def _listed_in_ci() -> set[str]:
     """The test paths inside `const sourceGuardArgs = [ ... ];`."""
     src = CI_RUNNER.read_text(encoding="utf-8")
-    block = re.search(r"const sourceGuardArgs\s*=\s*\[(.*?)\];", src, re.S)
+    # The terminator is anchored to the start of a line. A bare `];` matched anywhere would
+    # end the block at the first one that appears INSIDE it — and the entries below that point
+    # then read as unwired while actually being wired, or worse, read as wired-and-checked
+    # while never being parsed at all. That is not hypothetical: a comment describing a class
+    # MRO as "[TelegramChannel, object]; the ..." truncated this list from 98 entries to 95,
+    # silently, and the guard reported the three it could no longer see as missing.
+    block = re.search(r"const sourceGuardArgs\s*=\s*\[(.*?)^\];", src, re.S | re.M)
     assert block, (
         f"could not find `const sourceGuardArgs = [...]` in {CI_RUNNER} — the runner was "
         "restructured and this meta-guard is now checking nothing."
     )
+    # A floor comparing against every `"tests/….py"` in the whole runner was tried and is
+    # WRONG: INVARIANT_GUARDS and other step definitions name test files too, so it reported
+    # 26 phantom misses on a correct file. The anchored terminator above is the actual fix.
     return set(re.findall(r'"(tests/[^"]+\.py)"', block.group(1)))
 
 
@@ -340,8 +357,9 @@ def test_the_plugin_subject_detector_still_finds_something() -> None:
     # all; 1461 test files exist. A bound expressed against the total (`< total // 10`
     # = 146) was slack enough to sit ABOVE the greedy case — verified by mutation: a
     # detector short-circuited to `return True` reported ~90 and sailed through it. 45
-    # leaves room for this set to double and still fails that mutation.
-    assert len(found) < 45, (
+    # left room for the 22 to double; they did — the 45th plugin-scanning guard (the
+    # direct-`import click` guard) tripped it. 70 still sits below the ~90 mutation.
+    assert len(found) < 70, (
         f"{len(found)} test files matched — the plugin-subject detector has become too "
         "broad to mean anything (it should find guards, not every file with a repo root)."
     )
@@ -491,8 +509,10 @@ def test_the_asset_subject_detector_still_finds_something() -> None:
     )
     # Ceiling catches the greedy mutation, and the number is MEASURED, not estimated:
     # a detector short-circuited to `return True` reports 133 (verified by mutation --
-    # I had guessed ~90). 80 sits well below that while leaving today's 60 room to grow.
-    assert len(found) < 80, (
+    # I had guessed ~90). The ceiling was 80 when today's count was 60; the count reached
+    # 79 through guards added one at a time, and the 80th (the loguru placeholder guard)
+    # tripped it. 110 still sits well below the mutation's 133.
+    assert len(found) < 110, (
         f"{len(found)} test files matched -- the asset-subject detector has become too "
         "broad to mean anything (it should find guards, not every rooted test file)."
     )
@@ -741,3 +761,63 @@ def test_exemptions_are_real() -> None:
     """An exemption for a guard that no longer exists quietly grants itself forever."""
     ghosts = sorted(p for p in NOT_WIRED_ON_PURPOSE if not (CORE_TESTS.parent / p).is_file())
     assert not ghosts, f"NOT_WIRED_ON_PURPOSE names files that do not exist: {ghosts}"
+
+
+# ── a guard OF the shared conftest must run when the conftest changes ────────────
+#
+# `core/tests/conftest.py` is the one file every test in this repo depends on, and both
+# of its guards ran in NO tier. Measured before this test existed:
+#
+#     node scripts/ci-local.mjs --explain-selection --changed=core/tests/conftest.py
+#     → the always-run source guards, and NEITHER of the two guards of that file.
+#
+# The reason is structural, which is why it needs a test rather than a memo: the pytest
+# selection matches changed `core/navig/**` MODULES against test names, so a change to
+# test INFRASTRUCTURE reaches nothing by that route — and `conftest.py` is not a
+# `test_*.py`, so it is not picked up as a "changed test" either. Both directions miss it.
+_CONFTEST_TRIGGER = "core/tests/conftest.py"
+
+
+def _conftest_subject_guards() -> set[str]:
+    """Tests that import the shared conftest — i.e. whose subject IS that file."""
+    found: set[str] = set()
+    for path in sorted(TESTS_ROOT.rglob("test_*.py")):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if re.search(r"^\s*from tests import conftest|^\s*import tests\.conftest", text, re.M):
+            found.add(path.relative_to(TESTS_ROOT.parent).as_posix())
+    return found
+
+
+def _conftest_guard_entry() -> str:
+    """The INVARIANT_GUARDS entry keyed on the conftest, as source text."""
+    src = CI_RUNNER.read_text(encoding="utf-8")
+    start = src.find(_CONFTEST_TRIGGER)
+    if start == -1:
+        return ""
+    # To the end of that entry: `tests:` lives between the trigger and the closing `},`,
+    # so requiring both in the SAME slice proves the trigger and the targets are wired
+    # together rather than merely both appearing somewhere in a 3,000-line runner.
+    end = src.find("},", start)
+    return src[start:end] if end != -1 else src[start:]
+
+
+def test_a_guard_of_the_shared_conftest_runs_when_the_conftest_changes() -> None:
+    guards = _conftest_subject_guards()
+    # Floor as a presence: a scan that found nothing would assert nothing at all.
+    assert len(guards) >= 2, (
+        f"expected at least 2 guards importing the shared conftest, found {sorted(guards)} "
+        "-- if they were renamed this check is now watching nothing."
+    )
+    entry = _conftest_guard_entry()
+    assert entry, (
+        f"no INVARIANT_GUARDS entry keyed on {_CONFTEST_TRIGGER} in {CI_RUNNER.name}. "
+        "Every test depends on that file and nothing else can select its guards."
+    )
+    missing = sorted(g for g in guards if g not in entry)
+    assert not missing, (
+        "these guards drive the shared conftest's own fixtures, but a change to it does "
+        "not run them:\n  " + "\n  ".join(missing)
+        + f"\n\nAdd each to the INVARIANT_GUARDS entry keyed on {_CONFTEST_TRIGGER}. "
+        "The pytest selection cannot reach them: it maps changed core/navig modules onto "
+        "test names, and conftest.py is neither a module nor a test_*.py file."
+    )

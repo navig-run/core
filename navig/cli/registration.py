@@ -175,6 +175,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "knowledge": ("navig.commands.kg", "kg_app"),
     "webhook": ("navig.commands.webhook", "webhook_app"),
     "webhooks": ("navig.commands.webhook", "webhook_app"),
+    "notify": ("navig.commands.notify", "notify_app"),
     "signals": ("navig.commands.signals", "signals_app"),
     "signal": ("navig.commands.signals", "signals_app"),          # alias
     "cron": ("navig.commands.cron", "cron_app"),
@@ -192,8 +193,9 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     # cdp/do/gmail (auto-login browser surfaces) are registered once above, near "auto".
     "import": ("navig.commands.import_cmd", "import_app"),
     "dispatch": ("navig.commands.dispatch", "dispatch_app"),
-    "contacts": ("navig.commands.dispatch", "contacts_app"),
-    "ct": ("navig.commands.dispatch", "contacts_app"),        # hidden alias
+    # `contacts` and `ct` are provided by the navig-contacts plugin, which owns
+    # the address book AND the alias->route table dispatch reads. It is a HARD
+    # dependency of core (see core/pyproject.toml), so the verb is always there.
     "paths": ("navig.commands.paths_cmd", "paths_app"),
     "mcp": ("navig.commands.mcp_cmd", "mcp_app"),
     "radar": ("navig.commands.radar", "radar_app"),
@@ -590,6 +592,36 @@ def _disabled_command_map() -> dict[str, str]:
     except Exception as exc:  # noqa: BLE001 — never break the CLI over a state file
         logger.debug("[navig] disabled_commands.json unreadable: %s", exc)
         return {}
+
+
+def ensure_group_registered(
+    target_app: typer.Typer,  # type: ignore[name-defined]
+    name: str,
+) -> bool:
+    """Register the external command group *name* on demand; True if it is now present.
+
+    ``_register_external_commands`` is argv-driven: for ``navig init space`` the
+    target is ``init``, an inline command, so it returns without importing
+    anything — and ``space`` is simply not on the app when the usage error is
+    being explained. A hint that wants to say "did you mean ``navig space init``"
+    therefore has to register the candidate group itself. This is the same
+    single-module import the fast path does, so it costs what a normal
+    ``navig space …`` invocation costs, and only on an invocation that has
+    already failed.
+
+    Only sub-Typer groups (the ``_EXTERNAL_CMD_MAP`` + entry-point commands) are
+    considered; the flat top-level commands (``wire``/``apply``/``undo``) cannot
+    be the group half of a transposition.
+    """
+    with _registration_lock:
+        already = _registered_app_cmds.setdefault(target_app, set())
+    if name in already:
+        return True
+    if name in _EXTERNAL_CMD_MAP:
+        _try_register_one(target_app, name, already)
+    elif name in _entry_point_commands():
+        _try_register_ep(target_app, name, already)
+    return name in already
 
 
 def _try_register_ep(

@@ -40,6 +40,14 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
+import pytest
+
+# Pinned to one of TWO xdist lanes (needs `--dist loadgroup`, which the gate passes):
+# this guard parses the whole tree, and eight workers each holding a whole-tree AST
+# at the same moment is what crashes workers on a shared box and fakes a red gate.
+# Lane assignment is declared in tests/quality/test_heavy_tree_guards_are_pinned.py.
+pytestmark = pytest.mark.xdist_group("whole_tree_ast_1")
+
 CORE = Path(__file__).resolve().parents[2] / "navig"
 _SKIP = {"__pycache__", "builtin", "scaffold-templates"}
 

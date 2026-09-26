@@ -41,6 +41,7 @@ ALLOWED = frozenset(
         "b", "i", "pre", "code",  # HTML tags
         "dns", "ssl", "whois", "sql", "ssh", "docker", "tiktok", "telegram",
         "business", "navig", "csv", "metrics", "id",
+        "courrier", "ocr", "paperwork",  # the /courrier command, an acronym, a space id
     }
 )
 

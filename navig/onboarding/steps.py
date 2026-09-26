@@ -866,7 +866,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             active_tag = "  ← current" if p.id == current_provider else ""
             ch.dim(f"    \\[{i}] {p.display_name}{local_tag}{env_tag}{ready_tag}{active_tag}")
         skip_hint = " (keep existing)" if current_provider else " for now"
-        ch.dim(f"    [s] Skip{skip_hint}")
+        ch.dim(f"    \\[s] Skip{skip_hint}")
 
         try:
             choice_raw = typer.prompt("  Provider", default=default_choice)
@@ -986,7 +986,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             for i, p in enumerate(fallback_providers, start=1):
                 local_tag = "" if getattr(p, "requires_key", True) else "  (local)"
                 ch.dim(f"    \\[{i}] {p.display_name}{local_tag}")
-            ch.dim("    [s] Skip")
+            ch.dim("    \\[s] Skip")
             fb_raw = typer.prompt("  Fallback provider", default="s").strip().lower()
             if fb_raw not in ("s", "skip", ""):
                 try:
@@ -1631,7 +1631,7 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
             current_tag = "  ← current" if pid == current_search_provider else ""
             ch.dim(f"    \\[{idx}] {label}{current_tag}")
         skip_hint = " (keep existing)" if current_search_provider else " for now"
-        ch.dim(f"    [s] Skip{skip_hint}")
+        ch.dim(f"    \\[s] Skip{skip_hint}")
 
         try:
             choice_raw = typer.prompt("  Provider", default="s").strip().lower()

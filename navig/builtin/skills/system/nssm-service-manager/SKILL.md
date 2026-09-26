@@ -1,4 +1,3 @@
-```skill
 ---
 name: nssm-service-manager
 description: Install, start, stop, remove, and query Windows services using NSSM
@@ -71,4 +70,3 @@ navig sys nssm remove --name myapp --yes
 
 - `--dry-run` supported for `install` and `remove`
 - Admin check is performed early; exits with code `3` if elevation needed
-```

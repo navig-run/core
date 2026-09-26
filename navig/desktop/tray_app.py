@@ -298,8 +298,62 @@ class NavigTray:
         except Exception as e:  # noqa: BLE001
             log.error("Orphan bot cleanup failed: %s", e)
 
+    def _service_is_installed(self) -> bool:
+        """Is there an installed service to start THROUGH? Best-effort, never raises."""
+        try:
+            from navig.daemon.launch import service_is_installed
+
+            return bool(service_is_installed())
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _run_service_verb(self, verb: str, timeout: float = 60.0) -> bool:
+        """`navig service <verb>` as a subprocess — the CLI owns the lifecycle
+        (task launch, graceful stop, autostart). True when it exited 0."""
+        cmd = [self._python, "-m", "navig", "service", verb]
+        log.info("Daemon via service: %s", " ".join(cmd))
+        try:
+            r = subprocess.run(
+                cmd,
+                capture_output=True,
+                timeout=timeout,
+                cwd=str(Path.home()),
+                creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning("navig service %s failed to run: %s", verb, e)
+            return False
+        if r.returncode != 0:
+            log.warning(
+                "navig service %s exited %s: %s",
+                verb,
+                r.returncode,
+                (r.stdout or b"").decode("utf-8", "replace")[-400:],
+            )
+            return False
+        return True
+
     def start_daemon(self):
-        """Start the NAVIG daemon supervisor (manages bot, gateway, scheduler)."""
+        """Start the NAVIG daemon supervisor (manages bot, gateway, scheduler).
+
+        Through the installed service when there is one: the daemon then has the
+        Task Scheduler service as its parent — not the tray, whose close would leave
+        it orphan-shaped (the shape an hourly process sweep on the operator's machine
+        kills) — plus the task's env and autostart. The direct spawn is the fallback.
+        """
+        if self._service_is_installed():
+            self.daemon.status = Status.STARTING
+            self._update_icon()
+            if self._run_service_verb("start"):
+                self.daemon.process = None  # not our child; the pid file is the handle
+                self.daemon.status = Status.RUNNING
+                self.daemon.started_at = datetime.now()
+                self.daemon.last_error = ""
+                log.info("Daemon started through the installed service")
+                self._update_icon()
+                return
+            log.warning("service start failed — falling back to a direct spawn")
+
         # Stop existing daemon gracefully
         self._stop_daemon_graceful()
         # Kill any orphan bot processes from previous runs
@@ -404,7 +458,20 @@ class NavigTray:
                 pass  # best-effort; failure is non-critical
 
     def stop_daemon(self):
-        """Stop the NAVIG daemon and all its children."""
+        """Stop the NAVIG daemon and all its children.
+
+        Through `navig service stop` when the service is installed: it disables the
+        scheduled task first (so the daemon STAYS stopped — the direct path below
+        never did, and the task relaunched it within five minutes), sets the stop
+        flag, then stops gracefully. The direct path remains the fallback.
+        """
+        if self._service_is_installed() and self._run_service_verb("stop"):
+            self.daemon.process = None
+            self.daemon.status = Status.STOPPED
+            self.daemon.started_at = None
+            self._update_icon()
+            log.info("Daemon stopped through the installed service")
+            return
         self._stop_daemon_graceful()
         # Kill any orphan bots that survived
         self._kill_orphan_bots()
@@ -849,6 +916,21 @@ class NavigTray:
 
 def main():
     """Entry point."""
+    # The tray runs under pythonw.exe (commands/tray.py launches it with
+    # CREATE_NO_WINDOW | DETACHED_PROCESS), so it has NO console — and a console child
+    # spawned from a parent without one gets a brand-new console that flashes on screen.
+    # Its OWN spawn sites already pass flags; this covers everything it calls INTO.
+    #
+    # It never overrides a caller that chose, so the two deliberate CREATE_NEW_CONSOLE
+    # spawns below — the "open a terminal" menu items, where the window IS the feature —
+    # still open their terminal.
+    try:
+        from navig.platform.process import install_windowless_spawn_default
+
+        install_windowless_spawn_default()
+    except Exception:  # noqa: BLE001 — cosmetic; never block the tray
+        pass
+
     # Single instance check via lock file
     lock_file = NAVIG_DIR / "tray.lock"
     NAVIG_DIR.mkdir(parents=True, exist_ok=True)

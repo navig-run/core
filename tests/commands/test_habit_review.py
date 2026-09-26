@@ -45,6 +45,7 @@ def _full_week(tracker, *, skip: set[str] = frozenset()):
 # average_bedtime — the number the sleep rail is steered by
 # ===========================================================================
 
+
 class TestAverageBedtime:
     def test_after_midnight_does_not_average_to_midday(self):
         """23:40 and 00:20 are twenty minutes apart, not twelve hours."""
@@ -64,6 +65,7 @@ class TestAverageBedtime:
 # The review block
 # ===========================================================================
 
+
 class TestBuild:
     def test_a_perfect_week_reports_seven_of_seven(self, tracker):
         _full_week(tracker)
@@ -82,15 +84,48 @@ class TestBuild:
         assert "**No tracker row at all:**" in block
         assert "Wed 19" in block and "Sat 22" in block
 
-    def test_the_journal_setback_lines_are_pulled_in(self, tracker):
+    def test_a_historical_labelled_entry_still_yields_its_setback(self, tracker):
+        """⚠ The fixture is written in the OLD shape ON PURPOSE.
+
+        `setback_for` matches "**What knocked me off:**", which `append_entry`
+        stopped writing when the card stopped asking the question. Building this
+        fixture through `append_entry` would test the parser against input it
+        cannot match — green only because nothing is asserted about the parse.
+        Journals written before the change are full of these labels and must
+        keep feeding the weekly review, so the old shape is written directly.
+        """
         _full_week(tracker)
-        journal.append_entry(
-            tracker, "2026-08-18", "shipped the page\nlost an hour to a client\nwrite the README"
+        path = journal.entry_path(tracker, "2026-08-18")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "# Journal — Tuesday, 18 August 2026\n\n## Evening check-in\n\n"
+            "1. **Proud of:** shipped the page\n"
+            "2. **What knocked me off:** lost an hour to a client\n"
+            "3. **Tomorrow's number one:** write the README\n",
+            encoding="utf-8",
         )
         block = weekly_review.build(tracker, MON, SUN)
 
         assert "lost an hour to a client" in block
         assert "Tue 18" in block
+
+    def test_a_free_form_entry_is_not_mined_for_a_setback(self, tracker):
+        """Silence is the honest answer, and it is the DOCUMENTED one.
+
+        `setback_for` says picking a sentence out of free text and presenting it
+        as "what broke this week" would be the system inventing a finding. Now
+        that every new entry is free text, that branch is the normal path rather
+        than the exception — so it is pinned, not left to inference.
+        """
+        _full_week(tracker)
+        journal.append_entry(
+            tracker,
+            "2026-08-18",
+            "Long day. The client call ate an hour and I never got the README done.",
+        )
+        block = weekly_review.build(tracker, MON, SUN)
+
+        assert "The client call ate an hour" not in block
 
     def test_a_dictated_entry_is_not_mined_for_a_setback(self, tracker):
         """Picking a sentence out of free speech and calling it "what broke" invents a finding."""
@@ -100,17 +135,104 @@ class TestBuild:
         )
         block = weekly_review.build(tracker, MON, SUN)
 
-        assert "_nothing recorded this week_" in block
+        # The entry EXISTS, so "nothing recorded this week" would be a lie about
+        # the operator's week. It says what is actually true: there are entries,
+        # they are free-form, and no line is pulled out of them.
+        assert "_nothing recorded this week_" not in block
+        assert "written free-form" in block
         assert "ate an hour" not in block
 
-    def test_days_without_three_lines_are_listed(self, tracker):
+    def test_a_week_of_free_form_entries_is_never_called_unrecorded(self, tracker):
+        """The regression the free-form change would otherwise have caused.
+
+        `setback_for` only matches the card's OLD labelled shape, so once entries
+        became free-form it returns nothing for every day — and this section's
+        empty branch rendered unconditionally. The operator would have written
+        every evening and read "nothing recorded this week" over seven full
+        entries, every week, forever.
+
+        Found by grepping for the old wording, not by a failing test: nothing was
+        asserting this, because before the change it could not happen.
+        """
+        _full_week(tracker)
+        for day in ("2026-08-17", "2026-08-18", "2026-08-19"):
+            journal.append_entry(
+                tracker, day, "A long and ordinary day, written out properly in prose."
+            )
+        block = weekly_review.build(tracker, MON, SUN)
+
+        assert "_nothing recorded this week_" not in block, (
+            "the review told the operator nothing was recorded while three "
+            "entries sat in the journal"
+        )
+        assert "3 entries this week" in block
+
+    def test_the_cli_review_carries_the_weeks_reflection_when_enabled(self, tracker, monkeypatch):
+        """Same switch, second surface. The review is built pure and synchronous;
+        the reflection is appended after, so a review still renders with no model."""
+        from navig.spaces import journal_reflection
+        from navig.telegram import ai_actions
+
+        _full_week(tracker)
+        for d in ("2026-08-18", "2026-08-20"):
+            journal.append_entry(tracker, d, "A day written out at some length, in prose.")
+        monkeypatch.setattr(journal_reflection, "is_enabled", lambda: True)
+
+        async def _fake(tool, content, **_k):
+            assert tool == "reflect_week"
+            return {"ok": True, "result": "You kept circling the same client."}
+
+        monkeypatch.setattr(ai_actions, "run_text_action", _fake)
+
+        from navig.commands import habit as habit_cmd
+
+        printed: list[str] = []
+        monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(map(str, a))))
+        monkeypatch.setattr(habit_cmd, "_tracker_path", lambda space: tracker)
+        habit_cmd.habit_review(ending="2026-08-23", days=7, write=False, space=None)
+
+        out = "\n".join(printed)
+        assert "**Reading the week back**" in out
+        assert "You kept circling the same client." in out
+
+    def test_the_cli_review_renders_without_a_model_when_disabled(self, tracker, monkeypatch):
+        from navig.spaces import journal_reflection
+        from navig.telegram import ai_actions
+
+        _full_week(tracker)
+        monkeypatch.setattr(journal_reflection, "is_enabled", lambda: False)
+
+        async def _never(*a, **k):
+            raise AssertionError("the model was called with the switch off")
+
+        monkeypatch.setattr(ai_actions, "run_text_action", _never)
+
+        from navig.commands import habit as habit_cmd
+
+        printed: list[str] = []
+        monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(map(str, a))))
+        monkeypatch.setattr(habit_cmd, "_tracker_path", lambda space: tracker)
+        habit_cmd.habit_review(ending="2026-08-23", days=7, write=False, space=None)
+
+        assert "## Review" in "\n".join(printed)
+        assert "Reading the week back" not in "\n".join(printed)
+
+    def test_a_week_with_no_entries_at_all_still_says_so(self, tracker):
+        """The other side of it — the empty branch must survive, or the fix
+        would have replaced one inaccuracy with its mirror image."""
+        _full_week(tracker)
+        block = weekly_review.build(tracker, MON, SUN)
+
+        assert "_nothing recorded this week_" in block
+
+    def test_days_with_nothing_written_are_listed(self, tracker):
         _full_week(tracker)
         journal.append_entry(tracker, "2026-08-18", "a\nb\nc")
         block = weekly_review.build(tracker, MON, SUN)
 
-        assert "**No three lines:**" in block
+        assert "**Nothing written:**" in block
         assert "Mon 17" in block
-        assert "Tue 18" not in block.split("**No three lines:**")[1].split("\n")[0]
+        assert "Tue 18" not in block.split("**Nothing written:**")[1].split("\n")[0]
 
     def test_a_written_review_does_not_count_as_that_day_s_entry(self, tracker):
         """--write creates the file; the review must not then claim the day has an entry."""
@@ -118,8 +240,8 @@ class TestBuild:
         journal.append_block(tracker, SUN.isoformat(), "## Review — earlier\n\nsomething\n")
         block = weekly_review.build(tracker, MON, SUN)
 
-        assert "**No three lines:**" in block
-        assert "Sun 23" in block.split("**No three lines:**")[1]
+        assert "**Nothing written:**" in block
+        assert "Sun 23" in block.split("**Nothing written:**")[1]
 
     def test_bedtime_and_score_averages_appear(self, tracker):
         _full_week(tracker)
@@ -158,17 +280,20 @@ class TestBuild:
 # Dictation
 # ===========================================================================
 
+
 class TestDictatedEntry:
     def test_a_transcript_is_kept_verbatim_and_marked(self, tracker):
         path, written = journal.append_entry(
-            tracker, "2026-08-26", "shipped the page lost an hour to a client tomorrow the readme",
+            tracker,
+            "2026-08-26",
+            "shipped the page lost an hour to a client tomorrow the readme",
             dictated=True,
         )
         body = path.read_text(encoding="utf-8")
 
         assert written is True
         assert "## Evening check-in (dictated)" in body
-        assert "- shipped the page lost an hour to a client tomorrow the readme" in body
+        assert "shipped the page lost an hour to a client tomorrow the readme" in body
         for prompt in journal.PROMPTS:
             assert f"**{prompt}:**" not in body
 
@@ -177,7 +302,7 @@ class TestDictatedEntry:
         path, _ = journal.append_entry(tracker, "2026-08-26", "one\ntwo\nthree", dictated=True)
         body = path.read_text(encoding="utf-8")
 
-        assert "- one" in body
+        assert "one" in body
         assert "**Proud of:**" not in body
 
     def test_the_gateway_passes_the_dictation_flag_through(self, tracker):

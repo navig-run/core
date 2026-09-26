@@ -1,4 +1,5 @@
 {
+  "$schema": "./tool.schema.json",
   "id": "tool:ios",
   "name": "navig_ios",
   "description": "Execute NAVIG ios operations.",

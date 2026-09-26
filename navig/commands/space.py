@@ -24,6 +24,8 @@ from navig import console_helper as ch
 from navig.config import get_config_manager
 from navig.console_helper import get_console
 from navig.core.yaml_io import atomic_write_text
+from navig.platform.paths import invocation_cwd, resolve_user_path
+from navig.spaces.gitignore import scaffold_gitignore
 from navig.spaces.kickoff import build_space_kickoff
 
 # ── Typer app ─────────────────────────────────────────────────────────────────
@@ -73,8 +75,11 @@ _DEFAULT_PHASE_MD = """# Current Phase
 # ONE structure, produced by `navig space init` and mirrored by the
 # navig-community example. Plans live in .navig/plans (root-linked to ./plans);
 # inbox in .navig/inbox (root-linked to ./.inbox). The .dev/.local/docs hygiene
-# zones follow the repo-cleanup convention (.navig, .dev and .local are all
-# gitignored — machine-local/private; only docs/ and source are committed).
+# zones follow the repo-cleanup convention. .dev and .local are gitignored; .navig/
+# is COMMITTABLE except its private state (inbox/state/vault/memory/refs/data/logs
+# — see navig.spaces.gitignore), exactly as the flagship repo commits its own
+# .navig/plans. The root links ./plans and ./.inbox are ignored so git never walks
+# through a junction into content it already tracks at the canonical path.
 
 _SKELETON_DIRS = (
     ".navig/plans",
@@ -200,15 +205,10 @@ _SPACE_FILES: dict[str, str] = {
         "| archive/ | deprecated / historical |\n\n"
         "> **Plans live in `.navig/plans/`** (linked to `./plans`), not here.\n"
     ),
-    ".gitignore": (
-        "# ── navig: machine-local / private — never commit ──\n"
-        ".navig/\n.inbox\n.lab/\n.backup/\n.local/\n.dev/\n\n"
-        "# ── build / cache / IDE artifacts ──\n"
-        ".next/\n.open-next/\n.wrangler/\n.venv/\n.pytest_cache/\n"
-        ".tmp/\n.core-sync-tmp/\n.idea/\n\n"
-        "# ── logs & temp ──\n*.log\n\n"
-        "# ── OS / editor junk ──\n.DS_Store\nThumbs.db\n"
-    ),
+    # One owner for the navig rules: the managed block `navig wire` refreshes
+    # (navig.spaces.gitignore). The old head here repeated them — with a blanket
+    # `.navig/` the block could never override, so plans were never committable.
+    ".gitignore": scaffold_gitignore(),
 }
 
 # NAVIG.md is the canonical project-context file. Assistant files (CLAUDE.md,
@@ -522,12 +522,26 @@ def _profile_status(profile: Path) -> str:
 
 
 def _resolve_space_target(target: str | None) -> Path | None:
-    """Resolve a doctor target: a path, a registered space name, or (default) the cwd."""
+    """Resolve a doctor target: a path, a registered space name, or (default) where you stand.
+
+    ⚠ "Where you stand" is :func:`invocation_cwd`, NOT ``Path.cwd()``: ``main.py``
+    chdir's into the active space before this runs, so the process cwd is the
+    space. Using it made ``navig space doctor`` — whose own help promises "current
+    directory" — diagnose the ACTIVE SPACE from inside an unrelated project, and
+    ``--fix`` scaffold into it.
+    """
     if not target:
-        return Path.cwd()
+        return invocation_cwd()
     p = Path(target).expanduser()
-    if p.is_dir():
+    if p.is_absolute() and p.is_dir():
         return p.resolve()
+    if not p.is_absolute():
+        # A relative target is anchored to where the operator typed it. Probing it
+        # against the process cwd could also match a same-named folder inside the
+        # active space — a wrong answer that looks right.
+        cand = resolve_user_path(p)
+        if cand.is_dir():
+            return cand
     try:
         from navig.spaces.resolver import discover_space_paths  # noqa: PLC0415
 
@@ -536,6 +550,13 @@ def _resolve_space_target(target: str | None) -> Path | None:
             return cfg.path
     except Exception:  # noqa: BLE001
         pass
+    # A target that LOOKS like a path (a separator, `.`, `~`) but resolved to nothing is
+    # a missing directory, not a malformed space name — say so instead of letting
+    # `_validate_slug` reject `../foo` as "invalid space name: use lowercase letters".
+    if any(ch_ in target for ch_ in ("/", "\\")) or target.startswith((".", "~")):
+        raise typer.BadParameter(
+            f"No such directory: {resolve_user_path(target)} (resolved from where you ran navig)."
+        )
     cand = _spaces_dir(create=False) / _validate_slug(target)
     return cand if cand.is_dir() else None
 
@@ -549,6 +570,40 @@ def _resolve_space_name(space_path: Path) -> str:
         return m.resolved_id or m.resolved_name or space_path.name
     except Exception:  # noqa: BLE001
         return space_path.name
+
+
+def _gitignore_check(space_path: Path, chk) -> dict:
+    """One doctor row: does this space's .gitignore let its plans/skills/wiki be committed?
+
+    Three states, read-only:
+      ✓ managed block present, no blanket ``.navig/`` outside it → committable;
+      ⚠ a blanket ``.navig/`` rule outside the block (the pre-#1426 scaffold head, or the
+        operator's own) → nothing under .navig/ can be committed, whatever the block says;
+      ⚠ no managed block at all → ``navig wire`` has never run here.
+    A missing .gitignore is the third case too (the space is not tracked as a repo yet, or
+    the operator removed it) — reported, never written, since doctor without --fix reads only.
+    """
+    from navig.spaces.gitignore import MANAGED_END, MANAGED_START, blanket_navig_rule_outside_block
+
+    gi = space_path / ".gitignore"
+    try:
+        text = gi.read_text(encoding="utf-8") if gi.is_file() else ""
+    except OSError as exc:
+        return chk(False, ".gitignore", f"unreadable ({exc.__class__.__name__}) — could not verify",
+                   warn=True, action="manual")
+    has_block = MANAGED_START in text and MANAGED_END in text
+    if blanket_navig_rule_outside_block(text):
+        return chk(
+            False, ".gitignore — plans/skills/wiki committable",
+            "a blanket `.navig/` rule outside the managed block excludes the whole directory; "
+            "remove that line (private state stays ignored by the block)",
+            warn=True, action="retire-navig-rule",
+        )
+    if not has_block:
+        return chk(False, ".gitignore — navig managed block",
+                   "absent — `navig wire` adds it (keeps .navig/ private state ignored)")
+    return chk(True, ".gitignore — plans/skills/wiki committable",
+               "managed block present · private state ignored")
 
 
 def _diagnose_space(space_path: Path, name: str) -> dict:
@@ -586,6 +641,13 @@ def _diagnose_space(space_path: Path, name: str) -> dict:
     # a check the user has no way to satisfy.
     for inc in dict.fromkeys(plan.get("incomplete", [])):
         structure.append(chk(False, "navig install incomplete", inc, action="manual"))
+    # What the space COMMITS. The scaffold's .gitignore keeps only private state under
+    # .navig/ ignored (inbox/state/vault/memory/refs/…); a blanket `.navig/` rule anywhere
+    # OUTSIDE the managed block excludes the whole directory, and nothing inside the
+    # block can re-include a path whose parent is excluded — so plans, skills and wiki
+    # silently never reach a commit. `navig wire` retires the scaffold's old head when it
+    # is verbatim and warns otherwise; this is the read-only view of the same fact.
+    structure.append(_gitignore_check(space_path, chk))
     groups.append({"name": "Structure", "checks": structure})
 
     # 2) Wiring — root links + capability junctions (what makes skills visible to Claude Code).
@@ -642,10 +704,25 @@ def _diagnose_space(space_path: Path, name: str) -> dict:
         )
         # Registration is best-effort (a space still works locally unindexed) → a soft warning,
         # never a hard "missing" that would fail the exit code.
-        reg.append(chk(registered, "registered in ~/.navig/spaces.json",
-                       "" if registered else "not indexed — run --fix to add it", warn=not registered))
-    except Exception:  # noqa: BLE001
-        reg.append(chk(True, "registry", "check skipped", warn=True))
+        from navig.spaces import registry as _registry  # noqa: PLC0415
+
+        other = None if registered else _registry.id_taken_by_another_path(name, space_path)
+        if other:
+            # `--fix` will NOT register this: a second entry under the same id makes every
+            # `space use <id>` answer whichever came first. Say who holds it.
+            reg.append(chk(False, "registered in ~/.navig/spaces.json",
+                           f"id '{name}' already belongs to {other} — "
+                           f"`navig space rename {space_path} <other-id>` or `navig space forget {name}`",
+                           warn=True, action="manual"))
+        else:
+            reg.append(chk(registered, "registered in ~/.navig/spaces.json",
+                           "" if registered else "not indexed — run --fix to add it",
+                           warn=not registered))
+    except Exception as exc:  # noqa: BLE001
+        # ⚠ not `chk(True, …)`: ok=True renders a green ✓, and a ✓ over a check that never
+        # ran tells the operator not to look — the one thing a health row must never do.
+        reg.append(chk(False, "registry", f"check skipped ({exc.__class__.__name__}) — could not verify",
+                       warn=True, action="manual"))
     groups.append({"name": "Registry", "checks": reg})
 
     # 5) AI assistants — is the space legible to each agent tool (Claude/Copilot/Cursor/…)?
@@ -863,6 +940,71 @@ def _validate_slug(name: str) -> str:
     )
 
 
+def _refuse_if_id_taken(
+    space_id: str, space_path: Path, *, dry_run: bool = False, hint: str = "init"
+) -> None:
+    """Exit 1 with the other path named if *space_id* already belongs to a different space.
+
+    One id, one space. A duplicate is not a warning: every id lookup after it answers
+    whichever entry came first. Dry-run reports it too — a preview that hides the one
+    thing that would stop the real run is not a preview. *hint* picks the way out that
+    fits the caller: ``init`` (no manifest yet — pick another name) or ``rename`` (the
+    folder is already a space — re-id it).
+    """
+    try:
+        from navig.spaces import registry as _registry  # noqa: PLC0415
+
+        other = _registry.id_taken_by_another_path(space_id, space_path)
+    except Exception:  # noqa: BLE001 — a locked/corrupt registry must not block init
+        return
+    if not other:
+        return
+    if hint == "rename":
+        way_out = f"  navig space rename {space_path} <other-id>"
+    else:
+        way_out = f"  navig space init <other-name> --path {space_path}"
+    ch.error(
+        f"'{space_id}' is already the id of another space: {other}",
+        details="One id, one space — a second entry would make `navig space use "
+                f"{space_id}` answer whichever came first. Either give this one another id:\n"
+                f"{way_out}\n"
+                f"or, if that space is gone, forget it first:  navig space forget {space_id}"
+                + ("\n(dry run — nothing was written either way)" if dry_run else ""),
+    )
+    raise typer.Exit(1)
+
+
+def _slug_from_folder(folder: Path) -> str:
+    """Derive a space slug from a folder name — ``My Project`` → ``my-project``.
+
+    Used only when the operator did not type a name. Returns ``""`` when nothing
+    usable survives (a drive root, a folder named ``___``), which the caller turns
+    into "tell me the name" rather than inventing one.
+    """
+    raw = (folder.name or "").strip().lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", raw).strip("-")
+    # _SLUG_RE caps the length at 30; trim on a hyphen so the result stays readable
+    # rather than ending mid-word.
+    if len(slug) > 30:
+        slug = slug[:30].rstrip("-")
+    return slug if _SLUG_RE.match(slug) else ""
+
+
+def _refuse_inferred_target(target: Path) -> str:
+    """Why an INFERRED target must not be scaffolded, or ``""`` if it is fine.
+
+    Only ever applied to a directory navig chose itself. An explicit ``--path`` is
+    the operator's call and is never second-guessed — but a bare ``navig space init``
+    typed in the wrong terminal should not quietly seed 100+ items into ``~``.
+    """
+    resolved = target.resolve()
+    if resolved == resolved.parent:
+        return "that is a filesystem root"
+    if resolved == Path.home().resolve():
+        return "that is your home directory"
+    return ""
+
+
 # ── Default callback — `navig space` → `navig space list` ────────────────────
 
 
@@ -939,10 +1081,16 @@ def _space_install(
 @space_app.command("create")
 @space_app.command("init")
 def space_create(
-    name: str = typer.Argument(..., help="Space name — slug format: a-z0-9 and hyphens"),
+    name: str | None = typer.Argument(
+        None,
+        help="Space name — slug format: a-z0-9 and hyphens. Omit it to name the space "
+             "after the target folder (`My Project` becomes `my-project`).",
+    ),
     path: Path | None = typer.Option(
         None, "--path", "-p",
-        help="Initialize at this directory instead of ~/.navig/spaces/<name> (e.g. D:\\spaces\\company).",
+        help="Initialize at this directory instead of ~/.navig/spaces/<name>. Relative paths "
+             "are read from where you ran the command, so `--path .` turns the folder you are "
+             "standing in into a space (e.g. --path . or D:\\spaces\\company).",
     ),
     no_links: bool = typer.Option(
         False, "--no-links",
@@ -960,6 +1108,22 @@ def space_create(
 ) -> None:
     """Create/initialize a space.
 
+    **Both arguments are optional, and each defaults to the other's answer:**
+
+    ==================================== ================== ==========================
+    Command                              Space name         Created in
+    ==================================== ================== ==========================
+    ``navig space init``                 the folder you are the folder you are in
+                                         standing in
+    ``navig space init foo``             ``foo``            ``~/.navig/spaces/foo``
+    ``navig space init --path D:\\work``  ``work``           ``D:\\work``
+    ``navig space init foo --path .``    ``foo``            the folder you are in
+    ==================================== ================== ==========================
+
+    In one line: *the name defaults to the target folder's name, and the target
+    folder defaults to where you ran the command.* So the common case — "make this
+    project a space" — is a bare ``navig space init``.
+
     Scaffolds the canonical structure — ``.navig/{plans,inbox,memory,state,wiki}``
     plus the ``.dev/`` · ``.local/`` (both gitignored) · ``docs/`` hygiene
     zones — and links ``./plans`` → ``.navig/plans`` and ``./.inbox`` →
@@ -976,8 +1140,43 @@ def space_create(
     adds what's missing and never overwrites, truncates, or deletes anything you
     already have. Use ``--dry-run`` to preview first.
     """
-    name = _validate_slug(name)
-    space_path = path.expanduser().resolve() if path else _spaces_dir() / name
+    # Resolve the TARGET first, because the name is derived from it when omitted.
+    # A name with no --path keeps the historical destination (~/.navig/spaces/<name>);
+    # everything else follows the folder.
+    inferred_target = path is None and not name
+    if path is not None:
+        space_path = resolve_user_path(path)
+    elif name:
+        space_path = _spaces_dir() / _validate_slug(name)
+    else:
+        space_path = invocation_cwd().resolve()
+
+    if inferred_target and (reason := _refuse_inferred_target(space_path)):
+        ch.error(
+            f"Refusing to initialize a space in {space_path} — {reason}.",
+            details="Run it from the project folder, or name the target explicitly:\n"
+                    "  navig space init <name>            # in ~/.navig/spaces/<name>\n"
+                    f"  navig space init --path {space_path}   # if you really meant here",
+        )
+        raise typer.Exit(1)
+
+    if name:
+        name = _validate_slug(name)
+    else:
+        name = _slug_from_folder(space_path)
+        if not name:
+            ch.error(
+                f"Cannot derive a space name from {space_path}.",
+                details="Give one explicitly: navig space init <name> "
+                        "(lowercase letters, digits, hyphens).",
+            )
+            raise typer.Exit(1)
+        ch.info(f"Naming the space after the folder: [bold]{name}[/bold]")
+
+    # The id must be unique in the registry. `register` keys on PATH, so a second folder
+    # with the same name used to append a duplicate id — `space use <id>` then answered
+    # whichever came first. Refuse BEFORE anything is written, and say what to do.
+    _refuse_if_id_taken(name, space_path, dry_run=dry_run)
 
     # Refuse to scaffold "into" a regular file — never clobber it.
     if space_path.exists() and not space_path.is_dir():
@@ -988,6 +1187,7 @@ def space_create(
         raise typer.Exit(1)
 
     existed = space_path.is_dir() and any(space_path.iterdir())
+    was_space = (space_path / ".navig").is_dir()  # a space already, not merely a non-empty folder
 
     if not dry_run:
         try:
@@ -1009,9 +1209,12 @@ def space_create(
         try:
             from navig.spaces import registry as _registry  # noqa: PLC0415
 
+            # "root" means it lives under ~/.navig/spaces; anything else is external.
+            # Keyed off where the space ACTUALLY landed, not off whether --path was
+            # typed: a bare `navig space init` infers the operator's own folder, which
+            # is external even though no --path was given.
             _registry.register(
-                space_path, id=name, name=name,
-                source="external" if path else "root", enabled=True,
+                space_path, id=name, name=name, source=_registry.source_for(space_path), enabled=True,
             )
         except Exception:  # noqa: BLE001 — registry is best-effort, never block init
             pass
@@ -1046,13 +1249,20 @@ def space_create(
         if book:
             ch.info(f"[yellow]DRY RUN:[/yellow] Would set the finance book: {book}")
     else:
-        verb = "Initialized structure in existing" if existed else "Created"
-        ch.success(f"{verb} space '{name}'.", details=str(space_path))
+        # "existing space" was printed for ANY non-empty folder — a README and a .git
+        # made a project read as a space it never was. Say which it was.
+        if was_space:
+            headline = f"Initialized structure in existing space '{name}'."
+        elif existed:
+            headline = f"Turned existing folder into space '{name}'."
+        else:
+            headline = f"Created space '{name}'."
+        ch.success(headline, details=str(space_path))
         if book:
             ch.info(f"  book: {book} — separate finance ledger (Harbor)")
         ch.info(f"+{nc} created · {ns} existing left untouched · "
                 ".navig/{plans,inbox,memory,state,wiki} · .dev/ · .local/ · docs/ "
-                "(.navig/.dev/.local gitignored)")
+                "(.dev/.local gitignored · .navig/ committable except private state)")
         for m in link_msgs:
             ch.info(f"  link: {m}")
         for m in cap_msgs:
@@ -1454,6 +1664,25 @@ def _doctor_interactive_loop(space_path: Path, name: str) -> None:
             for m in _wire_agents(space_path, name):
                 cons.print(f"  [dim]{m}[/]")
             ch.success("Wired for all AI assistants.")
+        elif action == "retire":
+            from navig.spaces.gitignore import (  # noqa: PLC0415
+                blanket_navig_rule_lines,
+                retire_blanket_navig_rules,
+            )
+
+            gi_path = space_path / ".gitignore"
+            text = gi_path.read_text(encoding="utf-8")
+            lines = text.splitlines()
+            cons.print("\n[bright_cyan]This would remove from .gitignore:[/]")
+            for n in blanket_navig_rule_lines(text):
+                cons.print(f"  [dim]{n:>3}[/]  [red]- {lines[n - 1]}[/]")
+            cons.print("  [dim]The managed block keeps .navig/{inbox,state,vault,memory,refs,…} "
+                       "ignored; plans, skills and wiki become committable.[/]")
+            if not typer.confirm("Remove these lines?", default=False):
+                cons.print("[dim]Left as is.[/]")
+                continue  # nothing changed on disk
+            removed = retire_blanket_navig_rules(space_path)
+            ch.success(f"Removed {len(removed)} line(s) from .gitignore.")
         elif action == "inbox":
             cons.print(
                 "\n[bright_cyan]Configure /inbox[/]\n"
@@ -1687,13 +1916,21 @@ def _apply_fix(space_path: Path, name: str) -> int:
     _migrate_context(space_path, name)
     _link_space_roots(space_path)
     _link_space_capabilities(space_path)
+    # The gitignore row doctor reports is repaired by the same code `navig wire` runs.
+    from navig.spaces.gitignore import reconcile as _reconcile_gitignore  # noqa: PLC0415
+
+    gi_actions = _reconcile_gitignore(space_path)
     try:
         from navig.spaces import registry as _registry  # noqa: PLC0415
 
-        _registry.ensure_registered(space_path, id=name, name=name, source="root")
+        # never create a duplicate id from a repair either; doctor's own row will say why
+        if not _registry.id_taken_by_another_path(name, space_path):
+            _registry.ensure_registered(
+                space_path, id=name, name=name, source=_registry.source_for(space_path)
+            )
     except Exception:  # noqa: BLE001
         pass
-    return len(summary["created"])
+    return len(summary["created"]) + sum(1 for a in gi_actions if not a.startswith("⚠"))
 
 
 def _doctor_menu_options(diag: dict) -> list[tuple[str, str]]:
@@ -1708,6 +1945,9 @@ def _doctor_menu_options(diag: dict) -> list[tuple[str, str]]:
         opts.append(("agents", "Wire for AI assistants — Copilot · Cursor · Gemini · Codex/AGENTS.md"))
     if any(c.get("action") == "configure" for c in checks):
         opts.append(("inbox", "How to configure /inbox for this project"))
+    if any(c.get("action") == "retire-navig-rule" for c in checks):
+        opts.append(("retire", "Remove your blanket `.navig/` rule from .gitignore — shows the lines, "
+                               "asks first (private state stays ignored)"))
     return opts
 
 
@@ -1922,14 +2162,23 @@ def space_register(
     from navig.spaces.contracts import normalize_space_name  # noqa: PLC0415
     from navig.spaces.space_manifest import is_space_dir, load_space_manifest  # noqa: PLC0415
 
-    target = path.expanduser().resolve()
+    target = resolve_user_path(path)
     if not target.is_dir() or not is_space_dir(target):
         ch.error(f"Not a space: {target}", details="A space is a folder containing a .navig/ directory.")
         raise typer.Exit(1)
     manifest = load_space_manifest(target)
     sid = normalize_space_name(manifest.resolved_id or target.name)
+    # The one register site that skipped the id check: `register ~/other/homelab` after
+    # `init homelab` elsewhere appended a second `homelab` row, exactly what init/wire/
+    # doctor refuse. `source` was also hardcoded "external" — a folder under
+    # ~/.navig/spaces registered by hand was filed as foreign.
+    _refuse_if_id_taken(sid, target, hint="rename")
     entry = space_registry.register(
-        target, id=sid, name=manifest.resolved_name or target.name, source="external", enabled=True
+        target,
+        id=sid,
+        name=manifest.resolved_name or target.name,
+        source=space_registry.source_for(target),
+        enabled=True,
     )
     ch.success(f"Registered space '{entry['id']}' (enabled).", details=str(target))
 
@@ -1943,6 +2192,154 @@ def space_forget(name: str = typer.Argument(..., help="Space name or path to for
         ch.success(f"Forgot space '{name}' (folder left intact).")
     else:
         ch.warning(f"'{name}' is not registered.")
+
+
+def _display_name_for(slug: str) -> str:
+    """The display name ``space init`` derives from a slug — ``home-lab`` → ``Home Lab``."""
+    return slug.replace("-", " ").replace("_", " ").title()
+
+
+def _retarget_navig_md_space(space_path: Path, old: str, new: str) -> bool:
+    """Rewrite ``space: <old>`` → ``space: <new>`` in NAVIG.md's frontmatter, if present.
+
+    The frontmatter carries the id as a human-visible label (``_navig_md_template``);
+    nothing machine-reads it, so a stale value is confusion rather than breakage —
+    but "rename" that leaves the file saying the old name is half a rename. Only the
+    leading ``---`` block is touched, only an exact ``space: <old>`` line, and only
+    when the file parses as one; anything else is left alone. Returns whether it wrote.
+    """
+    md = space_path / "NAVIG.md"
+    if not md.is_file():
+        return False
+    try:
+        text = md.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    if not text.startswith("---\n"):
+        return False
+    end = text.find("\n---", 4)
+    if end < 0:
+        return False
+    head, tail = text[: end + 1], text[end + 1 :]
+    lines = head.split("\n")
+    changed = False
+    for i, line in enumerate(lines):
+        if line.strip() == f"space: {old}":
+            lines[i] = f"space: {new}"
+            changed = True
+    if not changed:
+        return False
+    try:
+        atomic_write_text(md, "\n".join(lines) + tail)
+    except OSError:
+        return False
+    return True
+
+
+@space_app.command("rename")
+def space_rename(
+    space: str = typer.Argument(..., help="The space to rename — its id, or a path to its folder"),
+    new_id: str = typer.Argument(..., help="New id: lowercase letters, digits, hyphens"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Report what would change; write nothing"),
+) -> None:
+    """Give a space a new id — manifest, registry and the active-space pointer together.
+
+    The id is what `navig space use <id>` answers to. It lives in three places and they
+    drift the moment one is edited by hand: `.navig/space.json` (the source of truth —
+    discovery re-derives everything else from it), the registry row in `spaces.json`,
+    and the active-space pointer if this is the space you stand in. The manifest is
+    written FIRST, so if the registry write fails the next discovery repairs the row
+    from the manifest rather than the other way round. The folder is never moved.
+    """
+    from navig.spaces import registry as space_registry  # noqa: PLC0415
+    from navig.spaces.contracts import normalize_space_name  # noqa: PLC0415
+    from navig.spaces.space_manifest import (  # noqa: PLC0415
+        ManifestNotWritable,
+        is_space_dir,
+        load_space_manifest,
+        set_manifest_field,
+    )
+
+    target = _resolve_space_target(space)
+    if target is None or not target.is_dir() or not is_space_dir(target):
+        ch.error(
+            f"Not a space: {space}",
+            details="Pass a registered space id, or a path to a folder holding a .navig/ directory.",
+        )
+        raise typer.Exit(1)
+
+    new = normalize_space_name(_validate_slug(new_id))
+    if new != new_id.strip().lower():
+        # `foo-space` → `foo`, and the documented aliases: say what the id will actually be.
+        ch.info(f"'{new_id}' normalises to '{new}' — that is the id every lookup will use.")
+
+    manifest = load_space_manifest(target)
+    old = normalize_space_name(manifest.resolved_id or target.name)
+    if old == new:
+        ch.info(f"'{old}' is already the id of {target} — nothing to do.")
+        return
+
+    _refuse_if_id_taken(new, target, dry_run=dry_run, hint="rename")
+
+    active = resolve_active_space()
+    is_active = bool(active) and normalize_space_name(active) == old
+    registered = space_registry.entry_for(target) is not None
+    # Labels DERIVED from the old id follow it; a label someone chose stays.
+    follow_name = manifest.get("name") == old
+    follow_display = manifest.get("display_name") == _display_name_for(old)
+    navig_md = target / "NAVIG.md"
+    follow_md = False
+    if navig_md.is_file():
+        try:
+            follow_md = f"\nspace: {old}\n" in navig_md.read_text(encoding="utf-8")[:2000]
+        except OSError:
+            follow_md = False
+
+    plan = [f"space.json id: {old} → {new}"]
+    if follow_name:
+        plan.append(f"space.json name: {old} → {new}")
+    if follow_display:
+        plan.append(f"space.json display_name: {_display_name_for(old)} → {_display_name_for(new)}")
+    if follow_md:
+        plan.append(f"NAVIG.md frontmatter: space: {old} → {new}")
+    plan.append("registry row re-keyed" if registered else "registry: not registered — untouched")
+    if is_active:
+        plan.append(f"active space pointer: {old} → {new}")
+    if target.name != new:
+        plan.append(f"folder stays {target} (rename never moves it)")
+
+    if dry_run:
+        ch.info(f"Would rename '{old}' → '{new}' for {target}:", details="\n".join(plan))
+        ch.info("(dry run — nothing was written)")
+        return
+
+    try:
+        set_manifest_field(target, "id", new, id_hint=new)
+        if follow_name:
+            set_manifest_field(target, "name", new, id_hint=new)
+        if follow_display:
+            set_manifest_field(target, "display_name", _display_name_for(new), id_hint=new)
+    except ManifestNotWritable as exc:
+        ch.error(f"Could not write the manifest for {target}: {exc}", details="Nothing was changed.")
+        raise typer.Exit(1) from exc
+    if follow_md:
+        _retarget_navig_md_space(target, old, new)
+
+    try:
+        space_registry.rename(target, new)
+    except ValueError as exc:  # a holder appeared between the check and the write
+        ch.error(
+            f"Manifest renamed, registry NOT: {exc}",
+            details=f"Run `navig space doctor {target}` — the registry re-derives from the manifest.",
+        )
+        raise typer.Exit(1) from exc
+
+    if is_active:
+        _set_active_space(new)
+
+    ch.success(f"Renamed space '{old}' → '{new}'.", details="\n".join(plan))
+    if not registered:
+        ch.info(f"Register it when you want it in the deck: navig space register {target}")
 
 
 # ── Fold: demote a nested space so it never claims a top-level id ────────────
@@ -1966,7 +2363,7 @@ def space_fold(
     from navig.spaces.resolver import FOLD_MARKER  # noqa: PLC0415
     from navig.spaces.space_manifest import is_space_dir  # noqa: PLC0415
 
-    target = path.expanduser().resolve()
+    target = resolve_user_path(path)
     if not target.is_dir() or not is_space_dir(target):
         ch.error(
             f"Not a space: {target}",
@@ -2014,7 +2411,7 @@ def space_unfold(
     from navig.spaces.resolver import FOLD_MARKER, FOLDED_DIR  # noqa: PLC0415
     from navig.spaces.space_manifest import is_space_dir  # noqa: PLC0415
 
-    target = path.expanduser().resolve()
+    target = resolve_user_path(path)
     hard = target / FOLDED_DIR
     if not target.is_dir() or not (is_space_dir(target) or hard.is_dir()):
         ch.error(
@@ -2071,5 +2468,17 @@ try:  # pragma: no cover - registration glue
     from navig.commands.wire import wire_command as _wire_command
 
     space_app.command("wire", help="Wire this folder into the agent ecosystem (alias of `navig wire`).")(_wire_command)
+except Exception:  # noqa: BLE001
+    pass
+
+
+# `navig space media` — the code/media split: verify and repair the `.media`
+# directory links that attach a lean code tree to a separate media tree. Kept in
+# its own module so this one stays readable; mounted here because the links are
+# space wiring, not a separate product.
+try:  # pragma: no cover - registration glue
+    from navig.commands.space_media import media_app as _media_app
+
+    space_app.add_typer(_media_app, name="media")
 except Exception:  # noqa: BLE001
     pass

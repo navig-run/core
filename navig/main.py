@@ -824,6 +824,14 @@ def main() -> None:
                     handled = False
                 if not handled:
                     _suggest_did_you_mean(command_tokens[0])
+            elif command_tokens:
+                # A REGISTERED command that still failed usage — the one shape
+                # worth a hint is a transposed `<command> <group>` (`navig init
+                # space`); everything else here is a genuine bad flag/argument.
+                try:
+                    _suggest_transposed_command(cli_app, command_tokens)
+                except Exception as _te:  # noqa: BLE001 — never mask the exit
+                    _log.debug("transposed-command suggestion failed: %s", _te)
         raise
     except Exception as e:
         # A missing optional plugin is a CONFIGURATION state, not a bug — routing it
@@ -848,6 +856,25 @@ def main() -> None:
         crash_handler.handle_exception(e)
 
 
+def _subgroup_named(node, name: str):
+    """The sub-Typer registered on *node* under *name*, or None."""
+    for group in getattr(node, "registered_groups", None) or []:
+        if group.name == name:
+            return group.typer_instance
+    return None
+
+
+def _has_command_named(node, name: str) -> bool:
+    """True if a plain command (not a group) named *name* is registered on *node*."""
+    for cmd in getattr(node, "registered_commands", None) or []:
+        cmd_name = cmd.name or (
+            cmd.callback.__name__.replace("_", "-") if cmd.callback else ""
+        )
+        if cmd_name == name:
+            return True
+    return False
+
+
 def _is_registered_command(app, name: str) -> bool:
     """True if *name* is a command/group actually registered on the typer app.
 
@@ -857,18 +884,65 @@ def _is_registered_command(app, name: str) -> bool:
     if app is None:
         return False
     try:
-        for group in app.registered_groups:
-            if group.name == name:
-                return True
-        for cmd in app.registered_commands:
-            cmd_name = cmd.name or (
-                cmd.callback.__name__.replace("_", "-") if cmd.callback else ""
-            )
-            if cmd_name == name:
-                return True
+        return _subgroup_named(app, name) is not None or _has_command_named(app, name)
     except Exception:  # noqa: BLE001 — never break exit handling over a lookup
-        pass
-    return False
+        return False
+
+
+def _resolves_as_command_path(app, tokens: list[str]) -> bool:
+    """True if ``navig <tokens…>`` names a real ``<group…> <command>`` path.
+
+    Walks the registered typer structure (the cheap half of
+    ``typer.main.get_command``) rather than building the click command tree —
+    this only runs on an invocation that has already failed, but it should still
+    cost nothing noticeable. Every token but the last must be a GROUP; the last
+    must be a command in the innermost one.
+    """
+    if app is None or not tokens:
+        return False
+    try:
+        node = app
+        for token in tokens[:-1]:
+            node = _subgroup_named(node, token)
+            if node is None:
+                return False
+        return _has_command_named(node, tokens[-1])
+    except Exception:  # noqa: BLE001 — never break exit handling over a lookup
+        return False
+
+
+def _suggest_transposed_command(app, tokens: list[str]) -> bool:
+    """``navig init space`` → *Did you mean: navig space init*.
+
+    The one usage error `_suggest_did_you_mean` structurally cannot see: the first
+    token IS a registered command, so the "unknown command" branch is skipped by
+    design (it must not fire on ``navig github --badflag``). This branch is
+    narrower still — it fires only when the operator's own order FAILED and the
+    two leading tokens, swapped, name a real ``<group> <command>`` path. A flag
+    is never transposed, so a bad option on a real command can never produce a
+    hint. Trailing POSITIONAL tokens are carried across (``navig init space foo``
+    → ``navig space init foo``); flags are not, because ``extract_non_global_tokens``
+    drops every flag, global or not — the hint names the command path, and the
+    operator re-adds their options.
+
+    Returns True when a hint was printed.
+    """
+    if len(tokens) < 2 or tokens[0].startswith("-") or tokens[1].startswith("-"):
+        return False
+    swapped = [tokens[1], tokens[0]]
+    if not _resolves_as_command_path(app, swapped):
+        # External groups are registered lazily from argv, and argv named the
+        # WRONG group — so `space` is not on the app yet. Register just that
+        # candidate (one module import) and look again.
+        from navig.cli.registration import ensure_group_registered
+
+        if not ensure_group_registered(app, swapped[0]):
+            return False
+        if not _resolves_as_command_path(app, swapped):
+            return False
+    _eprint("\n[yellow]Did you mean?[/yellow]")
+    _eprint(f"  navig {' '.join(swapped + tokens[2:])}")
+    return True
 
 
 def _suggest_did_you_mean(unknown: str) -> None:

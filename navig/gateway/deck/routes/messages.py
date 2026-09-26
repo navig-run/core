@@ -144,7 +144,13 @@ async def handle_deck_messages_contact_add(request: "web.Request") -> "web.Respo
         from navig.store.contacts import get_contact_store, normalize_phone
 
         if phone:
-            routes.append(f"{network}:{normalize_phone(phone)}")
+            normalised = normalize_phone(phone)
+            if not normalised:
+                # normalize_phone now refuses a non-number (too long for
+                # E.164, no digits). Say so, rather than building the route
+                # "sms:" and surfacing a parse error the caller cannot act on.
+                return _err(f"not a usable phone number: {phone!r}", status=400)
+            routes.append(f"{network}:{normalised}")
         default_network = body.get("default_network") or (network if phone else None)
         store = get_contact_store()
         if store.resolve_alias(alias):  # upsert routes onto an existing contact
@@ -182,7 +188,13 @@ async def handle_deck_messages_contact_update(request: "web.Request") -> "web.Re
             )
         add_route = body.get("add_route")
         if not add_route and body.get("phone"):
-            add_route = f"{(body.get('network') or 'sms').strip().lower()}:{normalize_phone(body['phone'])}"
+            normalised = normalize_phone(body["phone"])
+            if not normalised:
+                return _err(
+                    f"not a usable phone number: {body['phone']!r}", status=400
+                )
+            network = (body.get("network") or "sms").strip().lower()
+            add_route = f"{network}:{normalised}"
         if add_route:
             store.add_route(alias, str(add_route))
         if body.get("remove_route"):

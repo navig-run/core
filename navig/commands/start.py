@@ -38,7 +38,6 @@ def run_quick_start(
 ) -> None:
     """Start NAVIG services (gateway + bot) with sensible defaults."""
     import os
-    import subprocess
     import sys
 
     from navig import console_helper as ch
@@ -58,7 +57,19 @@ def run_quick_start(
 
         port, _host = _load_gateway_cli_defaults()
 
-    if gateway and bot:
+    if bot and background:
+        # One policy for every background bot launch (navig.daemon.launch) — the
+        # running daemon, else the installed service (a living parent), else a
+        # detached worker that writes worker.pid.
+        from navig.daemon.launch import start_bot_in_background
+
+        how = start_bot_in_background(gateway=gateway, port=port, ch=ch)
+        if how == "spawned" and gateway:
+            ch.info(f"  Gateway: http://localhost:{port}")
+        ch.info("  Status: navig bot status")
+        ch.info("  Stop: navig bot stop")
+
+    elif gateway and bot:
         ch.info("Starting NAVIG (Gateway + Telegram Bot)...")
         cmd = [
             sys.executable,
@@ -67,50 +78,13 @@ def run_quick_start(
             "--port",
             str(port),
         ]
-        if background:
-            if sys.platform == "win32":
-                subprocess.Popen(
-                    cmd,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                subprocess.Popen(
-                    cmd,
-                    start_new_session=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            ch.success("Started in background")
-            ch.info(f"  Gateway: http://localhost:{port}")
-            ch.info("  Status: navig bot status")
-            ch.info("  Stop: navig bot stop")
-        else:
-            os.execv(sys.executable, cmd)
+        os.execv(sys.executable, cmd)
 
     elif bot:
         ch.info("Starting NAVIG Telegram Bot (standalone)...")
         ch.warning("⚠️  Conversations reset on restart")
         cmd = [sys.executable, "-m", "navig.daemon.telegram_worker", "--no-gateway"]
-        if background:
-            if sys.platform == "win32":
-                subprocess.Popen(
-                    cmd,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                subprocess.Popen(
-                    cmd,
-                    start_new_session=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            ch.success("Started in background")
-        else:
-            os.execv(sys.executable, cmd)
+        os.execv(sys.executable, cmd)
 
     elif gateway:
         from navig.commands.gateway import gateway_start

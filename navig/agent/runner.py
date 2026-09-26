@@ -248,6 +248,7 @@ async def run_agent(config: AgentConfig | None = None) -> None:
 
         # Report which channels are actually active
         listener_status = agent.ears.get_listener_status()
+        listener_errors = agent.ears.get_listener_errors()
         active_channels = [name for name, running in listener_status.items() if running]
         channel_str = ", ".join(active_channels) if active_channels else "none"
 
@@ -255,11 +256,20 @@ async def run_agent(config: AgentConfig | None = None) -> None:
         print(f"  Mode       : {agent.config.mode}")
         print(f"  Personality: {agent.config.personality.profile}")
         print(f"  Channels   : {channel_str}")
+        # An ENABLED channel that failed to start is not the same as a disabled
+        # one, and the line above cannot tell them apart — it lists only what is
+        # running. Say which ones were expected and why they are missing.
+        for name, why in listener_errors.items():
+            print(f"  FAILED     : {name} — {why}")
         print(f"  PID        : {os.getpid()}")
         if not active_channels:
             print()
-            print("  NOTE: No input channels are active (Telegram/MCP/API all disabled).")
-            print("        The agent is running but cannot receive messages.")
+            if listener_errors:
+                print("  NOTE: No input channels are active — the enabled ones FAILED to start")
+                print("        (see FAILED above). The agent is running but cannot receive messages.")
+            else:
+                print("  NOTE: No input channels are active (Telegram/MCP/API all disabled).")
+                print("        The agent is running but cannot receive messages.")
             print("        For Telegram: run 'navig service start' instead.")
             print("        For console input: type below and press Enter.")
         else:

@@ -70,9 +70,14 @@ async def test_router_master_off(notify):
     assert feed.unread_count() == 0
 
 
-async def test_router_quiet_hours_mutes_non_deck(notify):
+async def test_router_quiet_hours_mutes_non_deck(notify, monkeypatch):
     prefs, feed, router = notify
     prefs.set_cell("reminder", "telegram", True)
+    # No gateway channel AND no operator chat configured → the direct-DM fallback reports
+    # "not configured" (and never touches the network in a test).
+    import navig.messaging.notify_operator as no
+
+    monkeypatch.setattr(no, "notify_operator", lambda text, **kw: False)
     h = datetime.now().hour
     prefs.set_setting("quiet_hours_enabled", True)
     prefs.set_setting("quiet_hours_start", h)
@@ -89,6 +94,24 @@ async def test_router_quiet_hours_mutes_non_deck(notify):
     assert "deck" in chans and "telegram" in chans
     tg = next(c for c in r2["channels"] if c["channel"] == "telegram")
     assert tg["ok"] is False  # not configured in tests
+
+
+async def test_router_telegram_falls_back_to_a_direct_operator_dm(notify, monkeypatch):
+    """The router's Telegram branch needed a gateway channel object that nothing ever
+    registered (configure_telegram() had no caller), so every dispatch to telegram —
+    daemon or CLI — reported 'not configured'. Without a channel it now DMs the operator
+    through the Bot API directly, and reports the real result."""
+    import navig.messaging.notify_operator as no
+
+    prefs, _feed, router = notify
+    prefs.set_cell("reminder", "telegram", True)
+    sent: list[str] = []
+    monkeypatch.setattr(no, "notify_operator", lambda text, **kw: sent.append(text) or True)
+
+    r = await router.dispatch("reminder", "Loud <one>", "now & then", priority="critical")
+    tg = next(c for c in r["channels"] if c["channel"] == "telegram")
+    assert tg["ok"] is True and tg["detail"] == "sent"
+    assert sent == ["<b>Loud &lt;one&gt;</b>\nnow &amp; then"]
 
 
 async def test_router_reports_channel_rejection_not_phantom_success(notify, monkeypatch):

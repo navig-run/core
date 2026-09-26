@@ -92,6 +92,114 @@ def test_shell_installer_starts_with_its_shebang(rel: str) -> None:
     )
 
 
+@pytest.mark.parametrize("rel", [p for p in PIPED_INSTALLERS if p.endswith(".sh")])
+def test_piped_shell_installers_have_no_carriage_returns(rel: str) -> None:
+    r"""A CR in a piped `.sh` is the same failure as a BOM, one line further in.
+
+    Measured against the live URL on GNU bash 5.3.9, `https://navig.run/install.sh` was
+    36,317 bytes of CRLF and did not survive parsing::
+
+        install.sh: line 28: syntax error near unexpected token `$'{\r''
+
+    -- so `curl -fsSL https://navig.run/install.sh | bash`, the documented install command,
+    failed for every Linux and macOS user before executing a single line.
+
+    Nothing in the repo was wrong, which is why no check saw it. The committed blob was LF
+    and byte-identical to `core/install.sh`; the CR was injected at CHECKOUT by git's Windows
+    default (`core.autocrlf=true`), because `core/.gitattributes` pinned `core/` and nothing
+    governed anywhere else. `next build` then copied `web/www/public/` verbatim and wrangler
+    uploaded those bytes -- so the artifact was broken when deployed from Windows and fine
+    when deployed from Linux.
+
+    This reads the WORKING TREE on purpose. The index is not what ships; the file on disk is.
+    """
+    raw = (REPO / rel).read_bytes()
+    assert b"\r" not in raw, (
+        f"{rel} contains carriage returns in the working tree. This is the copy a build "
+        "publishes, and real bash rejects a CRLF script with a syntax error on its first "
+        "brace -- before running anything.\n\n"
+        "It is almost certainly a CHECKOUT artifact rather than an edit: git on Windows "
+        "converts LF to CRLF unless a .gitattributes says otherwise. Re-materialise the "
+        f"file instead of editing it:\n\n    rm {rel} && git checkout -- {rel}\n\n"
+        "If the CRs come back, the root .gitattributes no longer pins this path -- add it "
+        "there, next to the other piped installers."
+    )
+
+
+def test_piped_shell_installers_are_pinned_to_lf() -> None:
+    """The BYTES are only correct until the next checkout; the attribute is what keeps them.
+
+    Checking bytes alone passes on a machine that happens to be Linux, or right after someone
+    normalised by hand, and goes on passing until the next clone re-breaks it. Assert the
+    mechanism as well as its current result.
+    """
+    import subprocess  # noqa: PLC0415 - only this test shells out
+
+    shells = [p for p in PIPED_INSTALLERS if p.endswith(".sh")]
+    proc = subprocess.run(
+        ["git", "check-attr", "eol", "--", *shells],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    if proc.returncode != 0:  # no git, or not a checkout -- do not invent a verdict
+        pytest.skip(f"git check-attr unavailable: {proc.stderr.strip() or proc.returncode}")
+
+    unpinned = [
+        line.rsplit(":", 2)[0]
+        for line in proc.stdout.splitlines()
+        if line.strip() and not line.rstrip().endswith(": lf")
+    ]
+    assert not unpinned, (
+        f"these piped shell installers have no `eol=lf` attribute: {unpinned}.\n\n"
+        "Without it a Windows checkout writes CRLF and a build publishes those bytes -- "
+        "which is exactly how navig.run/install.sh came to serve a script bash refuses to "
+        "parse. Add the path to the root .gitattributes beside the others."
+    )
+
+
+#: canonical -> the copy `web/www` serves at navig.run. Same script, two places in one repo.
+PUBLISHED_COPIES = (
+    ("core/install.sh", "web/www/public/install.sh"),
+    ("core/install.ps1", "web/www/public/install.ps1"),
+)
+
+
+@pytest.mark.parametrize(("canonical", "published"), PUBLISHED_COPIES)
+def test_published_installer_matches_its_canonical_source(canonical: str, published: str) -> None:
+    """`web/www/public/` is a COPY, and nothing local compared it to the original.
+
+    `scripts/published-installer.mjs` documents three copies and checks one hop of the
+    chain -- canonical against the PUBLIC REPO. The third copy is the one navig.run
+    actually serves, it lives in this repo, and the workflow that was supposed to sync it
+    is dead by location (it sits under `web/www/.github/workflows/`, a subdirectory, and
+    GitHub only runs workflows at a repository root). So a fix to `core/install.sh` could
+    land, pass every check, and leave the served file on the old content -- which is
+    exactly how the published copy kept a machine-wide `pkill -f 'navig'` for weeks after
+    it was fixed here.
+
+    This is the cheap half of that problem and the half a diff can actually fix: both
+    files are in this repo, so "did you update both" is answerable at commit time.
+
+    Compared with carriage returns removed, not byte-for-byte. Only the `.sh` copies are
+    pinned to LF (a CR there is an outage); the `.ps1` pair is deliberately left to the
+    platform, so their raw bytes differ by exactly one per line while the SCRIPT is the
+    same. Comparing raw bytes would fail for a difference that does not exist.
+    """
+    a = (REPO / canonical).read_bytes().replace(b"\r", b"")
+    b = (REPO / published).read_bytes().replace(b"\r", b"")
+    assert a == b, (
+        f"{published} has drifted from {canonical}.\n\n"
+        "That file is what navig.run serves, so the fix you just made is not the script "
+        "users download. The sync workflow for this hop does not run -- update the copy in "
+        f"the same change:\n\n    cp {canonical} {published}\n\n"
+        "(then re-materialise it if your checkout injects CRs: "
+        f"rm {published} && git checkout -- {published})"
+    )
+
+
 def test_every_listed_installer_exists() -> None:
     """Anti-vacuity: a parametrised test over paths that moved would silently pass nothing.
 

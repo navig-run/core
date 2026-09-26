@@ -710,9 +710,13 @@ def run_miniapp_deploy(
 
             tok = resolve_cf_token()
             if not tok:
+                from navig.core.vault_health import explain_missing_credential  # noqa: PLC0415
+
                 return {
                     "ok": False, "status": "no_cf_token",
-                    "error": "no Cloudflare credential — run `navig lighthouse login` or `navig vault add cloudflare`",
+                    "error": explain_missing_credential(
+                        "Cloudflare credential",
+                        "run `navig lighthouse login` or `navig vault add cloudflare`"),
                 }
             try:
                 from navig.cloud import deck_deploy

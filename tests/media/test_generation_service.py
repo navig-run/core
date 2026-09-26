@@ -133,3 +133,40 @@ async def test_history_is_space_scoped(wired):
     assert svc.history(space="/some/other/space") == []
     # all_spaces → global view sees them regardless of active space.
     assert len(svc.history(all_spaces=True)) >= 2
+
+
+class TestImageSizeIsNotSilentlyDropped:
+    """An unknown --size used to become the provider default, i.e. a square.
+
+    That is the worst shape of failure this repo has: the command exits 0, an image
+    appears, and the only evidence the request was ignored is the aspect ratio. It cost a
+    generation round and a square seed into an image-to-video model.
+    """
+
+    def _call(self, size, tmp_path):
+        import asyncio
+
+        from navig.media import generation_service as gen
+
+        return asyncio.run(gen._run_provider(
+            "image", "x", provider=None, size=size, kind="music",
+            duration_s=None, n=1, seed=None, out_dir=tmp_path,
+        ))
+
+    def test_an_unsupported_size_raises_and_names_the_supported_ones(self, tmp_path):
+        import pytest
+
+        from navig.tools.image_generation import ImageSize
+
+        with pytest.raises(ValueError, match="unknown --size"):
+            self._call("1024x1820", tmp_path)
+        try:
+            self._call("1024x1820", tmp_path)
+        except ValueError as exc:
+            # The message has to be actionable, not merely a refusal.
+            assert ImageSize.PORTRAIT_GPT.value in str(exc)
+
+    def test_the_portrait_size_the_winning_stills_used_is_supported(self):
+        from navig.tools.image_generation import ImageSize
+
+        assert "1024x1536" in {s.value for s in ImageSize}

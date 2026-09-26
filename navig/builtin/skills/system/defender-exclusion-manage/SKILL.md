@@ -1,4 +1,3 @@
-```skill
 ---
 name: defender-exclusion-manage
 description: Add, remove, and list Windows Defender exclusions (paths and processes) via PowerShell
@@ -79,4 +78,3 @@ navig sys defender exclude path --path "C:\USB" --dry-run
 - Don't exclude user profile root (C:\Users\{name}) — too broad
 - Exclusions persist until explicitly removed — use `list` to audit periodically
 - `--dry-run` shows the PowerShell command without executing it
-```

@@ -84,6 +84,55 @@ def test_render_uses_the_operator_facing_description():
     assert incidents.DECK_KEY_REIDENTIFIED not in body  # the id itself is never shown
 
 
+def test_the_push_carries_the_facts_doctor_prints():
+    """The phone used to get "check what else ran at that moment" with nothing to
+    check: the producer rendered the bare description and dropped the data. The
+    death's last heartbeat and the commands just before must reach the push."""
+    data = {
+        "previous_pid": 118488,
+        "last_seen_alive": "2026-09-14T18:01:40+00:00",
+        "nearby_commands": [
+            {
+                "at": "2026-09-14T18:01:13.985990Z",
+                "command": "navig cdp stop",
+                "session": "9f39fd34",
+            }
+        ],
+    }
+
+    _, body = ci.ConfigIncidentReporter._render(incidents.DAEMON_DIED_UNGRACEFULLY, data)
+
+    assert "last alive 18:01:40Z" in body
+    assert "navig cdp stop (9f39fd34) @ 18:01:13Z" in body
+    assert body == incidents.summarize(incidents.DAEMON_DIED_UNGRACEFULLY, data), (
+        "one renderer: the push and doctor must never drift"
+    )
+
+
+def test_a_corrupt_config_push_names_the_backup():
+    _, body = ci.ConfigIncidentReporter._render(
+        incidents.LOAD_FAILED, {"backup": "C:/x/config.yaml.corrupt"}
+    )
+    assert "config.yaml.corrupt" in body
+
+
+def test_on_incident_hands_the_data_to_the_render(monkeypatch):
+    """The seam that was broken: `on_incident(event, data)` received the data and
+    `_render(event)` never saw it."""
+    loop = _DummyLoop()
+    seen: list = []
+    r = ci.ConfigIncidentReporter(loop, sink=lambda *_: None)
+    monkeypatch.setattr(
+        ci.ConfigIncidentReporter,
+        "_render",
+        staticmethod(lambda ev, data=None: (seen.append(data), ("t", "b"))[1]),
+    )
+
+    r.on_incident(incidents.DAEMON_DIED_UNGRACEFULLY, {"last_seen_alive": "x"})
+
+    assert seen == [{"last_seen_alive": "x"}]
+
+
 def test_on_incident_never_raises_even_if_the_loop_is_hostile():
     class _Boom:
         def time(self):
@@ -138,17 +187,21 @@ async def test_end_to_end_record_pushes_through_the_installed_reporter(monkeypat
     monkeypatch.setattr("navig.notify.dispatch", fake_dispatch, raising=False)
     # Patch the module-level dispatch the reporter imports.
     import navig.notify as _n
+
     monkeypatch.setattr(_n, "dispatch", fake_dispatch, raising=False)
 
     ci.install_config_incident_reporter()
     try:
-        incidents.record(incidents.DECK_KEY_REIDENTIFIED, source="gateway")
+        incidents.record(
+            incidents.DECK_KEY_REIDENTIFIED, source="gateway", backup="/tmp/deck.corrupt"
+        )
         await asyncio.sleep(0.05)  # let the scheduled task run
     finally:
         ci.uninstall_config_incident_reporter()
 
     assert sent and sent[0][0] == "config_incident"
     assert incidents.DESCRIPTIONS[incidents.DECK_KEY_REIDENTIFIED] in sent[0][2]
+    assert "/tmp/deck.corrupt" in sent[0][2], "record() → hook → push must carry the data"
 
 
 # ── wiring: gateway MONITOR_KEYS and deck _MONITORS must not drift ────────────
@@ -244,8 +297,8 @@ def test_suppressed_incidents_are_reported_in_the_next_push():
     r = ci.ConfigIncidentReporter(loop, sink=lambda *_: None)
     r._throttle = _Throttle(window_s=1000.0, max_per_window=1, cooldown_s=0.0)
 
-    r.on_incident(incidents.DECK_KEY_REIDENTIFIED, {})   # allowed
-    r.on_incident(incidents.WIPE_REFUSED, {})     # suppressed — window full
+    r.on_incident(incidents.DECK_KEY_REIDENTIFIED, {})  # allowed
+    r.on_incident(incidents.WIPE_REFUSED, {})  # suppressed — window full
     assert len(loop.scheduled) == 1
 
     r._throttle.max_per_window = 5

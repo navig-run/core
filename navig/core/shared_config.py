@@ -77,6 +77,17 @@ class ConfigSingleton:
                 self._project_load_failed = False
                 self._project_cache_path: Path | None = None
                 self._project_cache_mtime_ns: int | None = None
+                # Global config was read ONCE and never again, while project config
+                # refreshed on every get(). A `navig config set` / `/lang` write was
+                # therefore invisible to this singleton for the life of the process
+                # — and the daemon lives for days.
+                self._global_cache_path: Path | None = None
+                self._global_cache_mtime_ns: int | None = None
+                # Global writes made since the last save, in order, as (dotted key →
+                # value). A refresh re-applies them on top of the fresh copy and a save
+                # is refresh → re-apply → write, so neither a read nor a save can lose
+                # what this process set — or what another one wrote meanwhile.
+                self._pending_global: dict[str, Any] = {}
 
                 # Load configuration
                 self._load()
@@ -147,8 +158,77 @@ class ConfigSingleton:
                 self._ensure_dirs()
                 self._save_global()
 
+        # Remember what the global copy was read FROM, so the mtime guard below
+        # has a baseline; a failed load leaves it unset and the next read retries.
+        if not self._global_load_failed:
+            self._remember_global_stat()
+
         # Load project-local config for the current CWD snapshot.
         self._refresh_project_data(force=True)
+
+    def _remember_global_stat(self) -> None:
+        path = self.global_config_path
+        try:
+            self._global_cache_mtime_ns = path.stat().st_mtime_ns if path.exists() else None
+        except OSError:
+            self._global_cache_mtime_ns = None
+        self._global_cache_path = path
+
+    def _refresh_global_data(self) -> None:
+        """Re-read the global config when the file on disk has changed.
+
+        The mirror of :meth:`_refresh_project_data`, and it exists for the same
+        reason: a value written by another part of this process — or by a
+        ``navig config set`` in another one — must become visible without a
+        restart. ``/lang Russian`` wrote the file and every localized surface kept
+        rendering English because this copy was frozen.
+
+        The failure rules are that method's, deliberately: an unreadable file keeps
+        whatever is already held (degrading to ``{}`` would let ``_save_global``
+        persist emptiness over a populated config) and does NOT record the mtime,
+        so a transient lock retries rather than sticking for the process lifetime.
+        """
+        path = self.global_config_path
+        try:
+            mtime_ns = path.stat().st_mtime_ns if path.exists() else None
+        except OSError:
+            mtime_ns = None
+
+        if path == self._global_cache_path and mtime_ns == self._global_cache_mtime_ns:
+            return
+        if not path.exists():
+            # Never blank an in-memory config because the file went missing; the
+            # next existing read wins, and a save is what would make it permanent.
+            self._global_cache_path = path
+            self._global_cache_mtime_ns = mtime_ns
+            return
+
+        try:
+            data = load_yaml_for_update(path)
+        except ConfigReadError as exc:
+            self._global_load_failed = True
+            self._global_cache_path = None
+            self._global_cache_mtime_ns = None
+            logger.warning("global config %s could not be re-read: %s", path, exc)
+            return
+
+        self._global_cache_path = path
+        self._global_cache_mtime_ns = mtime_ns
+        self._global_load_failed = False
+        self._global_data = data
+        self._reapply_pending_global()
+
+    def _reapply_pending_global(self) -> None:
+        """Lay this process's unsaved global writes back over a freshly read copy.
+
+        ``set()`` used to write into the in-memory dict and nothing else, and the
+        next ``get()`` — seeing a newer mtime, or a config dir that had moved —
+        replaced that dict wholesale, so the unsaved value simply vanished. Replayed
+        in the order they were made, so ``set("a.b", …)`` after ``set("a", {})``
+        lands the same way it did the first time.
+        """
+        for key, value in self._pending_global.items():
+            self._set_nested(self._global_data, key, value)
 
     def _refresh_project_data(self, force: bool = False) -> None:
         """Reload project-local config when current project path changes.
@@ -205,7 +285,14 @@ class ConfigSingleton:
             "active_host": None,
             "active_app": None,
             "default_host": None,
-            "execution": {"mode": "safe", "confirmation_level": "normal"},
+            # Must be values the SETTERS accept: `ExecutionSettings.set_mode` and
+            # `set_confirmation_level` validate against VALID_MODES /
+            # VALID_CONFIRMATION_LEVELS and raise on anything else. This shipped
+            # {"safe", "normal"}, which appears in neither list — so the default
+            # config could not be written back through its own setter, and the
+            # readers fell through to their conservative branch by luck rather than
+            # design (`mode != "auto"`, and CONFIRMATION_THRESHOLDS.get(level, 2)).
+            "execution": {"mode": "interactive", "confirmation_level": "standard"},
             "plugins": {"enabled": True, "auto_discover": True, "disabled_plugins": []},
             "debug_log": False,
             # Must match where the logger actually writes (paths.debug_log_path());
@@ -228,11 +315,21 @@ class ConfigSingleton:
         through `atomic_write_yaml` directly — so without this check it is a back door
         around that guard's refusal to put an empty config over a populated one.
         """
+        # Read-modify-write: take the newest copy on disk and lay the pending writes
+        # over it. Writing the copy this process loaded (possibly days ago, in a
+        # daemon) ERASED everything written since — `navig config set telegram.y 2`
+        # from the CLI was gone the moment the deck toggled a module, because
+        # `set_enabled` is a set + save on that stale base. Measured, not assumed.
+        self._refresh_global_data()
         if self._global_load_failed:
             self._record_write_refused("global_config", self.global_config_path)
             return
         self._ensure_dirs()
         atomic_write_yaml(self._global_data, self.global_config_path, allow_unicode=True)
+        self._pending_global.clear()
+        # What was just written IS the disk state; without this the next get() paid
+        # for a reload of a file that matches memory byte for byte.
+        self._remember_global_stat()
 
     def _record_write_refused(self, store: str, path: Path) -> None:
         """Note a refused write where the operator can actually see it.
@@ -306,6 +403,8 @@ class ConfigSingleton:
             Configuration value or default
         """
         with self._lock:
+            if scope in ("global", "merged"):
+                self._refresh_global_data()
             if scope in ("project", "merged"):
                 self._refresh_project_data()
             if scope == "global":
@@ -333,7 +432,11 @@ class ConfigSingleton:
                 self._refresh_project_data()
                 self._set_nested(self._project_data, key, value)
             else:
+                # Same shape as the project branch: a fresh base first. The global
+                # branch skipped it, which is why a set could sit on a stale copy.
+                self._refresh_global_data()
                 self._set_nested(self._global_data, key, value)
+                self._pending_global[key] = value
 
     def save(self, scope: str = "global") -> None:
         """
@@ -363,6 +466,7 @@ class ConfigSingleton:
                     cm.invalidate()
             except Exception:
                 pass
+            self._pending_global.clear()
             self._load()
 
     # =========================================================================
@@ -497,19 +601,23 @@ class ConfigSingleton:
     def disable_plugin(self, plugin_name: str) -> None:
         """Disable a plugin."""
         with self._lock:
-            disabled = self._get_nested(self._global_data, "plugins.disabled_plugins") or []
+            self._refresh_global_data()
+            disabled = list(self._get_nested(self._global_data, "plugins.disabled_plugins") or [])
             if plugin_name not in disabled:
                 disabled.append(plugin_name)
                 self._set_nested(self._global_data, "plugins.disabled_plugins", disabled)
+                self._pending_global["plugins.disabled_plugins"] = disabled
                 self._save_global()
 
     def enable_plugin(self, plugin_name: str) -> None:
         """Enable a previously disabled plugin."""
         with self._lock:
-            disabled = self._get_nested(self._global_data, "plugins.disabled_plugins") or []
+            self._refresh_global_data()
+            disabled = list(self._get_nested(self._global_data, "plugins.disabled_plugins") or [])
             if plugin_name in disabled:
                 disabled.remove(plugin_name)
                 self._set_nested(self._global_data, "plugins.disabled_plugins", disabled)
+                self._pending_global["plugins.disabled_plugins"] = disabled
                 self._save_global()
 
     # =========================================================================

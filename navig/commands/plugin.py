@@ -10,6 +10,7 @@ legacy `plugin.py` Typer dirs). Canonical verbs: `add` / `remove`
 from __future__ import annotations
 
 import re
+from collections.abc import Container
 from pathlib import Path
 
 import typer
@@ -43,43 +44,106 @@ def _host():
 # Wire-state glyphs + colours — mirrors the hub (`navig store`) aesthetic.
 _PLUGIN_MARK = {
     "wired": "[green]✓[/green]",
+    "shadowed": "[yellow]⚠[/yellow]",
     "degraded": "[yellow]~[/yellow]",
     "disabled": "[dim]○[/dim]",
     "failed": "[red]✗[/red]",
 }
-_PLUGIN_COLOR = {"wired": "green", "degraded": "yellow", "disabled": "dim", "failed": "red"}
+_PLUGIN_COLOR = {
+    "wired": "green",
+    "shadowed": "yellow",
+    "degraded": "yellow",
+    "disabled": "dim",
+    "failed": "red",
+}
 
 
-def _plugin_state(p) -> str:
-    """One word for a plugin's wire state — the single source both the list table
-    and its summary banner read (so they can never disagree)."""
-    if not p.enabled:
-        return "disabled"
-    if p.error or (p.health is not None and p.health.state.value == "failed"):
-        return "failed"
-    if p.health is not None and p.health.state.value == "degraded":
-        return "degraded"
-    return "wired"
+def _plugin_state(p, shadowed: Container[str] = ()) -> str:
+    """The table and banner's state word — see ``navig.plugins.host.wire_state``.
 
+    Kept as a thin local alias because this module's readers (and its tests) have
+    always spelled it this way; the PRECEDENCE itself lives in the plugin domain so
+    the hub/store aggregator resolves the same word from the same code.
+    """
+    from navig.plugins.host import wire_state  # noqa: PLC0415
+
+    return wire_state(p, shadowed)
 
 @plugin_app.callback()
 def _plugin_callback(ctx: typer.Context):
     if ctx.invoked_subcommand is None:
         # Explicit defaults — a direct call would pass typer.OptionInfo objects.
-        _plugin_list(all_plugins=False, plain=False)
+        _plugin_list(all_plugins=False, plain=False, json_out=False)
         raise typer.Exit()
 
 
 # ── list / show ───────────────────────────────────────────────────────────────
 
 
+def _emit_plugin_json(plugins, *, all_plugins: bool) -> None:
+    """The machine view of `navig plugin list` — same facts the table shows.
+
+    `--plain` cannot carry this: its five tab-separated columns are a scripting
+    contract, so the `shadowed` state added for humans was invisible to every agent
+    and script. That is the half of the audience that most needs it — a CI step or an
+    agent checking plugin health could not tell that the CLI was running a stale copy.
+
+    Emitted via `emit_json`, never the Rich console: `console.print(json.dumps(...))`
+    hard-wraps at the console width once stdout is a pipe and corrupts the payload.
+    """
+    from navig.console_helper import emit_json  # noqa: PLC0415
+    from navig.plugins.sources import audit_plugin_sources  # noqa: PLC0415
+
+    audit = audit_plugin_sources()
+    shadowed = frozenset(audit.shadowed) if audit else frozenset()
+    shown = [p for p in plugins if all_plugins or p.enabled]
+
+    rows = []
+    counts: dict[str, int] = {}
+    for p in shown:
+        state = _plugin_state(p, shadowed)
+        counts[state] = counts.get(state, 0) + 1
+        rows.append({
+            "id": p.id,
+            "state": state,
+            "version": p.version,
+            "format": p.format,
+            "source": p.source,
+            "enabled": p.enabled,
+            "description": p.description,
+        })
+
+    payload: dict[str, object] = {"plugins": rows, "counts": counts}
+    if audit is not None:
+        # Only when there is something to compare against — outside a development
+        # checkout there is no declaration, and an empty block would read as 'nothing
+        # is shadowed' rather than 'this was not checked'.
+        payload["sources"] = {
+            "declared": audit.declared,
+            "verified": list(audit.verified),
+            "shadowed": list(audit.shadowed),
+            "unresolved": [{"id": d, "reason": why} for d, why in audit.unresolved],
+            "fix_paths": list(audit.fix_paths),
+        }
+    emit_json(payload)
+
+
 @plugin_app.command("list")
 def _plugin_list(
     all_plugins: bool = typer.Option(False, "--all", "-a", help="Include disabled plugins"),
     plain: bool = typer.Option(False, "--plain", help="Plain output for scripting."),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON."),
 ):
     """List installed plugins across every format (package, pip, legacy)."""
     plugins = _host().list_installed(refresh=True)
+
+    if json_out:
+        # BEFORE the empty-list branch on purpose: a script asked for JSON, and prose
+        # ("No plugins installed") is not parseable. An empty install emits an empty
+        # list, which a caller can read.
+        _emit_plugin_json(plugins, all_plugins=all_plugins)
+        return
+
     if not plugins:
         ch.info("No plugins installed")
         ch.dim("Add one: navig plugin add <path|zip|git-url|name>")
@@ -96,15 +160,25 @@ def _plugin_list(
 
     shown = [p for p in plugins if all_plugins or p.enabled]
 
+    # Which plugins resolve to an installed copy instead of the source tree
+    # `[tool.uv.sources]` declares. Run ONCE for the whole table (it touches the
+    # filesystem); empty for anyone outside a development checkout, which is why an
+    # end user never sees this state at all.
+    from navig.plugins.sources import audit_plugin_sources  # noqa: PLC0415
+
+    audit = audit_plugin_sources()
+    shadowed = frozenset(audit.shadowed) if audit else frozenset()
+    shadowed_shown = {p.id for p in shown if p.id in shadowed}
+
     # Wire-state summary banner — glyph + count + word (a broken/disabled count
     # only shows when there is one; wired always shows).
     counts: dict[str, int] = {}
     for p in shown:
-        st = _plugin_state(p)
+        st = _plugin_state(p, shadowed)
         counts[st] = counts.get(st, 0) + 1
     banner = "  ·  ".join(
         f"{_PLUGIN_MARK[st]} {counts.get(st, 0)} {st}"
-        for st in ("wired", "degraded", "disabled", "failed")
+        for st in ("wired", "shadowed", "degraded", "disabled", "failed")
         if st == "wired" or counts.get(st)
     )
     ch.console.print("  " + banner + "\n")
@@ -118,7 +192,7 @@ def _plugin_list(
     table.add_column("Source", style="dim")
     table.add_column("Description")
     for p in shown:
-        st = _plugin_state(p)
+        st = _plugin_state(p, shadowed)
         fmt = f"{p.format}[dim] (convert → plugin-spec)[/dim]" if p.format == "legacy" else p.format
         desc = p.description[:50] + "…" if len(p.description) > 50 else p.description
         table.add_row(
@@ -126,11 +200,39 @@ def _plugin_list(
             p.version, fmt, p.source, desc,
         )
     ch.console.print(table)
+    # Report what THIS table shows. `audit.shadowed` covers every declared plugin,
+    # but a distribution the host does not list as a plugin (navig-vault is a library
+    # dependency) has no row here — so counting all of them made the footer say 4
+    # above a table showing 3, which is the banner/table disagreement one level up.
+    here = [d for d in audit.shadowed if d in shadowed_shown] if audit else []
+    elsewhere = len(audit.shadowed) - len(here) if audit else 0
+    if here:
+        remedy = [path for dist, path in zip(audit.shadowed, audit.fix_paths) if dist in here]
+        ch.console.print()
+        ch.console.print(
+            f"  [yellow]⚠ {len(here)} plugin(s) run an installed copy, not your "
+            f"source[/yellow] — the CLI runs stale code while tests read the repo."
+        )
+        ch.dim("  fix → pip install -e " + " ".join(remedy))
+        if elsewhere:
+            ch.dim(
+                f"  {elsewhere} more declared plugin(s) are shadowed but not listed "
+                f"here — navig doctor"
+            )
     ch.dim(
         "\n  enable/disable → navig plugin enable|disable <id>"
         "  ·  details → navig plugin show <id>"
     )
 
+
+def _show_health_detail(p) -> None:
+    """The per-component lines behind a failed/degraded status."""
+    if p.health is None:
+        return
+    if p.health.error:
+        ch.dim(f"  {p.health.error}")
+    for comp in p.health.degraded_components():
+        ch.dim(f"  {comp.kind}:{comp.name} — {comp.state.value}: {comp.error}")
 
 @plugin_app.command("show")
 @plugin_app.command("info", hidden=True)  # deprecated → show
@@ -169,17 +271,36 @@ def _plugin_show(
         meta.add_row("CLI commands", ", ".join(sorted(p.commands)))
     ch.console.print(meta)
     ch.console.print()
-    if not p.enabled:
+    # The state WORD comes from the canonical resolver; only the per-state DETAIL is
+    # local. This command used to re-derive the word from `enabled`/`error`/`health` by
+    # hand — equivalent for all seven reachable combinations when measured, but nothing
+    # bound the two, so a state added to `wire_state` would have reached the table and
+    # never this view. `list` says `shadowed` while `show` says `wired` is exactly the
+    # disagreement this state exists to prevent.
+    from navig.plugins.sources import audit_plugin_sources  # noqa: PLC0415
+
+    audit = audit_plugin_sources()
+    state = _plugin_state(p, frozenset(audit.shadowed) if audit else frozenset())
+
+    if state == "disabled":
         ch.warning("Status: disabled")
         ch.dim(f"Enable with: navig plugin enable {p.id}")
-    elif p.error:
-        ch.error("Status: failed to load", p.error)
-    elif p.health is not None and p.health.state.value != "healthy":
-        ch.warning(f"Status: {p.health.state.value}")
-        if p.health.error:
-            ch.dim(f"  {p.health.error}")
-        for comp in p.health.degraded_components():
-            ch.dim(f"  {comp.kind}:{comp.name} — {comp.state.value}: {comp.error}")
+    elif state == "failed":
+        # `error` is the legacy-format load error; a health FAILED carries its detail on
+        # the health object instead, so fall through to the health lines below.
+        if p.error:
+            ch.error("Status: failed to load", p.error)
+        else:
+            ch.error("Status: failed")
+        _show_health_detail(p)
+    elif state == "degraded":
+        ch.warning("Status: degraded")
+        _show_health_detail(p)
+    elif state == "shadowed":
+        ch.warning("Status: shadowed — running an installed copy, not your source")
+        remedy = dict(zip(audit.shadowed, audit.fix_paths)).get(p.id) if audit else None
+        if remedy:
+            ch.dim(f"  fix → pip install -e {remedy}")
     else:
         ch.success("Status: wired")
     if p.missing_deps:

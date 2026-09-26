@@ -29,6 +29,20 @@ from .types import (
 )
 
 
+def _github_models_config_token() -> str | None:
+    """``github_models.token`` from config.yaml, or None. Best-effort: a config
+    read must never make credential resolution raise."""
+    try:
+        from navig.config import get_config_manager
+
+        cfg = get_config_manager().global_config or {}
+        token = str((cfg.get("github_models") or {}).get("token") or "").strip()
+        return token or None
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("resolve_auth: github_models config lookup failed: %s", exc)
+        return None
+
+
 class AuthProfileManager:
     """
     Manages authentication profiles for AI providers.
@@ -510,6 +524,16 @@ class AuthProfileManager:
                 return vault_key, f"vault:{provider}"
         except Exception as vault_err:
             logger.debug("resolve_auth: vault lookup failed for %s: %s", provider, vault_err)
+
+        # GitHub Models has one more documented home: ``github_models.token`` in
+        # config.yaml (the message every runtime reader prints says so). Five
+        # dispatch paths honour it; this store did not, so a token that worked
+        # for every chat showed as "not set" in ``navig ai providers`` and
+        # failed ``--test``. Same key, same precedence as ``llm/router.py``.
+        if provider == "github_models":
+            token = _github_models_config_token()
+            if token:
+                return token, "config:github_models.token"
 
         return None, "not_found"
 

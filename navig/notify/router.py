@@ -145,6 +145,20 @@ class NotificationRouter:
             nm = get_notification_manager()
             ch_obj = nm.get_channel(channel) if hasattr(nm, "get_channel") else nm._channels.get(channel)
             if ch_obj is None:
+                if channel == "telegram":
+                    # No channel object exists outside the gateway (a CLI, a cron subprocess —
+                    # and, as it turned out, inside the gateway too: configure_telegram() had
+                    # no caller). The Bot API itself needs none of that: DM the operator
+                    # directly, off the loop, with the same token the gateway uses.
+                    import asyncio
+
+                    from navig.messaging.notify_operator import escape_html, notify_operator
+
+                    text = f"<b>{escape_html(title)}</b>"
+                    if body:
+                        text += "\n" + escape_html(body)
+                    ok = await asyncio.to_thread(notify_operator, text)
+                    return bool(ok), ("sent" if ok else "telegram not configured")
                 return False, f"{channel} not configured"
             # Use the real result: send_alert now returns False when an immediate
             # (CRITICAL) send is rejected, so a must-deliver alert that Telegram/

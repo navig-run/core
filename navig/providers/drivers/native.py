@@ -49,6 +49,21 @@ def parse_test_connection_error(msg: str) -> tuple[str, str]:
         return HealthState.UNREACHABLE.value, "API endpoint not found. Check the URL."
     if "429" in low or "rate limit" in low:
         return HealthState.DEGRADED.value, "Rate limit exceeded. Try again shortly."
+    # 5xx is the PROVIDER failing, never the operator's credential. Without this
+    # branch a 500/502/503 fell through to INVALID, and `_validate_and_store`
+    # reads INVALID as "real auth failure only" — so one hiccup persisted
+    # `needs_reauth` AND dropped Capability.INFERENCE, taking a working provider
+    # out of routing until the operator re-authenticated a key that was fine.
+    # ⚠ "504" is listed EXPLICITLY. An earlier version of this comment claimed it
+    # "already lands in unreachable via 'timeout'" — true only when the message
+    # carries that word. A bare `HTTP 504` fell straight through to INVALID, and
+    # the parity guard in tests/llm/test_liveness_transient.py caught it on its
+    # first run. A claim about what another branch catches is not a substitute
+    # for listing the code.
+    if any(s in low for s in ("500", "502", "503", "504", "internal server error",
+                              "bad gateway", "service unavailable", "gateway timeout",
+                              "overloaded")):
+        return HealthState.DEGRADED.value, "Provider is temporarily unavailable. Try again shortly."
     return HealthState.INVALID.value, msg[:300]
 
 
@@ -179,22 +194,56 @@ class NativeDriver(ProviderDriver):
                 return access
         return access
 
-    async def _probe_oauth(self, config, token: str, probe_model: str) -> ValidationResult:
+    async def _probe_walk(self, client, config, candidates: list[str]) -> ValidationResult:
+        """One-token completions over *candidates* until a model answers.
+
+        The verdict is about the credential, so an id the provider reports as
+        unknown/retired is skipped rather than reported. The answering model is
+        listed FIRST in ``models`` — ``connect`` records ``models[0]`` as the
+        connection's ``default_model``, and a retired default is what this
+        replaces. On 2026-09-19 the previous single ``config.models[0]`` probe
+        was a retired id for every provider the operator held a key for.
+        """
+        from navig.providers.clients import CompletionRequest, Message
+        from navig.providers.probe_models import probe_first_answering
+
+        async def _attempt(model: str) -> None:
+            await client.complete(CompletionRequest(
+                messages=[Message(role="user", content="ping")],
+                model=model, max_tokens=1, temperature=0.0,
+            ))
+
+        answered, error, gone = await probe_first_answering(candidates, _attempt)
+        if answered:
+            known = [answered] + [m for m in candidates if m != answered and m not in gone]
+            known += [m.id for m in config.models if m.id not in known and m.id not in gone]
+            return ValidationResult(ok=True, health=HealthState.HEALTHY.value,
+                                    models=[ModelInfo(id=m) for m in known])
+        if error is None:
+            return ValidationResult(ok=False, health=HealthState.INVALID.value,
+                                    error_code="validation_error",
+                                    error_message="No model id to probe with.")
+        if gone and len(gone) == len(candidates):
+            # Every id we know is retired: the credential was never judged.
+            return ValidationResult(
+                ok=False, health=HealthState.DEGRADED.value, error_code="validation_error",
+                error_message=(
+                    "Every known model id is retired (" + ", ".join(gone) + "). "
+                    "Update navig/providers/registry.py; the credential was not judged."
+                ),
+            )
+        # map, never leak internals/secrets
+        health, friendly = parse_test_connection_error(str(error))
+        return ValidationResult(ok=False, health=health,
+                                error_code="validation_error", error_message=friendly)
+
+    async def _probe_oauth(self, config, token: str, candidates: list[str]) -> ValidationResult:
         """Run a 1-token Anthropic completion using an OAuth bearer (CLI presentation)."""
-        from navig.providers.clients import CompletionRequest, Message, create_client
+        from navig.providers.clients import create_client
 
         client = create_client(config, oauth_token=token, timeout=20.0)
         try:
-            await client.complete(CompletionRequest(
-                messages=[Message(role="user", content="ping")],
-                model=probe_model, max_tokens=1, temperature=0.0,
-            ))
-            return ValidationResult(ok=True, health=HealthState.HEALTHY.value,
-                                    models=[ModelInfo(id=m.id) for m in config.models])
-        except Exception as exc:  # noqa: BLE001
-            health, friendly = parse_test_connection_error(str(exc))
-            return ValidationResult(ok=False, health=health,
-                                    error_code="validation_error", error_message=friendly)
+            return await self._probe_walk(client, config, candidates)
         finally:
             close = getattr(client, "close", None)
             if close:
@@ -211,12 +260,8 @@ class NativeDriver(ProviderDriver):
 
     # ── validation via a real 1-token completion ────────────────────────────
     async def validate(self, *, secret_ref, endpoint=None, model=None) -> ValidationResult:
-        from navig.providers.clients import (
-            CompletionRequest,
-            Message,
-            create_client,
-            get_builtin_provider,
-        )
+        from navig.providers.clients import create_client, get_builtin_provider
+        from navig.providers.probe_models import probe_candidates
 
         # OAuth (Anthropic Pro/Max subscription): resolve the bearer (auto-refresh
         # within a 5-min buffer), present as the official CLI, retry once on auth fail.
@@ -226,18 +271,18 @@ class NativeDriver(ProviderDriver):
                 return ValidationResult(ok=False, health=HealthState.INVALID.value,
                                         error_code="validation_error",
                                         error_message="Anthropic provider config unavailable.")
-            probe_model = model or (config.models[0].id if config.models else "claude-3-5-haiku-20241022")
+            candidates = probe_candidates("anthropic", first=model) or ["claude-3-5-haiku-20241022"]
             access = await self._oauth_access_token(secret_ref)
             if not access:
                 return ValidationResult(ok=False, health=HealthState.INVALID.value,
                                         error_code="validation_error",
                                         error_message="Claude subscription token required.")
-            result = await self._probe_oauth(config, access, probe_model)
+            result = await self._probe_oauth(config, access, candidates)
             if not result.ok and result.health == HealthState.INVALID.value:
                 # token may be stale/revoked — force a refresh and retry once
                 access2 = await self._oauth_access_token(secret_ref, force_refresh=True)
                 if access2 and access2 != access:
-                    result = await self._probe_oauth(config, access2, probe_model)
+                    result = await self._probe_oauth(config, access2, candidates)
             return result
 
         api_key = await self._secret(secret_ref)
@@ -255,21 +300,12 @@ class NativeDriver(ProviderDriver):
                                     error_code="validation_error",
                                     error_message="API key required for a non-local endpoint.")
 
-        probe_model = model or (config.models[0].id if config.models else "gpt-4o-mini")
+        candidates = probe_candidates(self._provider_id, first=model) or (
+            [m.id for m in config.models[:1]] or ["gpt-4o-mini"]
+        )
         client = create_client(config, api_key=api_key, timeout=20.0)
         try:
-            await client.complete(CompletionRequest(
-                messages=[Message(role="user", content="ping")],
-                model=probe_model,
-                max_tokens=1,
-                temperature=0.0,
-            ))
-            return ValidationResult(ok=True, health=HealthState.HEALTHY.value,
-                                    models=[ModelInfo(id=m.id) for m in config.models])
-        except Exception as exc:  # noqa: BLE001 — map, never leak internals/secrets
-            health, friendly = parse_test_connection_error(str(exc))
-            return ValidationResult(ok=False, health=health,
-                                    error_code="validation_error", error_message=friendly)
+            return await self._probe_walk(client, config, candidates)
         finally:
             close = getattr(client, "close", None)
             if close:

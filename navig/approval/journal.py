@@ -98,9 +98,50 @@ def clear_pending(request_id: str) -> dict[str, Any] | None:
         return None
 
 
-def list_pending() -> dict[str, Any]:
-    """Everything still recorded as outstanding — including across a restart."""
+#: An expired request is kept this long past its deadline so a tap that lands a
+#: moment late is still recognised — then it is pruned. A gateway that dies or
+#: restarts mid-wait never reaches the `finally` that clears the record, and the
+#: operator's journal had carried six such entries for 14–26 days, counted by
+#: `doctor` as "unanswered" when nothing could answer them any more.
+_EXPIRED_GRACE_S = 15 * 60.0
+
+
+def prune_expired(*, now: float | None = None) -> int:
+    """Drop entries past their deadline (+ grace). Returns how many were dropped.
+
+    An entry with no ``expires_at`` is unknown, not expired — it is kept.
+    """
     try:
+        data = _load()
+    except Exception:  # noqa: BLE001
+        return 0
+    t = time.time() if now is None else now
+    keep: dict[str, Any] = {}
+    for rid, entry in data.items():
+        exp = entry.get("expires_at") if isinstance(entry, dict) else None
+        try:
+            expired = exp is not None and float(exp) + _EXPIRED_GRACE_S < t
+        except (TypeError, ValueError):
+            expired = False
+        if not expired:
+            keep[rid] = entry
+    dropped = len(data) - len(keep)
+    if dropped:
+        try:
+            _save(keep)
+        except Exception:  # noqa: BLE001 — a failed prune must not break a read
+            pass
+    return dropped
+
+
+def list_pending() -> dict[str, Any]:
+    """Everything still outstanding — including across a restart, minus the expired.
+
+    Self-healing on read: the expired are pruned here, so no surface has to remember
+    to do it and a stale record cannot outlive the next look.
+    """
+    try:
+        prune_expired()
         return _load()
     except Exception:  # noqa: BLE001
         return {}

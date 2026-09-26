@@ -103,14 +103,17 @@ def mcp_install_config(
     existing servers. VS Code → .vscode/mcp.json · Cursor → .cursor/mcp.json.
     Then run `navig mcp serve --transport stdio` (or let the client launch it).
     """
-    from pathlib import Path
 
     from navig import console_helper as ch
     from navig.core.json_io import JsonReadError, atomic_write_json, load_json_for_update
     from navig.mcp_server import generate_vscode_mcp_config
+    from navig.platform.paths import invocation_cwd, resolve_user_path
 
     server_def = generate_vscode_mcp_config().get("mcpServers", {}).get("navig", {})
-    root = Path(path) if path else Path.cwd()
+    # Both halves anchor to where the operator TYPED the command: main.py chdir's
+    # into the active space first, so Path.cwd() would write .vscode/mcp.json
+    # into the SPACE rather than the project open in the editor.
+    root = resolve_user_path(path) if path else invocation_cwd()
 
     if client == _Client.vscode:
         cfg_path = root / ".vscode" / "mcp.json"

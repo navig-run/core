@@ -1,4 +1,3 @@
-```skill
 ---
 name: gh-cli-github
 description: List/create PRs, issues, releases, and CI run status via the gh CLI
@@ -99,4 +98,3 @@ Returns open PRs, issues, and recent run summary for the current repo.
 - `pr-create` supports `--dry-run` — shows what would be submitted without creating
 - All list commands are read-only
 - Authentication is checked early; exits with code `3` if not logged in
-```

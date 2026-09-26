@@ -202,14 +202,23 @@ def show_link(
 @links_app.command("open")
 def open_link(
     link_id: str = typer.Argument(..., help="Link ID"),
-    profile: str | None = typer.Option(None, "--profile", "-p", help="Browser profile to use"),
-    headless: bool = typer.Option(False, "--headless", help="Open in headless mode"),
+    profile: str | None = typer.Option(
+        None, "--profile", "-p",
+        help="Named persistent browser profile (keeps the logged-in session); omit for a "
+             "throwaway one.",
+    ),
+    headless: bool = typer.Option(
+        False, "--headless",
+        help="Log in without showing a window, then close it. Useful to warm a --profile.",
+    ),
 ):
     """
     Open a bookmark in the browser.
 
-    If the bookmark has a vault credential attached, queues an auto-login
-    workflow via the NAVIG browser orchestrator.
+    If the bookmark has a vault credential attached, a NAVIG-launched browser opens the
+    page and fills the login from the vault (the credential is matched by the page's
+    domain, the same way ``navig cdp login`` does). Without a credential the link opens
+    in your default browser.
     """
     import asyncio
 
@@ -221,39 +230,65 @@ def open_link(
 
     db.record_visit(link_id)
 
-    if link.vault_cred_id:
-        _ch.info(f"Opening [blue]{link.url}[/blue] with auto-login (cred: {link.vault_cred_id})")
-        try:
-            from navig.integrations.browser_orchestrator import run_browser_task
-
-            task_spec = {
-                "intent": "open_link",
-                "target": {"url": link.url},
-                "routing": {"profile": profile or "default"},
-                "steps": [
-                    {"goto": {"url": link.url}},
-                    {
-                        "vault_fill": {
-                            "credential_id": link.vault_cred_id,
-                            "username_selector": "input[name='email'],input[name='username'],input[name='login'],#email,#username",
-                            "password_selector": "input[type='password'],#password",
-                            "submit_selector": "button[type='submit'],input[type='submit']",
-                        }
-                    },
-                    {"wait": {"kind": "dom_ready"}},
-                ],
-            }
-            asyncio.run(run_browser_task(task_spec))
-        except Exception as exc:
-            _ch.warning(f"Auto-login failed ({exc}). Opening without credentials.")
-            import webbrowser
-
-            webbrowser.open(link.url)
-    else:
+    if not link.vault_cred_id:
+        if headless:
+            # Nothing to log into and nothing to look at: say so rather than open a
+            # window the flag promised not to.
+            _ch.warning("No credential is attached to this link, so --headless has nothing to do.")
+            raise typer.Exit(2)
         _ch.info(f"Opening [blue]{link.url}[/blue]")
         import webbrowser
 
         webbrowser.open(link.url)
+        return
+
+    # Auto-login. This used to POST a task to /api/v1/browser/task -- a route nothing in the
+    # repository serves; the module it lived in describes itself as a bridge to a "Go browser
+    # executor" this Python-only core never had. Every credentialed `links open` since the
+    # command existed hit that dead route, caught the error, and fell to a plain open. The
+    # working stack is the CDP one behind `navig cdp new` + `navig cdp login`.
+    _ch.info(f"Opening [blue]{link.url}[/blue] with auto-login (cred: {link.vault_cred_id})")
+    from navig.browser import cdp_actions
+
+    # context="human": this is an operator command, so the visibility default is a window.
+    launched = cdp_actions.new(app="chrome", profile=profile, headless=headless, context="human")
+    if not launched.get("ok"):
+        _ch.warning(
+            f"Could not start a browser for auto-login ({launched.get('error', 'unknown')}). "
+            f"Opening without credentials."
+        )
+        import webbrowser
+
+        webbrowser.open(link.url)
+        return
+
+    port = launched["port"]
+    try:
+        # login() navigates to open_url and matches the vaulted credential by that page's
+        # registrable domain; the password stays server-side and is never returned.
+        result = asyncio.run(cdp_actions.login(port, open_url=link.url))
+    except Exception as exc:  # noqa: BLE001 -- the page is open either way; report, don't crash
+        result = {"status": "error", "error": str(exc)}
+
+    status = result.get("status") or ("ok" if result.get("ok") else "error")
+    if status in ("ok", "submitted", "filled"):
+        _ch.success(f"Logged in on port {port}.")
+    elif status == "no_credential":
+        _ch.warning(
+            f"No vault login found for {link.url}. Add one with 'navig vault login add', "
+            f"or fix the link's --cred."
+        )
+    else:
+        _ch.warning(f"Auto-login did not complete ({status}: {result.get('error', '')}).")
+
+    if headless:
+        # A headless browser is invisible; leaving it running is a leak. With --profile the
+        # logged-in session is already persisted on disk, which is the point of the flag.
+        cdp_actions.stop(port=port)
+        _ch.info("Headless session closed" + (f"; profile '{profile}' keeps the login." if profile else "."))
+    else:
+        _ch.info(f"Browser is open on port {port} — close it when you are done, or 'navig cdp stop --port {port}'.")
+
 
 
 @links_app.command("edit")

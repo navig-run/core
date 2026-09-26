@@ -16,7 +16,24 @@ only safe once a duplicate launch is a no-op.
 
 from __future__ import annotations
 
+import os
+
+import pytest
+
 import navig.daemon.entry as entry
+
+
+@pytest.fixture(autouse=True)
+def _entry_chdirs_to_its_home(monkeypatch):
+    """`entry.main()` chdir's to `config_dir()` by design -- it is the daemon's home, so
+    every launch path (shell, scheduled task, tray) sees the same cwd. Driven in-process
+    here, that chdir outlived each test: six tests left the worker standing in an
+    isolated temp config dir, and `tests/ops/test_monitoring_unicode.py`, which loaded a
+    module by a relative path, went 10-red in the full suite while passing alone.
+    `monkeypatch.chdir` records the cwd now and restores it on teardown whatever the
+    code under test does; the conftest cwd guard is what named this file.
+    """
+    monkeypatch.chdir(os.getcwd())
 
 
 def _never_reached(*a, **k):  # pragma: no cover - the point is that it is not called

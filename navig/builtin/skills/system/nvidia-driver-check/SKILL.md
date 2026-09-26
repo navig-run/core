@@ -1,4 +1,3 @@
-```skill
 ---
 name: nvidia-driver-check
 description: Check if a newer NVIDIA driver is available using TinyNvidiaUpdateChecker
@@ -64,4 +63,3 @@ navig sys nvidia check
 
 - Read-only operation — never downloads or installs automatically
 - Lightweight alternative to GeForce Experience for driver version checks
-```

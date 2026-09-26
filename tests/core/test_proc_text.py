@@ -101,8 +101,19 @@ def test_posix_uses_utf8() -> None:
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows branch")
 def test_windows_matches_the_live_console_code_page() -> None:
+    """`console_encoding()` derives from the console's CURRENT output code page.
+
+    ⚠ It is `lru_cache`d for the process lifetime (by design — a console's code page
+    does not normally change under a running program). This test reads the live code
+    page fresh, so in a long-lived xdist worker the two sides can observe different
+    moments: any earlier test that spawned `powershell.exe` on the shared console (which
+    sets its output encoding) leaves the cache holding cp866 while the live read says
+    65001 — a red that has nothing to do with this code and appears only in the full
+    suite. Clear the cache first so both sides see the same console.
+    """
     import ctypes
 
+    console_encoding.cache_clear()
     kernel32 = ctypes.windll.kernel32
     live = kernel32.GetConsoleOutputCP() or kernel32.GetOEMCP()
     expected = "utf-8" if live == 65001 else f"cp{live}"
@@ -121,6 +132,8 @@ def test_end_to_end_against_a_real_console_tool() -> None:
     if not any(b > 127 for b in raw):
         pytest.skip("this Windows install reports ASCII-only group names")
 
+    # Same moment for both sides — see test_windows_matches_the_live_console_code_page.
+    console_encoding.cache_clear()
     decoded = decode_console_output(raw)
     assert decoded.encode(console_encoding(), errors="replace") == raw
 
@@ -204,3 +217,49 @@ def test_decode_console_result_accepts_a_duck_typed_stand_in() -> None:
 
     partial = decode_console_result(SimpleNamespace(returncode=0, stdout=b"hi"))
     assert partial.stdout == "hi" and partial.stderr == ""
+
+
+# ── a UTF-8 console does not make a native tool write UTF-8 (2026-09-21) ─────
+#
+# Found through the gate: `install.ps1 -DryRun` sets `[Console]::OutputEncoding = UTF8`,
+# which is `SetConsoleOutputCP(65001)` on the ONE console every xdist worker shares — and
+# it stays. A later worker saw GetConsoleOutputCP() == 65001, cached "utf-8", and decoded
+# `icacls C:\Windows` — which still wrote cp866, console page or not — into U+FFFD. The
+# same thing happens in production to anyone who ran `chcp 65001` for a nicer terminal.
+
+
+def test_under_a_utf8_console_non_utf8_bytes_fall_back_to_the_oem_page(monkeypatch) -> None:
+    from navig.core import proc_text
+
+    monkeypatch.setattr(proc_text, "console_encoding", lambda: "utf-8")
+    monkeypatch.setattr(proc_text, "oem_encoding", lambda: "cp866")
+    assert proc_text.decode_console_output(OEM_GROUP_LINE) == EXPECTED
+    assert "\ufffd" not in proc_text.decode_console_output(OEM_GROUP_LINE)
+
+
+def test_under_a_utf8_console_valid_utf8_is_still_utf8(monkeypatch) -> None:
+    from navig.core import proc_text
+
+    monkeypatch.setattr(proc_text, "console_encoding", lambda: "utf-8")
+    monkeypatch.setattr(proc_text, "oem_encoding", lambda: "cp866")
+    assert proc_text.decode_console_output("Администраторы".encode()) == "Администраторы"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="OEM code pages are a Windows concept")
+def test_oem_encoding_is_a_real_codec_and_is_the_oem_page() -> None:
+    import codecs
+    import ctypes
+
+    from navig.core.proc_text import oem_encoding
+
+    enc = oem_encoding()
+    codecs.lookup(enc)
+    live = ctypes.windll.kernel32.GetOEMCP()
+    assert enc == f"cp{live}" or enc == "oem", (enc, live)
+
+
+def test_posix_oem_encoding_is_utf8(monkeypatch) -> None:
+    from navig.core import proc_text
+
+    monkeypatch.setattr(proc_text.os, "name", "posix")
+    assert proc_text.oem_encoding() == "utf-8"

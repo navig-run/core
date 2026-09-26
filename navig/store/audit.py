@@ -219,6 +219,27 @@ class AuditStore(BaseStore):
     # comparison homogeneous.
     _WINDOW_HOURS = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ? || ' hours')"
 
+    def events_between(self, start_iso: str, end_iso: str, *, limit: int = 20) -> list[dict[str, Any]]:
+        """Events with ``start_iso <= timestamp <= end_iso``, newest first.
+
+        Timestamps are ISO-8601 UTC text (``_utcnow``), which sorts lexically, so
+        this is a plain range on the column. ``query_events`` pages by id and has
+        no notion of time; this exists for "what ran around THEN" questions — the
+        daemon-death incident is the first caller.
+        """
+        rows = self._read_all(
+            """
+            SELECT id, timestamp, action, actor, target, details,
+                   channel, host, session_id, status, duration_ms
+            FROM audit_events
+            WHERE timestamp >= ? AND timestamp <= ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (start_iso, end_iso, int(limit)),
+        )
+        return [dict(r) for r in rows]
+
     def query_events(
         self,
         action: str | None = None,

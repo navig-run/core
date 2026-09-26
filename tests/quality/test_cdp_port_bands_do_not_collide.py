@@ -12,12 +12,13 @@ session drove the DESKTOP APP's window instead of a browser. The comment above t
 had reasoned carefully about the in-app browser panes (9333+) and concluded "they never
 collide", which was true and about the wrong neighbour.
 
-⚠ Deliberately NOT asserted here: **profiles (9280-9339) already overlap the panes
-(9333-9340)**. That is a real, pre-existing collision, but narrowing either band moves the
-STABLE port of profiles people already have, which is a migration, not a lint fix. Asserting
-it would make this guard red on arrival and teach the next person to delete it. It is
-recorded in ``test_known_profile_pane_overlap_is_recorded`` instead, which fails if the
-overlap ever changes shape — so the debt cannot drift unnoticed, and cannot be forgotten.
+**The profiles/panes overlap is PAID.** Profiles (9280-9339) used to overlap the panes
+(9333-9340); it was recorded here as debt rather than fixed, because moving a band is a
+decision. The decision was made on 2026-09-15: the pane base moved to 9450 (the panes are
+per-launch, not stable ports anyone holds; the profiles kept theirs). Also the pane base is
+now RESOLVED at runtime (``NAVIG_PANE_CDP_PORT`` override, fallbacks when the range is
+reserved) — the literal parsed here is the default, which is what the band map documents.
+``test_profile_pane_overlap_is_gone`` keeps it gone.
 """
 
 from __future__ import annotations
@@ -83,8 +84,8 @@ def test_os_dev_cdp_port_avoids_the_in_app_panes() -> None:
     rs = (REPO / "apps" / "os" / "src-tauri" / "src" / "webview_pane.rs").read_text(
         encoding="utf-8"
     )
-    m = re.search(r"PANE_CDP_PORT:\s*u16\s*=\s*(\d+)", rs)
-    assert m, "could not find PANE_CDP_PORT — update this parser rather than dropping it"
+    m = re.search(r"PANE_CDP_PORT_DEFAULT:\s*u16\s*=\s*(\d+)", rs)
+    assert m, "could not find PANE_CDP_PORT_DEFAULT — update this parser rather than dropping it"
     base = int(m.group(1))
     port = _os_dev_cdp_port()
     assert port not in range(base, base + 16), (
@@ -93,26 +94,26 @@ def test_os_dev_cdp_port_avoids_the_in_app_panes() -> None:
     )
 
 
-def test_known_profile_pane_overlap_is_recorded() -> None:
-    """A pre-existing collision, pinned so it cannot drift while nobody is looking.
+def test_profile_pane_overlap_is_gone() -> None:
+    """The panes must not share a port with the named profiles — ever again.
 
-    Named profiles run 9280-9339 and the panes start at 9333, so the top 7 profile ports
-    are also pane ports. Fixing it means moving a STABLE port that existing profiles
-    already hold — a migration. This test does not demand the fix; it demands that the
-    overlap stay exactly the size it is, so a change to either band is a decision someone
-    makes on purpose.
+    Named profiles run 9280-9339 and the panes used to start at 9333, so the top 7
+    profile ports were also pane ports (a `navig cdp profile` and the in-app pane could
+    claim the same port). This was pinned as recorded debt; the pane base then moved to
+    9450 and the debt is paid. Any future overlap between the two bands — from either
+    side — is a regression, not a decision.
     """
     from navig.browser import profiles as p
 
     rs = (REPO / "apps" / "os" / "src-tauri" / "src" / "webview_pane.rs").read_text(
         encoding="utf-8"
     )
-    base = int(re.search(r"PANE_CDP_PORT:\s*u16\s*=\s*(\d+)", rs).group(1))
+    base = int(re.search(r"PANE_CDP_PORT_DEFAULT:\s*u16\s*=\s*(\d+)", rs).group(1))
     profile_band = range(p.PROFILE_PORT_BASE, p.PROFILE_PORT_BASE + p.PROFILE_PORT_COUNT)
     overlap = [port for port in range(base, base + 8) if port in profile_band]
-    assert overlap == [9333, 9334, 9335, 9336, 9337, 9338, 9339], (
-        f"the known profiles/panes overlap changed shape: {overlap}. If you narrowed a "
-        "band deliberately, update this expectation; if not, something moved by accident."
+    assert overlap == [], (
+        f"the in-app pane band ({base}+slot) overlaps the named-profile band "
+        f"({p.PROFILE_PORT_BASE}-{p.PROFILE_PORT_BASE + p.PROFILE_PORT_COUNT - 1}): {overlap}"
     )
 
 

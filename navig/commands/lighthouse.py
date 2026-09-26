@@ -395,6 +395,21 @@ def lighthouse_deploy_cmd(
 
     tok = resolve_cf_token(token)
     if not tok:
+        # Before walking someone through creating a token, check whether we simply could not
+        # READ the one they have. Prompting here is the most costly form of this bug: it does
+        # not just misreport, it guides the user into minting a duplicate Cloudflare API token.
+        from navig.core.vault_health import vault_unavailable_reason  # noqa: PLC0415
+
+        engine_gone = vault_unavailable_reason()
+        if engine_gone:
+            ch.warning(
+                "Could not read your Cloudflare credential — the vault engine failed to "
+                "load, so this is probably NOT a missing token: it is likely present and "
+                "intact.\n"
+                f"  {engine_gone}\n"
+                "  Fix that first; do not create a second token."
+            )
+            raise typer.Exit(2)
         # Interactive: guide the user through token creation and capture the paste.
         tok = _prompt_for_token()
     if not tok:
@@ -445,7 +460,12 @@ def lighthouse_redeploy(
 
     tok = resolve_cf_token(token)
     if not tok:
-        ch.warning("No Cloudflare API token (see `navig lighthouse deploy --help`).")
+        # A missing navig-vault engine reads exactly like "you never added a token", and the
+        # advice below would then send you to create one you already have. Say which it is.
+        from navig.core.vault_health import explain_missing_credential  # noqa: PLC0415
+
+        ch.warning(explain_missing_credential(
+            "Cloudflare API token", "see `navig lighthouse deploy --help`"))
         raise typer.Exit(2)
     cfg = _config()
     account_id = (cfg.get("cloud.lighthouse_account_id") or "").strip() or None
@@ -688,7 +708,14 @@ def lighthouse_disable(
     if delete:
         tok = resolve_cf_token(token)
         if not tok:
-            ch.warning("No Cloudflare token — skipped Worker deletion.")
+            # Skipping here is the dangerous one: without the distinction this reads as
+            # "there was nothing to delete", when the Worker may still be live and simply
+            # unreachable because the engine holding the token is missing.
+            from navig.core.vault_health import explain_missing_credential  # noqa: PLC0415
+
+            ch.warning(explain_missing_credential(
+                "Cloudflare token", "the Worker was left in place; delete it manually or "
+                "re-run after `navig lighthouse login`"))
             return
         from navig.cloud.lighthouse_deploy import DeployError, delete_worker
         try:

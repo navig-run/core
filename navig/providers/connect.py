@@ -209,7 +209,11 @@ async def connect_provider(
     # not arbitrary LAN hosts (else the validation probe becomes an internal
     # port-scanner). Everything else must be a safe public destination.
     if endpoint:
-        assert_safe_endpoint(endpoint, allow_loopback=(template.driver == Driver.LOCAL))
+        # A LOCAL provider may also live on another machine in the house (Ollama on a
+        # home server): loopback AND private ranges are legitimate targets for it, while a
+        # hosted provider still may not be pointed at an internal address (SSRF).
+        is_local = template.driver == Driver.LOCAL
+        assert_safe_endpoint(endpoint, allow_loopback=is_local, allow_private=is_local)
 
     # Shared-BYOK: write the key to the SHARED store (visible to `navig ai` too)
     # and resolve it live — no separate copy, no import, always in sync.
@@ -240,6 +244,18 @@ async def connect_provider(
     # left nothing in its place.
     try:
         result = await drv.validate(secret_ref=secret_ref, endpoint=endpoint, model=model)
+        if not result.ok:
+            # Confirm before believing. INVALID here is the MOST destructive
+            # verdict in the provider layer: it marks needs_reauth, drops
+            # INFERENCE, and — for a shared key — ROLLS BACK the key the user just
+            # typed, silently replacing their input with the previous one and
+            # telling them it was invalid. The driver's unknown-error fallthrough
+            # is INVALID, and NVIDIA has answered one call with an unclassified
+            # error and the next with 200 (measured 2026-09-09: 11x 200, 1x
+            # timeout, on a healthy model). One extra call on an already-failing
+            # path is cheap; discarding a valid key is not. Same rule as
+            # revalidate() and probe_model(): a destructive verdict is earned twice.
+            result = await drv.validate(secret_ref=secret_ref, endpoint=endpoint, model=model)
         health = HealthState(result.health)
     except Exception:
         if shared:
@@ -640,6 +656,22 @@ def _restore_shared_key(
             "using an unverified key; re-run `navig connect add` or set the key again",
             provider_id, exc,
         )
+        # A log line is where this used to end — under the daemon nobody reads it.
+        # This is a data-RECOVERY path failing: the user's previous working key is
+        # gone and an unverified one is in its place. That is exactly what the
+        # incident log is for; it reaches `navig doctor` → Config Health and the
+        # notify path. Best-effort by contract: record() never raises.
+        try:
+            from navig.core import incidents  # noqa: PLC0415
+
+            incidents.record(
+                incidents.SHARED_KEY_ROLLBACK_FAILED,
+                provider=str(provider_id),
+                error=f"{type(exc).__name__}: {exc}"[:200],
+                had_previous_key=bool(prev_key),
+            )
+        except Exception:  # noqa: BLE001 — never let telemetry mask the outcome
+            pass
 
 
 def _virtual_connection(
@@ -835,6 +867,17 @@ async def revalidate(connection_id: str, store: ConnectionStore | None = None) -
             endpoint=(c.metadata or {}).get("endpoint"),
             model=c.default_model,
         )
+        if not result.ok:
+            # Confirm before reporting. Nothing is persisted here, but the verdict
+            # IS what the operator reads and what decides `is_routable` on the
+            # returned record — and one call is not enough evidence for
+            # "your credential is invalid". See the note in the stored path below:
+            # NVIDIA answered 404 once and 200 five times running for the same id.
+            result = await drv.validate(
+                secret_ref=None,
+                endpoint=(c.metadata or {}).get("endpoint"),
+                model=c.default_model,
+            )
         health = HealthState(result.health)
         if result.ok:
             auth_state = AuthState.CONNECTED
@@ -863,6 +906,23 @@ async def revalidate(connection_id: str, store: ConnectionStore | None = None) -
     drv = get_driver(template, store)
     endpoint = (conn.metadata or {}).get("endpoint")
     result = await drv.validate(secret_ref=conn.secret_ref, endpoint=endpoint, model=conn.default_model)
+    if not result.ok:
+        # Confirm a failure before PERSISTING it. This is the single point where
+        # a bad verdict becomes durable state: INVALID writes `needs_reauth` and
+        # discards Capability.INFERENCE, taking a working provider out of routing
+        # until the operator re-authenticates a credential that was fine.
+        #
+        # One call is not enough evidence for that. Measured 2026-09-08: NVIDIA
+        # answered HTTP 404 for `nvidia/nemotron-3-super-120b-a12b` during
+        # `navig connect test`, and 200 five times in a row for the same id
+        # moments later — the verdict flipped between "unhealthy" and
+        # "needs_reauth" run to run for a healthy provider.
+        #
+        # The retry costs one extra call only on an already-failing path, and a
+        # genuine failure simply returns the same verdict twice.
+        result = await drv.validate(
+            secret_ref=conn.secret_ref, endpoint=endpoint, model=conn.default_model
+        )
 
     caps = set(getattr(drv, "advertised_capabilities", set()))
     health = HealthState(result.health)
@@ -884,6 +944,18 @@ async def revalidate(connection_id: str, store: ConnectionStore | None = None) -
     conn.capabilities = caps
     if result.models:
         conn.models = [m.id for m in result.models]
+        # The driver lists the id that ANSWERED first and omits the ids the
+        # provider reported retired. A default that is no longer listed was
+        # probed (it is passed as the first candidate) and is gone — and
+        # inference routes every unspecified request to it, so a green
+        # revalidate over a dead default is a connection that cannot answer.
+        # Replace it with the id that just did.
+        if result.ok and conn.default_model and conn.default_model not in conn.models:
+            logger.info(
+                "connection %s: default model %r is retired at the provider; now %r",
+                conn.connection_id, conn.default_model, conn.models[0],
+            )
+            conn.default_model = conn.models[0]
         if not conn.default_model and conn.models:
             conn.default_model = conn.models[0]
     return store.update(conn, expected_revision=conn.revision)

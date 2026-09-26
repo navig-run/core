@@ -20,10 +20,10 @@ pip install -e .[dev]
 
 ## Development Workflow
 
-1. Create a branch from `develop` (`feature/<slug>` for features, `hotfix/<slug>` for urgent prod fixes).
+1. Create a branch from `main` — `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `chore/<slug>`. There is no `develop`; every PR targets `main` and is squash-merged.
 2. Implement focused changes with tests.
 3. Run lint + tests locally.
-4. Update docs/changelog when behavior changes.
+4. Update docs when behavior changes; the changelog entry is a fragment — `changelog.d/<slug>.<kind>.md` (see `changelog.d/README.md`), never an edit to `CHANGELOG.md [Unreleased]`.
 5. Open a PR using the provided template.
 
 ## Repository Hygiene

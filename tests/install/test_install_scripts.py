@@ -24,12 +24,40 @@ def run_cmd(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
 
 @pytest.fixture(scope="session")
 def bash_cmd() -> str | None:
-    cmd = shutil.which("bash")
-    if cmd and "system32\\bash" in cmd.lower():
-        # Prefer Git Bash on Windows to avoid WSL translation bugs
-        git_bash = shutil.which("bash", path=r"C:\Program Files\Git\bin")
-        return git_bash if git_bash else None
-    return cmd
+    # Git Bash resolved from git's own install — this used to probe one hardcoded
+    # `C:\Program Files\Git\bin` and skipped every test on a scoop-installed git.
+    from tests.fixtures.posix_shell import POSIX_SHELL
+
+    return POSIX_SHELL
+
+
+@pytest.fixture(autouse=True)
+def _restore_console_code_page():
+    """The installers set the console to UTF-8; put it back after each test.
+
+    `install.ps1` runs `[Console]::OutputEncoding = UTF8` — `SetConsoleOutputCP(65001)` on
+    the ONE console every xdist worker shares, and it stays after the process exits.
+    Measured (2026-09-21): the dry-run tests flipped it 866 → 65001 and a later worker,
+    decoding `icacls` with the page it then saw, produced U+FFFD in an unrelated suite. A
+    test that changes a process-external resource restores it, the same way `_no_env_leaks`
+    guards `os.environ`. No-op off Windows.
+    """
+    import sys
+
+    if sys.platform != "win32":
+        yield
+        return
+    import ctypes
+
+    k32 = ctypes.windll.kernel32
+    out_cp, in_cp = k32.GetConsoleOutputCP(), k32.GetConsoleCP()
+    try:
+        yield
+    finally:
+        if out_cp:
+            k32.SetConsoleOutputCP(out_cp)
+        if in_cp:
+            k32.SetConsoleCP(in_cp)
 
 
 @pytest.fixture(scope="session")

@@ -10,6 +10,7 @@ from pathlib import Path
 # Allow importing sibling script without a package __init__
 sys.path.insert(0, str(Path(__file__).parent))
 from _version_sync import run as _sync_manifests  # noqa: E402
+from changelog_assemble import release_changelog  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
@@ -75,8 +76,30 @@ def ensure_tag_absent(tag_name: str) -> None:
         raise RuntimeError(f"Tag {tag_name} already exists on origin")
 
 
-def git_commit(version: str) -> None:
+def rotate_changelog(version: str, *, dry_run: bool = False) -> dict:
+    """Fold ``changelog.d/`` fragments and rotate ``[Unreleased]`` under ``## [version]``.
+
+    The 3.25.0 release did this by hand in the release commit; this path did not, so a
+    bump shipped a tag whose changelog still said "Unreleased" and left every fragment on
+    disk. Delegates to ``changelog_assemble.release_changelog``, which refuses an empty
+    release (``--no-changelog`` is the deliberate hatch) and a version already present.
+    """
+    import datetime as _dt
+
+    today = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
+    try:
+        return release_changelog(REPO_ROOT, version, today, dry_run=dry_run)
+    except ValueError as exc:
+        # main() reports RuntimeError as a one-line error; a ValueError would traceback.
+        raise RuntimeError(
+            f"changelog: {exc} (pass --no-changelog only if this release truly has no entries)"
+        ) from exc
+
+
+def git_commit(version: str, *, changelog: bool = True) -> None:
     paths = ["pyproject.toml", "latest.json"]
+    if changelog:
+        paths.append("CHANGELOG.md")
     # Monorepo: the website version files (synced by _version_sync via the canonical
     # Node script) live at ../web/www — include them so the release commit carries the
     # site version too. Skipped in a standalone-core checkout where web/www is absent.
@@ -85,6 +108,10 @@ def git_commit(version: str) -> None:
             paths.append(www_rel)
     for path in paths:
         run_git("add", path)
+    if changelog and (REPO_ROOT / "changelog.d").is_dir():
+        # The fragments the rotation consumed are deletions; `-A` scoped to the one
+        # directory stages exactly those and nothing else in the tree.
+        run_git("add", "-A", "changelog.d")
     run_git("commit", "-m", f"chore(release): bump version to {version}")
 
 
@@ -96,6 +123,14 @@ def git_tag(version: str) -> str:
 
 
 def git_push_tag(tag_name: str) -> None:
+    """Push the release COMMIT, then the tag.
+
+    The tag alone used to be pushed: the commit it points at reached origin as an object
+    but never as part of main, so origin/main still said the OLD version and carried none
+    of the changelog rotation — the next bump from a synced checkout would have bumped the
+    same version again. A tag whose commit is not on main is half a release.
+    """
+    run_git("push", "origin", "main")
     run_git("push", "origin", tag_name)
 
 
@@ -110,11 +145,23 @@ def parse_args() -> argparse.Namespace:
     bump_parser.add_argument("level", choices=["patch", "minor", "major"])
     bump_parser.add_argument("--commit", action="store_true", help="Commit pyproject version change")
     bump_parser.add_argument("--tag", action="store_true", help="Create annotated git tag")
-    bump_parser.add_argument("--push", action="store_true", help="Push tag to origin (requires --tag)")
+    bump_parser.add_argument(
+        "--push", action="store_true",
+        help="Push the release commit to origin main, then the tag (requires --tag)",
+    )
     bump_parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Preview the next version without writing files or creating git artifacts",
+    )
+    bump_parser.add_argument(
+        "--no-changelog",
+        action="store_true",
+        help=(
+            "Skip folding changelog.d/ fragments and rotating [Unreleased] under the new "
+            "version. Only for a release that genuinely carries no user-facing entries — "
+            "without it an empty [Unreleased] refuses the bump."
+        ),
     )
     bump_parser.set_defaults(command="bump")
 
@@ -141,15 +188,33 @@ def main() -> int:
 
     if args.dry_run:
         print(f"Version (dry-run): {current} -> {next_version}")
+        if not args.no_changelog:
+            plan = rotate_changelog(next_version, dry_run=True)  # raises: nothing to release
+            print(
+                f"Changelog (dry-run): {len(plan['fragments'])} fragment(s) folded; "
+                f"[Unreleased] -> ## [{plan['version']}] ({plan['date']})"
+            )
         return 0
+
+    # The changelog goes FIRST: its refusals (empty release, version already present, a
+    # malformed fragment) must fire before pyproject.toml has been rewritten, or a refused
+    # bump leaves a half-done release in the working tree.
+    rotation = None
+    if not args.no_changelog:
+        rotation = rotate_changelog(next_version)
 
     old_version, new_version = write_version(next_version)
     print(f"Version: {old_version} -> {new_version}")
+    if rotation is not None:
+        print(
+            f"Changelog: {len(rotation['fragments'])} fragment(s) folded; "
+            f"[Unreleased] -> ## [{rotation['version']}] ({rotation['date']})"
+        )
 
     _sync_manifests(version=new_version)
 
     if args.commit:
-        git_commit(new_version)
+        git_commit(new_version, changelog=rotation is not None)
         print(f"Committed version bump to {new_version}")
 
     tag_name = None
@@ -159,7 +224,7 @@ def main() -> int:
 
     if args.push and tag_name:
         git_push_tag(tag_name)
-        print(f"Pushed tag: {tag_name}")
+        print(f"Pushed main and tag: {tag_name}")
 
     return 0
 

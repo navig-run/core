@@ -1,29 +1,45 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "Two families of tool definition ship side by side, and this schema describes BOTH. It used to describe only the first, with half of that family's own keys missing, so 16 of 58 shipped definitions violated it. Nothing validates against it at runtime; editors and tests/quality/test_tool_definitions_match_schema.py do. Measured 2026-09-14: 42 'runtime' definitions (an external tool with an entrypoint) and 16 'execution' definitions (a wrapper over a navig CLI verb), each family 100% consistent within itself.",
   "type": "object",
-  "required": [
-    "id",
-    "name",
-    "runtime"
-  ],
+  "required": ["id", "name", "description", "version"],
   "properties": {
-    "id": {
-      "type": "string"
+    "$schema": { "type": "string" },
+    "id": { "type": "string", "description": "Stable identifier, e.g. `tool:app`. Skills reference tools by the bare id in their `tool_id:` frontmatter." },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "version": { "type": "string" },
+
+    "runtime": { "type": "string", "description": "runtime family: the interpreter for `entrypoint`, e.g. `python`." },
+    "entrypoint": { "type": "string" },
+    "inputs": { "type": "array" },
+    "outputs": { "type": "array" },
+    "auth": { "type": "object" },
+    "rateLimits": { "type": "object" },
+    "errorPolicy": { "type": "string", "description": "e.g. `skip` -- a policy NAME, not an object. Measured: a string in all 42 definitions." },
+
+    "execution": {
+      "type": "object",
+      "description": "execution family: the tool IS a navig CLI verb; `target` is the command it runs.",
+      "required": ["type", "target"],
+      "properties": {
+        "type": { "type": "string", "enum": ["cli"] },
+        "target": { "type": "string" }
+      }
     },
-    "name": {
-      "type": "string"
+    "parameters": { "type": "object" },
+    "requires_approval": { "type": "boolean" }
+  },
+  "oneOf": [
+    {
+      "$comment": "An external tool with its own entrypoint.",
+      "required": ["runtime", "entrypoint", "inputs", "outputs"],
+      "not": { "required": ["execution"] }
     },
-    "description": {
-      "type": "string"
-    },
-    "runtime": {
-      "type": "string"
-    },
-    "inputs": {
-      "type": "array"
-    },
-    "outputs": {
-      "type": "array"
+    {
+      "$comment": "A wrapper over a navig CLI verb.",
+      "required": ["execution", "parameters", "requires_approval"],
+      "not": { "required": ["runtime"] }
     }
-  }
+  ]
 }

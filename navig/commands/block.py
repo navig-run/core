@@ -14,6 +14,7 @@ from typing import Any
 import typer
 
 from navig import console_helper as ch
+from navig.platform.paths import resolve_user_path
 
 block_app = typer.Typer(
     help="Author, inspect, and manage NAVIG blocks (installable, verifiable outcomes).",
@@ -582,12 +583,16 @@ def apply_command(
         ch.error(str(exc))
         raise typer.Exit(1) from exc
 
-    wd = Path(workdir) if workdir else (find_app_root() or Path.cwd())
+    # A typed --workdir is anchored to where the operator ran the command (main.py
+    # chdir's into the active space first). The DEFAULT stays the space root —
+    # that is what the help promises, and blocks run against the space.
+    wd = resolve_user_path(workdir) if workdir else (find_app_root() or Path.cwd())
 
     with RecordedOperation(
-        command=f"navig apply {block.id}",
-        op_type=OperationType.WORKFLOW_RUN,
+        command=f"navig apply {block.id}" + (" --dry-run" if dry_run else ""),
+        op_type=OperationType.READ_QUERY if dry_run else OperationType.WORKFLOW_RUN,
         tags=["block", block.id],
+        claim=("apply",),  # enrich the CLI middleware's record — one ledger line per run
     ) as rec:
         run = apply_block(block, inputs, yes=yes, dry_run=dry_run, approvals=approvals, workdir=wd)
         rec.success = run.outcome in ("succeeded", "planned")

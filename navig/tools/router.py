@@ -398,10 +398,15 @@ class ToolRegistry:
             )
         return "\n".join(lines)
 
-    def to_openapi_schema(self) -> dict[str, Any]:
-        """Return an OpenAPI 3.0 document for all registered tools."""
+    def to_openapi_schema(self, *, available_only: bool = False) -> dict[str, Any]:
+        """Return an OpenAPI 3.0 document for registered tools.
+
+        ``available_only`` mirrors :meth:`list_tools`: ``navig tools schema`` defaults its
+        ``--available/--all`` flag to available-only, and the flag was parsed and never
+        reached here, so the dump always included disabled tools.
+        """
         paths: dict[str, Any] = {}
-        for meta in self.list_tools():
+        for meta in self.list_tools(available_only=available_only):
             paths[f"/tools/{meta.name}"] = {
                 "post": meta.to_openapi_schema(),
             }

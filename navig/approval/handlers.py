@@ -71,13 +71,23 @@ class TelegramApprovalHandler:
                 )
                 return
 
+            import html as _html
+
             level_emoji = {"confirm": "⚠️", "dangerous": "🚨"}.get(request.level.value, "❓")
             expires = (
                 request.expires_at.strftime("%H:%M:%S") if request.expires_at else "never"
             )
+            # The description carries what the operator is actually deciding on
+            # (for a tool call: the tool AND its arguments — `bash_exec` with the
+            # command). Six prompts reading only "tool bash_exec" are six coin
+            # flips; the command text is the decision.
+            desc = str(getattr(request, "description", "") or "").strip()
+            detail = ""
+            if desc and desc != request.command and desc != f"Execute: {request.command}":
+                detail = f"\n<b>What:</b> {_html.escape(desc[:600])}"
             message = (
                 f"{level_emoji} <b>Approval Required</b>\n\n"
-                f"<b>Command:</b> <code>{request.command}</code>\n"
+                f"<b>Command:</b> <code>{_html.escape(request.command)}</code>{detail}\n"
                 f"<b>Level:</b> {request.level.value}\n"
                 f"<b>Expires:</b> {expires}"
             )

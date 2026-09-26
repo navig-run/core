@@ -217,10 +217,15 @@ def test_bot_start_uses_configured_gateway_port_when_unspecified(monkeypatch):
     # Bypass vault check (SQLite lock can hang indefinitely in test environments)
     monkeypatch.setattr(_secrets_mod, "resolve_telegram_bot_token", lambda *a, **kw: "fake-token")
     monkeypatch.setattr(gw_mod, "_load_gateway_cli_defaults", lambda: (8789, "127.0.0.1"))
+    # The background policy prefers a running daemon, then an installed service;
+    # this test is about the DIRECT spawn's argv, so pin the policy to that branch —
+    # on the operator's machine the real task exists and would be started instead.
+    monkeypatch.setattr("navig.daemon.launch.supervisor_runs_the_bot", lambda: None)
+    monkeypatch.setattr("navig.daemon.launch.service_is_installed", lambda: False)
     monkeypatch.setattr(
         subprocess,
         "Popen",
-        lambda cmd, **kwargs: recorded.setdefault("cmd", cmd) or SimpleNamespace(),
+        lambda cmd, **kwargs: recorded.setdefault("cmd", cmd) or SimpleNamespace(pid=1),
     )
 
     gw_mod.bot_start(gateway=True, port=None, background=True)
@@ -239,10 +244,12 @@ def test_quick_start_uses_configured_gateway_port_when_unspecified(monkeypatch):
     # Bypass vault check (SQLite lock can hang indefinitely in test environments)
     monkeypatch.setattr(_secrets_mod, "resolve_telegram_bot_token", lambda *a, **kw: "fake-token")
     monkeypatch.setattr(gw_mod, "_load_gateway_cli_defaults", lambda: (8789, "127.0.0.1"))
+    monkeypatch.setattr("navig.daemon.launch.supervisor_runs_the_bot", lambda: None)
+    monkeypatch.setattr("navig.daemon.launch.service_is_installed", lambda: False)
     monkeypatch.setattr(
         subprocess,
         "Popen",
-        lambda cmd, **kwargs: recorded.setdefault("cmd", cmd) or SimpleNamespace(),
+        lambda cmd, **kwargs: recorded.setdefault("cmd", cmd) or SimpleNamespace(pid=1),
     )
 
     cli.quick_start(bot=True, gateway=True, port=None, background=True)
@@ -305,15 +312,47 @@ def test_gateway_start_uses_cli_defaults_when_unspecified(monkeypatch):
     )
     monkeypatch.setattr("asyncio.run", lambda coro: coro.close())
 
+    # The operator's real config, with a gateway setting the command does not
+    # know about and a sibling top-level section. Both must survive: this used
+    # to build a three-key literal, so the live daemon ran with its auth token
+    # and policy rules invisible and re-minted the token on every boot.
+    monkeypatch.setattr(
+        gw_mod,
+        "get_config_manager",
+        lambda: SimpleNamespace(
+            global_config={
+                "gateway": {"auth": {"token": "operator-token"}, "port": 1234},
+                "telegram": {"bot_token": "keep-me"},
+            }
+        ),
+        raising=False,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "navig.config",
+        SimpleNamespace(
+            get_config_manager=lambda: SimpleNamespace(
+                global_config={
+                    "gateway": {"auth": {"token": "operator-token"}, "port": 1234},
+                    "telegram": {"bot_token": "keep-me"},
+                }
+            )
+        ),
+    )
+
     gw_mod.gateway_start(port=None, host=None, background=False)
 
-    assert captured["raw_config"] == {
-        "gateway": {
-            "enabled": True,
-            "port": 9911,
-            "host": "127.0.0.9",
-        }
-    }
+    section = captured["raw_config"]["gateway"]
+    # The resolved CLI defaults still win over what config says (1234).
+    assert section["enabled"] is True
+    assert section["port"] == 9911
+    assert section["host"] == "127.0.0.9"
+    # …and everything else the operator configured reaches the gateway.
+    assert section["auth"] == {"token": "operator-token"}, (
+        "gateway start dropped the configured auth token — start() would mint a "
+        "new one and persist it over the operator's config.yaml"
+    )
+    assert captured["raw_config"]["telegram"] == {"bot_token": "keep-me"}
     # Startup still claims single-instance ownership — and on the resolved port,
     # not the None it was given.
     assert swept == ["free_port:9911", "supersede"]

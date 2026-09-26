@@ -67,8 +67,41 @@ def log_shadow_anomaly(log_name: str, event: str, data: dict[str, Any]) -> None:
         entry = {"ts": time.time(), "event": event, "data": data}
         with log_file.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry) + "\n")
+        _cap_jsonl(log_file)
     except Exception:  # noqa: BLE001
         pass  # Logging failures must never propagate
+
+
+# Append-only JSONL logs had no ceiling. The incident log (config_incidents) is
+# written by every self-healing path in the daemon, and a stuck loop writes to it
+# on every heartbeat — measured: 294 entries in ~5 weeks on one install, from a
+# single unfixable issue re-raised every few hours. Readers cap by AGE (30 days),
+# so the file only ever grows. A bound in bytes rather than lines keeps one huge
+# payload from being the thing that finally slows `navig doctor`.
+_JSONL_CAP_BYTES = 2 * 1024 * 1024
+_JSONL_KEEP_BYTES = 1 * 1024 * 1024
+
+
+def _cap_jsonl(log_file: Path) -> None:
+    """Keep an append-only JSONL log from growing without bound.
+
+    When it exceeds the cap, keep the NEWEST ~1 MB, cut on a line boundary, and
+    rewrite atomically. Best-effort and rare (once per MB of growth), so it costs
+    nothing on the hot path. Never raises.
+    """
+    try:
+        if log_file.stat().st_size <= _JSONL_CAP_BYTES:
+            return
+        data = log_file.read_bytes()
+        tail = data[-_JSONL_KEEP_BYTES:]
+        nl = tail.find(b"\n")
+        if nl != -1:
+            tail = tail[nl + 1:]  # drop the partial first line
+        tmp = log_file.with_suffix(log_file.suffix + ".tmp")
+        tmp.write_bytes(tail)
+        tmp.replace(log_file)
+    except Exception:  # noqa: BLE001
+        pass  # a failed trim is the old behaviour, not a new failure
 
 
 # ─────────────────────────────────────────────────────────────────────────────

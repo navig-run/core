@@ -34,12 +34,28 @@ def _make_init_data(user_id: int = 555, auth_date: int | None = None) -> str:
 
 
 class _Req:
-    """Minimal stand-in for aiohttp.web.Request (only what _get_user_id reads)."""
+    """Minimal stand-in for aiohttp.web.Request (what _get_user_id reads/writes).
+
+    aiohttp's Request is a MutableMapping — the deck code stashes request-scoped
+    values on it (`request["deck_user_id"]`, and now `request["_deck_auth_reason"]`
+    so the middleware can name a rejection). Model that mapping so the fake stays
+    a faithful stand-in.
+    """
 
     def __init__(self, headers: dict | None = None, remote: str = "127.0.0.1", query: dict | None = None):
         self.headers = headers or {}
         self.remote = remote
         self.query = query or {}
+        self._store: dict = {}
+
+    def __setitem__(self, key, value):
+        self._store[key] = value
+
+    def __getitem__(self, key):
+        return self._store[key]
+
+    def get(self, key, default=None):
+        return self._store.get(key, default)
 
 
 def _configure(telegram_only: bool) -> None:

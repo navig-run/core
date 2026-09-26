@@ -146,7 +146,7 @@ def blackbox_capture(
     from navig.blackbox.bundle import create_bundle, write_bundle
 
     hours = _parse_hours(last)
-    bundle = create_bundle(since_hours=hours)
+    bundle = create_bundle(since_hours=hours, limit=limit)
 
     if bundle.event_count() == 0 and bundle.crash_count() == 0:
         _ch.info("No events in the capture window.")

@@ -55,7 +55,11 @@ import os
 import threading
 from typing import Any
 
-from navig.providers._local_defaults import _LLAMACPP_BASE_URL, _OLLAMA_BASE_URL
+from navig.providers._local_defaults import (
+    _LLAMACPP_BASE_URL,
+    _OLLAMA_BASE_URL,
+    ollama_base_url,
+)
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 from navig.providers.source_scan import PROVIDER_ENV_KEYS
 
@@ -405,6 +409,11 @@ class ResolvedLLMConfig:
     ):
         self.provider = provider
         self.model = model
+        # Ollama is resolved at CALL time, not import time: the operator may point navig at
+        # a model on another machine (env/config, see providers._local_defaults), and the
+        # module-level dict was baked at import.
+        if not base_url and provider == "ollama":
+            base_url = f"{ollama_base_url()}/v1"
         self.base_url = base_url or PROVIDER_BASE_URLS.get(provider, "")
         self.temperature = temperature
         self.max_tokens = max_tokens
@@ -447,7 +456,7 @@ _ollama_model_cache: dict[str, bool] | None = None
 _ollama_cache_ts: float = 0.0
 
 
-def _check_ollama_models(base_url: str = _OLLAMA_BASE_URL) -> dict[str, bool]:
+def _check_ollama_models(base_url: str | None = None) -> dict[str, bool]:
     """Query Ollama /api/tags and return {model_name: True} for installed models."""
     global _ollama_model_cache, _ollama_cache_ts
     import time
@@ -899,6 +908,8 @@ class LLMModeRouter:
         temperature: float | None = None,
         max_tokens: int | None = None,
         use_uncensored: bool | None = None,
+        fallback_provider: str | None = None,
+        fallback_model: str | None = None,
     ) -> bool:
         """Update a mode's configuration in memory.
 
@@ -927,6 +938,15 @@ class LLMModeRouter:
             cfg.max_tokens = int(max_tokens)
         if use_uncensored is not None:
             cfg.use_uncensored = use_uncensored
+        # Normalised exactly like the primary above, for the same reason: raw
+        # attribute assignment skips the pydantic validators, and a value that
+        # fails `model_validate` on the NEXT load silently resets the whole
+        # llm_router block. An EMPTY fallback_provider is meaningful — it means
+        # "same provider as the primary" — so "" is stored, not discarded.
+        if fallback_provider is not None:
+            cfg.fallback_provider = fallback_provider.strip().lower()
+        if fallback_model is not None:
+            cfg.fallback_model = fallback_model.strip()
         self.modes.set_mode(mode, cfg)
         return True
 

@@ -13,7 +13,7 @@ import time
 from typing import Any
 from urllib.parse import parse_qs, unquote
 
-from navig.core.coerce import coerce_bool, coerce_id_rejects, coerce_id_set
+from navig.core.coerce import coerce_bool, coerce_id_rejects, coerce_id_set, coerce_int
 
 try:
     from aiohttp import web
@@ -97,7 +97,7 @@ def configure_deck_auth(
     allowed_users: list[int],
     require_auth: bool = True,
     dev_mode: bool = False,
-    auth_max_age: int = 3600,
+    auth_max_age: int = 86400,
     api_key: str = "",
     telegram_only: bool = False,
 ) -> None:
@@ -114,7 +114,14 @@ def configure_deck_auth(
     # (require_auth is intentionally left raw — it's read in several other
     # subsystems too, so coercing it only here would make auth inconsistent.)
     _deck_config["dev_mode"] = coerce_bool(dev_mode, default=False)
-    _deck_config["auth_max_age"] = auth_max_age
+    # coerce_int, not raw: `navig config set deck.auth_max_age 86400` stores the
+    # STRING "86400", and validate_init_data does `time.time() - auth_date > max_age`
+    # — `float > str` RAISES TypeError, which its `except` swallows into "not
+    # valid". The result is not a wrong number; it is EVERY Mini App request
+    # rejected as unauthorized, silently, the moment an operator tunes this key.
+    # (Same class the coerce_bool lines above exist for.) Floor at 60s to match
+    # the config schema's `ge=60`.
+    _deck_config["auth_max_age"] = coerce_int(auth_max_age, 86400, minimum=60)
     _deck_config["api_key"] = api_key or ""
     _deck_config["telegram_only"] = coerce_bool(telegram_only, default=False)
     logger.info(
@@ -139,20 +146,45 @@ def deck_bot_token() -> str:
 
 def deck_auth_max_age() -> int:
     """Max age (seconds) accepted for Telegram initData auth_date."""
-    return int(_deck_config.get("auth_max_age") or 3600)
+    return coerce_int(_deck_config.get("auth_max_age"), 86400, minimum=60)
 
 
 def validate_init_data(
-    init_data: str, bot_token: str, max_age: int = 3600
+    init_data: str,
+    bot_token: str,
+    max_age: int = 86400,
+    *,
+    reason: list[str] | None = None,
 ) -> dict[str, Any] | None:
-    if not init_data or not bot_token:
+    """Validate a Telegram Mini App `initData` string; return the user payload or None.
+
+    Every failure returns an identical None, which is exactly why a single wrong
+    config value (a stale window, a rotated bot token) took a multi-agent
+    investigation to diagnose instead of one log line. Pass a `reason` list to
+    capture WHY validation failed — the caller folds it into its existing single
+    "unauthorized" WARNING (no extra log volume). A reason is a FIXED label plus,
+    for staleness, integer ages only — it MUST NEVER contain the initData string,
+    the hash, or the bot token (repo rule: no secrets in logs, even at --debug).
+    """
+
+    def _reject(why: str) -> None:
+        if reason is not None:
+            reason.append(why)
         return None
 
+    if not init_data or not bot_token:
+        return _reject("no initData presented")
+
+    # Defensive: this is where the whole class bites — `time.time() - auth_date >
+    # max_age` raises TypeError if max_age is a str ("86400" from `navig config
+    # set`), and the `except` below turns that into a silent "invalid". Coerce
+    # here too so the validator is correct no matter how a caller sourced max_age.
+    max_age = coerce_int(max_age, 86400, minimum=60)
     try:
         parsed = parse_qs(init_data, keep_blank_values=True)
         received_hash = parsed.get("hash", [None])[0]
         if not received_hash:
-            return None
+            return _reject("initData carried no hash")
 
         items = []
         for key, values in parsed.items():
@@ -166,11 +198,14 @@ def validate_init_data(
         computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
         if not hmac.compare_digest(computed_hash, received_hash):
-            return None
+            # Deliberately does not say which — wrong bot token vs. a tampered
+            # payload are indistinguishable here, and naming a guess misleads.
+            return _reject("initData hash mismatch (wrong bot token, or tampered)")
 
         auth_date = int(parsed.get("auth_date", [0])[0])
-        if time.time() - auth_date > max_age:
-            return None
+        age = int(time.time() - auth_date)
+        if age > max_age:
+            return _reject(f"initData stale (age={age}s > max={max_age}s) — reopen the Mini App")
 
         user_str = parsed.get("user", [None])[0]
         user = json.loads(unquote(user_str)) if user_str else None
@@ -182,7 +217,7 @@ def validate_init_data(
         }
     except Exception as e:
         logger.debug("initData validation failed: %s", e)
-        return None
+        return _reject("initData malformed")
 
 
 _DEV_BYPASS_SENTINEL = -1  # Negative = dev/localhost bypass; skips allowlist
@@ -285,9 +320,13 @@ def _get_user_id(request: "web.Request", bot_token: str = "") -> int | None:
 
     init_data = request.headers.get("X-Telegram-Init-Data", "")
     if init_data and token:
-        result = validate_init_data(init_data, token, max_age)
+        reasons: list[str] = []
+        result = validate_init_data(init_data, token, max_age, reason=reasons)
         if result and result.get("user"):
             return result["user"]["id"]
+        # Keep the specific reason for the middleware's one WARNING line. A valid
+        # signature with no `user` field falls here too (rare) — say so.
+        request["_deck_auth_reason"] = reasons[0] if reasons else "initData had no user"
 
     # Locked to the Telegram Mini App: valid initData above is the ONLY
     # *remote* credential — no Bearer api_key, no dev-header. Genuinely-local
@@ -356,8 +395,11 @@ if web:
         }
 
         if user_id is None:
+            # Name the reason (set by _get_user_id) so a recurring auth failure is
+            # a one-line diagnosis, not the multi-agent hunt this class caused once.
             logger.warning(
-                "Deck API unauthorized: no valid auth from %s %s (origin=%s)",
+                "Deck API unauthorized: %s (%s %s, origin=%s)",
+                request.get("_deck_auth_reason", "no credential presented"),
                 request.method,
                 path,
                 request.headers.get("Origin", "-"),

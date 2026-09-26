@@ -33,7 +33,9 @@ class _FakeCM:
 
 # (getter, config-key, default-when-unset)
 _TOGGLES = [
-    (TelegramChecklistMixin._get_checklist_config, "checklist_enabled", True),
+    # Opt-in since it was wired: the feature was unreachable while this said True, so
+    # "on by default" was never a behaviour anyone had. See telegram_checklist.py.
+    (TelegramChecklistMixin._get_checklist_config, "checklist_enabled", False),
     (TelegramForumMixin._get_forum_config, "forum_routing_enabled", False),
     (TelegramInlineMixin._get_inline_config, "inline_mode_enabled", True),
     (TelegramReactionsMixin._get_reactions_config, "reactions_enabled", True),

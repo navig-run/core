@@ -74,6 +74,9 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         env_vars=["OPENAI_API_KEY"],
         vault_keys=["openai/api-key", "openai/api_key"],
         models=[
+            # ⚠ gpt-4.1 stays FIRST deliberately: `models[0]` is the implicit
+            # substitution default in model_router, so promoting gpt-5 here would
+            # silently make every unknown-model slot fall back to a pricier model.
             # GPT-4.1 series (April 2025)
             "gpt-4.1",
             "gpt-4.1-mini",
@@ -86,7 +89,15 @@ ALL_PROVIDERS: list[ProviderManifest] = [
             "o3",
             "o3-mini",
             "o1",
-            "o1-mini",
+            # "o1-mini" removed 2026-09-08 — probe returned 404 (control: gpt-4.1 live).
+            # GPT-5. Probe-verified live 2026-09-08 and only USABLE since the same
+            # day: these reject `max_tokens` and any explicit `temperature`, so
+            # every call 404'd/400'd until _sanitize_openai_body learned to send
+            # `max_completion_tokens` and omit temperature for this family.
+            # Listing them before that fix would have offered models navig could
+            # not call — the o-series was in exactly that state for months.
+            "gpt-5",
+            "gpt-5-mini",
         ],
         emoji="🤖",
     ),
@@ -135,12 +146,19 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         tier="cloud",
         env_vars=["OPENROUTER_API_KEY"],
         vault_keys=["openrouter/api-key", "openrouter/api_key"],
+        # Audited 2026-09-08 against GET /v1/models (429 live) — 10 of the 23
+        # listed ids had been withdrawn, INCLUDING the first entry, which is the
+        # implicit substitution default. Spot-probed with controls:
+        # anthropic/claude-3-7-sonnet 404, qwen/qwq-32b 404, openai/gpt-4.1 live.
+        # For THIS provider the catalog is authoritative (it is the routing
+        # table) — unlike xAI above, where it is not.
         models=[
             # Anthropic
-            "anthropic/claude-3-7-sonnet",
-            "anthropic/claude-3-5-sonnet",
-            "anthropic/claude-3-5-haiku",
+            "anthropic/claude-sonnet-4.5",
+            "anthropic/claude-opus-4.1",
+            "anthropic/claude-haiku-4.5",
             # OpenAI
+            "openai/gpt-5",
             "openai/gpt-4.1",
             "openai/gpt-4.1-mini",
             "openai/gpt-4o",
@@ -148,25 +166,21 @@ ALL_PROVIDERS: list[ProviderManifest] = [
             "openai/o3-mini",
             # Google
             "google/gemini-2.5-pro-preview-05-06",
-            "google/gemini-2.5-flash-preview-04-17",
-            "google/gemini-2.0-flash-001",
+            "google/gemini-2.5-flash",
             # Meta Llama
             "meta-llama/llama-3.3-70b-instruct",
             "meta-llama/llama-3.1-8b-instruct",
             # DeepSeek
+            "deepseek/deepseek-chat-v3.1",
             "deepseek/deepseek-chat-v3-0324",
             "deepseek/deepseek-r1",
-            # xAI
-            "x-ai/grok-3-beta",
-            "x-ai/grok-3-mini-beta",
             # Mistral
-            "mistralai/mistral-large-2411",
+            "mistralai/mistral-medium-3.1",
             "mistralai/mistral-small-3.1-24b-instruct",
             # Qwen
-            "qwen/qwq-32b",
+            "qwen/qwen3-235b-a22b",
             "qwen/qwen-2.5-72b-instruct",
             # Misc
-            "nvidia/llama-3.1-nemotron-70b-instruct",
             "microsoft/phi-4",
         ],
         emoji="🌐",
@@ -175,22 +189,23 @@ ALL_PROVIDERS: list[ProviderManifest] = [
     ProviderManifest(
         id="groq",
         display_name="Groq",
-        description="Ultra-fast LPU inference — Llama 3.3, DeepSeek-R1, Qwen, Gemma.",
+        description="Ultra-fast LPU inference — GPT-OSS, Qwen 3.8, Allam.",
         tier="cloud",
         env_vars=["GROQ_API_KEY"],
         vault_keys=["groq/api-key", "groq/api_key"],
+        # ⚠ Audited 2026-09-26 by CALLING every id: **all ELEVEN shipped ids were
+        # gone** — 4x 404 and 7x `400 has been decommissioned` — so groq's whole
+        # catalog had rotated out from under this list, and `models[0]` (the
+        # substitution default AND the credential probe) was dead. The five below
+        # each answered a 1-token call; `whisper-large-v3` is in groq's own
+        # listing and is NOT here because it answered "does not support chat" —
+        # the listing is not the truth, the call is.
         models=[
-            "llama-3.3-70b-versatile",
-            "llama-3.3-70b-specdec",
-            "llama-3.1-8b-instant",
-            "llama3-70b-8192",
-            "mixtral-8x7b-32768",
-            "deepseek-r1-distill-llama-70b",
-            "deepseek-r1-distill-qwen-32b",
-            "qwen-qwq-32b",
-            "qwen2.5-72b-instruct",
-            "gemma2-9b-it",
-            "compound-beta",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "openai/gpt-oss-safeguard-20b",
+            "qwen/qwen3.8-27b",
+            "allam-2-7b",
         ],
         emoji="⚡",
     ),
@@ -202,35 +217,33 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         tier="cloud",
         env_vars=["NVIDIA_API_KEY", "NIM_API_KEY"],
         vault_keys=["nvidia/api-key", "nvidia/api_key"],
+        # ⚠ NVIDIA NIM retires models aggressively and this list ROTS.
+        # Audited 2026-09-08 against the live catalog and by a 1-token call to
+        # each: ALL 20 previous entries were uncallable — 17 had vanished from
+        # `GET /v1/models` entirely (four llama-3.1-* hit end-of-life on one day,
+        # 2026-08-26) and the surviving three answered 404. The first entry is
+        # the implicit default when a slot needs substituting, so a dead entry
+        # here silently repointed every routing slot at a dead model.
+        # ⚠ Presence in `/v1/models` is NOT sufficient — 4 of 8 catalogued
+        # models 404'd on a real call. Re-audit by CALLING each one:
+        #   POST https://integrate.api.nvidia.com/v1/chat/completions
+        #   {"model": ..., "messages": [{"role":"user","content":"ping"}], "max_tokens": 1}
+        # Every entry below returned 200. Warm latency in the comment.
         models=[
-            # Meta Llama
-            "meta/llama-3.3-70b-instruct",
-            "meta/llama-3.1-405b-instruct",
-            "meta/llama-3.1-70b-instruct",
-            "meta/llama-3.1-8b-instruct",
-            # NVIDIA Nemotron
-            "nvidia/llama-3.1-nemotron-70b-instruct",
-            "nvidia/llama-3.3-nemotron-super-49b-v1",
-            # Mistral
-            "mistralai/mistral-large-2-instruct",
-            "mistralai/mistral-7b-instruct-v0.3",
-            "mistralai/mixtral-8x22b-instruct-v0.1",
-            # Google
-            "google/gemma-3-27b-it",
-            # Microsoft
-            "microsoft/phi-4",
-            "microsoft/phi-4-mini-instruct",
-            "microsoft/phi-3-medium-4k-instruct",
-            # DeepSeek
-            "deepseek-ai/deepseek-r1",
-            "deepseek-ai/deepseek-r1-distill-llama-70b",
-            # Qwen 2.5
-            "qwen/qwq-32b",
-            "qwen/qwen2.5-72b-instruct",
-            # Qwen 3
-            "qwen/qwen3-235b-a22b",
-            "qwen/qwen3-30b-a3b",
-            "qwen/qwen3-coder-480b-a35b-instruct",
+            # NVIDIA Nemotron — general purpose; first entry is the default
+            "nvidia/nemotron-3-super-120b-a12b",  # 0.6s — big and the fastest
+            "nvidia/nemotron-3.5-lightning-30b-a3b",  # 8.5s
+            # Small / fast
+            # "minimaxai/minimax-m3" — 410 EOL 2026-09-09, one day after it was added.
+            # Code
+            "poolside/laguna-xs-2.1",  # 0.5s
+            # Others
+            "moonshotai/kimi-k3",  # 11.6s
+            "openai/gpt-oss-20b",  # 12.9s
+            # ⚠ Flakiest entry here. Measured 2026-09-15, 8 probes: 5x 200, 1x 500,
+            # 1x 502, 1x timeout. Alive, so listed — but not a good default, and
+            # the probe retry is what keeps it from reading as broken.
+            "mistralai/mistral-nemotron",  # 5.7s warm
         ],
         emoji="🟩",
     ),
@@ -238,17 +251,22 @@ ALL_PROVIDERS: list[ProviderManifest] = [
     ProviderManifest(
         id="xai",
         display_name="xAI / Grok",
-        description="Grok-3, Grok-2 and Grok Vision from xAI — real-time web access.",
+        description="Grok 4 and Grok 3 from xAI — real-time web access.",
         tier="cloud",
         env_vars=["XAI_API_KEY", "GROK_KEY"],
         vault_keys=["xai/api-key", "xai/api_key"],
+        # Audited 2026-09-08 by CALLING each id (1 token). ⚠ For xAI the catalog
+        # is NOT the truth: /v1/models lists only grok-4.x, yet every grok-3* id
+        # below answers normally. Trusting the catalog here would have deleted
+        # four working models. Probe; never infer from a listing.
         models=[
+            "grok-4.6",  # live, and missing entirely before this audit
+            "grok-4.5",
+            "grok-4.3",
             "grok-3",
             "grok-3-fast",
             "grok-3-mini",
             "grok-3-mini-fast",
-            "grok-2-1212",
-            "grok-2-vision-1212",
         ],
         emoji="🌩",
     ),
@@ -302,7 +320,7 @@ ALL_PROVIDERS: list[ProviderManifest] = [
             "pixtral-large-latest",
         ],
         emoji="🌬",
-        enabled=False,  # Key in PROVIDER_ENV_VARS but no ProviderConfig yet — opt-in
+        enabled=False,  # Opt-in: has a ProviderConfig, but no key is expected by default
     ),
     # ── Cloud: Cerebras ───────────────────────────────────────────────────────
     ProviderManifest(
@@ -319,7 +337,7 @@ ALL_PROVIDERS: list[ProviderManifest] = [
             "qwen-3-32b",
         ],
         emoji="🧠",
-        enabled=False,  # Key in PROVIDER_ENV_VARS but no ProviderConfig yet — opt-in
+        enabled=False,  # Opt-in: has a ProviderConfig, but no key is expected by default
     ),
     # ── Cloud: GitHub Copilot ─────────────────────────────────────────────────
     ProviderManifest(

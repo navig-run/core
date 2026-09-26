@@ -73,7 +73,7 @@ class TestGetActiveHostNoSource:
         ctx = ContextManager(provider)
         assert ctx.get_active_host() == "my-server"
 
-    def test_env_var_unknown_host_falls_through(self, tmp_path, monkeypatch):
+    def test_env_var_unknown_host_stops_instead_of_falling_through(self, tmp_path, monkeypatch):
         monkeypatch.setenv("NAVIG_ACTIVE_HOST", "no-such-host")
         provider = _make_provider(
             tmp_path,
@@ -81,8 +81,12 @@ class TestGetActiveHostNoSource:
             global_config={"default_host": "real-host"},
         )
         ctx = ContextManager(provider)
-        # env host doesn't exist → falls through to default
-        assert ctx.get_active_host() == "real-host"
+        # This used to assert "falls through to default". It must not: the
+        # operator NAMED a host, and routing the command to a different machine
+        # because that name did not verify is how a `navig run` executed on the
+        # wrong server on 2026-09-15 (see test_active_host_no_fallback.py).
+        assert ctx.get_active_host() is None
+        assert ctx.get_active_host(return_source=True) == (None, "unresolvable")
 
     def test_global_cache_file_used(self, tmp_path, monkeypatch):
         monkeypatch.delenv("NAVIG_ACTIVE_HOST", raising=False)
@@ -94,7 +98,7 @@ class TestGetActiveHostNoSource:
         ctx = ContextManager(provider)
         assert ctx.get_active_host() == "cached-host"
 
-    def test_cache_file_unknown_host_ignored(self, tmp_path, monkeypatch):
+    def test_cache_file_unknown_host_stops_instead_of_being_ignored(self, tmp_path, monkeypatch):
         monkeypatch.delenv("NAVIG_ACTIVE_HOST", raising=False)
         provider = _make_provider(
             tmp_path,
@@ -103,7 +107,11 @@ class TestGetActiveHostNoSource:
             global_config={"default_host": "real-host"},
         )
         ctx = ContextManager(provider)
-        assert ctx.get_active_host() == "real-host"
+        # `navig host use ghost-host` was an explicit choice. A choice that no
+        # longer verifies is reported, not silently swapped for the default —
+        # "removed since" and "unreadable this instant" look identical here,
+        # and the second one routed a command to the wrong server once.
+        assert ctx.get_active_host() is None
 
     def test_default_host_from_global_config(self, tmp_path, monkeypatch):
         monkeypatch.delenv("NAVIG_ACTIVE_HOST", raising=False)

@@ -53,7 +53,9 @@
 
 ### Repository Local-Only Folders (Agent Hygiene)
 
-- `CHANGELOG.md` is tracked and remains the release/public history source of truth.
+- `CHANGELOG.md` is tracked and remains the release/public history source of truth. New core entries
+  are written as fragments under `changelog.d/` (one file per change, so concurrent branches never
+  conflict) and folded in with `npm run changelog:assemble` — see `changelog.d/README.md`.
 - `.dev/` is the default local AI working folder for scripts, logs, outputs, and scratch artifacts.
 - `.local/` is reserved for backups/moved files and compatibility temp artifacts.
 - Keep repo root clean: do not place scratch files directly in root.
@@ -299,10 +301,12 @@ All resource groups support consistent actions:
 
 ```bash
 # ═══ QUICK START ═══
-navig start                        # Start gateway + bot (background)
+navig start                        # Start gateway + bot (background) — through the installed
+                                   # service when there is one (a living parent, autostart),
+                                   # else a detached worker that writes ~/.navig/worker.pid
 navig start --foreground           # Start with live logs
-navig bot status                   # Check if bot is running
-navig bot stop                     # Stop all services
+navig bot status                   # Check if bot is running (names the daemon when it owns it)
+navig bot stop                     # Stop all services (stops the daemon gracefully when it owns the bot)
 navig init --status                # Setup readiness dashboard
 
 # ═══ PILLAR 1: INFRASTRUCTURE ═══
@@ -3643,6 +3647,26 @@ Row states: `ok=true` = verified healthy (✓) · `ok=false, warn=true` = warnin
 `ok=false, warn=false` = failure (✗). Warnings flip the exit code to 1 just like failures —
 in this report a ✓ means *verified*, never "could not check".
 
+**Desktop Apps (Windows only).** When NAVIG Anchor is installed, three rows say which
+binary is installed (path + build stamp — every rebuild reports the same version, the
+stamp is what tells them apart), whether the running Anchor *is* that binary (matched by
+path, not process name), and what **Launch at login** points at. A `Run` entry that names
+a different binary — typically a development build under `target/debug`, whose frontend
+is a dev server that is never up at boot, so every window is a browser error page — is a
+⚠ with the fix (re-enable Launch at login from the installed Anchor's Settings). An
+unquoted path is also a ⚠: under a directory with spaces, `C:\Program.exe` can win the
+race. Off is a green "off"; absent from the machine is a green "not installed".
+
+**Release (development checkout only).** Three rows compare what the tree says
+(`pyproject.toml` vs `latest.json`), the newest `v*` tag this checkout knows, and what PyPI
+serves — the three places that each answer "what version is navig?" and used to disagree
+unseen (3.25.0 was published by hand and never tagged; nothing said so for two weeks). A
+tree ahead of PyPI or of its newest tag is a ⚠ naming the command (`bash tools/release.sh
+X.Y.Z --publish`); PyPI ahead of the tree, or a tag pointing at a tree of another version,
+is a ✗. The PyPI row also counts the `[Unreleased]` entries and `changelog.d/` fragments
+waiting for a release. PyPI unreachable (or `NAVIG_VERSION_SYNC_OFFLINE=1`) is a ⚠ "not
+checked", never a tick.
+
 ### Fix what doctor found: `navig doctor --heal`
 
 Close the observe→repair loop: `--heal` maps failing checks onto fixes that already exist in
@@ -4569,17 +4593,27 @@ NAVIG supports multiple AI providers with automatic fallback:
 - `ollama` — Local Ollama models
 - `groq` — Groq (fast inference)
 - `airllm` — Local inference for 70B+ models on limited VRAM
+- `github_models` — GitHub Models (free tier on a GitHub token: `GITHUB_TOKEN`, or `github_models.token` in config.yaml)
 
 **Manage Providers:**
 ```bash
 navig ai providers                # List all providers and status
 navig ai providers --add openai   # Add API key for OpenAI
 navig ai providers --test anthropic  # Test Anthropic connection
+navig ai providers --test xai        # 1-token call; walks the known model ids and skips retired ones,
+                                     # so a working key is never reported broken by a dead first model
 navig ai providers --remove groq  # Remove Groq API key
 
 # List all available models
 navig ai models
 navig ai models --provider airllm
+
+# Audit the catalog: call every listed model once and report what the provider has RETIRED.
+# `mode doctor` probes what you ROUTE to; this probes what can be SUBSTITUTED IN (models[0] is
+# the credential probe and the routing default). Prints a paste-ready RETIRED_MODELS entry per
+# finding; exits 1 only for a retired id — never for a slow model or a provider you hold no key for.
+navig ai models --check
+navig ai models --check --provider groq --json
 ```
 
 ### 22.6 AirLLM Local Inference
@@ -5114,6 +5148,89 @@ notifications:
 - SSL certificate expiry (warn if <14 days)
 - Service status (configurable per host)
 
+**"Remediate health issues" — what runs without asking you**
+
+When `missions.autonomous_enabled` is on, a heartbeat finding can raise a
+`Remediate health issues` mission. Two rules keep that from ever paging you:
+
+- **Provider and model findings never raise a mission.** An expired API key, a retired
+  model, an endpoint returning 503, a rate limit — no shell agent can fix those, the LLM
+  router already falls back at request time, and the heartbeat alert has told you (once
+  per issue set, deduped for 6 hours). `navig mode doctor` shows the fix.
+- **A mission that does run is quiet by construction.** It runs without a prompt
+  (`missions.remediate.autonomy: auto` — set `approval` to be asked first), and inside it
+  the agent may only run **read-only diagnostics** on its own (`navig doctor`, `git
+  status`, `tail`, `ping`, …); every such command is audited as auto-approved. Anything
+  that would change state is refused with a reason the agent reads, so it *reports* the
+  command it wanted instead of asking you — the result reaches you as a `mission_complete`
+  notification. To let missions run a specific write on their own:
+
+```yaml
+missions:
+  allowed_commands:               # glob patterns, matched against the whole command
+    - "navig mode set *"
+    - "navig service restart"
+```
+
+When you *are* asked (interactive chat, a `dangerous` tool), the prompt shows the command
+text, not just the tool name.
+
+Some issues re-appear on every heartbeat, and a daemon restart triggers a check within
+10-60 seconds. Suppression keeps the actionable ones from becoming a stream of missions:
+
+```yaml
+missions:
+  remediate_backoff_base_secs: 3600    # 1h — first wait before the SAME issues re-ask
+  remediate_backoff_max_secs: 259200   # 72h — ceiling on the doubling (0 = uncapped)
+  remediate_min_interval_secs: 1800    # 30m — floor between ANY two remediate missions
+```
+
+Identical issues back off **exponentially** — 1h, 2h, 4h, 8h … up to the ceiling — so a
+problem is reported promptly and then goes quiet if nothing changes. A genuinely new
+issue set starts again at the base, so nothing is ever swallowed. The ceiling means a
+long-standing issue still resurfaces every few days rather than never again.
+
+The floor is a backstop for issues whose text wobbles between checks (a transient `503`
+from a provider reads as a different issue each time, and so as a new issue set) — it
+delays a new issue by at most one window, it never drops one.
+
+Every suppressed prompt is logged with the prior mission id, how many times it has been
+raised, and the next window, so quiet is always explainable.
+
+If the heartbeat *alerts* keep coming, run `navig mode doctor` — a dead model or an expired
+provider key is the usual cause, and only a new key or a new model clears it.
+
+**Reading `navig mode doctor`**
+
+It probes every configured route with a real 1-token call: each mode's primary, its
+fallback, and the hybrid routing tiers (`--modes-only` skips the last two). A model
+reached by several routes is probed once. Statuses, and what each one asks of you:
+
+| Status | Meaning | Action |
+|---|---|---|
+| `● live` | Answered | none |
+| `✗ DEAD` | Provider retired it (410) or the id is gone (404) | `navig mode set <mode> --provider <p> --model <m>` (tiers: `navig mode route set`) |
+| `⚠ auth` | 401/403 — credential invalid or lapsed | `navig connect login <template>` or `navig connect add` |
+| `○ no key` | Nothing configured for that provider | `navig connect add` |
+| `✗ unreachable` | Refused / timed out **twice** | Check the endpoint; for ollama, that it is running |
+| `↻ busy` | 429/5xx **twice** — the provider, not your config | Nothing; re-run later |
+
+Two rules keep this honest. **A destructive verdict is earned twice**: a bare 404, a
+timeout and a 5xx are each confirmed by a second call before being believed, because
+providers have been measured answering 404 once and 200 five times running for the same
+model. A real failure survives the retry. Only **410 is believed on sight** — it carries
+an explicit end-of-life message and has been stable every time it was checked.
+
+And **a dead fallback is reported but does not fail the command**: it breaks nothing
+today, and a machine that simply does not run ollama would otherwise be permanently red.
+A dead primary or tier is live breakage and does fail (exit 1), which is what makes the
+command usable as a CI gate. `↻ busy` never fails it either — a red build over someone
+else's rate limit teaches people to ignore the gate.
+
+The heartbeat runs the same probe once a day over primaries and tiers (not fallbacks),
+so a model a provider retires is reported without anyone running a command — that is
+how `minimaxai/minimax-m3` was caught the day after it was chosen.
+
 ### 23.3 Cron Scheduler
 
 Persistent job scheduling with natural language support.
@@ -5209,9 +5326,10 @@ Complete setup for 24/7 autonomous operation:
 navig host add production
 navig host add staging
 
-# 2. Configure notifications
-navig config set notifications.channel telegram
-navig config set notifications.recipient "YOUR_TELEGRAM_ID"
+# 2. Notifications need no setup — heartbeat findings are delivered as a
+#    "system_alert", which fans out to the Deck and Telegram automatically.
+#    (`notifications.recipient` is no longer read: it was a second copy of
+#    "who is the operator", which the notify router already resolves.)
 
 # 3. Configure heartbeat
 navig heartbeat configure --interval 30 --enable
@@ -5417,12 +5535,43 @@ navig service install
 navig service start           # Start daemon in background
 navig service start -f        # Start in foreground (for debugging)
 navig service stop            # Graceful shutdown
-navig service restart         # Stop + start
-navig service status          # Show daemon and child process health
+navig service restart         # Stop + start (on Windows: relaunched THROUGH the scheduled
+                              # task when installed, so the daemon keeps a living parent —
+                              # a detached spawn is orphan-shaped and process sweeps kill it)
+navig service status          # Daemon + children (pids verified NOW, not the boot snapshot),
+                              # Since/uptime, and the heartbeat — STALE = a wedged supervisor
 navig service logs            # Last 50 lines
 navig service logs -f         # Follow log output
 navig service logs -n 200     # Last 200 lines
+navig service pids            # Every navig-owned process tree — what a sweeper must spare
+navig service pids --plain    # One pid per line (an exclusion list)
 ```
+
+#### Process sweepers: what to spare
+
+To a cleanup script a navig daemon and a leaked helper look the same — python, parent
+gone — and an hourly "kill orphaned dev processes" sweep will take the daemon down at
+the next :01 (it did, twice, on 2026-09-14). `navig doctor` → **Daemon parent** warns when
+the running daemon is orphan-shaped; `navig service start|restart` relaunch through the
+scheduled task on Windows so the parent is the service host. For the sweeper itself:
+
+```powershell
+# Spare everything navig owns (verified: a recycled pid is never listed)
+$spare = navig service pids --plain
+```
+
+A sweeper that must not depend on navig being runnable may read the pid files directly —
+each names the ROOT of a tree; spare it **and its descendants**:
+
+| Pid file (under `~/.navig`)  | Tree                                                   |
+|------------------------------|--------------------------------------------------------|
+| `daemon/supervisor.pid`      | the service supervisor → gateway + telegram worker     |
+| `gateway.pid`                | a standalone `navig gateway start`                     |
+| `agent/agent.pid`            | a standalone `navig agent start`                       |
+| `worker.pid`                 | a standalone bot worker (`navig bot start --background` with no service installed) |
+
+A pid file is a *number*, not proof: trust it only if the process is **older than the
+file** (`navig service pids` does this check; a hand-rolled reader should too).
 
 #### Installation Methods
 
@@ -8836,6 +8985,7 @@ and never one with a visible window. See `docs/automation/cdp-connector.md`.
 | `navig cdp launched` | List browsers NAVIG started and whether each is live |
 | `navig cdp profile usage` | Disk used by each browser profile (named, orphaned, throwaway) |
 | `navig cdp profile prune [name…]` | Reclaim disk — throwaway sessions, plus any profile you name |
+| `navig cdp profile vacuum [name…] \| --all` | Reclaim disk **without losing logins** — caches and Chrome's on-device AI model |
 | `navig cdp stop` / `detach` | Close (`--port`/`--all`) or just disconnect a debug browser |
 | `navig cdp tabs` / `switch` | List every open page / make one the active target |
 | `navig cdp snapshot` / `screenshot` | a11y tree with refs / capture the page |
@@ -8889,15 +9039,26 @@ navig cdp profile close cybesis  ·  navig cdp profile remove cybesis
 navig cdp profile usage                                # disk used by each profile
 navig cdp profile prune                                # reclaim throwaway session dirs
 navig cdp profile prune gaze-books                     # delete a named profile you're done with
+navig cdp profile vacuum --all                         # caches + Chrome's 4 GB AI model go; logins stay
 ```
 
 - **Reuse, no reopen**: `open` attaches to the already-running profile on its stable port.
 - **Disk**: an automation profile is a full Chrome user-data dir (caches, service workers,
   IndexedDB) and grows without bound — `usage` shows where the gigabytes went, including
-  *orphaned* dirs no profile points at any more. `prune` only ever deletes what you name
-  plus throwaway sessions; it refuses a profile that is **running**, one another session's
-  browser is using, and — always — a `--real` profile, since that directory is your actual
-  Chrome data.
+  *orphaned* dirs no profile points at any more. **Reach for `vacuum` first**: Chrome
+  downloads its on-device AI model (~4 GB) into *every* profile it is launched with — on the
+  machine this was written for, 8.4 GB of an 11.7 GB footprint was that one model, twice,
+  against 7 MB of actual logins. `vacuum` deletes only what Chrome rebuilds (the model,
+  caches, shader and extension caches) and keeps every cookie and login; new launches no
+  longer download the model at all. `prune` is the destructive one: it only ever deletes
+  what you name plus throwaway sessions. Both refuse a profile that is **running**, one
+  another session's browser is using, and — always — a `--real` profile, since that
+  directory is your actual Chrome data.
+- **Closing is a request, then a kill**: `close`, `stop`, `stop --all` and the idle reaper
+  first ask the browser to shut down cleanly (CDP `Browser.close`) and wait for it, and only
+  then kill. A kill drops whatever Chrome has not flushed yet — measured: a cookie set one
+  second before a kill was gone, before a clean close it survived — so a `cdp login`
+  followed by `stop` keeps the login it just made.
 - **Active profile**: after `profile use`, `navig do` and `navig gmail` default to it (no `--port`).
 - **Your real Chrome** (advanced): `navig cdp profile list --real` shows your actual Chrome
   profiles; `navig cdp profile new mine --real "Profile 3"` registers one. Opening it relaunches
@@ -9367,29 +9528,32 @@ Manage *spaces* — contextual namespace bundles that group workspace settings, 
 
 | Command | Description |
 |---------|-------------|
-| `navig space list` | List all available spaces |
-| `navig space init <name>` | Create a new space |
-| `navig space use <name>` | Activate a space |
+| `navig space list` | List spaces across every root, with scope and enabled/active markers |
+| `navig space init [name]` | Create a new space. With no name it uses the folder you are standing in — for both the name and the location (`create`/`new` are aliases) |
+| `navig space use <name>` | Activate a space (`switch` is the canonical name; `use` is its alias) |
+| `navig space current` | Show the active space (`NAVIG_SPACE` override respected) |
+| `navig space rename <space> <new-id>` | Change a space's id everywhere it lives — manifest, registry row, active pointer; never moves the folder (`--dry-run` previews) |
+| `navig space doctor [path]` | Check a space and report what's present vs missing, then offer the next step (`check` is an alias; `--fix` repairs) |
+| `navig space audit` | Audit the whole spaces collection for structural drift (`lint` is an alias) |
 | `navig space books [name]` | Show or set the finance BOOK this space keeps its ledger in (`--clear` for the default) |
-| `navig space show [name]` | Show space details |
-| `navig space jump <name>` | Switch to space and `cd` to its root |
-| `navig space clear` | Deactivate the current space |
-| `navig space pack <name>` | Bundle space into a portable archive |
-| `navig space install <archive>` | Install a packed space |
-| `navig space validate [name]` | Validate space configuration |
-| `navig space apply [name]` | Apply space overlays to working directory |
-| `navig space unapply [name]` | Remove applied overlays |
-| `navig space diff [name]` | Show diff of pending space changes |
-| `navig space publish <name>` | Publish space to the registry |
-| `navig space workspace generate` | Generate workspace config from active space |
+| `navig space register <path>` | Register an external `.navig/` folder so it shows in the deck |
+| `navig space forget <name>` | Remove a space from the registry (the folder stays) |
+| `navig space enable / disable <name>` | Show or hide a space in the deck and switcher (a hidden folder still works when you are in it) |
+| `navig space fold / unfold <path>` | Demote a sub-space so it never claims a top-level id, and undo that |
+| `navig space wire` | Wire this folder into the agent ecosystem (alias of `navig wire`) |
+| `navig space install <source>` | Install a space bundle from the community registry (GitHub-backed) |
+| `navig space delete <name>` | Delete a space and all its contents (confirm-gated) |
 
 **Examples:**
 ```bash
 navig space list
-navig space init devops-prod    # Create "devops-prod" space
+cd /srv/devops-prod && navig space init   # Turn THIS folder into a space named after it
+navig space init devops-prod    # Or: create "devops-prod" under ~/.navig/spaces
+navig space init devops-prod --path .     # A chosen name, in the current folder
 navig space use devops-prod     # Activate it
-navig space show                # Inspect the active space
-navig space pack devops-prod    # Archive for sharing
+navig space current             # Which space is active
+navig space rename devops-prod prod   # Re-id it; `navig space use prod` from now on
+navig space doctor              # Is this folder a healthy space? (--fix repairs)
 ```
 
 ---
@@ -9609,6 +9773,47 @@ you switch it back on. Because the schedule is untouched, `navig habit list` and
 `/habits` show a banner saying the reminders are scheduled but not delivered,
 rather than reporting a healthy count into a void.
 
+**The evening journal.** When the day closes, Habits sends a card inviting you to
+write about your day — free form, as much or as little as you like. Reply to that
+card (typing or a voice note) and it lands in `journal/<date>.md` in your space;
+send `skip` to leave the day without an entry. There is no fixed form: it used to
+ask three numbered questions, which reliably collected three sentences and not a
+day.
+
+**Reading the journal back (off by default).** NAVIG can follow your entry with a
+short reflection — what the day's emotional thread was, phrases of yours worth
+noticing, what you returned to or stepped around, and at most one question. It is
+**opt-in**, because it sends a private journal entry to your configured model:
+
+```bash
+navig config set journal.reflect true     # off by default
+navig config set journal.reflect false    # back off
+```
+
+It never diagnoses, never uses clinical or disorder language, and never advises
+unless you asked — it reflects what is on the page. Short entries are left alone,
+and if the model is unavailable you are told so: the entry is written and
+confirmed *before* any of this runs, so a reflection can never cost you the
+record of your day.
+
+**The week, read together.** With the same switch on, Sunday's read-back is
+followed by a second one over the whole week — what you kept coming back to, what
+shifted from Monday to Sunday, phrases of yours from different days set side by
+side, and at most one question about the week ahead. It needs at least two
+entries in the week to say anything. `navig habit review` carries the same
+weekly reflection under **Reading the week back**, and `--write` keeps it in
+the journal. Reviews written into the journal are never fed back in as if you
+had written them.
+
+**Which model reads it.** By default the read-backs use your `big_tasks` mode
+(the quality tier, not the fast chat one). To keep the journal off hosted APIs
+entirely, pin it to a local model — this affects the journal and nothing else:
+
+```bash
+navig config set journal.model ollama:llama3      # any provider:model spec
+navig config set journal.model ""                 # back to the big_tasks mode
+```
+
 **Health is a separate switch.** `/health`, `/weigh` and `/body` belong to the
 **Health** extension, not Habits — so turning Habits off leaves the body check-in
 running, and vice versa. Health behaves the same way when switched off: the
@@ -9647,6 +9852,15 @@ Mapping:
 - `release:big` = major bump (`X.Y.Z` -> `(X+1).0.0`)
 - `release:dry` = preview next patch bump only (no file/git changes)
 
+Every bump also folds `changelog.d/` fragments and rotates `[Unreleased]` under
+`## [X.Y.Z] — <date>` in the same release commit (the consumed fragments' deletions
+included). Then `bash tools/release.sh X.Y.Z --publish` verifies the wheel (real-install
+smoke), tags, publishes to PyPI (the tag workflow cannot run — org Actions is
+billing-blocked), creates the GitHub Release with the artifacts attached, and records the
+verified asset in `latest.json`. It refuses a version `pyproject.toml` does not carry. An empty `[Unreleased]` with no fragments refuses the bump — a version heading
+over nothing is a lie — and `--no-changelog` is the deliberate hatch for a release that
+genuinely carries no user-facing entries. `release:dry` shows the changelog plan too.
+
 ---
 
 ## 50. Multi-Agent Repo Guard (`navig repo`)
@@ -9662,19 +9876,28 @@ navig repo new <slug>           # create .dev/worktrees/<slug> on feat/<slug> (b
 navig repo new <slug> --type fix    # fix/<slug> instead; --from <ref> to override the base
 navig repo remove <slug>        # reliably remove that worktree (unregister + delete, no leak)
 navig repo remove <slug> --force    # discard the worktree's uncommitted changes too
+#   a lock left by a `worktree add` that died (`locked: initializing`) is cleared for you;
+#   any other lock is named — `git worktree unlock <path>` if it is yours
 navig repo conflicts            # simulate merges between EVERY pair of worktrees
 navig repo conflicts --json     # machine-readable; exit 2 when any pair conflicts
 navig repo conflicts --no-dirty # committed state only (default includes dirty)
 navig repo stale                # leftover worktrees / unmerged branches / stashes / orphan dirs
+#   an unmerged branch carrying changelog.d/ fragments is marked: user-facing work waiting
+#   a worktree still locked `initializing` is an add that DIED (partial tree) - flagged, with the fix
 navig repo stale --json
 navig repo lock                 # who holds the main-checkout agent lock
 navig repo lock release [--force]
 navig repo prune                # dry-run: list orphaned .dev/worktrees dirs git no longer tracks
 navig repo prune --yes          # delete them (safe: skips live worktrees + locked dirs, says why)
 navig repo prune --yes --force  # also delete live worktrees (may hold uncommitted work) — rare
+navig repo sweep                # dry-run: local branches PROVABLY already on origin/main
+navig repo sweep --yes          # delete them (prints each sha; the reflog keeps the commit)
+navig repo sweep --no-github    # ancestry + tree proofs only (skip the gh PR lookup)
+navig repo land <branch>        # dry-run: the teardown plan for a MERGED branch
+navig repo land <branch> --yes  # delete it locally, on origin, and its worktree (refuses if unmerged)
 ```
 
-All of these (`new` / `remove` / `conflicts` / `stale` / `lock` / `prune`) accept `--repo
+All of these (`new` / `remove` / `conflicts` / `stale` / `lock` / `prune` / `sweep` / `land`) accept `--repo
 <path>`, and fall back to `NAVIG_REPO` / `CLAUDE_PROJECT_DIR` when the process cwd
 is not the repo — so an agent can drive them reliably from a subshell (a launched
 `navig.exe` does not always inherit the shell's directory).
@@ -9719,6 +9942,32 @@ Details:
   "locked" dir is a scanner (antivirus/indexer) holding a fresh checkout — the
   delete retries with backoff, and it clears within a minute (verified: not the
   daemon), so just re-run; a reboot clears any stubborn one.
+- **`sweep`** deletes local branches whose work is **provably** already on the
+  remote default branch — the debris that `stale` reports but nobody clears.
+  Measured in one repo: 8 → 20 branches in eleven days, 37 at the worst, 28 of
+  them already merged. Three proofs, any one sufficient: the tip is an
+  **ancestor** of `origin/main`; the tip **tree** is identical to it (a
+  squash-merged branch has commits main lacks and contents main already has);
+  or GitHub records a **merged PR** that landed exactly this tip (`gh`, optional
+  — without it that class is simply not claimed, and the command says so).
+  Everything unproven is **kept** and listed with its ahead-count and PR state
+  (`#1094 CLOSED`, `—`), so the decision left is a human one about real work.
+  It judges against `origin/main` after a best-effort fetch, **not** local
+  `main` — which is exactly the ref that goes stale in a shared checkout
+  (measured 107 PRs behind). Dry-run by default (`--yes` to delete); the default
+  branch and any branch checked out in a worktree are never touched; each
+  deletion prints the sha it removed, and git's reflog keeps the commit. A failed
+  fetch or a missing `gh` can only make it keep **more**, never delete more.
+- **`land`** finishes a MERGED branch completely — the merge-and-delete contract's
+  other three steps as one verb. `gh pr merge --delete-branch` run from a worktree
+  merges, then FAILS its remote delete (it can't check out the default branch a
+  worktree holds), leaving the branch on `origin` and its worktree behind — measured
+  on four consecutive PRs. `land` deletes the origin ref, removes the worktree, then
+  deletes the local branch. It does **not** merge (that is the reviewed step) and
+  **refuses** a branch not provably on `origin/main` (ancestor tip, identical tree, or
+  a MERGED PR that landed exactly this tip — the same proofs `sweep` uses), so it can
+  never delete unmerged work. Dry-run by default; the reflog and `refs/pull/N/head`
+  keep both sides recoverable.
 
 ### Install the guard into any repo
 

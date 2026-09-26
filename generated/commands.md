@@ -1,6 +1,6 @@
 # NAVIG Command Reference
 
-_Generated 2026-09-07T14:38:05.854606+00:00_
+_Generated 2026-09-26T17:42:22.076706+00:00_
 
 ## `navig action add`
 **Status:** `stable` · **Since:** 
@@ -692,7 +692,7 @@ navig ai explain
 
 ## `navig ai login`
 **Status:** `stable` · **Since:** 
-Login to an AI provider using OAuth (e.g., OpenAI Codex).
+Login to an AI provider using OAuth.
 **Examples:**
 ```sh
 navig ai login
@@ -944,6 +944,38 @@ Ask AI about server/configuration.
 **Examples:**
 ```sh
 navig ask
+```
+
+## `navig audio beat analyse`
+**Status:** `stable` · **Since:** 
+🔍 What is this beat — tempo, key, structure, spectrum, and a style brief derived from them.
+**Examples:**
+```sh
+navig audio beat analyse
+```
+
+## `navig audio beat gen`
+**Status:** `stable` · **Since:** 
+🎛  Render beats from a style — bar-exact sections, no vocals, tempo and key checked afterwards.
+**Examples:**
+```sh
+navig audio beat gen
+```
+
+## `navig audio beat plan`
+**Status:** `stable` · **Since:** 
+🧮 The arrangement a render would use — section by section, in seconds. Spends nothing.
+**Examples:**
+```sh
+navig audio beat plan
+```
+
+## `navig audio beat styles`
+**Status:** `stable` · **Since:** 
+📚 The beat styles available — built-in genres plus any file you pass.
+**Examples:**
+```sh
+navig audio beat styles
 ```
 
 ## `navig audio check`
@@ -1850,6 +1882,14 @@ Set the active profile (navig do / cdp default to it).
 navig cdp profile use
 ```
 
+## `navig cdp profile vacuum`
+**Status:** `stable` · **Since:** 
+Reclaim disk from a profile WITHOUT losing its logins: delete only what Chrome rebuilds.
+**Examples:**
+```sh
+navig cdp profile vacuum
+```
+
 ## `navig cdp record`
 **Status:** `stable` · **Since:** 
 Record the attached page to an mp4 (screencast → video).
@@ -2212,15 +2252,39 @@ navig connector status
 
 ## `navig contacts add`
 **Status:** `stable` · **Since:** 
-Add a contact to the address book.
+Add a contact by hand.
 **Examples:**
 ```sh
 navig contacts add
 ```
 
+## `navig contacts doctor`
+**Status:** `stable` · **Since:** 
+Check that the book says the same thing in both of its halves.
+**Examples:**
+```sh
+navig contacts doctor
+```
+
+## `navig contacts export`
+**Status:** `stable` · **Since:** 
+Export contacts as CSV.
+**Examples:**
+```sh
+navig contacts export
+```
+
+## `navig contacts flag`
+**Status:** `stable` · **Since:** 
+Record whether a handle still resolves, so exports can skip dead ones.
+**Examples:**
+```sh
+navig contacts flag
+```
+
 ## `navig contacts import`
 **Status:** `stable` · **Since:** 
-Import contacts from Telegram Desktop export.
+Import an address book, merging duplicates into one contact per person.
 **Examples:**
 ```sh
 navig contacts import
@@ -2228,18 +2292,58 @@ navig contacts import
 
 ## `navig contacts list`
 **Status:** `stable` · **Since:** 
-List saved contacts.
+List contacts.
 **Examples:**
 ```sh
 navig contacts list
 ```
 
+## `navig contacts liveness`
+**Status:** `stable` · **Since:** 
+What the book knows about which routes still resolve.
+**Examples:**
+```sh
+navig contacts liveness
+```
+
+## `navig contacts merge`
+**Status:** `stable` · **Since:** 
+Fold one contact into another, reversibly.
+**Examples:**
+```sh
+navig contacts merge
+```
+
+## `navig contacts merges`
+**Status:** `stable` · **Since:** 
+Every merge and split applied, and whether it was undone.
+**Examples:**
+```sh
+navig contacts merges
+```
+
+## `navig contacts migrate`
+**Status:** `stable` · **Since:** 
+Bring a pre-merge contact book onto the shared schema.
+**Examples:**
+```sh
+navig contacts migrate
+```
+
 ## `navig contacts remove`
 **Status:** `stable` · **Since:** 
-Remove a contact from the address book.
+Remove a contact.
 **Examples:**
 ```sh
 navig contacts remove
+```
+
+## `navig contacts review`
+**Status:** `stable` · **Since:** 
+Record that a flagged merge was looked at and found correct.
+**Examples:**
+```sh
+navig contacts review
 ```
 
 ## `navig contacts route`
@@ -2250,12 +2354,44 @@ Add or remove a route for a contact.
 navig contacts route
 ```
 
+## `navig contacts search`
+**Status:** `stable` · **Since:** 
+Find someone by anything you remember about them.
+**Examples:**
+```sh
+navig contacts search
+```
+
 ## `navig contacts show`
 **Status:** `stable` · **Since:** 
-Show full contact details.
+Everything known about one contact, and where it came from.
 **Examples:**
 ```sh
 navig contacts show
+```
+
+## `navig contacts split`
+**Status:** `stable` · **Since:** 
+Move one identifier onto a contact of its own.
+**Examples:**
+```sh
+navig contacts split
+```
+
+## `navig contacts stats`
+**Status:** `stable` · **Since:** 
+How many people, at which tiers, and how much evidence backs them.
+**Examples:**
+```sh
+navig contacts stats
+```
+
+## `navig contacts undo`
+**Status:** `stable` · **Since:** 
+Reverse a merge, restoring the absorbed contact.
+**Examples:**
+```sh
+navig contacts undo
 ```
 
 ## `navig context clear`
@@ -3264,17 +3400,145 @@ Show an inventory item and its offers.
 navig ebay show
 ```
 
+## `navig email connect`
+**Status:** `stable` · **Since:** 
+Link a Gmail account (OAuth). Same as `navig connector connect gmail`.
+**Examples:**
+```sh
+navig email connect
+```
+
+## `navig email digest`
+**Status:** `stable` · **Since:** 
+Template digest for the period; `--llm` adds prose through the guarded model door.
+**Examples:**
+```sh
+navig email digest
+```
+
+## `navig email edge deploy`
+**Status:** `stable` · **Since:** 
+Deploy the Worker from the plugin's edge/ folder (uses wrangler's own login).
+**Examples:**
+```sh
+navig email edge deploy
+```
+
+## `navig email edge events`
+**Status:** `stable` · **Since:** 
+Recent messages the edge handled (metadata only — never bodies).
+**Examples:**
+```sh
+navig email edge events
+```
+
+## `navig email edge secrets`
+**Status:** `stable` · **Since:** 
+Push the Worker's secrets from navig's own vault/config. Nothing is ever printed.
+**Examples:**
+```sh
+navig email edge secrets
+```
+
+## `navig email edge send`
+**Status:** `stable` · **Since:** 
+Send AS support@<domain> (or another @domain address) through Cloudflare Email Sending.
+**Examples:**
+```sh
+navig email edge send
+```
+
+## `navig email edge stats`
+**Status:** `stable` · **Since:** 
+Counts by alias / tag / day / sender domain for mail that entered at the edge.
+**Examples:**
+```sh
+navig email edge stats
+```
+
+## `navig email edge status`
+**Status:** `stable` · **Since:** 
+Is the Worker up, and does it have Email Sending?
+**Examples:**
+```sh
+navig email edge status
+```
+
+## `navig email followup`
+**Status:** `stable` · **Since:** 
+Draft follow-ups in the space's style for ledger threads (opt-in model; drafts only).
+**Examples:**
+```sh
+navig email followup
+```
+
+## `navig email labels ensure`
+**Status:** `stable` · **Since:** 
+Create a label (and its parents) if missing; print its id.
+**Examples:**
+```sh
+navig email labels ensure
+```
+
+## `navig email labels list`
+**Status:** `stable` · **Since:** 
+Every label with its counts.
+**Examples:**
+```sh
+navig email labels list
+```
+
 ## `navig email list`
 **Status:** `stable` · **Since:** 
-List emails from your inbox.
+List messages of a folder (newest first).
 **Examples:**
 ```sh
 navig email list
 ```
 
+## `navig email read`
+**Status:** `stable` · **Since:** 
+Read one message (or its whole thread), body included.
+**Examples:**
+```sh
+navig email read
+```
+
+## `navig email replied`
+**Status:** `stable` · **Since:** 
+Find every Sent reply to mail that sat in a folder (spam): ledger, corpus, label, stats.
+**Examples:**
+```sh
+navig email replied
+```
+
+## `navig email rules apply`
+**Status:** `stable` · **Since:** 
+Run the rules over existing mail (backfill labels). Notifications are NOT sent here.
+**Examples:**
+```sh
+navig email rules apply
+```
+
+## `navig email rules check`
+**Status:** `stable` · **Since:** 
+Validate the rules file; with a message id, show which rules would fire.
+**Examples:**
+```sh
+navig email rules check
+```
+
+## `navig email rules list`
+**Status:** `stable` · **Since:** 
+The rules the watch applies (space file + enabled daemon rules).
+**Examples:**
+```sh
+navig email rules list
+```
+
 ## `navig email search`
 **Status:** `stable` · **Since:** 
-Search emails by subject, sender, or content.
+Search with Gmail's own syntax (spam and trash included).
 **Examples:**
 ```sh
 navig email search
@@ -3282,26 +3546,42 @@ navig email search
 
 ## `navig email send`
 **Status:** `stable` · **Since:** 
-Send an email.
+Send (or draft) a message — through Gmail, or AS the domain via the Cloudflare edge.
 **Examples:**
 ```sh
 navig email send
 ```
 
-## `navig email setup`
+## `navig email stats`
 **Status:** `stable` · **Since:** 
-Configure email provider credentials.
+Counts for the period (received/sent/spam/unread, per label & rule, top senders, per day).
 **Examples:**
 ```sh
-navig email setup
+navig email stats
 ```
 
-## `navig email sync`
+## `navig email status`
 **Status:** `stable` · **Since:** 
-Sync email data from remote provider.
+Connected account, mailbox size, rules loaded, last watch.
 **Examples:**
 ```sh
-navig email sync
+navig email status
+```
+
+## `navig email tag`
+**Status:** `stable` · **Since:** 
+Add/remove labels on one message or on a search result.
+**Examples:**
+```sh
+navig email tag
+```
+
+## `navig email watch`
+**Status:** `stable` · **Since:** 
+One incremental pass over new mail: rules → labels / Telegram / run. For cron (every 5 min).
+**Examples:**
+```sh
+navig email watch
 ```
 
 ## `navig eval run`
@@ -5002,7 +5282,7 @@ navig habit checkin
 
 ## `navig habit journal`
 **Status:** `stable` · **Since:** 
-Write the day's three lines into the space journal.
+Write the day's entry into the space journal.
 **Examples:**
 ```sh
 navig habit journal
@@ -7387,6 +7667,142 @@ Storage usage.
 navig mobile storage
 ```
 
+## `navig mobile ui apps`
+**Status:** `stable` · **Since:** 
+List launchable apps for a platform.
+**Examples:**
+```sh
+navig mobile ui apps
+```
+
+## `navig mobile ui assert`
+**Status:** `stable` · **Since:** 
+Assert the current screen shows (or --gone: hides) a text/ref — the
+**Examples:**
+```sh
+navig mobile ui assert
+```
+
+## `navig mobile ui close`
+**Status:** `stable` · **Since:** 
+End the current UI session.
+**Examples:**
+```sh
+navig mobile ui close
+```
+
+## `navig mobile ui devices`
+**Status:** `stable` · **Since:** 
+List app-automation targets (simulators / emulators / devices).
+**Examples:**
+```sh
+navig mobile ui devices
+```
+
+## `navig mobile ui doctor`
+**Status:** `stable` · **Since:** 
+agent-device's own environment check (SDKs, drivers, permissions).
+**Examples:**
+```sh
+navig mobile ui doctor
+```
+
+## `navig mobile ui exec`
+**Status:** `stable` · **Since:** 
+Escape hatch — pass raw arguments straight to agent-device.
+**Examples:**
+```sh
+navig mobile ui exec
+```
+
+## `navig mobile ui fill`
+**Status:** `stable` · **Since:** 
+Fill a text field identified by its snapshot ref.
+**Examples:**
+```sh
+navig mobile ui fill
+```
+
+## `navig mobile ui open`
+**Status:** `stable` · **Since:** 
+Start a UI session bound to an app — snapshot/tap/… then act on it.
+**Examples:**
+```sh
+navig mobile ui open
+```
+
+## `navig mobile ui press`
+**Status:** `stable` · **Since:** 
+Press a device button / key.
+**Examples:**
+```sh
+navig mobile ui press
+```
+
+## `navig mobile ui record`
+**Status:** `stable` · **Since:** 
+Record your manual flow into a replayable .ad script (interactive).
+**Examples:**
+```sh
+navig mobile ui record
+```
+
+## `navig mobile ui replay`
+**Status:** `stable` · **Since:** 
+Replay a recorded .ad script (streams progress).
+**Examples:**
+```sh
+navig mobile ui replay
+```
+
+## `navig mobile ui screenshot`
+**Status:** `stable` · **Since:** 
+Capture the app screen to a PNG (app-context — distinct from the raw
+**Examples:**
+```sh
+navig mobile ui screenshot
+```
+
+## `navig mobile ui scroll`
+**Status:** `stable` · **Since:** 
+Scroll the current view.
+**Examples:**
+```sh
+navig mobile ui scroll
+```
+
+## `navig mobile ui snapshot`
+**Status:** `stable` · **Since:** 
+Accessibility snapshot with element refs (@e1…) — the agent's eyes.
+**Examples:**
+```sh
+navig mobile ui snapshot
+```
+
+## `navig mobile ui tap`
+**Status:** `stable` · **Since:** 
+Tap an element by its snapshot ref.
+**Examples:**
+```sh
+navig mobile ui tap
+```
+
+## `navig mobile ui type`
+**Status:** `stable` · **Since:** 
+Type text into the currently focused field.
+**Examples:**
+```sh
+navig mobile ui type
+```
+
+## `navig mobile ui wait`
+**Status:** `stable` · **Since:** 
+Wait for the UI to settle.
+**Examples:**
+```sh
+navig mobile ui wait
+```
+
 ## `navig mobile watch`
 **Status:** `stable` · **Since:** 
 Watch for device arrival/removal until interrupted (Ctrl-C).
@@ -7667,6 +8083,22 @@ Remove a registered node.
 navig node remove
 ```
 
+## `navig notify send`
+**Status:** `stable` · **Since:** 
+Dispatch one notification and report which channels accepted it.
+**Examples:**
+```sh
+navig notify send
+```
+
+## `navig notify types`
+**Status:** `stable` · **Since:** 
+Show every notification type and the channels it currently routes to.
+**Examples:**
+```sh
+navig notify types
+```
+
 ## `navig output-style create`
 **Status:** `stable` · **Since:** 
 Scaffold a new output style file.
@@ -7707,12 +8139,92 @@ Activate an output style by name.
 navig output-style use
 ```
 
+## `navig paperwork apply`
+**Status:** `stable` · **Since:** 
+Execute the plan: copy, verify by hash, then quarantine the source.
+**Examples:**
+```sh
+navig paperwork apply
+```
+
+## `navig paperwork echeances`
+**Status:** `stable` · **Since:** 
+The deadline radar: what is overdue or due soon, from filed letters and recurrent renewals.
+**Examples:**
+```sh
+navig paperwork echeances
+```
+
+## `navig paperwork handoff`
+**Status:** `stable` · **Since:** 
+File the manifest's non-company documents into the spaces that own them.
+**Examples:**
+```sh
+navig paperwork handoff
+```
+
+## `navig paperwork index`
+**Status:** `stable` · **Since:** 
+Rebuild the document index and the invoice register from disk.
+**Examples:**
+```sh
+navig paperwork index
+```
+
+## `navig paperwork reply`
+**Status:** `stable` · **Since:** 
+Draft the reply to a filed letter (French, formal) into out/courriers/ — never sent.
+**Examples:**
+```sh
+navig paperwork reply
+```
+
+## `navig paperwork review`
+**Status:** `stable` · **Since:** 
+Show what the plan intends, or just the rows that still need you.
+**Examples:**
+```sh
+navig paperwork review
+```
+
+## `navig paperwork scan`
+**Status:** `stable` · **Since:** 
+Extract, classify and deduplicate documents into a reviewable plan.
+**Examples:**
+```sh
+navig paperwork scan
+```
+
+## `navig paperwork undo`
+**Status:** `stable` · **Since:** 
+Reverse an apply, restoring every source from the quarantine.
+**Examples:**
+```sh
+navig paperwork undo
+```
+
+## `navig pipeline captions`
+**Status:** `stable` · **Since:** 
+✍️  Transcribe a track to an .srt — with word-level timings.
+**Examples:**
+```sh
+navig pipeline captions
+```
+
 ## `navig pipeline clip`
 **Status:** `stable` · **Since:** 
 🎵 Build a vertical clip cut to a track you already have — no narration.
 **Examples:**
 ```sh
 navig pipeline clip
+```
+
+## `navig pipeline hooks`
+**Status:** `stable` · **Since:** 
+🎣 Rank the passages of a track worth cutting a short clip from.
+**Examples:**
+```sh
+navig pipeline hooks
 ```
 
 ## `navig pipeline reel`
@@ -8315,6 +8827,14 @@ Remove the guard wiring (and hook scripts, when unmodified) from a repo.
 navig repo guard uninstall
 ```
 
+## `navig repo land`
+**Status:** `stable` · **Since:** 
+Finish a MERGED branch completely: delete it locally, on origin, and its worktree.
+**Examples:**
+```sh
+navig repo land
+```
+
 ## `navig repo lock release`
 **Status:** `stable` · **Since:** 
 Release the agent lock.
@@ -8361,6 +8881,22 @@ Report leftover agent work: worktrees, unmerged branches, stashes, lock.
 **Examples:**
 ```sh
 navig repo stale
+```
+
+## `navig repo sweep`
+**Status:** `stable` · **Since:** 
+Delete local branches whose work is provably already on the default branch.
+**Examples:**
+```sh
+navig repo sweep
+```
+
+## `navig repo sync`
+**Status:** `stable` · **Since:** 
+Return the MAIN checkout to the default branch and fast-forward it.
+**Examples:**
+```sh
+navig repo sync
 ```
 
 ## `navig run`
@@ -8537,6 +9073,14 @@ Show NAVIG daemon logs.
 **Examples:**
 ```sh
 navig service logs
+```
+
+## `navig service pids`
+**Status:** `stable` · **Since:** 
+The pids an external process sweeper must spare — every navig-owned tree.
+**Examples:**
+```sh
+navig service pids
 ```
 
 ## `navig service restart`
@@ -9003,6 +9547,22 @@ Publish ONE brief to many networks (X · Facebook · Dev.to · Telegram) with UT
 navig social fan-out
 ```
 
+## `navig social presence crawl`
+**Status:** `stable` · **Since:** 
+Crawl every account in a space's registry and record what moved.
+**Examples:**
+```sh
+navig social presence crawl
+```
+
+## `navig social presence trend`
+**Status:** `stable` · **Since:** 
+First → latest movement for every tracked account, across all snapshots.
+**Examples:**
+```sh
+navig social presence trend
+```
+
 ## `navig social receipts`
 **Status:** `stable` · **Since:** 
 What we've published — a campaign-tagged ledger of every live fan-out.
@@ -9195,6 +9755,54 @@ List spaces across every root (with scope + enabled/active indicators).
 navig space list
 ```
 
+## `navig space media config`
+**Status:** `stable` · **Since:** 
+Show the media layout, or write it with ``--init``.
+**Examples:**
+```sh
+navig space media config
+```
+
+## `navig space media fix`
+**Status:** `stable` · **Since:** 
+Repair what can be repaired without a judgement call.
+**Examples:**
+```sh
+navig space media fix
+```
+
+## `navig space media link`
+**Status:** `stable` · **Since:** 
+Attach one project to its media folder, creating the folder if needed.
+**Examples:**
+```sh
+navig space media link
+```
+
+## `navig space media list`
+**Status:** `stable` · **Since:** 
+Show every media link and its target, healthy ones included.
+**Examples:**
+```sh
+navig space media list
+```
+
+## `navig space media relink`
+**Status:** `stable` · **Since:** 
+Repoint one media link. Removes the link only — never the media.
+**Examples:**
+```sh
+navig space media relink
+```
+
+## `navig space media verify`
+**Status:** `stable` · **Since:** 
+Check every media link across the configured trees.
+**Examples:**
+```sh
+navig space media verify
+```
+
 ## `navig space new`
 **Status:** `stable` · **Since:** 
 Create/initialize a space.
@@ -9209,6 +9817,14 @@ Register an external `.navig/` folder so it shows in the deck (enabled).
 **Examples:**
 ```sh
 navig space register
+```
+
+## `navig space rename`
+**Status:** `stable` · **Since:** 
+Give a space a new id — manifest, registry and the active-space pointer together.
+**Examples:**
+```sh
+navig space rename
 ```
 
 ## `navig space switch`
@@ -9363,6 +9979,54 @@ List spaces across every root (with scope + enabled/active indicators).
 navig spaces list
 ```
 
+## `navig spaces media config`
+**Status:** `stable` · **Since:** 
+Show the media layout, or write it with ``--init``.
+**Examples:**
+```sh
+navig spaces media config
+```
+
+## `navig spaces media fix`
+**Status:** `stable` · **Since:** 
+Repair what can be repaired without a judgement call.
+**Examples:**
+```sh
+navig spaces media fix
+```
+
+## `navig spaces media link`
+**Status:** `stable` · **Since:** 
+Attach one project to its media folder, creating the folder if needed.
+**Examples:**
+```sh
+navig spaces media link
+```
+
+## `navig spaces media list`
+**Status:** `stable` · **Since:** 
+Show every media link and its target, healthy ones included.
+**Examples:**
+```sh
+navig spaces media list
+```
+
+## `navig spaces media relink`
+**Status:** `stable` · **Since:** 
+Repoint one media link. Removes the link only — never the media.
+**Examples:**
+```sh
+navig spaces media relink
+```
+
+## `navig spaces media verify`
+**Status:** `stable` · **Since:** 
+Check every media link across the configured trees.
+**Examples:**
+```sh
+navig spaces media verify
+```
+
 ## `navig spaces new`
 **Status:** `stable` · **Since:** 
 Create/initialize a space.
@@ -9377,6 +10041,14 @@ Register an external `.navig/` folder so it shows in the deck (enabled).
 **Examples:**
 ```sh
 navig spaces register
+```
+
+## `navig spaces rename`
+**Status:** `stable` · **Since:** 
+Give a space a new id — manifest, registry and the active-space pointer together.
+**Examples:**
+```sh
+navig spaces rename
 ```
 
 ## `navig spaces switch`
@@ -9673,6 +10345,14 @@ Toggle the deleted-message -> DM-you alert.
 **Examples:**
 ```sh
 navig telegram business alerts
+```
+
+## `navig telegram business deleted`
+**Status:** `stable` · **Since:** 
+What was deleted in your business chats — the DM alert, browsable.
+**Examples:**
+```sh
+navig telegram business deleted
 ```
 
 ## `navig telegram business disable`
@@ -10021,7 +10701,7 @@ navig telegram setup
 
 ## `navig telegram status`
 **Status:** `stable` · **Since:** 
-Show MTProto login status.
+Show Telegram bot status.
 **Examples:**
 ```sh
 navig telegram status

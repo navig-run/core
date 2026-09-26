@@ -1,4 +1,5 @@
 {
+  "$schema": "./tool.schema.json",
   "id": "tool:db",
   "name": "navig_db",
   "description": "Execute NAVIG db operations.",

@@ -717,6 +717,115 @@ def profile_prune(names: list[str] | None = None, *, sessions: bool = True,
             "root": str(config_dir() / "cdp-profiles")}
 
 
+# Directories inside a Chrome user-data-dir that Chrome REBUILDS on demand. Deleting them
+# loses nothing a person did: no cookie, login, saved password, bookmark, history entry,
+# extension, or site setting lives in any of these. Measured on the operator's machine
+# (2026-09-15): `OptGuideOnDeviceModel` alone was 4,072 MB in EACH of two profiles — the same
+# on-device AI model, downloaded twice — against 6 MB and 1 MB of actual login state.
+# Relative to the user-data-dir; `Default/` is Chrome's profile-within-the-dir.
+_REGENERABLE_DIRS: tuple[str, ...] = (
+    "OptGuideOnDeviceModel",                 # Gemini Nano (~4 GB); see CHROMIUM_DISABLED_FEATURES
+    "OptGuideOnDeviceClassifierModel",       # its ~120 MB companion
+    "OptGuidePredictionModels",
+    "extensions_crx_cache",
+    "component_crx_cache",
+    "GrShaderCache",
+    "ShaderCache",
+    "GraphiteDawnCache",
+    "Default/Cache",
+    "Default/Code Cache",
+    "Default/GPUCache",
+    "Default/DawnCache",
+    "Default/DawnGraphiteCache",
+    "Default/DawnWebGPUCache",
+    "Default/Service Worker/CacheStorage",   # page-controlled cache; refetched from the network
+    "Default/Service Worker/ScriptCache",
+)
+
+
+def profile_vacuum(names: list[str] | None = None, *, all_profiles: bool = False,
+                   dry_run: bool = True) -> dict:
+    """Delete REGENERABLE data inside named profiles — caches and Chrome's on-device AI
+    model — and keep every login.
+
+    This is the safe complement to :func:`profile_prune`. Prune deletes a profile (and its
+    logins) and therefore never selects one on its own; vacuum deletes only what Chrome
+    rebuilds, so ``--all`` is fine. What is never touched: ``Cookies``, ``Login Data``,
+    ``Web Data``, ``Preferences``, ``Local Storage``, ``Session Storage``, ``IndexedDB``,
+    ``Extensions``, ``History``, ``Bookmarks``, ``Local State`` — none of them is in
+    ``_REGENERABLE_DIRS``, and the list is an allowlist of paths to remove, not a denylist.
+
+    * A ``real`` profile (the operator's actual Chrome data) is refused — it is very likely
+      running, and touching the operator's own browser is a line this module never crosses.
+    * A running profile is refused — Chrome holds cache files open; deleting under it
+      corrupts what is left. Close it first.
+    ``dry_run=True`` (the default) reports what would go, per directory.
+    """
+    import shutil
+
+    from navig.platform.paths import config_dir
+
+    usage = profile_usage()
+    by_name = {r["name"]: r for r in usage["named"]}
+    wanted = list(by_name) if all_profiles else list(names or [])
+
+    planned: list[dict] = []
+    refused: list[dict] = []
+    for name in wanted:
+        rec = by_name.get(name)
+        if rec is None:
+            refused.append({"name": name, "why": "no such profile (or its dir is gone)"})
+            continue
+        if rec["real"]:
+            refused.append({"name": name, "why": "points at your REAL Chrome data — refused"})
+            continue
+        if rec["running"]:
+            refused.append({"name": name, "why": "currently running — close it first "
+                                                 f"(navig cdp profile close {name})"})
+            continue
+        udd = rec["user_data_dir"]
+        for rel in _REGENERABLE_DIRS:
+            path = os.path.join(udd, *rel.split("/"))
+            if not os.path.isdir(path):
+                continue
+            size = _dir_size_bytes(path)
+            if size == 0:
+                continue
+            planned.append({"name": name, "rel": rel, "path": path, "bytes": size})
+
+    freed = 0
+    deleted: list[str] = []
+    errors: list[str] = []
+    if not dry_run:
+        for item in planned:
+            try:
+                shutil.rmtree(item["path"])
+            except OSError as exc:
+                errors.append(f"{item['path']}: {exc}")
+                continue
+            freed += item["bytes"]
+            deleted.append(item["path"])
+
+    per_profile: dict[str, int] = {}
+    for item in planned:
+        per_profile[item["name"]] = per_profile.get(item["name"], 0) + item["bytes"]
+
+    return {"ok": not errors, "dry_run": dry_run, "planned": planned, "refused": refused,
+            "per_profile": per_profile, "deleted": deleted, "freed_bytes": freed,
+            "errors": errors, "root": str(config_dir() / "cdp-profiles")}
+
+
+def regenerable_bytes(user_data_dir: str) -> int:
+    """How much of *user_data_dir* is regenerable (see ``_REGENERABLE_DIRS``) — for the
+    usage report's reclaim hint. Costs a walk of those subdirs only."""
+    total = 0
+    for rel in _REGENERABLE_DIRS:
+        path = os.path.join(user_data_dir, *rel.split("/"))
+        if os.path.isdir(path):
+            total += _dir_size_bytes(path)
+    return total
+
+
 def _launched_entries() -> list[dict]:
     from navig.browser import targets as t
 
@@ -930,7 +1039,15 @@ async def screenshot(port: int = 9222, out: str | None = None,
                      tab: int | None = None, url: str | None = None) -> dict:
     """Capture the current page — to a file (default) or as base64.
 
-    Falls back to a full-screen OS capture when no CDP target is attached.
+    Falls back to a full-screen OS capture when no CDP target is attached — and SAYS SO.
+    The fallback result carries ``fallback: True`` and a ``note`` naming what was captured,
+    because a desktop capture handed back as "the page" is a phantom success: a pixel
+    harness diffed two 7282x4320 desktop shots against 1422x804 page baselines and
+    reported *size mismatch* (#1515), and a blanket recapture once BAKED one in as a
+    baseline (#1231) — the attach had blipped for one call, the browser was fine, and the
+    only signal was ``via`` in ``--json`` output nobody read. A desktop shot also contains
+    every other window on the screen, which is not what a caller asking for a page gets to
+    receive silently.
     """
     b = await _try_bridge(port)
     if b is not None:
@@ -939,7 +1056,11 @@ async def screenshot(port: int = 9222, out: str | None = None,
             return {"ok": True, "via": "cdp", "base64": await b.screenshot_base64()}
         path = await b.screenshot(name=out, full_page=full_page)
         return {"ok": True, "via": "cdp", "path": path}
-    # OS fallback — full-screen capture.
+    # OS fallback — full-screen capture, flagged as such.
+    fallback_note = (
+        f"no CDP target on port {port} — captured the FULL SCREEN (every window on the "
+        "desktop), not a page; retry once the browser is attachable if you wanted the page"
+    )
     try:
         import base64 as _b64
         import io
@@ -953,7 +1074,8 @@ async def screenshot(port: int = 9222, out: str | None = None,
         if as_base64:
             buf = io.BytesIO()
             img.save(buf, format="PNG")
-            return {"ok": True, "via": "os-automation", "backend": backend,
+            return {"ok": True, "via": "os-automation", "backend": backend, "fallback": True,
+                    "note": fallback_note,
                     "base64": _b64.b64encode(buf.getvalue()).decode()}
         name = out or f"cdp_screen_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
         if not name.endswith(".png"):
@@ -962,7 +1084,8 @@ async def screenshot(port: int = 9222, out: str | None = None,
         dest.mkdir(parents=True, exist_ok=True)
         path = str(dest / name)
         img.save(path)
-        return {"ok": True, "via": "os-automation", "backend": backend, "path": path}
+        return {"ok": True, "via": "os-automation", "backend": backend, "fallback": True,
+                "note": fallback_note, "path": path}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": f"no CDP target and OS screenshot failed: {exc}"}
 

@@ -70,6 +70,13 @@ dependencies = [
   # and the vault -- which the agent, the gateway and 7 plugins all read secrets through --
   # does not work at all. An extra is for something the product is complete without.
   "navig-vault>=0.6.0",
+  # navig-contacts owns `navig contacts` outright: the address book and the
+  # alias->route table dispatch resolves against are one store, so the verb
+  # cannot be an optional extra without `navig contacts` disappearing for
+  # anyone who did not install it. Like navig-vault above, this is a HARD
+  # dependency. The schema itself stays in core (navig.store.contacts), which
+  # is what messaging reads; the plugin brings the importer and the CLI.
+  "navig-contacts>=0.1.0",
   # First-party plugins (Deck UI, navig-github, navig-social/download/generate) are intentionally
   # NOT default deps — this keeps a bare `pip install navig` lean and always
   # resolvable (no unpublished packages in the base). They ship as optional
@@ -106,6 +113,15 @@ telegram = [
 ]
 matrix = [
   "matrix-nio[e2e]>=0.24.0",
+]
+# Twilio SMS transport for the `adapters.sms` messaging channel. Optional and
+# lazily imported, like telethon above — but with a difference worth knowing: the
+# SDK import sits inside `_get_client`, several frames below `send`, so without
+# this extra the adapter used to construct fine, register as a usable channel and
+# then fail on EVERY delivery. It now refuses to register instead, naming this
+# extra (#1356). Vonage is the other supported provider and is not packaged here.
+sms = [
+  "twilio>=9.0.0",
 ]
 # The Deck UI is a proprietary compiled web bundle delivered by the installer /
 # `navig store install`, not a public PyPI package — so `navig[deck]` stays a
@@ -149,6 +165,10 @@ mobile = ["navig-mobile>=0.1.0"]
 # (numpy/Pillow) was extracted here from core; `navig.media.*_dedupe` are now
 # thin shims, and `navig dedupe` / `navig media dedupe-*` need this extra.
 dedupe = ["navig-dedupe>=0.1.0"]
+# Business-paperwork filer: reads invoices/quotes/contracts/tax PDFs and files them
+# into a space by content. Optional because it pulls PDF/OCR readers; `navig
+# paperwork` is the only surface that needs them.
+paperwork = ["navig-paperwork>=0.1.0"]
 # Flight-recorder & crash black-box (event log + sealed .navbox bundles). The engine
 # was extracted here from core; `navig.blackbox.*` are now thin shims, and both
 # `navig blackbox` and the standalone `navig-blackbox` CLI need this extra.
@@ -198,6 +218,8 @@ navig-games = { path = "../plugins/navig-games", editable = true }
 navig-mobile = { path = "../plugins/navig-mobile", editable = true }
 navig-dedupe = { path = "../plugins/navig-dedupe", editable = true }
 navig-blackbox = { path = "../plugins/navig-blackbox", editable = true }
+navig-contacts = { path = "../plugins/navig-contacts", editable = true }
+navig-paperwork = { path = "../plugins/navig-paperwork", editable = true }
 
 [project.urls]
 Homepage = "https://navig.run"

@@ -1,4 +1,5 @@
 {
+  "$schema": "./tool.schema.json",
   "id": "tool:sync",
   "name": "navig_sync",
   "description": "Execute NAVIG sync operations.",

@@ -27,6 +27,11 @@ from navig.platform.paths import config_dir
 
 logger = get_debug_logger()
 
+# How old a state file must be before its (mtime, size) stamp is trusted to change
+# on every write: longer than any filesystem's timestamp granularity in use (1s on
+# ext3/HFS+, the scheduler tick on NTFS).
+_STAMP_SETTLE_SECONDS = 2.0
+
 
 class OperatorState(Enum):
     """Current operator state inference."""
@@ -285,8 +290,108 @@ class UserStateTracker:
         hour = datetime.now().hour
         return self.active_hours_start <= hour < self.active_hours_end
 
+    #: The six proactive-send timestamps. Every one is written by
+    #: `record_proactive_event` and read by `hours_since`, so every one has the
+    #: cross-process staleness described on `_refresh_proactive_timestamps`.
+    _PROACTIVE_STAMPS = (
+        "last_greeting",
+        "last_checkin",
+        "last_capability_promo",
+        "last_feedback_ask",
+        "last_idle_nudge",
+        "last_wrapup",
+    )
+
+    def _refresh_proactive_timestamps(self) -> None:
+        """Adopt any proactive-send timestamp that is NEWER on disk than in memory.
+
+        The cooldowns are per-PROCESS, and NAVIG runs more than one process.
+        Measured on the operator's own daemon - two greetings three seconds apart,
+        both `state=just_arrived`, against a 12-hour cooldown:
+
+            21:28:10 [navig.agent.proactive.engagement] Proactive engagement: greeting
+            21:28:13 [navig.agent.proactive.engagement] Proactive engagement: greeting
+
+        `get_engagement_coordinator` is a "process-level singleton" over a MODULE
+        global, which protects the two in-process callers (`proactive/engine.py` and
+        `gateway/notifications.py`) from each other and protects nothing at all from
+        a second interpreter. The supervisor spawns `navig.daemon.telegram_worker`
+        alongside `navig gateway start`, and that worker builds its own
+        `NavigGateway`, so two processes each hold their own tracker.
+
+        The WRITE side was already correct: `record_proactive_event` calls
+        `_save_state()` immediately, so a send reaches disk at once. The READ side
+        was the gap - `_load_state()` runs once, in `__init__`, so each process
+        decided from the snapshot it happened to take at ITS OWN startup. Process A
+        greeted and persisted; process B consulted a `last_greeting` from before A
+        started, saw no greeting, and greeted again.
+
+        Three properties make this safe to call on every read:
+
+        - It takes the MAX of memory and disk, never simply what disk says. A
+          timestamp may only move FORWARD, so a stale or partially-written file can
+          never move a cooldown backwards and cause *more* messages, which is the
+          failure this exists to prevent. It also cannot lose a send this process
+          just made but has not re-read.
+        - A failed read leaves memory UNTOUCHED. This module's own history is the
+          reason to say so explicitly: `_load_state` carries a docstring about a
+          failed READ becoming a destructive WRITE, and this must not reopen it. It
+          reads the six timestamps and nothing else - never `preferences`, which is
+          what carried `autonomy_level` and `quiet_hours_*` into that incident.
+        - It re-reads only when the file's mtime has changed, so the common tick
+          costs one `stat()`.
+        """
+        state_file = self.state_dir / "user_state.json"
+        try:
+            st = state_file.stat()
+        except OSError:
+            return  # absent or unreadable - keep what we hold
+        # Size rides along with mtime because a filesystem's timestamp granularity
+        # can be coarser than the gap between two writes (1s on ext3/HFS+), and the
+        # race being fixed here is measured in seconds.
+        stamp = (st.st_mtime, st.st_size)
+        # ...and neither tells two writes apart until the clock has MOVED between
+        # them. Two same-length writes inside one tick leave an identical stamp, and
+        # on Windows the tick is whatever the busiest process asked for - 1ms with a
+        # browser open, 15.6ms without. Measured: 300 back-to-back atomic writes
+        # never collided at 1ms; the suite's "second send was not adopted" flake is
+        # what a collision looks like. So the stamp is only trusted once the file is
+        # older than the coarsest granularity it could be sitting on; inside that
+        # window the read is a few hundred bytes of JSON, once per heartbeat.
+        settled = (time.time() - st.st_mtime) > _STAMP_SETTLE_SECONDS
+        if settled and stamp == getattr(self, "_stamps_mtime", None):
+            return
+
+        try:
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+            stats = data.get("stats") or {}
+            if not isinstance(stats, dict):
+                return
+        except (OSError, ValueError) as exc:
+            # Deliberately NOT recorded as a load failure: we changed nothing, and
+            # `_load_failed` gates the write paths.
+            logger.debug("could not refresh proactive timestamps: %s", exc)
+            return
+
+        # Only mark the file consumed once it has actually been parsed, or an
+        # unreadable moment would be remembered as "already up to date".
+        self._stamps_mtime = stamp
+
+        for attr in self._PROACTIVE_STAMPS:
+            on_disk = stats.get(attr)
+            if not isinstance(on_disk, (int, float)):
+                continue
+            in_memory = getattr(self.stats, attr, None)
+            if in_memory is None or on_disk > in_memory:
+                setattr(self.stats, attr, float(on_disk))
+
     def hours_since(self, event_type: str) -> float | None:
-        """Get hours since a specific proactive event type."""
+        """Get hours since a specific proactive event type.
+
+        Consults disk first: another NAVIG process may have sent this very event
+        since we loaded our state. See `_refresh_proactive_timestamps`.
+        """
+        self._refresh_proactive_timestamps()
         now = time.time()
         ts = None
         if event_type == "greeting":

@@ -63,6 +63,31 @@ def test_installed_guard_reports_active_and_lock_free(repo: Path, monkeypatch) -
     assert "active" in line and "lock free" in line
 
 
+def test_an_outdated_hook_script_turns_the_row_into_a_warning(repo: Path, monkeypatch) -> None:
+    """Wired is not current. The row used to check the events and the lock and render ✓
+    over hook scripts of any age — a repo fully wired to the pre-#1481 agent_lock.py (the
+    one that blocked `navig repo new` from a worktree) read "active". A green light that
+    does not consult the script state is the "green over unknown" trap."""
+    guard_install_cmd(repo=str(repo))
+    hook = repo / ".claude" / "hooks" / "agent_lock.py"
+    hook.write_text(hook.read_text(encoding="utf-8") + "\n# an older build\n", encoding="utf-8")
+    monkeypatch.chdir(repo)
+    _icon, ok, line = check_repo_guard()[0]
+    assert ok is False, "an outdated hook script must not render as a green tick"
+    assert "agent_lock.py outdated" in line
+    assert "guard install" in line
+    assert "active" in line, "the wiring IS active — say so alongside the warning, not instead of it"
+
+
+def test_a_missing_hook_script_behind_live_wiring_warns(repo: Path, monkeypatch) -> None:
+    guard_install_cmd(repo=str(repo))
+    (repo / ".claude" / "hooks" / "session_start.py").unlink()
+    monkeypatch.chdir(repo)
+    _icon, ok, line = check_repo_guard()[0]
+    assert ok is False
+    assert "session_start.py missing" in line
+
+
 def test_partial_wiring_warns(repo: Path, monkeypatch) -> None:
     guard_install_cmd(repo=str(repo))
     settings_path = repo / ".claude" / "settings.json"

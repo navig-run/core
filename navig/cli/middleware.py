@@ -106,18 +106,32 @@ def _status_for_exit_code(code: object | None):
 
 # Meta-commands whose invocation should skip operation recording / fact
 # extraction (avoids polluting history with internal bookkeeping calls).
-# "ledger " is here for the observer effect: `navig ledger show/verify` are
+# `ledger` is here for the observer effect: `navig ledger show/verify` are
 # pure reads of the ledger and must not append to the thing they inspect.
-# "audit " likewise: `navig audit tail` is a pure read of the gateway audit
+# `audit` likewise: `navig audit tail` is a pure read of the gateway audit
 # log — an inspection view, not an operation worth a history line.
 # `navig undo` is deliberately NOT here — an undo is a real operation and
 # is recorded on the chain (T-068).
-_SKIP_RECORD_KEYWORDS: frozenset[str] = frozenset([
-    "history ", "help", "--help", "-h", "--version", "-v",
-    "insights ", "dashboard", "suggest",
-    "trigger test", "trigger history",
-    "ledger ", "audit ",
+#
+# ⚠ Matched as whole argv TOKENS, never as substrings. The previous shape was a
+# substring scan of the joined command (`"-h" in "run df -h /"`), and the ledger
+# silently DROPPED every remote command whose payload happened to contain one of
+# the keywords: `navig run 'df -h /'`, `free -h`, `ls -lh`, `grep -v`, anything
+# mentioning "help" or "dashboard". Measured: two consecutive `navig run`s, both
+# exit 0, one line in the ledger — the audit trail had a hole shaped exactly like
+# the flags admins type most. A resource is matched on `tokens[0]` (post-alias),
+# a flag on the raw argv token — so `--help` on a SUBCOMMAND (`navig apply --help`)
+# is also caught: the root callback records before Click's eager help handler
+# runs, and the record used to land in the ledger as a red-risk operation.
+_SKIP_RECORD_RESOURCES: frozenset[str] = frozenset([
+    "help", "history", "insights", "dashboard", "suggest", "ledger", "audit",
 ])
+_SKIP_RECORD_PAIRS: frozenset[tuple[str, str]] = frozenset([
+    ("trigger", "test"), ("trigger", "history"),
+])
+#: Bare flags that turn the invocation into a help/version screen. `-h` is NOT
+#: here: on this CLI it is the short form of `--host` and consumes a value.
+_SKIP_RECORD_FLAGS: frozenset[str] = frozenset(["--help", "--version", "-v"])
 _SKIP_FACT_CMDS: frozenset[str] = frozenset([
     "memory", "kg", "index", "history", "version", "help",
     "--help", "--version",
@@ -159,6 +173,10 @@ _READ_ACTIONS: frozenset[str] = frozenset({
     "get", "show", "list", "ls", "status", "info", "search", "logs",
     "history", "settings", "tables", "doctor", "validate", "verify",
     "check", "ps", "help", "version",
+    # `skill tree` / `skill lint` / `block doctor` / `ledger verify-receipt` inspect and
+    # write nothing, yet fell through to the red LOCAL_COMMAND fallback — a showcase
+    # recording of `navig ledger show` had `navig skill tree` sitting there in red.
+    "tree", "lint", "verify-receipt", "explain", "preview", "diff",
 })
 
 #: Top-level commands that are pure reads on their own (`navig status`).
@@ -209,19 +227,21 @@ def init_operation_recorder(
     ch = _lazy_ch()
 
     try:
-        from navig.operation_recorder import get_operation_recorder
+        from navig.operation_recorder import OperationType, get_operation_recorder
 
         recorder = get_operation_recorder()
-        command_str = " ".join(sys.argv[1:])
+        raw_argv = sys.argv[1:]
+        command_str = " ".join(raw_argv)
 
-        # Use non-global-stripped tokens to avoid matching short flags like
-        # "-h" inside "--host" or "-v" inside "--verbose".
-        non_global = extract_non_global_tokens(sys.argv[1:])
-        cmd_str_for_skip = " ".join(non_global)
-
+        non_global = extract_non_global_tokens(raw_argv)
         op_type = _classify_operation_type(non_global)
+        if "--dry-run" in raw_argv:
+            # A dry run resolves no secrets, opens no connection and writes nothing
+            # (that is its contract on `apply`, `space init`, `kill`, …) — it must not
+            # sit in the ledger wearing the red label of the command it previews.
+            op_type = OperationType.READ_QUERY
 
-        skip = any(kw in cmd_str_for_skip for kw in _SKIP_RECORD_KEYWORDS)
+        skip = _should_skip_record(raw_argv, non_global)
         if not skip and command_str.strip():
             record = recorder.start_operation(
                 command=f"navig {command_str}",
@@ -245,6 +265,27 @@ def init_operation_recorder(
 
     if "_operation_record" in ctx.obj:
         _register_operation_complete_atexit(ctx)
+
+
+def _should_skip_record(raw_argv: list[str], tokens: list[str]) -> bool:
+    """Is this invocation a help/version screen or a pure inspection view?
+
+    *raw_argv* is ``sys.argv[1:]`` untouched; *tokens* is the global-flag-stripped
+    view. Flags are looked for in the raw list because ``extract_non_global_tokens``
+    removes exactly the tokens the old skip list was written to find (``--help``,
+    ``--version``) — which is why `navig apply --help` used to be recorded.
+    Every comparison is whole-token equality: a shell payload such as
+    ``'df -h /'`` is ONE argv element and can never match.
+    """
+    if any(tok in _SKIP_RECORD_FLAGS for tok in raw_argv):
+        return True
+    if not tokens:
+        return False
+    resource = _RESOURCE_ALIASES.get(tokens[0], tokens[0])
+    if resource in _SKIP_RECORD_RESOURCES:
+        return True
+    action = tokens[1] if len(tokens) > 1 else ""
+    return (resource, action) in _SKIP_RECORD_PAIRS
 
 
 def _classify_operation_type(tokens: list[str]):

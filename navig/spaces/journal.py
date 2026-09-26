@@ -1,13 +1,17 @@
-"""Space journal — the three lines the check-in card asks for every evening.
+"""Space journal — what the evening check-in card collects about the day.
 
 The tracker records *whether* a day happened; the journal records *what*
 happened in it. Both belong to the same space, so the journal lives next to the
 tracker: ``<space>/journal/YYYY-MM-DD.md``, the layout spaces already use.
 
-Why this module exists at all: the card has always ended with "three lines in
-the journal and you're done", and nothing anywhere captured them. Taps landed in
-habits.csv, the three lines landed nowhere, and a plan whose own rule is
-"failure is when you stop recording" was recording exactly half of itself.
+Why this module exists at all: the card has always ended by asking for the day
+in writing, and nothing anywhere captured it. Taps landed in habits.csv, the
+writing landed nowhere, and a plan whose own rule is "failure is when you stop
+recording" was recording exactly half of itself.
+
+The card used to ask three fixed questions and this module labelled an entry of
+exactly three lines with them. It now invites free-form writing, and entries are
+stored as written — see :func:`format_block`.
 
 Written to by ``navig habit journal`` (CLI) and by the gateway when the owner
 replies to the closing card's prompt. One implementation for both, for the same
@@ -17,12 +21,17 @@ shape.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 JOURNAL_DIR = "journal"
 
-#: The card's three questions, in the order it asks them.
+#: The three questions the evening card used to ask. Nothing WRITES them any
+#: more — free-form entries are stored verbatim (see :func:`format_block`) — but
+#: this is a live constant, not a memento: :func:`setback_for` PARSES this exact
+#: wording out of entries already on disk, so every journal written before the
+#: card changed still yields its setback line to the weekly review. Change the
+#: wording and you silently stop reading the operator's own history.
 PROMPTS = (
     "Proud of",
     "What knocked me off",
@@ -63,8 +72,12 @@ def _title(day: str) -> str:
 def clean_lines(text: str) -> list[str]:
     """The reply as lines: blanks dropped, list markers the owner typed stripped.
 
-    People number their own lines. Keeping "1." and then adding our own label
-    would render "1. **Proud of:** 1. finished the release".
+    ⚠ This is NO LONGER how an entry is rendered — :func:`format_block` writes
+    the text through verbatim, markers and all, because nothing is prefixed to
+    the writer's lines any more. It survives as the *comparison* form: whether a
+    reply is empty, and whether a redelivered Telegram update is text this file
+    already holds. Stripping "1." and "-" for that check is what lets a retry
+    match an entry the writer formatted slightly differently the second time.
     """
     out: list[str] = []
     for raw in text.replace("\r\n", "\n").split("\n"):
@@ -81,26 +94,36 @@ def clean_lines(text: str) -> list[str]:
 
 
 def format_block(text: str, *, again: bool = False, dictated: bool = False) -> str:
-    """Render one entry.
+    """Render one entry as the writer wrote it.
 
-    Exactly three lines get the card's labels — that is what was asked for, in
-    that order. Any other count is written verbatim as bullets: labelling two
-    lines "Proud of" and "What knocked me off" would put words in someone's
-    mouth, and a journal that invents content is worse than an empty one.
+    Two things used to happen here and neither survives the move to free-form
+    writing:
+
+    **The three labels are gone.** An entry of exactly three lines was rendered
+    as "1. **Proud of:** …" / "2. **What knocked me off:** …" / "3. **Tomorrow's
+    number one:** …". That was faithful while the card ASKED those three
+    questions in that order. The card now invites you to write about your day,
+    where three paragraphs is an ordinary shape — so the branch could only
+    assert three answers nobody gave. The old docstring already stated the rule
+    ("a journal that invents content is worse than an empty one") and applied it
+    to every line count *except* three; that exception was a property of the
+    questions, and it died with them.
+
+    **Prose is no longer bulletised.** Every line became "- line", which is the
+    right shape for three terse answers and the wrong one for a paragraph about
+    a day. The text is written through verbatim, so the writer's own paragraph
+    breaks and their own numbering survive — nothing is prefixed to their lines
+    any more, so nothing can collide with them.
+
+    The heading is deliberately unchanged: ``has_entry`` recognises an existing
+    entry by ``_HEADING``, so renaming it would make every journal already on
+    disk read as empty.
     """
-    lines = clean_lines(text)
     heading = _HEADING_DICTATED if dictated else (_HEADING_AGAIN if again else _HEADING)
-    body: list[str] = [heading, ""]
-
-    # A transcript has no line breaks — speech does not come with a line 1, 2 and
-    # 3. Labelling it would attach the card's three questions to whatever the
-    # speech-to-text happened to produce, so dictation is always kept verbatim.
-    if len(lines) == len(PROMPTS) and not dictated:
-        body += [f"{i}. **{PROMPTS[i - 1]}:** {line}" for i, line in enumerate(lines, start=1)]
-    else:
-        body += [f"- {line}" for line in lines]
-
-    return "\n".join(body) + "\n"
+    # Trailing whitespace goes (it is invisible and churns diffs); the line and
+    # paragraph structure stays exactly as typed or transcribed.
+    body = "\n".join(line.rstrip() for line in text.strip().splitlines())
+    return f"{heading}\n\n{body}\n"
 
 
 def append_entry(
@@ -110,7 +133,7 @@ def append_entry(
 
     ``written=False`` means the identical text was already in the file and
     nothing was added — Telegram redelivers updates on its own, and a redelivered
-    reply must not print the same three lines twice.
+    reply must not write the same entry twice.
 
     ``dictated=True`` marks an entry that arrived as a voice note, and keeps it
     verbatim.
@@ -134,7 +157,7 @@ def append_entry(
 def append_block(tracker: Path, day: str, block: str) -> Path:
     """Append an arbitrary markdown block to *day*'s entry, creating the file.
 
-    Used by the weekly review, which is not a three-line entry but belongs in the
+    Used by the weekly review, which is not a day's own entry but belongs in the
     same file: the review is written *into* the day it reviews from, so a week
     later there is one place to read rather than two.
     """
@@ -151,6 +174,52 @@ def _write(path: Path, day: str, existing: str, block: str) -> Path:
     else:
         path.write_text(f"{_title(day)}\n\n{block}", encoding="utf-8")
     return path
+
+
+def entry_bodies(tracker: Path, day: str) -> list[str]:
+    """The evening entries written for *day*, as the writer wrote them.
+
+    A day's file can hold more than the day's own entry: ``append_block`` writes
+    the weekly review into the same file, under its own ``## Review`` heading. A
+    reader that took the whole file would hand a reflection its own previous
+    output as if the operator had written it. So only sections headed
+    ``## Evening check-in`` (first, added-later, dictated) are returned, each
+    body stripped, in file order.
+    """
+    path = entry_path(tracker, day)
+    if not path.exists():
+        return []
+    bodies: list[str] = []
+    current: list[str] | None = None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## "):
+            if current is not None:
+                bodies.append("\n".join(current).strip())
+            current = [] if line.startswith(_HEADING) else None
+            continue
+        if current is not None:
+            current.append(line)
+    if current is not None:
+        bodies.append("\n".join(current).strip())
+    return [b for b in bodies if b]
+
+
+def entries_between(tracker: Path, start: date, end: date) -> list[tuple[str, str]]:
+    """``[(day, text), …]`` for every day in *start*..*end* that has an entry.
+
+    Several entries on one day are joined with a blank line, so a day reads as
+    one piece of writing. Days without an entry are simply absent — the caller
+    decides what an absence means, because for a weekly read-back the honest
+    answer to "what did the week hold" must not be padded with empty days.
+    """
+    out: list[tuple[str, str]] = []
+    d = start
+    while d <= end:
+        bodies = entry_bodies(tracker, d.isoformat())
+        if bodies:
+            out.append((d.isoformat(), "\n\n".join(bodies)))
+        d += timedelta(days=1)
+    return out
 
 
 def has_entry(tracker: Path, day: str) -> bool:

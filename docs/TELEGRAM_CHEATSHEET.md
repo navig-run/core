@@ -153,6 +153,7 @@ navig telegram business enable | disable        # refuses to arm if owner-gate i
 navig telegram business rights                  # list all per-tool policies
 navig telegram business rights <tool> <who>     # who ∈ owner | both | off
 navig telegram business alerts on | off         # deleted message → DM you
+navig telegram business deleted                 # WHAT was deleted (table; --json, --chat, -n)
 navig telegram business emoji                   # list emoji → tool map
 navig telegram business emoji <emoji> <tool>    # remap a reaction (tool|off)
 navig telegram business ping <owner|both|off>   # who gets a /ping reply in business chats

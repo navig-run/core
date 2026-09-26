@@ -397,7 +397,55 @@ def telegram_status():
         logger.debug("Telegram session status unavailable: %s", exc)
 
     ch.console.print()
+    _render_user_account_status()
+    ch.console.print()
     ch.info("Start bot with: navig gateway start")
+
+
+def _render_user_account_status() -> None:
+    """The MTProto half of `navig telegram status`.
+
+    Two transports share this command name; the bot half used to be the only one
+    that rendered, because Typer keeps the last registration and the MTProto
+    command was registered first. That left the user-account state invisible —
+    including the case where the vault engine is missing and every credential
+    reads as unset, which then looks like "you never logged in".
+    """
+    from navig.telegram import status as tgstatus
+
+    st = tgstatus.collect()
+    ch.info("Telegram User Account (MTProto)")
+    ch.console.print()
+    ok, bad, dim = "[green]✓[/green]", "[red]✗[/red]", "[dim]○[/dim]"
+
+    ch.console.print(f"  {ok if st['telethon'] else bad} telethon "
+                     f"{'installed' if st['telethon'] else 'NOT installed'}")
+
+    if st["vault_error"]:
+        ch.console.print(f"  {bad} vault engine unavailable — {st['vault_error']}")
+        ch.dim("    Credentials are probably intact; install the engine rather "
+               "than re-running `navig telegram setup`.")
+        return
+
+    if not st["credentials"]:
+        ch.console.print(f"  {dim} api credentials not set")
+        ch.dim("    Configure with: navig telegram setup")
+        return
+    ch.console.print(f"  {ok} api credentials configured")
+
+    if not st["logged_in"]:
+        ch.console.print(f"  {dim} not logged in")
+        ch.dim("    Log in with: navig telegram login <phone>")
+        return
+
+    me = tgstatus.probe_account()
+    if me:
+        ch.console.print(f"  {ok} logged in as "
+                         f"{me.get('username') or me.get('name')} (id {me['id']})")
+    else:
+        # A session that exists but is not authorized is broken, and every
+        # command downstream fails on it — so say so rather than showing a tick.
+        ch.console.print(f"  {bad} session present but NOT authorized — re-login")
 
 
 # ── Extensions: switch bot features on and off ───────────────────────────────

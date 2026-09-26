@@ -39,8 +39,10 @@ _ALLOWLIST: dict[str, str] = {
     # Walk-UP loops: iterate [dir, *dir.parents] and stop at the first `.git`, so they
     # correctly find the repo root from ANY depth — the right pattern, not the trap.
     "navig/agent/tools/git_tools.py": "_find_git_root walks up the parents",
-    "navig/guard/agent_lock.py": "repo-root discovery walks up the parents",
-    "navig/guard/session_start.py": "repo-root discovery walks up the parents",
+    # navig/guard/{agent_lock,session_start}.py used to be here. Their walk-up now tests
+    # `.is_dir()` (the main tree) and `.is_file()` (a linked worktree's gitdir pointer,
+    # which it READS to find the main tree) — a linked worktree's `.git` is a file, and
+    # `.exists()` accepting it is exactly how both hooks mistook a worktree for the repo.
     # Checks of a path that IS a repo root / clone / worktree by construction (never a
     # possible subdirectory) — 'is THIS dir a git repo' is the correct question there.
     "navig/commands/contribute.py": "checks a freshly-cloned repo root",

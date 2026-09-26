@@ -61,7 +61,7 @@ class ConfigIncidentReporter:
             now = self._loop.time()
             if not self._throttle.allow(event, now):
                 return
-            title, body = self._render(event)
+            title, body = self._render(event, data)
             suppressed = self._throttle.drain_suppressed()
             if suppressed:
                 body += f"\n\n(+{suppressed} further incident(s) suppressed by the rate limit)"
@@ -86,10 +86,14 @@ class ConfigIncidentReporter:
             self._throttle.rollback(event)
 
     @staticmethod
-    def _render(event: str) -> tuple[str, str]:
+    def _render(event: str, data: dict | None = None) -> tuple[str, str]:
         from navig.core import incidents
 
-        summary = incidents.DESCRIPTIONS.get(event, event)
+        # The same text doctor prints, facts included — the last heartbeat and
+        # the commands just before a daemon death, the backup path of a corrupt
+        # config. Rendering the bare description here left the phone with
+        # "check what else ran at that moment" and nothing to check.
+        summary = incidents.summarize(event, data if isinstance(data, dict) else None)
         # No leading glyph: the telegram channel prepends emoji_for_type("config_incident"),
         # and the deck feed renders the type's own icon — a title emoji would double it.
         return "NAVIG config health", summary

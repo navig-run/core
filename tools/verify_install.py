@@ -83,6 +83,40 @@ def main() -> int:
     }
     check("builtin store is populated", all(n > 0 for n in counts.values()), json.dumps(counts))
 
+    # Presence is not integrity. The count above proves each subdir has files; a file that
+    # is present can still be unreadable, and two shipped ones were: `tools/app.tool.json`
+    # was UTF-16 with a stray trailing byte (parseable as NO encoding) and
+    # `tools/iperf3/schema.json` carried shell escaping (`\\"windows\\"`). Both shipped.
+    #
+    # The repo-side guard (tests/quality/test_shipped_data_parses.py) cannot see this side:
+    # it reads the checkout, where every asset is on disk no matter what the wheel contains.
+    # This reads what site-packages actually received, which is also the only side that can
+    # notice a file the packaging step dropped or truncated.
+    import yaml
+
+    seen = 0
+    unreadable: list[str] = []
+    for path in sorted(pkg.rglob("*")):
+        suffix = path.suffix.lower()
+        if not path.is_file() or suffix not in {".json", ".yaml", ".yml"}:
+            continue
+        seen += 1
+        try:
+            # Strict UTF-8, matching how consumers read these: a BOM breaks
+            # json.loads(path.read_text()), so tolerating one here would pass a file that
+            # fails at runtime.
+            text = path.read_bytes().decode("utf-8")
+            json.loads(text) if suffix == ".json" else yaml.safe_load(text)
+        except Exception as exc:  # noqa: BLE001 - any parse/decode failure is the finding
+            unreadable.append(f"{path.relative_to(pkg).as_posix()} ({type(exc).__name__})")
+    # The floor is a PRESENCE: a walk that found nothing reports no unreadable files, which
+    # is not the same as every file being readable.
+    check(
+        "shipped data files parse",
+        not unreadable and seen >= 100,
+        f"{seen} parsed" + (f"; UNREADABLE {unreadable[:3]}" if unreadable else ""),
+    )
+
     from navig.prompts.loader import load_prompt
 
     boot = load_prompt("boot")

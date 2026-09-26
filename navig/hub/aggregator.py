@@ -32,6 +32,18 @@ class WireState(str, Enum):
     BROKEN = "broken"        # installed but FAILED / failing health check
 
 
+#: The canonical per-plugin state word -> this module's coarser store vocabulary.
+#: Exhaustive on purpose: a new word must be mapped here deliberately, not fall
+#: through a default that would quietly advertise it as usable.
+_WIRE_STATE_TO_STORE = {
+    "disabled": WireState.UNWIRED,
+    "failed": WireState.BROKEN,
+    "degraded": WireState.WIRED,
+    "shadowed": WireState.WIRED,
+    "wired": WireState.WIRED,
+}
+
+
 @dataclass
 class StoreItem:
     id: str                  # "<kind>:<name>" — globally unique
@@ -229,17 +241,16 @@ def _modules() -> list[StoreItem]:
 
 
 def _plugins() -> list[StoreItem]:
-    from navig.plugins.host import get_plugin_host
+    from navig.plugins.host import get_plugin_host, wire_state
 
     items: list[StoreItem] = []
     for p in get_plugin_host().list_installed():
-        health_state = p.health.state.value if p.health is not None else "healthy"
-        if health_state == "failed":
-            state = WireState.BROKEN
-        elif not p.enabled:
-            state = WireState.UNWIRED
-        else:
-            state = WireState.WIRED
+        # One precedence for every surface. This vocabulary is deliberately coarser
+        # than the CLI's — WIRED covers "healthy or degraded" by definition, and a
+        # shadowed plugin is still installed, enabled and usable (the store makes no
+        # claim about source freshness; `navig doctor` and `navig plugin list` do).
+        word = wire_state(p)
+        state = _WIRE_STATE_TO_STORE[word]
         actions = ["disable" if p.enabled else "enable"]
         if p.source != "builtin" and p.format != "pip":
             actions.append("remove")
@@ -249,7 +260,7 @@ def _plugins() -> list[StoreItem]:
             label=p.id,
             description=p.description,
             state=state.value,
-            degraded=health_state == "degraded",
+            degraded=word == "degraded",
             standalone=p.id in _STANDALONE_MODULE_IDS,
             source=p.source,
             version=p.version,

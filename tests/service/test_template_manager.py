@@ -1,8 +1,6 @@
 """Tests for Template Manager"""
 
 import json
-import shutil
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -16,23 +14,35 @@ pytestmark = pytest.mark.integration
 # ============================================================================
 
 
+@pytest.fixture(autouse=True)
+def _own_enabled_overlay(tmp_path, monkeypatch):
+    """Every test gets its OWN template-enablement overlay.
+
+    `Template.is_enabled` consults ``store_dir()/templates/enabled.json`` before
+    the shipped metadata, and that file is shared by every test in a worker. So
+    ``test_..._disable_template`` (or ``toggle``, from a fresh overlay) wrote
+    ``test-template: false``, and a later ``test_..._apply_template_config`` in
+    the same worker — whose template says ``enabled: True`` — found it disabled,
+    merged no paths, and died on ``KeyError: 'app_root'``. Serially the tests
+    happened to run enable → disable → toggle → … → apply, which nets out to
+    "enabled"; under ``-n 6`` the distribution decided, roughly one run in three.
+    ``NAVIG_STORE_DIR`` is what ``store_dir()`` honours first.
+    """
+    monkeypatch.setenv("NAVIG_STORE_DIR", str(tmp_path / "store"))
+
+
 @pytest.fixture
-def temp_template_dir():
-    """Create temporary template directory structure."""
-    # Use custom temp directory to avoid Windows permission issues
-    temp_base = Path(tempfile.gettempdir()) / "navig_test_templates"
-    temp_base.mkdir(exist_ok=True)
+def temp_template_dir(tmp_path):
+    """A template directory unique to this test and this worker.
 
-    template_dir = temp_base / f"test_{id(object())}"
+    This used to be ``<tmp>/navig_test_templates/test_{id(object())}``, and
+    ``id(object())`` of a throwaway object is the same number in every xdist
+    worker (identical processes, identical heap layout) — two workers could
+    share one directory. pytest's ``tmp_path`` is per test, per worker.
+    """
+    template_dir = tmp_path / "templates"
     template_dir.mkdir()
-
-    yield template_dir
-
-    # Cleanup
-    try:
-        shutil.rmtree(template_dir)
-    except (OSError, PermissionError):
-        pass  # Cleanup failures are acceptable in tests
+    return template_dir
 
 
 @pytest.fixture

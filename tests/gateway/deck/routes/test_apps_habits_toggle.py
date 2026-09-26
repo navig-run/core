@@ -77,3 +77,96 @@ async def test_toggle_never_matches_a_plain_job_via_blind_slice(tmp_path, monkey
 
     saved = {j["id"]: j for j in json.loads(cron_file.read_text(encoding="utf-8"))["jobs"]}
     assert saved["2"]["last_run"] is None  # plain cron job untouched
+
+
+async def test_last_run_is_stamped_on_the_LOCAL_calendar(tmp_path, monkeypatch):
+    """A habit ticked in the deck must read back as done TODAY, in the user's calendar.
+
+    Both readers of last_run prefix-match a LOCAL date (`date.today()`), and the
+    scheduler stamps a naive local `datetime.now()`. Both write paths here stamped
+    UTC, so between local midnight and UTC midnight the deck wrote yesterday: the
+    user ticked the habit and it immediately read back as NOT done. On UTC+2 that is
+    00:00-02:00 every day.
+
+    The clock is skewed so UTC-now is a day behind the local date, which forces the
+    disagreement instead of waiting for the two-hour window to come round.
+    """
+    pytest.importorskip("aiohttp")
+    from datetime import date as _date
+    from datetime import datetime as _dt
+    from datetime import timedelta as _td
+
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from navig.gateway.deck.routes import apps as apps_mod
+
+    cron_file = _seed(monkeypatch, tmp_path)
+
+    class _SkewedClock(_dt):
+        @classmethod
+        def now(cls, tz=None):
+            # local stays real; anything asking for UTC gets the previous day
+            return _dt.now() - _td(days=1) if tz is not None else _dt.now()
+
+    monkeypatch.setattr(apps_mod, "datetime", _SkewedClock)
+
+    async with TestClient(TestServer(_app())) as client:
+        resp = await client.post("/toggle", json={"id": "workout"})
+        assert resp.status == 200
+
+    jobs = json.loads(cron_file.read_text(encoding="utf-8"))
+    rows = jobs["jobs"] if isinstance(jobs, dict) else jobs
+    stamped = next(j["last_run"] for j in rows if j.get("name", "") == "habit:workout")
+    assert stamped.startswith(_date.today().isoformat()), (
+        f"last_run {stamped!r} is not on the local calendar the readers use "
+        f"({_date.today().isoformat()}) — a habit ticked now reads back as not done"
+    )
+
+
+async def test_last_run_is_LOCAL_on_the_live_scheduler_path_too(tmp_path, monkeypatch):
+    """The same calendar contract, on the branch that runs in production.
+
+    The sibling above forces the FILE-FALLBACK branch (_seed stubs get_live_service to
+    None), so it cannot see the live-scheduler write at all -- measured: reverting that
+    branch alone left it green. With a real daemon in-process this is the path that
+    executes, so it needs its own cover.
+    """
+    pytest.importorskip("aiohttp")
+    from datetime import date as _date
+    from datetime import datetime as _dt
+    from datetime import timedelta as _td
+
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from navig.gateway.deck.routes import apps as apps_mod
+
+    class _Job:
+        id = "9"
+        name = "habit:workout"
+
+    captured: dict = {}
+
+    class _Svc:
+        jobs = {"9": _Job()}
+
+        def update_job(self, job_id, **kw):
+            captured.update(kw)
+
+    monkeypatch.setattr("navig.scheduler.cron_service.get_live_service", lambda: _Svc())
+
+    class _SkewedClock(_dt):
+        @classmethod
+        def now(cls, tz=None):
+            return _dt.now() - _td(days=1) if tz is not None else _dt.now()
+
+    monkeypatch.setattr(apps_mod, "datetime", _SkewedClock)
+
+    async with TestClient(TestServer(_app())) as client:
+        resp = await client.post("/toggle", json={"id": "workout"})
+        assert resp.status == 200
+
+    stamped = captured.get("last_run")
+    assert stamped is not None, "the live branch never wrote last_run"
+    assert stamped.isoformat().startswith(_date.today().isoformat()), (
+        f"live-scheduler last_run {stamped!r} is not on the local calendar the readers use"
+    )

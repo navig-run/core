@@ -1,12 +1,15 @@
-# Skill: win-perf-tuner
-
-**id**: `win-perf-tuner`
-**version**: `1.0.0`
-**os**: `windows`
-**tool_id**: `win_perf_tuner`
-**cli**: `navig sys perf`
-
 ---
+name: win-perf-tuner
+description: Audit and apply a curated set of Windows performance tweaks that reduce UI latency, build/dev tool slowness, and kernel overhead — without changing the visual appearance of the desktop (Aero, transparency, and animations are preserved).
+version: 1.0.0
+user-invocable: true
+navig-commands:
+  - navig sys perf
+os: [windows]
+tool_id: win_perf_tuner
+---
+
+# Skill: win-perf-tuner
 
 ## Purpose
 

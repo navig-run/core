@@ -26,7 +26,11 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
-from navig.providers._local_defaults import _LLAMACPP_USER_BASE_URL, _OLLAMA_USER_BASE_URL
+from navig.providers._local_defaults import (
+    _LLAMACPP_USER_BASE_URL,
+    _OLLAMA_USER_BASE_URL,
+    ollama_base_url,
+)
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
 logger = logging.getLogger(__name__)
@@ -139,7 +143,7 @@ class OllamaProvider(LLMProvider):
     name = "ollama"
 
     def __init__(self, base_url: str = "", **kwargs):
-        super().__init__(base_url=base_url or _OLLAMA_USER_BASE_URL, **kwargs)
+        super().__init__(base_url=base_url or ollama_base_url() or _OLLAMA_USER_BASE_URL, **kwargs)
 
     async def chat(self, model, messages, temperature=_PROVIDER_DEFAULT_TEMPERATURE, max_tokens=_PROVIDER_CHAT_MAX_TOKENS, **kw):
         session = await self._get_session()

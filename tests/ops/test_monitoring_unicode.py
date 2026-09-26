@@ -7,6 +7,7 @@ strings even when the terminal cannot encode emoji (Windows cp1252 / charmap).
 
 import importlib
 import types
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -52,9 +53,14 @@ def _import_monitoring():
         "navig.console_helper": stub_ch,
     }
     with patch.dict("sys.modules", mocks):
+        # Anchored to THIS file, not the process cwd: under xdist an earlier test in the
+        # same worker can chdir into an isolated temp config dir and never restore it,
+        # and a relative path then resolves to a file that does not exist — ten red
+        # tests in the full suite, fourteen green in isolation. (The cwd itself is
+        # someone else's leak; this test simply must not depend on it.)
         spec = importlib.util.spec_from_file_location(
             "navig.commands.monitoring",
-            "navig/commands/monitoring.py",
+            str(Path(__file__).resolve().parents[2] / "navig" / "commands" / "monitoring.py"),
         )
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)

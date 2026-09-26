@@ -1106,6 +1106,12 @@ def update_source(
         typer.echo(json.dumps({"source": src_cfg, "channel": channel}, indent=2))
         return
 
+    # `--no-show` was declared and never read, so it displayed the config anyway. Its one
+    # coherent meaning is "resolve the source and say nothing" -- a script checking that a
+    # source is configured without wanting the table -- which is what it does now.
+    if not show:
+        return
+
     con = _con()
     if isinstance(src_cfg, dict):
         for k, v in src_cfg.items():

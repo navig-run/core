@@ -26,13 +26,43 @@ So identity must be supplied. In precedence order:
 
 1. ``NAVIG_SESSION_ID`` — explicit, and the correct answer for agents.
 2. ``CLAUDE_SESSION_ID`` / ``CLAUDE_CODE_SESSION_ID`` — set by some Claude Code versions.
-3. A terminal-scoped id (``WT_SESSION`` on Windows, the controlling tty on POSIX).
+3. A terminal-scoped id (``WT_SESSION`` under Windows Terminal, the conhost window
+   under a classic console, the controlling tty on POSIX).
 4. ``user@machine`` — a last resort that is **honest but weak**: two agents sharing one
    account collapse to one identity, which is precisely the case this module exists to
    catch.
 
 :func:`identity_quality` reports which tier was used so callers can warn instead of
 implying a protection that is not there. Agents should export ``NAVIG_SESSION_ID``.
+
+Liveness — a lock whose session is gone is not a lock
+-----------------------------------------------------
+The TTL is a backstop, not the release. On 2026-09-15 a deploy of one app waited on a
+lock held by a session of *another* app that had finished its turn ~40 minutes earlier —
+the lock simply outlived the work, twice in one evening. When the holder is a Claude Code
+session, its registry entry (``~/.claude/sessions/<pid>.json``, carrying ``sessionId`` and
+``pid``) says whether that process still exists. A lock whose session process is dead is
+classified ``stale`` at once (:func:`session_alive`), regardless of age; a session the
+registry does not know (a plain shell, another tool) keeps the TTL semantics — liveness is
+only ever used to *shorten* a wait, never to make a live lock look dead.
+
+Two kinds of claim — a one-shot command is not a session's whole afternoon
+--------------------------------------------------------------------------
+On 2026-09-20 a production deploy waited 90 minutes and gave up: the host was "held" by a
+session that had run one ``navig run "docker logs …"`` and gone on to unrelated work. The
+session was alive (so liveness could not free it) and the 60-minute TTL was the only way
+out — a read of a log file cost another app an hour. So a claim now carries its ``kind``:
+
+* ``implicit`` — taken by :func:`guard` on behalf of a command (``navig run``, a remote
+  file write, ``navig docker …``). Expires after :data:`IMPLICIT_TTL_MINUTES` of
+  inactivity: long enough for a build step to finish, short enough that a session which
+  merely ran something and moved on stops blocking. Every further command refreshes it.
+* ``explicit`` — ``navig host lock acquire``: the session *said* it is operating the host
+  (a deploy, a migration). Keeps the full :data:`LOCK_TTL_MINUTES`, and an implicit claim
+  from the same session never downgrades it.
+
+A lock written before ``kind`` existed reads as explicit — the old behaviour, never a
+surprise shortening for a lock someone may be relying on.
 """
 
 from __future__ import annotations
@@ -51,6 +81,10 @@ from pathlib import Path
 
 # Keep in sync with navig.commands.repo.LOCK_TTL_MINUTES — one mental model for both locks.
 LOCK_TTL_MINUTES = 60
+#: An implicit claim (one command, not a declared operation) idles out this much sooner.
+IMPLICIT_TTL_MINUTES = 20
+#: Accepted values of a lock's ``kind``; anything else (or nothing) reads as explicit.
+CLAIM_KINDS = ("implicit", "explicit")
 
 #: ``NAVIG_HOST_LOCK`` accepts these. ``block`` refuses to run while another live session
 #: holds the host; ``warn`` prints and continues; ``off`` disables the check entirely.
@@ -66,6 +100,24 @@ def _tty_token() -> str | None:
     wt = os.environ.get("WT_SESSION")  # Windows Terminal
     if wt:
         return f"wt:{wt}"
+    if sys.platform == "win32":
+        # A classic console (PowerShell 5.1, cmd, VS Code's ConPTY) sets no
+        # WT_SESSION, so two PowerShell windows on one account were both
+        # `user@host` — indistinguishable in the audit, which is precisely the
+        # "who ran `cdp stop` at the second the daemon died" question. The
+        # conhost window handle is the Windows analogue of the POSIX tty: one
+        # per console, shared by every process in it, reused only after the
+        # console closes (as a pts number is). It is 0 for a windowless process
+        # (CREATE_NO_WINDOW, pythonw), so a daemon-spawned subprocess falls
+        # through to the honest weak tier rather than posing as a terminal.
+        try:
+            import ctypes
+
+            hwnd = int(ctypes.windll.kernel32.GetConsoleWindow())  # type: ignore[attr-defined]
+            if hwnd:
+                return f"con:{hwnd:x}"
+        except (AttributeError, OSError, ValueError):
+            pass
     for stream in (sys.stdin, sys.stdout):
         try:
             if stream is not None and stream.isatty():
@@ -158,6 +210,12 @@ class LockState:
     machine: str | None = None
     command: str | None = None
     claimed_at: str | None = None
+    #: why a lock is ``stale`` — ``"expired"`` (TTL) or ``"session ended"`` (dead process)
+    reason: str | None = None
+    #: ``implicit`` (a command claimed it) or ``explicit`` (``navig host lock acquire``)
+    kind: str | None = None
+    #: the idle TTL that applies to this lock, in minutes
+    ttl_minutes: int | None = None
 
     @property
     def blocking(self) -> bool:
@@ -165,24 +223,75 @@ class LockState:
         return self.state == "held"
 
 
+def claude_sessions_dir() -> Path:
+    """Where Claude Code registers live sessions (``NAVIG_CLAUDE_SESSIONS_DIR`` overrides)."""
+    override = os.environ.get("NAVIG_CLAUDE_SESSIONS_DIR")
+    if override:
+        return Path(override)
+    return Path.home() / ".claude" / "sessions"
+
+
+def session_alive(session: str | None, sessions_dir: Path | None = None) -> bool | None:
+    """Is the process behind ``session`` still running?
+
+    ``True``/``False`` when the Claude Code session registry knows the session (an entry
+    whose ``sessionId`` matches, checked against its ``pid``); ``None`` when it does not —
+    the caller must then fall back to the TTL. Any read/parse error is ``None`` too: a
+    broken registry must never turn a live lock into a stale one.
+    """
+    if not session or session == "?":
+        return None
+    directory = sessions_dir or claude_sessions_dir()
+    try:
+        entries = list(directory.glob("*.json"))
+    except OSError:
+        return None
+    for entry in entries:
+        try:
+            data = json.loads(entry.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict) or str(data.get("sessionId") or "") != session:
+            continue
+        pid = data.get("pid")
+        if not isinstance(pid, int) or pid <= 0:
+            return None
+        try:
+            import psutil
+
+            return bool(psutil.pid_exists(pid))
+        except Exception:
+            return None
+    return None
+
+
 def lock_state(
     lock: dict | None,
     *,
     me: str | None = None,
     now: datetime | None = None,
+    alive=session_alive,
 ) -> LockState:
-    """Classify a lock relative to the calling session."""
+    """Classify a lock relative to the calling session.
+
+    ``alive`` is the liveness probe (injectable for tests): a lock held by a session whose
+    process is known to be gone is ``stale`` immediately, whatever its age.
+    """
     if not lock:
         return LockState(state="free")
     me = me or session_id()
     now = now or datetime.now(timezone.utc)
 
+    kind = claim_kind(lock)
+    ttl = ttl_for(kind)
     meta = {
         "session": str(lock.get("session_id") or "?"),
         "user": lock.get("user"),
         "machine": lock.get("machine"),
         "command": lock.get("command"),
         "claimed_at": lock.get("claimed_at"),
+        "kind": kind,
+        "ttl_minutes": ttl,
     }
 
     try:
@@ -192,13 +301,30 @@ def lock_state(
         age = (now - updated).total_seconds() / 60
     except ValueError:
         # Unparseable timestamp: treat as stale rather than jamming the host forever.
-        return LockState(state="stale", age_minutes=None, **meta)
+        return LockState(state="stale", age_minutes=None, reason="unreadable", **meta)
 
     if meta["session"] == me:
         return LockState(state="mine", age_minutes=round(age, 1), **meta)
-    if age > LOCK_TTL_MINUTES:
-        return LockState(state="stale", age_minutes=round(age, 1), **meta)
+    if age > ttl:
+        return LockState(state="stale", age_minutes=round(age, 1), reason="expired", **meta)
+    try:
+        gone = alive(meta["session"]) is False
+    except Exception:
+        gone = False  # a probe that blows up must not decide anything
+    if gone:
+        return LockState(state="stale", age_minutes=round(age, 1), reason="session ended", **meta)
     return LockState(state="held", age_minutes=round(age, 1), **meta)
+
+
+def claim_kind(lock: dict | None) -> str:
+    """``implicit`` or ``explicit``; a lock without a ``kind`` (older navig) is explicit."""
+    kind = (lock or {}).get("kind")
+    return kind if kind in CLAIM_KINDS else "explicit"
+
+
+def ttl_for(kind: str) -> int:
+    """Idle minutes before a claim of this ``kind`` stops blocking."""
+    return IMPLICIT_TTL_MINUTES if kind == "implicit" else LOCK_TTL_MINUTES
 
 
 # ── mutation ─────────────────────────────────────────────────────────────────
@@ -226,18 +352,25 @@ def claim(
     *,
     base_dir: Path | None = None,
     me: str | None = None,
+    kind: str = "explicit",
 ) -> dict:
     """Claim or refresh the lock for ``host``. Returns the written payload.
 
     Refreshing preserves the original ``claimed_at`` so "held for 40 minutes" stays true
-    across many commands in one session.
+    across many commands in one session. ``kind`` is ``implicit`` for a claim made on a
+    command's behalf and ``explicit`` for ``navig host lock acquire``; a refresh never
+    downgrades an explicit hold to implicit.
     """
+    if kind not in CLAIM_KINDS:
+        raise ValueError(f"kind must be one of {CLAIM_KINDS}, not {kind!r}")
     me = me or session_id()
     now = datetime.now(timezone.utc).isoformat()
     existing = read_lock(host, base_dir)
     claimed_at = now
     if existing and str(existing.get("session_id")) == me:
         claimed_at = str(existing.get("claimed_at") or now)
+        if claim_kind(existing) == "explicit":
+            kind = "explicit"
 
     try:
         user = getpass.getuser()
@@ -252,6 +385,7 @@ def claim(
         "machine": platform.node() or socket.gethostname(),
         "pid": os.getpid(),
         "command": (command or "")[:200] or None,
+        "kind": kind,
         "claimed_at": claimed_at,
         "updated_at": now,
         "nonce": uuid.uuid4().hex[:8],
@@ -299,7 +433,8 @@ def describe(st: LockState, host: str) -> str:
         f"  session : {st.session}\n"
         f"  who     : {st.user}@{st.machine}\n"
         f"  since   : {st.claimed_at} (active {st.age_minutes}m ago)\n"
-        f"  command : {st.command or '?'}"
+        f"  command : {st.command or '?'}\n"
+        f"  kind    : {st.kind or 'explicit'} (frees after {st.ttl_minutes or LOCK_TTL_MINUTES}m idle)"
     )
 
 
@@ -334,7 +469,7 @@ def guard(host: str, command: str | None = None, *, base_dir: Path | None = None
             ch.error(
                 f"Refusing to operate '{host}' — another session holds it.",
                 describe(st, host) + "\n\nOptions:\n"
-                f"  • wait — locks expire after {LOCK_TTL_MINUTES}m of inactivity\n"
+                f"  • wait — the lock frees the moment that session ends, or after {st.ttl_minutes or LOCK_TTL_MINUTES}m of inactivity\n"
                 f"  • navig host lock status {host}      (inspect)\n"
                 f"  • navig host lock release {host} --force   (only if that session is dead)\n"
                 "  • NAVIG_HOST_LOCK=warn navig ...     (proceed anyway, this once)",
@@ -344,7 +479,7 @@ def guard(host: str, command: str | None = None, *, base_dir: Path | None = None
             raise _typer.Exit(2)
         return st
 
-    claim(host, command, base_dir=base_dir)
+    claim(host, command, base_dir=base_dir, kind="implicit")
 
     if identity_quality() == "weak" and st.state == "free":
         # Say it once per claim rather than implying protection that isn't there.

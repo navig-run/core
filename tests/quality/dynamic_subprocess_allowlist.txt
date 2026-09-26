@@ -13,22 +13,27 @@
 #
 # [mixed] The child may be either. Named separately because it is the one case where no
 #   answer is right for both, and picking one silently breaks the other half.
+#
+# Entry format: `path::qualname`, plus ` xN` when that function holds N allowlisted calls.
+# Keyed by enclosing FUNCTION, never by line: a line key moved with every unrelated edit
+# above it (504 -> 501 in commands/skills.py from a shortened docstring near line 79), and
+# exempted whatever later drifted into that line. The count keeps the key honest -- a second
+# offending call in a listed function is a NEW offence, not covered by the existing entry.
 
 # --- python-child: correct as-is (14) ------------------
-core/navig/cli/providers.py:226
-core/navig/commands/history.py:319
-core/navig/commands/host.py:946
-core/navig/commands/update.py:202
-core/navig/commands/update.py:231
-core/navig/commands/update.py:374
-core/navig/commands/upgrade.py:122
-core/navig/commands/upgrade.py:152
-core/navig/mcp_manager.py:390
-core/navig/update/lifecycle.py:352
-plugins/navig-mini/install.py:66
-plugins/navig-mobile/navig_mobile/engine/ios/device.py:53
-plugins/navig-msstore/navig_msstore/__init__.py:187
-plugins/navig-pipeline/navig_pipeline/telegram_import.py:166
+core/navig/cli/providers.py::pip_install
+core/navig/commands/history.py::replay_operation
+core/navig/commands/host.py::test_host
+core/navig/commands/update.py::_step_git
+core/navig/commands/update.py::_step_pypi
+core/navig/commands/update.py::_step_reload_daemon
+core/navig/commands/upgrade.py::run_upgrade x2
+core/navig/mcp_manager.py::MCPManager.install_server
+core/navig/update/lifecycle.py::UpdateEngine._rollback_node
+plugins/navig-mini/install.py::find_python
+plugins/navig-mobile/navig_mobile/engine/ios/device.py::_run
+plugins/navig-msstore/navig_msstore/__init__.py::_vault_get
+plugins/navig-pipeline/navig_pipeline/telegram_import.py::_run_pipeline
 
 # --- mixed: python OR node, no single correct codec (1) ------
-core/navig/commands/skills.py:504
+core/navig/commands/skills.py::run_skill_cmd
