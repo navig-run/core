@@ -871,6 +871,179 @@ def register(telegram_app: "typer.Typer") -> None:
         biz.set_deletion_alert(state.lower() in ("on", "true", "1", "yes"))
         ch.success(f"Deletion alert {'ON' if biz.deletion_alert_enabled() else 'OFF'}")
 
+    deletions_app = typer.Typer(
+        help="Deletion watching: record it or not, how loudly, and where")
+    business_app.add_typer(deletions_app, name="deletions")
+
+    @deletions_app.command("status")
+    def tg_del_status(
+        as_json: bool = typer.Option(False, "--json", help="raw settings for scripts"),
+    ) -> None:
+        """Show every deletion switch: record · mode · window · target · muted."""
+        from navig.telegram import deletions as dl
+
+        st = dl.status()
+        if as_json:
+            ch.console.print_json(json.dumps(st))
+            return
+        from navig.console_helper import Table
+
+        mode_help = {
+            "digest": "one card per window, with a Show button",
+            "instant": "a report per deletion (can flood a busy account)",
+            "off": "recorded silently — nothing is sent",
+        }
+        table = Table(box=None, show_header=True, padding=(0, 2))
+        table.add_column("Setting", no_wrap=True)
+        table.add_column("Value", no_wrap=True)
+        table.add_column("Meaning")   # the one wrappable column
+        table.add_row(
+            "record",
+            "[green]● on[/green]" if st["record"] else "[red]○ off[/red]",
+            "deletions are written to the catalog" if st["record"]
+            else "nothing is written down — no trace of deleted messages",
+        )
+        table.add_row("mode", st["mode"], mode_help.get(st["mode"], "—"))
+        table.add_row("window", f"{st['window_sec']}s",
+                      "how long a digest batches before it is sent")
+        table.add_row("target", st["target"] or "[dim]your DM[/dim]",
+                      "a separate log chat, or your own DM")
+        table.add_row("muted", str(len(st["muted_chats"])) or "0",
+                      ", ".join(str(c) for c in st["muted_chats"]) or "no chats muted")
+        ch.console.print(table)
+        if not st["record"]:
+            ch.dim("\nnothing is being recorded · turn it on with"
+                   "  navig telegram business deletions record on")
+        else:
+            ch.dim(f"\nmode {st['mode']} · see the record with"
+                   "  navig telegram business deleted")
+
+    @deletions_app.command("mode")
+    def tg_del_mode(
+        value: str = typer.Argument(None, help="digest | instant | off (omit to show)"),
+    ) -> None:
+        """How you hear about deletions.
+
+        `digest` (default) sends one "N deleted · Show" card per window instead of a
+        message per deletion. `off` keeps recording and says nothing.
+        """
+        from navig.telegram import deletions as dl
+
+        if not value:
+            ch.info(f"mode: {dl.mode()}")
+            ch.dim("digest (one card per window) | instant (per deletion) | off (silent)")
+            return
+        try:
+            dl.set_mode(value)
+        except ValueError as exc:
+            ch.error(str(exc))
+            raise typer.Exit(1) from exc
+        ch.success(f"Deletion alerts: {dl.mode()}")
+
+    @deletions_app.command("record")
+    def tg_del_record(state: str = typer.Argument(..., help="on | off")) -> None:
+        """Whether deletions are tracked at all.
+
+        OFF means no trace: the catalog keeps no record that the message existed, so
+        nothing can show it to you later. To stay quiet but keep the record, use
+        `deletions mode off` instead.
+        """
+        from navig.core.coerce import coerce_bool
+        from navig.telegram import deletions as dl
+
+        on = coerce_bool(state, default=True)
+        dl.set_record_enabled(on)
+        if on:
+            ch.success("Deletion tracking ON — deletions are recorded.")
+        else:
+            ch.warning("Deletion tracking OFF — deletions leave no trace at all.")
+            ch.dim("To keep the record but stop the pings:"
+                   "  navig telegram business deletions mode off")
+
+    @deletions_app.command("window")
+    def tg_del_window(
+        seconds: int = typer.Argument(None, help="digest batching window (omit to show)"),
+    ) -> None:
+        """How long a digest collects before it is sent (default 900s / 15 min)."""
+        from navig.telegram import deletions as dl
+
+        if seconds is None:
+            ch.info(f"window: {dl.window_sec()}s")
+            return
+        try:
+            dl.set_window_sec(seconds)
+        except ValueError as exc:
+            ch.error(str(exc))
+            raise typer.Exit(1) from exc
+        ch.success(f"Digest window: {dl.window_sec()}s")
+
+    # ignore_unknown_options: every Telegram group/channel id is NEGATIVE, and Click
+    # reads a leading "-" as an option — `deletions target -1001234567890` failed with
+    # "No such option: -1", i.e. the flag was unusable for the only ids it accepts.
+    @deletions_app.command("target", context_settings={"ignore_unknown_options": True})
+    def tg_del_target(
+        chat: str = typer.Argument(None, help="chat id for a log chat, or 'dm' to reset"),
+    ) -> None:
+        """Send deletion reports to a separate log chat instead of your DM.
+
+        Use a private channel: create one, add your bot as an admin, and pass its id
+        (e.g. -1001234567890). A second BOT is not needed and would not work — a bot
+        only receives deletions for the business account IT is connected to, so a
+        "log bot" could never see them. A separate chat gives the same separation.
+        """
+        from navig.telegram import deletions as dl
+
+        if chat is None:
+            ch.info(f"target: {dl.target_chat() or 'your DM'}")
+            return
+        if chat.lower() in ("dm", "none", "off", "clear"):
+            dl.set_target_chat(None)
+            ch.success("Deletion reports go to your DM.")
+            return
+        try:
+            int(chat)
+        except ValueError:
+            ch.error("target must be a numeric chat id (or 'dm')")
+            raise typer.Exit(1) from None
+        dl.set_target_chat(chat)
+        ch.success(f"Deletion reports go to {chat}.")
+        ch.dim("Make sure the bot is a member/admin there, or sends will be rejected.")
+
+    @deletions_app.command("mute", context_settings={"ignore_unknown_options": True})
+    def tg_del_mute(
+        chat: str = typer.Argument(..., help="chat id to silence"),
+        off: bool = typer.Option(False, "--off", help="unmute instead"),
+    ) -> None:
+        """Stop announcing deletions from ONE chat (still recorded)."""
+        from navig.telegram import deletions as dl
+
+        try:
+            dl.set_muted(chat, not off)
+        except ValueError as exc:
+            ch.error(str(exc))
+            raise typer.Exit(1) from exc
+        ch.success(f"{chat} {'unmuted' if off else 'muted'} · "
+                   f"{len(dl.muted_chats())} chat(s) muted")
+
+    @deletions_app.command("flush")
+    def tg_del_flush() -> None:
+        """Send the pending digest now, instead of waiting for the window."""
+        from navig.telegram import deletions as dl
+
+        bot = dl.DirectBotChannel.resolve()
+        if bot is None:
+            ch.error("No Telegram bot token configured — nothing to send with.")
+            ch.dim("Set one with  navig config set telegram.bot_token <token>")
+            raise typer.Exit(1)
+        res = _run(dl.flush_digest(bot, force=True))
+        if res.get("sent"):
+            ch.success(f"Digest sent — {res['count']} deletion(s) in {res['chats']} chat(s).")
+        elif res.get("reason") == "nothing_pending":
+            ch.info("Nothing pending since the last digest.")
+        else:
+            ch.error(f"Not sent: {res.get('reason', 'unknown')}")
+            raise typer.Exit(1)
+
     @business_app.command("deleted")
     def tg_biz_deleted(
         chat: str = typer.Option(None, "--chat", "-c", help="only this chat id"),

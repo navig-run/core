@@ -111,6 +111,15 @@ class TelegramCatalogStore(BaseStore):
                 conn.execute(f"ALTER TABLE tg_media ADD COLUMN {_col}")
             except sqlite3.OperationalError:
                 pass  # column already present
+        # WHEN a message was deleted, as opposed to when it was first seen. The
+        # digest needs it: a watermark over `created_at` selects by the message's
+        # arrival, so deleting a month-old message would fall outside the window
+        # and never be reported. Additive — rows deleted before this column
+        # existed keep NULL, which every reader treats as "unknown when".
+        try:
+            conn.execute("ALTER TABLE tg_messages ADD COLUMN deleted_at TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already present
         # Link index — tiktok/youtube/url pulled from messages.
         conn.executescript(
             """
@@ -370,11 +379,33 @@ class TelegramCatalogStore(BaseStore):
             self._index_fts("message", local_id, int(row["chat_id"]), text)
 
     def mark_message_deleted(self, chat_id: int, message_id: int) -> bool:
+        """Soft-delete a message, stamping WHEN.
+
+        ``deleted_at`` is only set on the first mark: Telegram can re-deliver a
+        deletion, and refreshing the stamp would drag an old deletion back into a
+        digest window and report it twice."""
         cur = self._write(
-            "UPDATE tg_messages SET deleted = 1 WHERE chat_id = ? AND message_id = ?",
-            (chat_id, message_id),
+            "UPDATE tg_messages SET deleted = 1, "
+            "deleted_at = COALESCE(deleted_at, ?) "
+            "WHERE chat_id = ? AND message_id = ?",
+            (_utcnow(), chat_id, message_id),
         )
         return cur.rowcount > 0
+
+    def count_deleted_since(self, since: str) -> dict[str, int]:
+        """``{"messages": n, "chats": m}`` deleted at or after *since*.
+
+        The digest's headline. A COUNT rather than a fetch because the summary
+        needs two numbers and the rows are only read if the operator asks."""
+        row = self._read_one(
+            "SELECT COUNT(*) AS messages, COUNT(DISTINCT chat_id) AS chats "
+            "FROM tg_messages WHERE deleted = 1 AND deleted_at >= ?",
+            (since,),
+        )
+        return {
+            "messages": int((row["messages"] if row else 0) or 0),
+            "chats": int((row["chats"] if row else 0) or 0),
+        }
 
     def list_messages(
         self,
@@ -425,17 +456,23 @@ class TelegramCatalogStore(BaseStore):
     ) -> list[dict[str, Any]]:
         """Deleted messages across every room, newest first, with the room title.
 
-        Ordered by local ``id`` (insertion order), NOT ``message_id``: ids are
-        per-chat counters, so ordering a cross-room list by them interleaves
-        chats arbitrarily. Soft-deleted rows are the only record that a message
-        ever existed, which is what makes this the answer to "what was deleted"."""
+        *since* filters on **deleted_at** — when the deletion happened, not when
+        the message arrived. Filtering on ``created_at`` (as this first did) means
+        deleting a month-old message lands outside every digest window, so the one
+        case the operator most wants to hear about is the one it drops.
+
+        Ordered deletion-first, falling back to local ``id`` for rows deleted
+        before ``deleted_at`` existed. NOT by ``message_id``: ids are per-chat
+        counters, so ordering a cross-room list by them interleaves chats
+        arbitrarily. Soft-deleted rows are the only record that a message ever
+        existed, which is what makes this the answer to "what was deleted"."""
         clauses = ["m.deleted = 1"]
         params: list[Any] = []
         if chat_id is not None:
             clauses.append("m.chat_id = ?")
             params.append(chat_id)
         if since:
-            clauses.append("m.created_at >= ?")
+            clauses.append("m.deleted_at >= ?")
             params.append(since)
         params.append(max(1, min(500, limit)))
         rows = self._read_all(
@@ -447,7 +484,7 @@ class TelegramCatalogStore(BaseStore):
             LEFT JOIN tg_rooms r ON r.chat_id = m.chat_id
             LEFT JOIN tg_media d ON d.id = m.media_ref
             WHERE {' AND '.join(clauses)}
-            ORDER BY m.id DESC
+            ORDER BY m.deleted_at DESC NULLS LAST, m.id DESC
             LIMIT ?
             """,
             tuple(params),
@@ -697,6 +734,9 @@ def _message_dict(row: sqlite3.Row) -> dict[str, Any]:
         "kind": row["kind"],
         "edited_at": row["edited_at"],
         "deleted": bool(row["deleted"]),
+        # NULL for rows deleted before the column existed — "unknown when",
+        # which readers must not render as "just now".
+        "deleted_at": (row["deleted_at"] if "deleted_at" in row.keys() else None),
     }
     if "raw_json" in keys:
         payload = safe_json_loads(row["raw_json"], None)

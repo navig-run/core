@@ -6044,6 +6044,31 @@ actual = secret.reveal()  # Get real value
 
 ---
 
+## 23.5.1 Personal Document Cabinet (`navig cabinet`)
+
+The vault keeps **secrets**. The cabinet keeps **files**: ID and passport scans, medical records, contracts, diplomas, photos, recordings. It takes any type and any size, encrypts everything including titles, tags and OCR text, and makes text search local-only. Plugin: `navig-cabinet` (`pip install navig[cabinet]`).
+
+```bash
+navig cabinet add passport.pdf --expires 2031-05-01   # encrypt + local OCR
+navig cabinet add ~/Scans/medical/                    # a whole folder
+navig cabinet search blood test                       # words inside the documents
+navig cabinet expiring                                # due within 90 days
+navig cabinet open <id>                               # temporary decrypted copy → its app
+navig cabinet export --all --by-category -o <dir>     # original names, checksum-verified
+navig cabinet backup -o <file>                        # portable .ncab, own passphrase
+navig cabinet restore <file.ncab>
+navig cabinet import-paperwork --space <space>        # ID/medical docs a paperwork scan set aside
+navig cabinet passphrase set | clear                  # machine key (default) ↔ passphrase
+navig cabinet verify · status · edit · remove · undelete · close
+```
+
+- **Location:** `~/.navig/cabinet/` (override with `NAVIG_CABINET_DIR`).
+- **Passphrase in scripts:** `NAVIG_CABINET_PASSPHRASE`.
+- **Machine-key caveat:** a machine-key cabinet does not survive an OS reinstall, so back it up.
+- **Recovering without navig:** `navig_cabinet/recover_backup.py` restores a backup with only Python and `cryptography`.
+
+---
+
 ## 23.6 Windows System Tray Launcher
 
 Run NAVIG services from the Windows system tray — no terminal needed.

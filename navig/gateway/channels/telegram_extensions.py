@@ -263,6 +263,10 @@ EXTENSIONS: tuple[TelegramExtension, ...] = (
         description="Telegram Business conversations and auto-reply.",
         group="Comms", icon="briefcase",
         legacy_key="telegram.business.enabled",
+        # The deletion digest's "Show N" / "Quiet" buttons. Gated here so turning
+        # the business inbox off stops them with everything else it owns, instead
+        # of leaving live buttons for a feature that is supposed to be gone.
+        callback_prefixes=("bizdel:",),
         about=(
             "business messages are no longer catalogued",
             "deletion alerts stop",

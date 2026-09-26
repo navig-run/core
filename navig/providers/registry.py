@@ -105,18 +105,21 @@ ALL_PROVIDERS: list[ProviderManifest] = [
     ProviderManifest(
         id="anthropic",
         display_name="Anthropic",
-        description="Claude 3.7 Sonnet, Claude 3.5 series — extended thinking and long context.",
+        description="Claude Sonnet 4.6, Haiku 4.5, Opus 4.8 — extended thinking and long context.",
         tier="cloud",
         env_vars=["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
         vault_keys=["anthropic/api-key", "anthropic/api_key"],
+        # ⚠ Audited 2026-09-26 through the operator's Claude SUBSCRIPTION: all
+        # four ids previously here were gone (2x 404, 2x 410 EOL) — including
+        # models[0], the credential probe and routing substitution default. The
+        # first catalog sweep never saw it: it asked the API-key store, and a
+        # subscription is an OAuth connection with no key.
+        # Sonnet FIRST on purpose: models[0] is what model_router substitutes in,
+        # and the routing table's own rule is that Opus is never auto-selected.
         models=[
-            # Claude 3.7 (February 2025 — extended thinking)
-            "claude-3-7-sonnet-20250219",
-            # Claude 3.5 series
-            "claude-3-5-sonnet-20241022",
-            "claude-3-5-haiku-20241022",
-            # Claude 3 (legacy)
-            "claude-3-opus-20240229",
+            "claude-sonnet-4-6",
+            "claude-haiku-4-5",
+            "claude-opus-4-8",
         ],
         emoji="🟣",
     ),

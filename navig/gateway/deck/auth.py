@@ -149,6 +149,15 @@ def deck_auth_max_age() -> int:
     return coerce_int(_deck_config.get("auth_max_age"), 86400, minimum=60)
 
 
+# Fields Telegram EXCLUDES from the initData data-check-string before the HMAC.
+# `hash` has always been excluded; `signature` (an Ed25519 field for third-party
+# validation) was added in Bot API 8.0 (2024-11) and is now present in EVERY real
+# launch — it is not part of the bot-token HMAC input. Including it recomputes a
+# hash Telegram never produced, rejecting every genuine Mini App as "hash
+# mismatch". Spec: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+_DCS_EXCLUDED_FIELDS = frozenset({"hash", "signature"})
+
+
 def validate_init_data(
     init_data: str,
     bot_token: str,
@@ -188,7 +197,9 @@ def validate_init_data(
 
         items = []
         for key, values in parsed.items():
-            if key == "hash":
+            # Skip BOTH hash and signature — see _DCS_EXCLUDED_FIELDS. Excluding
+            # only `hash` here is what made every real (Bot API 8.0+) launch fail.
+            if key in _DCS_EXCLUDED_FIELDS:
                 continue
             items.append(f"{key}={unquote(values[0])}")
         items.sort()

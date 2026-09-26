@@ -1388,6 +1388,28 @@ class CallbackHandler:
             # Above the `self.store.get(cb_data)` fallback, like every other
             # prefix branch: that lookup answers "Button expired" for anything it
             # does not recognise, which is how a whole card can go dead silently.
+            # Deletion digest: "Show N" / "Quiet". Above the store fallback like
+            # every other prefix branch — that lookup answers "Button expired" for
+            # anything it does not recognise, which is how a whole card goes dead.
+            if cb_data.startswith("bizdel:"):
+                toast = ""
+                try:
+                    from navig.telegram import deletions
+
+                    toast = await deletions.handle_callback(
+                        self.channel, cb_data, chat_id, message_id, user_id
+                    )
+                except Exception as _bd_err:
+                    logger.warning(
+                        "Deletion digest callback error: chat_id=%s callback=%s err=%s",
+                        chat_id,
+                        cb_data,
+                        _bd_err,
+                    )
+                    toast = "⚠️ Deletion action error"
+                await self._answer(cb_id, toast or "Done")
+                return
+
             if cb_data.startswith("td:"):
                 toast = ""
                 try:

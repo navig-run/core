@@ -107,10 +107,32 @@ navig telegram business alerts on|off                  # deleted-message → DM 
    photo. Conversations with **other bots** are cataloged too (data only — never
    auto-replied to).
 
+   **By default this is a DIGEST, not a message per deletion.** One card per window
+   says *"🗑 4 deleted in 2 chats"* with a **Show** button; the detail (and the files)
+   arrive only when you tap it, and a **Quiet** button turns alerts off from the card
+   itself. Instant per-deletion reports flooded a live account, which is why digest is
+   the default.
+
+   Three switches, deliberately separate (`navig telegram business deletions status`):
+
+   | Switch | What it decides |
+   |---|---|
+   | `record on\|off` | whether a deletion is written down **at all**. Off leaves no trace, so nothing can show it to you later. |
+   | `mode digest\|instant\|off` | how loudly you hear. `off` keeps the record and says nothing. |
+   | `window <sec>` | how long a digest batches (default 900). |
+   | `target <chat id>` | send reports to a **log channel** instead of your DM (`dm` resets). |
+   | `mute <chat>` | silence one conversation; still recorded. |
+
+   On a "log bot": a second **bot** cannot do this — a bot only receives
+   `deleted_business_messages` for the account *it* is connected to, so a separate bot
+   would never see your deletions. A separate **chat** gives the same separation: make
+   a private channel, add your bot as an admin, and point `target` at it.
+
    The DM is a push you can miss or mute. The same record is browsable:
-   **`navig telegram business deleted`** (a table; `--chat`, `-n`, `--json`) and the
-   deck's **Business → Recently deleted** panel. Deletions are only recorded from the
-   moment the catcher is on — nothing can recover a message NAVIG never saw.
+   **`navig telegram business deleted`** (a table; `--chat`, `-n`, `--json`), the deck's
+   **Business → Recently deleted** panel, and a room's **Deleted** tab. Deletions are
+   only recorded from the moment the catcher is on — nothing can recover a message
+   NAVIG never saw.
 
 ---
 
@@ -121,7 +143,13 @@ navig telegram business alerts on|off                  # deleted-message → DM 
 | `telegram.user.enabled` | MTProto engine on/off |
 | `telegram.user.throttle_every` / `.throttle_secs` | flood-safe scan throttle (default 200 / 1.0s) |
 | `telegram.business.enabled` | business catcher on/off |
-| `telegram.business.deletion_alert` | deleted-message → DM you |
+| `telegram.business.deletion_alert` | legacy on/off (mirrors `deletions.mode != off`) |
+| `telegram.business.deletions.record` | write deletions down at all (default on) |
+| `telegram.business.deletions.mode` | `digest` (default) \| `instant` \| `off` |
+| `telegram.business.deletions.window_sec` | digest batching window (default 900) |
+| `telegram.business.deletions.target` | log chat id, empty = your DM |
+| `telegram.business.deletions.mute_chats` | chat ids never announced |
+| `telegram.boot_greeting.enabled` / `.dedupe_sec` | greet on boot; one greeting per window across processes |
 | `telegram.business.tools.<tool>.who` | `owner` \| `both` \| `off` |
 | `telegram.business.emoji.<emoji>` | remap a reaction emoji → tool |
 

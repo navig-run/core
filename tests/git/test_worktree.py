@@ -895,7 +895,7 @@ class TestEdgeCases:
         branch_delete_called = []
 
         async def fake_git(cmd: str):
-            if "branch -D" in cmd:
+            if "git branch -" in cmd:
                 branch_delete_called.append(cmd)
             return _completed(0)
 
@@ -904,6 +904,22 @@ class TestEdgeCases:
                 await mgr.remove("w")
         assert branch_delete_called
         assert "navig/w" in branch_delete_called[0]
+        # Without force: the SAFE delete, so a branch holding unmerged commits survives.
+        assert "branch -d " in branch_delete_called[0]
+
+    async def test_forced_remove_force_deletes_the_branch(self, tmp_path):
+        mgr = _make_manager(tmp_path)
+        mgr._worktrees["w"] = Worktree(name="w", path=tmp_path / "w", branch="navig/w")
+        calls = []
+
+        async def fake_git(cmd: str):
+            calls.append(cmd)
+            return _completed(0)
+
+        with patch.object(mgr, "_run_git", side_effect=fake_git):
+            with patch("os.name", "posix"):
+                await mgr.remove("w", force=True)
+        assert any("branch -D navig/w" in c for c in calls), calls
 
     async def test_cleanup_all_calls_remove_for_each(self, tmp_path):
         mgr = _make_manager(tmp_path)
@@ -957,3 +973,114 @@ class TestEdgeCases:
     def test_gitignore_entry_constant(self):
         """WORKTREE_DIR constant matches .gitignore plan."""
         assert WORKTREE_DIR == ".navig_worktrees"
+
+
+# ─────────────────────────────────────────────────────────────
+# remove(force=False) must never destroy work — REAL git, no mocks
+# ─────────────────────────────────────────────────────────────
+# The Windows path fell back to shutil.rmtree whenever git refused — and git's commonest
+# refusal is "contains modified or untracked files" — then `branch -D`, then logged
+# "Removed". Reproduced: an agent's uncommitted output and its unmerged branch were both
+# gone after remove(force=False), no error, and the tool reported success.
+
+
+def _real_repo(tmp_path: Path) -> Path:
+    root = tmp_path / "r"
+    root.mkdir()
+    for args in (
+        ["init", "-q", "-b", "main"],
+        ["config", "user.email", "t@navig.local"],
+        ["config", "user.name", "t"],
+    ):
+        subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+    (root / "a.txt").write_text("a\n", encoding="utf-8")
+    subprocess.run(["git", "add", "a.txt"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-q", "-m", "a"], cwd=root, check=True, capture_output=True)
+    return root
+
+
+def _branch_exists(root: Path, branch: str) -> bool:
+    out = subprocess.run(
+        ["git", "branch", "--list", branch], cwd=root, capture_output=True, text=True
+    ).stdout
+    return bool(out.strip())
+
+
+@pytest.fixture
+def _fast_retries(monkeypatch):
+    import navig.agent.worktree as wt_mod
+
+    monkeypatch.setattr(wt_mod, "WINDOWS_RETRY_DELAY", 0.01)
+
+
+async def test_real_remove_keeps_untracked_agent_work_without_force(tmp_path, _fast_retries):
+    root = _real_repo(tmp_path)
+    mgr = WorktreeManager(repo_root=root)
+    wt = await mgr.create("job")
+    work = Path(wt.path) / "agent-output.txt"
+    work.write_text("hours of agent work\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="uncommitted changes"):
+        await mgr.remove("job", force=False)
+    assert work.read_text(encoding="utf-8") == "hours of agent work\n"
+    assert "job" in mgr._worktrees, "a worktree that was not removed must stay tracked"
+    assert _branch_exists(root, "navig/job")
+
+
+async def test_real_remove_keeps_a_modified_tracked_file_without_force(tmp_path, _fast_retries):
+    root = _real_repo(tmp_path)
+    mgr = WorktreeManager(repo_root=root)
+    wt = await mgr.create("job")
+    (Path(wt.path) / "a.txt").write_text("edited\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError):
+        await mgr.remove("job", force=False)
+    assert (Path(wt.path) / "a.txt").read_text(encoding="utf-8") == "edited\n"
+
+
+async def test_real_remove_of_a_clean_merged_worktree_removes_it_and_its_branch(tmp_path, _fast_retries):
+    root = _real_repo(tmp_path)
+    mgr = WorktreeManager(repo_root=root)
+    wt = await mgr.create("job")
+    await mgr.remove("job", force=False)
+    assert not Path(wt.path).exists()
+    assert "job" not in mgr._worktrees
+    assert not _branch_exists(root, "navig/job")  # no commits of its own: -d succeeds
+
+
+async def test_real_remove_keeps_a_branch_with_unmerged_commits_without_force(tmp_path, _fast_retries):
+    root = _real_repo(tmp_path)
+    mgr = WorktreeManager(repo_root=root)
+    wt = await mgr.create("job")
+    p = Path(wt.path)
+    (p / "done.txt").write_text("committed agent work\n", encoding="utf-8")
+    subprocess.run(["git", "add", "done.txt"], cwd=p, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-q", "-m", "work"], cwd=p, check=True, capture_output=True)
+
+    await mgr.remove("job", force=False)  # the tree is clean, so the worktree goes
+    assert not p.exists()
+    assert _branch_exists(root, "navig/job"), "unmerged commits must survive a non-forced remove"
+
+
+async def test_real_forced_remove_discards_work_as_documented(tmp_path, _fast_retries):
+    root = _real_repo(tmp_path)
+    mgr = WorktreeManager(repo_root=root)
+    wt = await mgr.create("job")
+    (Path(wt.path) / "scratch.txt").write_text("x\n", encoding="utf-8")
+    await mgr.remove("job", force=True)
+    assert not Path(wt.path).exists()
+    assert not _branch_exists(root, "navig/job")
+
+
+async def test_the_remove_tool_reports_failure_when_work_would_be_lost(tmp_path, _fast_retries):
+    from navig.agent.tools.worktree_tools import WorktreeRemoveTool
+
+    root = _real_repo(tmp_path)
+    mgr = WorktreeManager(repo_root=root)
+    wt = await mgr.create("job")
+    (Path(wt.path) / "agent-output.txt").write_text("x\n", encoding="utf-8")
+
+    with patch("navig.agent.tools.worktree_tools._get_manager", return_value=mgr):
+        result = await WorktreeRemoveTool().run({"name": "job"})
+    assert result.success is False, result
+    assert "force=true" in (result.error or "")

@@ -297,3 +297,48 @@ def test_land_deletes_the_proven_local_branch_even_if_the_remote_delete_fails(re
     assert payload["failed"].get("remote"), "the remote delete was supposed to fail in this test"
     assert payload["done"].get("local", "").startswith("deleted"), payload
     assert "feat/stuck" not in _local_branches(repo), "a failed remote delete must not strand the local branch"
+
+
+# -- uncommitted work in the branch's worktree ---------------------------------
+# land removed the worktree with `git worktree remove --force` and never looked at it, so
+# uncommitted work sitting on top of a MERGED branch (merge, then start the next thing in
+# the same folder) was destroyed by `land --yes`. sweep has always refused this shape.
+
+
+def _merged_with_dirty_worktree(repo: Path) -> tuple[Path, Path]:
+    base_sha = _git("rev-parse", "HEAD", cwd=repo)
+    _git("branch", "done/busy", base_sha, cwd=repo)
+    _git("push", "-q", "origin", "done/busy", cwd=repo)
+    wt = repo / ".dev" / "worktrees" / "busy"
+    wt.parent.mkdir(parents=True)
+    _git("worktree", "add", "-q", str(wt), "done/busy", cwd=repo)
+    (wt / "base.txt").write_text("edited, not committed\n", encoding="utf-8")
+    new = wt / "next-task.txt"
+    new.write_text("brand new, untracked\n", encoding="utf-8")
+    return wt, new
+
+
+def test_land_refuses_when_the_branchs_worktree_has_uncommitted_work(repo: Path):
+    wt, new = _merged_with_dirty_worktree(repo)
+    result = runner.invoke(
+        repo_app, ["land", "done/busy", "--repo", str(repo), "--no-fetch", "--yes", "--json"]
+    )
+    assert result.exit_code != 0, result.output
+    # Nothing was torn down — not even the remote ref, so the refusal leaves no half-landed state.
+    assert new.exists() and new.read_text(encoding="utf-8") == "brand new, untracked\n"
+    assert (wt / "base.txt").read_text(encoding="utf-8") == "edited, not committed\n"
+    assert "done/busy" in _local_branches(repo)
+    assert "done/busy" in _remote_branches(repo)
+
+
+def test_land_plan_reports_the_dirty_worktree(repo: Path):
+    _merged_with_dirty_worktree(repo)
+    plan = collect_land(repo, "done/busy", github=False, fetch=False)
+    assert plan["worktree_dirty"] is True
+
+
+def test_land_human_output_says_why_and_how_to_proceed(repo: Path):
+    _merged_with_dirty_worktree(repo)
+    result = runner.invoke(repo_app, ["land", "done/busy", "--repo", str(repo), "--no-fetch", "--yes"])
+    assert result.exit_code != 0
+    assert "uncommitted" in result.output and "navig repo remove" in result.output, result.output

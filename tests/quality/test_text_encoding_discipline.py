@@ -125,6 +125,8 @@ def _needs_encoding(call: ast.Call) -> str | None:
             return None
         label = "Path.write_text()"
     elif bare == "open" or attr == "open":
+        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)                 and func.value.id == "tarfile":
+            return None                    # a tar is bytes; "w|"/"r:gz" have no "b" yet no text mode
         is_builtin = bare == "open"
         mode = _literal_mode(call, 1 if is_builtin else 0)
         if mode is not None and "b" in mode:
@@ -216,6 +218,9 @@ def test_the_detector_finds_the_shapes_it_claims_to() -> None:
     assert labels('open(p, "wb")') == []
     assert labels('p.open("rb")') == []
     assert labels('open(p, **kw)') == []
+    # tarfile has no text mode, and its stream modes ("w|", "r:gz") carry no "b".
+    assert labels('tarfile.open(fileobj=f, mode="w|")') == []
+    assert labels('tarfile.open(p, "r:gz")') == []
     # Not pathlib: an AutoHotkey UI-control read that merely shares the name.
     assert labels("adapter.read_text(selector, control_id)") == []
     assert labels("adapter.read_text(sel, control_id=c)") == []

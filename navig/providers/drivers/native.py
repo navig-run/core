@@ -271,7 +271,7 @@ class NativeDriver(ProviderDriver):
                 return ValidationResult(ok=False, health=HealthState.INVALID.value,
                                         error_code="validation_error",
                                         error_message="Anthropic provider config unavailable.")
-            candidates = probe_candidates("anthropic", first=model) or ["claude-3-5-haiku-20241022"]
+            candidates = probe_candidates("anthropic", first=model) or ["claude-haiku-4-5"]
             access = await self._oauth_access_token(secret_ref)
             if not access:
                 return ValidationResult(ok=False, health=HealthState.INVALID.value,

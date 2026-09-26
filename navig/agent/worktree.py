@@ -247,55 +247,70 @@ class WorktreeManager:
         name : str
             Worktree to remove.
         force : bool
-            Force removal even if there are uncommitted changes.
+            Force removal even if there are uncommitted changes, and delete the
+            branch even if it holds unmerged commits.
+
+        Raises
+        ------
+        RuntimeError
+            Without *force*, when git refuses (uncommitted or untracked files) and
+            the tree is not verifiably clean. The worktree stays tracked.
+
+        ⚠ Without *force* nothing that is not already safe elsewhere is destroyed.
+        The Windows path used to fall back to ``shutil.rmtree`` whenever git refused —
+        and git's commonest refusal IS "contains modified or untracked files" — then
+        ``branch -D``, and log "Removed". Reproduced with real git: an agent's
+        uncommitted output and its unmerged branch were both gone after
+        ``remove(force=False)``, with no error.
         """
         wt = self._worktrees.get(name)
         if not wt:
             return  # already gone — idempotent
 
         force_flag = "--force" if force else ""
-
-        if os.name == "nt":
-            # Windows: file locks may prevent immediate removal — retry
-            for attempt in range(WINDOWS_RETRY_ATTEMPTS):
-                result = await self._run_git(
-                    f'git worktree remove "{wt.path}" {force_flag}'
-                )
-                if result.returncode == 0:
-                    break
-                logger.debug(
-                    "Windows worktree remove attempt %d/%d failed: %s",
-                    attempt + 1,
-                    WINDOWS_RETRY_ATTEMPTS,
-                    result.stderr.strip(),
-                )
-                await asyncio.sleep(WINDOWS_RETRY_DELAY)
-            else:
-                # Last resort: manual directory removal + prune
-                logger.warning(
-                    "Worktree '%s': git remove failed after retries; "
-                    "falling back to shutil.rmtree.",
-                    name,
-                )
-                shutil.rmtree(str(wt.path), ignore_errors=True)
-                await self._run_git("git worktree prune")
-        else:
-            result = await self._run_git(
-                f'git worktree remove "{wt.path}" {force_flag}'
+        # Windows file locks (AV, indexer) make removal transiently fail — retry there.
+        attempts = WINDOWS_RETRY_ATTEMPTS if os.name == "nt" else 1
+        removed = False
+        last_err = ""
+        for attempt in range(attempts):
+            result = await self._run_git(f'git worktree remove "{wt.path}" {force_flag}')
+            if result.returncode == 0:
+                removed = True
+                break
+            last_err = result.stderr.strip()
+            # The dirty refusal says "use --force"; it is not transient, so retrying only
+            # delays the answer.
+            if not force and "--force" in last_err:
+                break
+            logger.debug(
+                "worktree remove attempt %d/%d failed: %s", attempt + 1, attempts, last_err
             )
-            if result.returncode != 0:
-                if force:
-                    shutil.rmtree(str(wt.path), ignore_errors=True)
-                    await self._run_git("git worktree prune")
-                else:
-                    logger.warning(
-                        "Worktree '%s' remove failed: %s",
-                        name,
-                        result.stderr.strip(),
-                    )
+            if attempt + 1 < attempts:
+                await asyncio.sleep(WINDOWS_RETRY_DELAY)
 
-        # Delete the branch (best-effort)
-        await self._run_git(f"git branch -D {wt.branch}")
+        if not removed:
+            # The rmtree fallback exists for locks, not for work: without force it runs
+            # only when the tree is VERIFIABLY clean (a status git cannot read is not).
+            if not force and not await self._is_clean(Path(wt.path)):
+                raise RuntimeError(
+                    f"Worktree '{name}' was not removed: {last_err or 'git refused'}. "
+                    "It keeps its uncommitted changes; pass force=true to discard them."
+                )
+            logger.warning(
+                "Worktree '%s': git remove failed (%s); falling back to shutil.rmtree.",
+                name,
+                last_err,
+            )
+            shutil.rmtree(str(wt.path), ignore_errors=True)
+            await self._run_git("git worktree prune")
+
+        # -d keeps a branch holding unmerged commits (the agent's committed work) unless
+        # the caller forced. Best-effort either way: the worktree itself is gone.
+        res = await self._run_git(f"git branch {'-D' if force else '-d'} {wt.branch}")
+        if res.returncode != 0:
+            logger.warning(
+                "Worktree '%s' removed; branch %s kept: %s", name, wt.branch, res.stderr.strip()
+            )
 
         wt.deleted = True
         self._worktrees.pop(name, None)
@@ -349,6 +364,16 @@ class WorktreeManager:
         return sum(1 for wt in self._worktrees.values() if not wt.deleted)
 
     # ── git helper ───────────────────────────────────────────
+
+    async def _is_clean(self, path: Path) -> bool:
+        """True when *path* holds nothing git would lose: absent, or ``status`` empty.
+
+        A status git cannot read is NOT clean — the caller is deciding whether to rmtree.
+        """
+        if not path.exists():
+            return True
+        res = await self._run_git(f'git -C "{path}" status --porcelain')
+        return res.returncode == 0 and not res.stdout.strip()
 
     async def _run_git(self, cmd: str) -> subprocess.CompletedProcess:
         """Run a git command in the repo root and return the result."""

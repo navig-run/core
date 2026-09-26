@@ -14,6 +14,13 @@
   ],
   "boot.position": "Позиция: {value}.",
   "boot.signal": "Сигнал: {value}%.",
+  "deletions.button.quiet": "Тихо",
+  "deletions.button.show": "Показать {n}",
+  "deletions.digest.chats": " в {n} чатах",
+  "deletions.digest.head": "удалено: {n}",
+  "deletions.digest.tail": "нажми, чтобы посмотреть",
+  "deletions.off.note": "Оповещения об удалении выключены. Запись сохраняется — посмотреть: `navig telegram business deleted`, включить снова: `navig telegram business deletions mode digest`.",
+  "deletions.toast.off": "Оповещения об удалении выключены",
   "engagement.checkin": [
     "Короткая проверка — нужна помощь?",
     "Я на месте. Позови, если что.",
@@ -102,6 +109,10 @@
   "habit.ext.off_cli": "Расширение «Привычки» выключено - напоминания запланированы, но не доставляются.",
   "habit.ext.off_cli_detail": "Включить: navig telegram extensions enable habits",
   "habit.ext.off_html": "⚠️ <b>Расширение «Привычки» выключено</b> — напоминания запланированы, но не доставляются.\nВключить: /extensions\n",
+  "habit.journal.invite": "Напиши о своём дне — всё, что на уме. Что произошло, как это ощущалось, что до сих пор крутится в голове. Без структуры и без нормы по объёму.",
+  "habit.journal.reflect.failed": "(В этот раз не получилось перечитать — запись сохранена.)",
+  "habit.journal.reflect.heading": "🫧 Что я замечаю",
+  "habit.journal.reflect.week_heading": "🫧 Неделя, если посмотреть на неё целиком",
   "habit.journal.reply_hint": "Ответь на это сообщение. Пиши столько, сколько захочется.",
   "habit.journal.title": "Дневник · {day}",
   "habit.journal.voice_hint": "Голосовое тоже подойдёт: ответь им — и я запишу текстом.",
@@ -499,9 +510,5 @@
   "weekday.3": "Чт",
   "weekday.4": "Пт",
   "weekday.5": "Сб",
-  "weekday.6": "Вс",
-  "habit.journal.invite": "Напиши о своём дне — всё, что на уме. Что произошло, как это ощущалось, что до сих пор крутится в голове. Без структуры и без нормы по объёму.",
-  "habit.journal.reflect.heading": "🫧 Что я замечаю",
-  "habit.journal.reflect.week_heading": "🫧 Неделя, если посмотреть на неё целиком",
-  "habit.journal.reflect.failed": "(В этот раз не получилось перечитать — запись сохранена.)"
+  "weekday.6": "Вс"
 }

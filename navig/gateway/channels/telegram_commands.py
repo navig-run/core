@@ -5641,6 +5641,11 @@ class TelegramCommandsMixin:
                     return raw
             return fallback or models[0]
 
+        def _first_containing(token: str) -> str:
+            """The first model whose id contains *token*, else "" — for a real
+            preference, which `_pick`'s any-token match cannot express."""
+            return next((raw for raw, low in lowered if token in low), "")
+
         if prov_id == "openai":
             big = _pick(("gpt-4o",), models[0])
             # prefer mini for small, but not the big gpt-4o itself
@@ -5661,8 +5666,11 @@ class TelegramCommandsMixin:
             return {"small": small, "big": big, "coder_big": coder}
 
         if prov_id == "groq":
-            big = _pick(("70b",), models[0])
-            small = _pick(("mixtral", "8x7b", "8b", "7b"), models[-1])
+            # The old tokens ("70b", "mixtral", "8x7b") named groq's catalog as it
+            # was — every one of those ids was decommissioned by 2026-09-26, and
+            # "7b" then matched "qwen3.8-27b" as the SMALL tier by accident.
+            big = _pick(("120b", "70b"), models[0])
+            small = _first_containing("gpt-oss-20b") or _pick(("8b", "7b"), models[-1])
             coder = big
             return {"small": small, "big": big, "coder_big": coder}
 
@@ -5684,7 +5692,12 @@ class TelegramCommandsMixin:
             # Prefer largest general model: Qwen3-235B > Llama 405B > 70B
             big = _pick_text(("235b", "405b", "70b", "72b"), models[0])
             # Prefer fast small model: Llama 8B or any 7B, Qwen3-30B as medium option
-            small = _pick_text(("8b", "7b", "30b"), models[-1])
+            # gpt-oss-20b when present: measured 2026-09-26 at 0.6–1.2 s per call,
+            # while the "30b" match (nemotron-3.5-lightning) took 20–65 s — a
+            # small-talk tier that makes the operator wait a minute for "hi".
+            # ⚠ Checked SEPARATELY, not as the first token: `_pick` returns the
+            # first MODEL matching ANY token, so token order expresses no preference.
+            small = _first_containing("gpt-oss-20b") or _pick_text(("8b", "7b", "30b"), models[-1])
             # Prefer Qwen3-Coder, then DeepSeek, then fall back to big
             coder = _pick(("qwen3-coder", "coder", "deepseek-r1", "deepseek"), big)
             return {"small": small, "big": big, "coder_big": coder}

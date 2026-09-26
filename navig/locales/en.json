@@ -14,6 +14,13 @@
   ],
   "boot.position": "Position: {value}.",
   "boot.signal": "Signal: {value}%.",
+  "deletions.button.quiet": "Quiet",
+  "deletions.button.show": "Show {n}",
+  "deletions.digest.chats": " in {n} chats",
+  "deletions.digest.head": "{n} deleted",
+  "deletions.digest.tail": "tap to see what they were",
+  "deletions.off.note": "Deletion alerts off. The record is still kept — list it with `navig telegram business deleted`, or switch them back on with `navig telegram business deletions mode digest`.",
+  "deletions.toast.off": "Deletion alerts off",
   "engagement.checkin": [
     "Quick check — anything you need help with?",
     "Still here. Shout if you need anything.",
@@ -102,6 +109,10 @@
   "habit.ext.off_cli": "The Habits extension is off - these reminders are scheduled but not delivered.",
   "habit.ext.off_cli_detail": "Turn it on: navig telegram extensions enable habits",
   "habit.ext.off_html": "⚠️ <b>The Habits extension is off</b> — these reminders are scheduled but not delivered.\nTurn it on: /extensions\n",
+  "habit.journal.invite": "Write about your day — whatever is on your mind. What happened, what it felt like, what is still turning over. No structure, no length to hit.",
+  "habit.journal.reflect.failed": "(Couldn't read it back this time — your entry is saved.)",
+  "habit.journal.reflect.heading": "🫧 What I notice",
+  "habit.journal.reflect.week_heading": "🫧 Reading the week back",
   "habit.journal.reply_hint": "Reply to this message. Write as much or as little as you like.",
   "habit.journal.title": "Journal · {day}",
   "habit.journal.voice_hint": "A voice note works too: reply with one and it is written down for you.",
@@ -499,9 +510,5 @@
   "weekday.3": "Thu",
   "weekday.4": "Fri",
   "weekday.5": "Sat",
-  "weekday.6": "Sun",
-  "habit.journal.invite": "Write about your day — whatever is on your mind. What happened, what it felt like, what is still turning over. No structure, no length to hit.",
-  "habit.journal.reflect.heading": "🫧 What I notice",
-  "habit.journal.reflect.week_heading": "🫧 Reading the week back",
-  "habit.journal.reflect.failed": "(Couldn't read it back this time — your entry is saved.)"
+  "weekday.6": "Sun"
 }

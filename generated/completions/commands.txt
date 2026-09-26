@@ -206,6 +206,24 @@ navig browser open
 navig browser screenshot
 navig browser status
 navig browser stop
+navig cabinet add
+navig cabinet backup
+navig cabinet close
+navig cabinet edit
+navig cabinet expiring
+navig cabinet export
+navig cabinet import-paperwork
+navig cabinet list
+navig cabinet open
+navig cabinet passphrase clear
+navig cabinet passphrase set
+navig cabinet remove
+navig cabinet restore
+navig cabinet search
+navig cabinet show
+navig cabinet status
+navig cabinet undelete
+navig cabinet verify
 navig calendar add
 navig calendar auth
 navig calendar list
@@ -1291,6 +1309,13 @@ navig task show
 navig task test
 navig telegram business alerts
 navig telegram business deleted
+navig telegram business deletions flush
+navig telegram business deletions mode
+navig telegram business deletions mute
+navig telegram business deletions record
+navig telegram business deletions status
+navig telegram business deletions target
+navig telegram business deletions window
 navig telegram business disable
 navig telegram business emoji
 navig telegram business enable

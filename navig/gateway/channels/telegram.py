@@ -677,6 +677,20 @@ class TelegramChannel:
             if self._boot_announced:
                 return
             self._boot_announced = True
+            # …but "once per process" is the WRONG SCOPE, and the operator sees it:
+            # the supervisor runs a gateway AND a telegram_worker, each building its
+            # own NavigGateway and so its own channel, so every restart greeted them
+            # TWICE (measured in their own chat: 19:10 ×2, 19:30 ×3 with the
+            # engagement greeting). The claim to greet once has to be made where both
+            # processes can see it, which is a file — an atomic create, so whichever
+            # process gets there first is the one that speaks.
+            from navig.boot_messages import boot_greeting_enabled, claim_boot_greeting
+
+            if not boot_greeting_enabled():
+                return
+            if not claim_boot_greeting():
+                logger.info("boot greeting already claimed by a sibling process — staying quiet")
+                return
             try:
                 from navig.boot_messages import get_boot_message
 

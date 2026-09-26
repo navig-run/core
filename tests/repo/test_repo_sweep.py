@@ -757,3 +757,99 @@ def test_stale_flags_a_worktree_holding_main(repo: Path):
     assert by_slug["normal"]["holds_default"] is False
     out = runner.invoke(repo_app, ["stale", "--repo", str(repo)]).output
     assert "holds main" in out, out
+
+
+# -- a worktree whose tip GitHub records as a MERGED PR's head -----------------
+# Squash-merging is the house default, so this is the COMMON finished shape. It was kept
+# as "only N behind — may be a fresh worktree", which cannot be true of it: a fresh
+# worktree sits at the base tip and was never any PR's head. It waited for 50 merges.
+
+
+def _merged_via_pr(root: Path, slug: str, monkeypatch, *, number: int = 42) -> tuple[Path, str]:
+    """A worktree with its own commit, squash-merged upstream (so NOT an ancestor)."""
+    wt = _worktree(root, slug)
+    tip = _commit(wt, f"{slug}.txt")
+    _advance_main(root, 1)  # the squash commit: main moves on without this tip
+    monkeypatch.setattr(
+        repo_mod, "_github_pr_index",
+        lambda r: ({f"feat/{slug}": {"number": number, "state": "MERGED", "head": tip}}, None),
+    )
+    return wt, tip
+
+
+def _finished_gh(root: Path) -> dict:
+    data = collect_sweep(root, github=True, fetch=False)
+    return {w["slug"]: w for w in data["finished_worktrees"]}
+
+
+def test_an_idle_squash_merged_worktree_is_removable_long_before_50_behind(
+    repo: Path, monkeypatch, _idle_two_hours
+):
+    _merged_via_pr(repo, "squashed", monkeypatch)
+    w = _finished_gh(repo)["squashed"]
+    assert w["proof"] == "merged-pr" and w["merged_pr_tip"] is True
+    assert w["behind"] < repo_mod.WORKTREE_BEHIND_WARN
+    assert w["removable"] is True, w["why_kept"]
+
+
+def test_a_squash_merged_worktree_that_was_just_used_is_kept(repo: Path, monkeypatch):
+    # Real reflog: its commit was seconds ago — the session that merged may still be in it.
+    _merged_via_pr(repo, "just-merged", monkeypatch)
+    w = _finished_gh(repo)["just-merged"]
+    assert w["removable"] is False
+    assert "merged as #42 MERGED" in w["why_kept"] and "min ago" in w["why_kept"]
+    assert "may be a fresh worktree" not in w["why_kept"]
+
+
+def test_a_fast_forward_merged_worktree_with_its_pr_record_uses_the_idle_gate(
+    repo: Path, monkeypatch, _idle_two_hours
+):
+    # Ancestry wins the proof, but the PR record still says this is finished work.
+    wt = _worktree(repo, "ffwd")
+    tip = _commit(wt, "ffwd.txt")
+    _git("merge", "-q", "--ff-only", "feat/ffwd", cwd=repo)
+    _git("push", "-q", "origin", "main", cwd=repo)
+    monkeypatch.setattr(
+        repo_mod, "_github_pr_index",
+        lambda r: ({"feat/ffwd": {"number": 7, "state": "MERGED", "head": tip}}, None),
+    )
+    w = _finished_gh(repo)["ffwd"]
+    assert w["proof"] == "ancestor" and w["merged_pr_tip"] is True
+    assert w["removable"] is True, w["why_kept"]
+
+
+def test_without_a_pr_record_a_merged_worktree_keeps_the_behind_rule(repo: Path, _idle_two_hours):
+    wt = _worktree(repo, "no-gh")
+    _commit(wt, "no-gh.txt")
+    _git("merge", "-q", "--ff-only", "feat/no-gh", cwd=repo)
+    _git("push", "-q", "origin", "main", cwd=repo)
+    w = _finished_gh(repo)["no-gh"]  # autouse fixture: no GitHub index
+    assert w["merged_pr_tip"] is False
+    assert w["removable"] is False and "may be a fresh worktree" in w["why_kept"]
+
+
+def test_sweep_yes_removes_an_idle_squash_merged_worktree_and_its_branch(
+    repo: Path, monkeypatch, _idle_two_hours
+):
+    wt, _tip = _merged_via_pr(repo, "squashed", monkeypatch)
+    result = runner.invoke(repo_app, ["sweep", "--repo", str(repo), "--no-fetch", "--yes", "--json"])
+    assert result.exit_code == 0, result.output
+    removed = {w["slug"]: w for w in json.loads(result.output)["worktrees_removed"]}
+    assert removed["squashed"]["branch_deleted"] is True, removed["squashed"]
+    assert not wt.exists()
+    assert "feat/squashed" not in _branches(repo)
+
+
+def test_a_fresh_worktree_reusing_a_branch_name_with_an_old_merged_pr_is_not_finished(
+    repo: Path, monkeypatch, _idle_two_hours
+):
+    # `navig repo new foo` after an earlier feat/foo was merged: ancestry holds trivially,
+    # GitHub says MERGED — but for an OLD head. Only head == tip proves THIS work landed.
+    _worktree(repo, "reused")
+    monkeypatch.setattr(
+        repo_mod, "_github_pr_index",
+        lambda r: ({"feat/reused": {"number": 9, "state": "MERGED", "head": "0" * 40}}, None),
+    )
+    w = _finished_gh(repo)["reused"]
+    assert w["merged_pr_tip"] is False
+    assert w["removable"] is False and "merged as" not in w["why_kept"], w["why_kept"]

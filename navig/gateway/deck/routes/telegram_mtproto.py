@@ -525,11 +525,14 @@ async def handle_business_status(request: "web.Request") -> "web.Response":
     """Business catcher state: master on/off, deletion alert, arming block reason,
     per-tool policies, and the emoji→tool legend. No telethon required (config-only)."""
     try:
-        from navig.telegram import ai_actions, business, permissions
+        from navig.telegram import ai_actions, business, deletions, permissions
 
         return _ok({
             "enabled": permissions.business_enabled(),
+            # Kept for older deck builds; `deletions` is the real answer now (a
+            # boolean cannot say "digest", which is the default).
             "deletion_alert": business.deletion_alert_enabled(),
+            "deletions": deletions.status(),
             "blocked": permissions.arming_blocked_reason(),
             "policies": permissions.all_policies(),
             "tools": list(permissions.BUSINESS_TOOLS),
@@ -602,16 +605,47 @@ async def handle_business_rights(request: "web.Request") -> "web.Response":
 
 
 async def handle_business_alerts(request: "web.Request") -> "web.Response":
-    """Toggle the deleted-message → DM-you alert. ``{on: bool}``."""
-    body = await _body(request)
-    if "on" not in body:
-        return _err("'on' is required", status=400)
-    on = _truthy(body.get("on"))
-    try:
-        from navig.telegram import business
+    """Deletion-alert settings.
 
-        business.set_deletion_alert(on)
-        return _ok({"deletion_alert": business.deletion_alert_enabled()})
+    ``{on: bool}`` still works (older deck builds send it, and it maps onto
+    ``off``/``digest``), but the real payload is any subset of
+    ``{mode, record, window_sec, target, mute, unmute}`` — a boolean cannot express
+    "digest", which is the shipped default after the alerts flooded a live account.
+    Returns the full state so the caller never has to guess what it now is."""
+    body = await _body(request)
+    try:
+        from navig.telegram import business, deletions
+
+        touched = False
+        if "mode" in body:
+            deletions.set_mode(str(body["mode"]))
+            touched = True
+        if "record" in body:
+            deletions.set_record_enabled(_truthy(body.get("record")))
+            touched = True
+        if "window_sec" in body:
+            deletions.set_window_sec(int(body["window_sec"]))
+            touched = True
+        if "target" in body:
+            deletions.set_target_chat(body.get("target") or None)
+            touched = True
+        for key, muted in (("mute", True), ("unmute", False)):
+            if body.get(key) not in (None, ""):
+                deletions.set_muted(body[key], muted)
+                touched = True
+        if "on" in body and "mode" not in body:
+            deletions.set_mode("digest" if _truthy(body.get("on")) else "off")
+            touched = True
+        if not touched:
+            return _err("nothing to change — send mode, record, window_sec, "
+                        "target, mute, unmute or on", status=400)
+        return _ok({
+            "deletion_alert": business.deletion_alert_enabled(),
+            "deletions": deletions.status(),
+        })
+    except (ValueError, TypeError) as exc:
+        # A bad mode / non-numeric window is the CALLER's error, not a 500.
+        return _err(str(exc), status=400)
     except Exception as exc:  # noqa: BLE001
         logger.exception("telegram business alerts failed")
         return _err(str(exc))

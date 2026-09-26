@@ -1,6 +1,6 @@
 # NAVIG Command Reference
 
-_Generated 2026-09-26T17:42:22.076706+00:00_
+_Generated 2026-09-26T19:15:20.852606+00:00_
 
 ## `navig action add`
 **Status:** `stable` · **Since:** 
@@ -1664,6 +1664,150 @@ Stop the browser controller.
 **Examples:**
 ```sh
 navig browser stop
+```
+
+## `navig cabinet add`
+**Status:** `stable` · **Since:** 
+Encrypt files into the cabinet (originals are kept unless --move).
+**Examples:**
+```sh
+navig cabinet add
+```
+
+## `navig cabinet backup`
+**Status:** `stable` · **Since:** 
+Write one encrypted backup file that restores on any computer, with its own passphrase.
+**Examples:**
+```sh
+navig cabinet backup
+```
+
+## `navig cabinet close`
+**Status:** `stable` · **Since:** 
+Remove every decrypted copy left by `open` right now.
+**Examples:**
+```sh
+navig cabinet close
+```
+
+## `navig cabinet edit`
+**Status:** `stable` · **Since:** 
+Change an item's title, category, tags, expiry, issuer or notes.
+**Examples:**
+```sh
+navig cabinet edit
+```
+
+## `navig cabinet expiring`
+**Status:** `stable` · **Since:** 
+Documents that have expired or expire soon — passports, ID cards, insurance.
+**Examples:**
+```sh
+navig cabinet expiring
+```
+
+## `navig cabinet export`
+**Status:** `stable` · **Since:** 
+Write decrypted copies with their original names (verified; never overwrites).
+**Examples:**
+```sh
+navig cabinet export
+```
+
+## `navig cabinet import-paperwork`
+**Status:** `stable` · **Since:** 
+Encrypt the ID and medical documents a `navig paperwork` scan set aside (originals stay put).
+**Examples:**
+```sh
+navig cabinet import-paperwork
+```
+
+## `navig cabinet list`
+**Status:** `stable` · **Since:** 
+Everything in the cabinet.
+**Examples:**
+```sh
+navig cabinet list
+```
+
+## `navig cabinet open`
+**Status:** `stable` · **Since:** 
+Open an item in its usual app (a temporary decrypted copy).
+**Examples:**
+```sh
+navig cabinet open
+```
+
+## `navig cabinet passphrase clear`
+**Status:** `stable` · **Since:** 
+Go back to the machine key (no passphrase).
+**Examples:**
+```sh
+navig cabinet passphrase clear
+```
+
+## `navig cabinet passphrase set`
+**Status:** `stable` · **Since:** 
+Lock the cabinet with a passphrase (asked for on every command).
+**Examples:**
+```sh
+navig cabinet passphrase set
+```
+
+## `navig cabinet remove`
+**Status:** `stable` · **Since:** 
+Move an item to the trash (or --purge it for good).
+**Examples:**
+```sh
+navig cabinet remove
+```
+
+## `navig cabinet restore`
+**Status:** `stable` · **Since:** 
+Add everything from a backup that the cabinet does not already hold.
+**Examples:**
+```sh
+navig cabinet restore
+```
+
+## `navig cabinet search`
+**Status:** `stable` · **Since:** 
+Find items by title, tag, or any word inside the document.
+**Examples:**
+```sh
+navig cabinet search
+```
+
+## `navig cabinet show`
+**Status:** `stable` · **Since:** 
+Details of one item.
+**Examples:**
+```sh
+navig cabinet show
+```
+
+## `navig cabinet status`
+**Status:** `stable` · **Since:** 
+What is in the cabinet, how it is locked, and what needs attention.
+**Examples:**
+```sh
+navig cabinet status
+```
+
+## `navig cabinet undelete`
+**Status:** `stable` · **Since:** 
+Bring an item back from the trash.
+**Examples:**
+```sh
+navig cabinet undelete
+```
+
+## `navig cabinet verify`
+**Status:** `stable` · **Since:** 
+Decrypt every item and check it against its stored checksum.
+**Examples:**
+```sh
+navig cabinet verify
 ```
 
 ## `navig calendar add`
@@ -10353,6 +10497,62 @@ What was deleted in your business chats — the DM alert, browsable.
 **Examples:**
 ```sh
 navig telegram business deleted
+```
+
+## `navig telegram business deletions flush`
+**Status:** `stable` · **Since:** 
+Send the pending digest now, instead of waiting for the window.
+**Examples:**
+```sh
+navig telegram business deletions flush
+```
+
+## `navig telegram business deletions mode`
+**Status:** `stable` · **Since:** 
+How you hear about deletions.
+**Examples:**
+```sh
+navig telegram business deletions mode
+```
+
+## `navig telegram business deletions mute`
+**Status:** `stable` · **Since:** 
+Stop announcing deletions from ONE chat (still recorded).
+**Examples:**
+```sh
+navig telegram business deletions mute
+```
+
+## `navig telegram business deletions record`
+**Status:** `stable` · **Since:** 
+Whether deletions are tracked at all.
+**Examples:**
+```sh
+navig telegram business deletions record
+```
+
+## `navig telegram business deletions status`
+**Status:** `stable` · **Since:** 
+Show every deletion switch: record · mode · window · target · muted.
+**Examples:**
+```sh
+navig telegram business deletions status
+```
+
+## `navig telegram business deletions target`
+**Status:** `stable` · **Since:** 
+Send deletion reports to a separate log chat instead of your DM.
+**Examples:**
+```sh
+navig telegram business deletions target
+```
+
+## `navig telegram business deletions window`
+**Status:** `stable` · **Since:** 
+How long a digest collects before it is sent (default 900s / 15 min).
+**Examples:**
+```sh
+navig telegram business deletions window
 ```
 
 ## `navig telegram business disable`

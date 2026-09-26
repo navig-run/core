@@ -17,7 +17,7 @@ import random
 from datetime import datetime
 from typing import Any
 
-from . import autoreply, biz_commands, permissions, reply_actions
+from . import autoreply, biz_commands, deletions, permissions, reply_actions
 
 logger = logging.getLogger(__name__)
 
@@ -620,34 +620,28 @@ async def handle_business_message(channel, msg: dict, *, edited: bool = False) -
     # IMPORTANT: business text is NEVER dispatched as a command. End of handling.
 
 
-async def handle_deleted_business_messages(channel, payload: dict) -> None:
-    """Deletion in a business conversation → DM the owner what was deleted (only
-    the owner; never the deck/other channels).
 
-    ONE alert per deletion event (Telegram sends one payload per chat, with every
-    id deleted at once), listing each message with who wrote it: its text, or
-    the media kind + caption — and each cached media is then re-sent by
-    ``file_id`` so the owner gets the actual photo/voice back. A line is honest
-    about why there is no text: never seen (sent before NAVIG watched the chat,
-    or while it was offline) is not the same as a caption-less photo."""
-    if not (permissions.business_enabled() and deletion_alert_enabled()):
-        return
-    chat = payload.get("chat") or {}
-    chat_id = chat.get("id")
-    ids = [m for m in (payload.get("message_ids") or []) if m is not None]
-    if chat_id is None or not ids:
-        return
+
+async def render_deletion_detail(
+    channel, chat: dict, ids: list, *, owner_id: int | None = None,
+) -> tuple[str, list[tuple[dict, str]]]:
+    """Build the human report for a set of deleted ids in one chat.
+
+    Returns ``(body, media_to_resend)`` and sends nothing, so the instant alert
+    and the digest's "Show" button render identically — the button producing a
+    different answer from the alert it replaces is the failure mode this split
+    exists to prevent."""
     store = _store()
+    chat_id = chat.get("id")
     cached_title = None
     try:
         cached_title = (store.get_room(chat_id) or {}).get("title")
     except Exception:  # noqa: BLE001
         cached_title = None
     chat_label = _chat_label(chat, cached_title)
-    owner_id = resolve_owner(payload.get("business_connection_id"))
 
-    # Asked once per event, not per id: it is the same answer for every message in
-    # this chat, and it is only consulted when a message is missing.
+    # Asked once per chat, not per id: it is the same answer for every message
+    # here, and it is only consulted when a message is missing.
     first_seen: str | None = None
     try:
         first_seen = store.first_message_at(chat_id)
@@ -677,62 +671,99 @@ async def handle_deleted_business_messages(channel, payload: dict) -> None:
                 cap += f"\n{text}"
             media_to_resend.append((media, cap))
 
-    title = "🗑 Message deleted" if len(ids) == 1 else f"🗑 {len(ids)} messages deleted"
-    if len(lines) > _LINES_MAX:   # a whole-chat clear: keep the DM readable
+    if len(lines) > _LINES_MAX:   # a whole-chat clear: keep the message readable
         lines = lines[:_LINES_MAX] + [f"• … and {len(lines) - _LINES_MAX} more"]
-    body = f"In {chat_label}:\n" + "\n".join(lines)
-    delivered = False
-    try:
-        from navig.notify.router import NotificationRouter
-        res = await NotificationRouter().dispatch(
-            "message_deleted",   # a registered notify type (navig.notify.types)
-            title,
-            body,
-            priority="high",
-            only_channels=["telegram"],   # owner DM only — never deck/others
-            data={"chat_id": chat_id, "message_ids": list(ids), "message_id": ids[0]},
-        )
-        delivered = any(
-            r.get("channel") == "telegram" and r.get("ok")
-            for r in (res or {}).get("channels") or []
-        )
-    except Exception:  # noqa: BLE001
-        logger.debug("deletion alert dispatch failed", exc_info=True)
-    # Re-send the media only when the summary itself went out: the router is
-    # where the owner's prefs (muted type, quiet hours, master off) are honoured,
-    # and the copies must not bypass them. Same DM target as the router's
-    # telegram sink, so the copies land next to the summary.
-    if delivered and media_to_resend:
-        target = None
-        try:
-            from navig.messaging.notify_operator import resolve_operator_chat_id
+    header = "🗑 Message deleted" if len(ids) == 1 else f"🗑 {len(ids)} messages deleted"
+    body = f"{header}\nIn {chat_label}:\n" + "\n".join(lines)
+    return body, media_to_resend
 
-            target = resolve_operator_chat_id()
+
+async def deliver_deletion_detail(
+    channel, chat: dict, ids: list, *, owner_id: int | None = None,
+    target: str | None = None, check_prefs: bool = True,
+) -> bool:
+    """Render and deliver one chat's deletion detail, then re-send its files.
+
+    ``check_prefs`` is False when the operator ASKED for this (the Show button):
+    quiet hours mute the unprompted alert, not an answer to a tap."""
+    body, media_to_resend = await render_deletion_detail(
+        channel, chat, ids, owner_id=owner_id)
+    if check_prefs:
+        allowed, why = deletions.should_notify()
+        if not allowed:
+            # Recorded, deliberately not announced. INFO rather than silence: "I
+            # chose not to tell you" is a different fact from "nothing happened",
+            # and the rows are still there (navig telegram business deleted).
+            logger.info("deletion alert suppressed (%s): chat=%s ids=%d",
+                        why, chat.get("id"), len(ids))
+            return False
+    if target is None:
+        target = await deletions.resolve_target(owner_id)
+    if not await deletions.send_detail(channel, body, target=target):
+        return False
+    # The files follow the summary that announced them, into the same chat — so a
+    # log chat keeps the evidence together with its report.
+    failed = 0
+    for media, cap in media_to_resend:
+        if not await _resend_media(channel, target, media, cap):
+            failed += 1
+    # The summary PROMISED a photo/voice that then did not arrive. Saying so is the
+    # whole doctrine of this file: an alert that silently delivers less than it
+    # announced trains the operator to distrust the ones that work.
+    if failed and target is not None and channel is not None:
+        kinds = ", ".join(sorted({(m.get("kind") or "media") for m, _ in media_to_resend}))
+        try:
+            await channel._api_call("sendMessage", {
+                "chat_id": target,
+                "text": (f"⚠️ Couldn't re-send {failed} of {len(media_to_resend)} deleted "
+                         f"file(s) ({kinds}) — Telegram no longer serves that file id. "
+                         f"The summary above is all that survives."),
+            })
         except Exception:  # noqa: BLE001
-            target = None
-        target = target or owner_id
-        failed = 0
-        for media, cap in media_to_resend:
-            if not await _resend_media(channel, target, media, cap):
-                failed += 1
-        # The summary above PROMISED a photo/voice that then did not arrive. Saying
-        # so is the whole doctrine of this file: an alert that silently delivers
-        # less than it announced trains the operator to distrust the ones that work.
-        if failed and target is not None and channel is not None:
-            kinds = ", ".join(sorted({(m.get("kind") or "media") for m, _ in media_to_resend}))
-            try:
-                await channel._api_call("sendMessage", {
-                    "chat_id": target,
-                    "text": (f"⚠️ Couldn't re-send {failed} of {len(media_to_resend)} deleted "
-                             f"file(s) from {chat_label} ({kinds}) — Telegram no longer serves "
-                             f"that file id. The summary above is all that survives."),
-                })
-            except Exception:  # noqa: BLE001
-                logger.debug("deletion alert: resend-failure note not delivered", exc_info=True)
+            logger.debug("deletion alert: resend-failure note not delivered", exc_info=True)
+    return True
+
+
+async def handle_deleted_business_messages(channel, payload: dict) -> None:
+    """A deletion in a business conversation: record it, then decide who hears.
+
+    Three independent switches, all in :mod:`navig.telegram.deletions`:
+
+    * **record** — the catalog row is the ONLY surviving trace of a deleted
+      message, so writing it down is a data decision. Off means no trace at all.
+    * **mode** — ``instant`` (a report per event, the original behaviour),
+      ``digest`` (one "N deleted · Show" card per window — the default, because
+      instant floods a busy account with a message AND a file per deletion), or
+      ``off`` (keep the record, say nothing).
+    * **target** — the owner's DM, or a separate log chat.
+
+    Recording happens FIRST and unconditionally of the mode: the digest reads the
+    catalog at flush time rather than holding content in memory, so a restart
+    mid-window loses nothing.
+    """
+    if not permissions.business_enabled():
+        return
+    chat = payload.get("chat") or {}
+    chat_id = chat.get("id")
+    ids = [m for m in (payload.get("message_ids") or []) if m is not None]
+    if chat_id is None or not ids:
+        return
+    if not deletions.record_enabled():
+        return  # deletion watching switched off entirely: no row, no alert
+    owner_id = resolve_owner(payload.get("business_connection_id"))
+
+    store = _store()
     for mid in ids:
         try:
             store.mark_message_deleted(chat_id, mid)
         except Exception:  # noqa: BLE001
-            pass
+            logger.debug("mark_message_deleted failed for %s/%s", chat_id, mid, exc_info=True)
 
-
+    how = "off" if deletions.is_muted(chat_id) else deletions.mode()
+    logger.info("business deletion: chat=%s ids=%d mode=%s", chat_id, len(ids), how)
+    if how == "off":
+        return
+    if how == "digest":
+        deletions.arm_digest(channel)
+        return
+    await deliver_deletion_detail(channel, chat, ids, owner_id=owner_id)

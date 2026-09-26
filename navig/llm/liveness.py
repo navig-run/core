@@ -96,6 +96,19 @@ RETIRED_MODELS: frozenset[str] = frozenset({
     "groq:deepseek-r1-distill-qwen-32b",            # groq — 400 decommissioned
     "groq:qwen-qwq-32b",                            # groq — 400 decommissioned
     "groq:gemma2-9b-it",                            # groq — 400 decommissioned
+    # 2026-09-26, the second sweep — now through the DISPATCH credential, which
+    # reaches a Claude SUBSCRIPTION (an OAuth connection with no API key) that the
+    # first sweep skipped. ALL FOUR anthropic manifest ids were gone, plus the ids
+    # the router's fallback tables named. Controls on the same credential:
+    # claude-opus-4-8, claude-sonnet-4-6, claude-haiku-4-5 live.
+    "anthropic:claude-3-7-sonnet-20250219",         # anthropic — 404 (was models[0])
+    "anthropic:claude-3-5-sonnet-20241022",         # anthropic — 410 EOL
+    "anthropic:claude-3-5-haiku-20241022",          # anthropic — 410 EOL (was the router's _default)
+    "anthropic:claude-3-opus-20240229",             # anthropic — 404
+    "anthropic:claude-sonnet-4-20250514",           # anthropic — 404 (router big_tasks/coding/research)
+    "anthropic:claude-haiku-3-20250422",            # anthropic — 404 (router small_talk/summarize)
+    "groq:llama-3.1-70b-versatile",                 # groq — 400 decommissioned (router _default)
+    "xai:grok-2-latest",                            # xAI — 404 (router _default; control grok-3 live)
 })
 
 # Provider-side failures that say nothing about the model or the credential —
@@ -454,6 +467,45 @@ def probe_modes(
     return out
 
 
+def _has_dispatch_credential(provider_id: str) -> bool:
+    """Would a real call to *provider_id* carry a credential?
+
+    Asks the SAME resolver `probe_model` dispatches through
+    (`resolve_provider_credential`: a routable connection first — a Claude
+    subscription's OAuth token has no API key — then the shared key store). The
+    first version asked `AuthProfileManager.resolve_auth`, the key store alone,
+    so a subscription-backed provider was reported "not judged" while every real
+    call to it succeeded: measured 2026-09-26, the sweep and the daily head check
+    both skipped `anthropic` on a machine whose Claude subscription answered —
+    and all four ids in anthropic's manifest turned out to be retired.
+    """
+    try:
+        from navig.providers.inference import resolve_provider_credential
+
+        api_key, oauth_token = resolve_provider_credential(provider_id)
+        return bool(api_key or oauth_token)
+    except Exception:  # noqa: BLE001 — an unreadable credential store is "no credential"
+        return False
+
+
+def _router_fallback_ids() -> dict[str, list[str]]:
+    """``{provider: [model, …]}`` from the live router's fallback tables, in
+    table order, deduplicated. Empty on any import failure — the sweep must
+    never break because a routing module moved."""
+    try:
+        from navig.llm.routing.capabilities import MODE_MODEL_PREFERENCE
+        from navig.llm.routing.router import _PROVIDER_DEFAULT_MODELS
+    except Exception:  # noqa: BLE001
+        return {}
+    pairs = [(prov, mid) for prefs in MODE_MODEL_PREFERENCE.values() for prov, mid in prefs.items()]
+    pairs += [(prov, mid) for prov, prefs in _PROVIDER_DEFAULT_MODELS.items() for mid in prefs.values()]
+    out: dict[str, list[str]] = {}
+    for prov, mid in pairs:
+        if mid and mid not in out.setdefault(prov, []):
+            out[prov].append(mid)
+    return out
+
+
 def catalog_entries(provider_id: str | None = None) -> list[dict[str, str]]:
     """Every ``(provider, model)`` the CATALOG names, with where it is named.
 
@@ -464,12 +516,19 @@ def catalog_entries(provider_id: str | None = None) -> list[dict[str, str]]:
     covered the ones it can SUBSTITUTE IN, and on 2026-09-19 the table's first
     row was retired for all four providers this machine held a key for.
 
+    It also covers the live router's two FALLBACK tables (``where="router"``),
+    which name models used only after a primary provider has failed: measured
+    2026-09-26, nine of their ids were dead and nothing looked there.
+
     Rows are ``{provider, model, where}`` with *where* ∈ ``manifest`` |
-    ``table`` | ``both``, ordered provider-then-catalog-order, deduplicated.
+    ``table`` | ``both`` | ``router``, ordered provider-then-catalog-order,
+    deduplicated. Router-only ids come LAST for each provider, so the first row
+    is still ``models[0]`` — the head the daily check probes.
     """
     from navig.providers.registry import get_provider, list_all_providers
     from navig.providers.types import BUILTIN_PROVIDERS
 
+    router_ids = _router_fallback_ids()
     manifests = [get_provider(provider_id)] if provider_id else list_all_providers()
     out: list[dict[str, str]] = []
     for man in manifests:
@@ -478,16 +537,23 @@ def catalog_entries(provider_id: str | None = None) -> list[dict[str, str]]:
             continue
         seen: dict[str, dict[str, str]] = {}
         cfg = BUILTIN_PROVIDERS.get(pid.lower())
+        # Router ids only for CLOUD providers: a local model (ollama's llama3.2)
+        # is a download, not a retirement, and "add a key" would be false advice.
+        routed = router_ids.get(pid, []) if getattr(man, "tier", "") == "cloud" else []
         for mid, where in (
             [(m, "manifest") for m in (getattr(man, "models", None) or [])]
             + [(m.id, "table") for m in (cfg.models if cfg else [])]
+            + [(m, "router") for m in routed]
         ):
             if not mid:
                 continue
             if mid in seen:
-                # Named by BOTH lists: one probe, one row — a model reported
-                # twice with two statuses is how `probe_modes` learned to cache.
-                seen[mid]["where"] = "both"
+                # Named by BOTH catalog lists: one probe, one row — a model
+                # reported twice with two statuses is how `probe_modes` learned
+                # to cache. A router mention of an id the catalog already lists
+                # adds nothing to probe, so it keeps the catalog's label.
+                if where != "router" and seen[mid]["where"] != where:
+                    seen[mid]["where"] = "both"
                 continue
             row = {"provider": pid, "model": mid, "where": where}
             seen[mid] = row
@@ -520,9 +586,6 @@ def probe_catalog(
     *heads_only* probes just each provider's FIRST catalog id — see
     :func:`probe_catalog_heads`, which is what a scheduled check uses.
     """
-    from navig.providers.auth import AuthProfileManager
-
-    auth = AuthProfileManager()
     probed = probed_cache if probed_cache is not None else {}
     keyed: dict[str, bool] = {}
     out: list[dict[str, Any]] = []
@@ -535,10 +598,7 @@ def probe_catalog(
     for entry in entries:
         pid, mid = entry["provider"], entry["model"]
         if pid not in keyed:
-            try:
-                keyed[pid] = bool(auth.resolve_auth(pid)[0])
-            except Exception:  # noqa: BLE001 — an unreadable key store is "no key"
-                keyed[pid] = False
+            keyed[pid] = _has_dispatch_credential(pid)
         if not keyed[pid]:
             out.append({**entry, "status": "nokey",
                         "detail": f"add a key: navig ai providers --add {pid}"})

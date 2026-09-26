@@ -120,6 +120,13 @@ OLLAMA_MODELS: dict[str, frozenset[str]] = {
 }
 
 # ── Mode → preferred model per provider (fallback selection) ───────
+#
+# ⚠ This table is used when a PRIMARY provider has already failed, so a dead id
+# here fails at the one moment there is no second chance. Audited 2026-09-26 by
+# calling every id: 9 were gone — every anthropic, groq and nvidia entry — and
+# nothing scanned this table (the retired-model guard covered modes, manifests
+# and BUILTIN_PROVIDERS). `test_mode_liveness_guard` now scans it; audit it live
+# with `navig ai models --check`, which lists these ids as `router`.
 
 MODE_MODEL_PREFERENCE: dict[str, dict[str, str]] = {
     "coding": {
@@ -127,10 +134,10 @@ MODE_MODEL_PREFERENCE: dict[str, dict[str, str]] = {
         "github_models": "gpt-4o",
         "ollama": "qwen2.5-coder:14b",
         "xai": "grok-3",
-        "anthropic": "claude-sonnet-4-20250514",
+        "anthropic": "claude-sonnet-4-6",
         "google": "gemini-2.5-pro",
-        "groq": "llama-3.3-70b-versatile",
-        "nvidia": "meta/llama-3.1-70b-instruct",
+        "groq": "openai/gpt-oss-120b",
+        "nvidia": "nvidia/nemotron-3-super-120b-a12b",
         "mistral": "mistral-large-latest",
         "cerebras": "llama-3.3-70b",
         "openai": "gpt-4o",
@@ -140,10 +147,10 @@ MODE_MODEL_PREFERENCE: dict[str, dict[str, str]] = {
         "github_models": "gpt-4o-mini",
         "ollama": "llama3.2",
         "xai": "grok-3-mini",
-        "anthropic": "claude-haiku-3-20250422",
+        "anthropic": "claude-haiku-4-5",
         "google": "gemini-2.5-flash",
-        "groq": "llama-3.1-8b-instant",
-        "nvidia": "meta/llama-3.1-8b-instruct",
+        "groq": "openai/gpt-oss-20b",
+        "nvidia": "openai/gpt-oss-20b",
         "mistral": "mistral-small-latest",
         "cerebras": "llama-3.1-8b",
         "openai": "gpt-4o-mini",
@@ -155,10 +162,10 @@ MODE_MODEL_PREFERENCE: dict[str, dict[str, str]] = {
         "github_models": "gpt-4o",
         "ollama": "",  # Not suitable for big tasks
         "xai": "grok-3",
-        "anthropic": "claude-sonnet-4-20250514",
+        "anthropic": "claude-sonnet-4-6",
         "google": "gemini-2.5-pro",
-        "groq": "llama-3.3-70b-versatile",
-        "nvidia": "meta/llama-3.1-70b-instruct",
+        "groq": "openai/gpt-oss-120b",
+        "nvidia": "nvidia/nemotron-3-super-120b-a12b",
         "mistral": "mistral-large-latest",
         "cerebras": "llama-3.3-70b",
         "openai": "gpt-4o",
@@ -168,10 +175,10 @@ MODE_MODEL_PREFERENCE: dict[str, dict[str, str]] = {
         "github_models": "gpt-4o-mini",
         "ollama": "llama3.2",
         "xai": "grok-3-mini",
-        "anthropic": "claude-haiku-3-20250422",
+        "anthropic": "claude-haiku-4-5",
         "google": "gemini-2.5-flash",
-        "groq": "llama-3.1-8b-instant",
-        "nvidia": "meta/llama-3.1-8b-instruct",
+        "groq": "openai/gpt-oss-20b",
+        "nvidia": "openai/gpt-oss-20b",
         "mistral": "mistral-small-latest",
         "cerebras": "llama-3.1-8b",
         "openai": "gpt-4o-mini",
@@ -181,10 +188,10 @@ MODE_MODEL_PREFERENCE: dict[str, dict[str, str]] = {
         "github_models": "gpt-4o",
         "ollama": "",  # Not suitable for research
         "xai": "grok-3",
-        "anthropic": "claude-sonnet-4-20250514",
+        "anthropic": "claude-sonnet-4-6",
         "google": "gemini-2.5-pro",
-        "groq": "llama-3.3-70b-versatile",
-        "nvidia": "meta/llama-3.1-70b-instruct",
+        "groq": "openai/gpt-oss-120b",
+        "nvidia": "nvidia/nemotron-3-super-120b-a12b",
         "mistral": "mistral-large-latest",
         "cerebras": "llama-3.3-70b",
         "openai": "gpt-4o",

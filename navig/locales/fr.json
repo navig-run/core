@@ -14,6 +14,13 @@
   ],
   "boot.position": "Position : {value}.",
   "boot.signal": "Signal : {value} %.",
+  "deletions.button.quiet": "Silencieux",
+  "deletions.button.show": "Afficher {n}",
+  "deletions.digest.chats": " dans {n} discussions",
+  "deletions.digest.head": "{n} supprimé(s)",
+  "deletions.digest.tail": "touchez pour voir ce que c'était",
+  "deletions.off.note": "Alertes de suppression désactivées. L'enregistrement est conservé — listez-le avec `navig telegram business deleted`, ou réactivez-les avec `navig telegram business deletions mode digest`.",
+  "deletions.toast.off": "Alertes de suppression désactivées",
   "engagement.checkin": [
     "Petit point — besoin d'aide ?",
     "Toujours là. Appelle si besoin.",
@@ -102,6 +109,10 @@
   "habit.ext.off_cli": "L'extension Habitudes est désactivée - ces rappels sont planifiés mais pas envoyés.",
   "habit.ext.off_cli_detail": "Activer : navig telegram extensions enable habits",
   "habit.ext.off_html": "⚠️ <b>L'extension Habitudes est désactivée</b> — ces rappels sont planifiés mais pas envoyés.\nActiver : /extensions\n",
+  "habit.journal.invite": "Écris ta journée — tout ce qui te passe par la tête. Ce qui s'est passé, ce que tu as ressenti, ce qui tourne encore. Sans structure ni longueur imposée.",
+  "habit.journal.reflect.failed": "(Lecture impossible cette fois — ton entrée est enregistrée.)",
+  "habit.journal.reflect.heading": "🫧 Ce que je remarque",
+  "habit.journal.reflect.week_heading": "🫧 La semaine, relue d'un trait",
   "habit.journal.reply_hint": "Réponds à ce message. Écris autant que tu veux.",
   "habit.journal.title": "Journal · {day}",
   "habit.journal.voice_hint": "Un vocal fonctionne aussi : réponds-en un et il sera transcrit.",
@@ -499,9 +510,5 @@
   "weekday.3": "Jeu",
   "weekday.4": "Ven",
   "weekday.5": "Sam",
-  "weekday.6": "Dim",
-  "habit.journal.invite": "Écris ta journée — tout ce qui te passe par la tête. Ce qui s'est passé, ce que tu as ressenti, ce qui tourne encore. Sans structure ni longueur imposée.",
-  "habit.journal.reflect.heading": "🫧 Ce que je remarque",
-  "habit.journal.reflect.week_heading": "🫧 La semaine, relue d'un trait",
-  "habit.journal.reflect.failed": "(Lecture impossible cette fois — ton entrée est enregistrée.)"
+  "weekday.6": "Dim"
 }

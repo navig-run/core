@@ -60,22 +60,14 @@ showcase_commit() {
 }
 
 # ── --check: verify committed assets, no recording ──────────────────────────
+# One implementation, in Node: this check must also run in the CI gate, which is Windows
+# node and cannot call into WSL. Re-implementing the rules here would be a second copy that
+# drifts (and the bash one only ever checked sha/size plus core/README.md's references — not
+# orphaned GIFs, the size budget, or the absolute-URL rule PyPI needs).
 if [[ "${1:-}" == "--check" ]]; then
-  [[ -f "$MANIFEST" ]] || die "no $MANIFEST — run record.sh first"
-  fails=0
-  while IFS=$'\t' read -r name sha size; do
-    f="$OUT_GIF/$name"
-    if [[ ! -f "$f" ]]; then printf '✗ missing: %s\n' "$name"; fails=$((fails+1)); continue; fi
-    if [[ "$(sha256 "$f")" != "$sha" ]]; then printf '✗ sha256 drift: %s\n' "$name"; fails=$((fails+1)); fi
-    if [[ "$(fsize "$f")" != "$size" ]]; then printf '✗ size drift: %s\n' "$name"; fails=$((fails+1)); fi
-  done < <(jq -r '.assets[] | [.file, .sha256, .bytes] | @tsv' "$MANIFEST")
-  # every asset the README embeds must exist in the manifest
-  while read -r ref; do
-    jq -e --arg f "$ref" '.assets[] | select(.file == $f)' "$MANIFEST" >/dev/null \
-      || { printf '✗ README references %s but it is not in the manifest\n' "$ref"; fails=$((fails+1)); }
-  done < <(grep -o 'docs/showcase/[a-z0-9-]*\.gif' "$CORE/README.md" | sed 's#docs/showcase/##' | sort -u)
-  (( fails == 0 )) && ok "showcase assets verified ($(jq '.assets | length' "$MANIFEST") files)" || die "$fails problem(s)"
-  exit 0
+  command -v node >/dev/null     || die "node is not on PATH in here — run \`npm run showcase:check\` from Windows instead (it needs no WSL)"
+  node "$CORE/../scripts/check-showcase-assets.mjs" "${@:2}"
+  exit $?
 fi
 
 # ── --manifest: rewrite MANIFEST.json from the GIFs on disk (no recording) ──────

@@ -41,7 +41,7 @@ def test_entries_cover_both_lists_and_mark_the_overlap():
     assert len(rows) >= 40, "scan floor: the catalog cannot be nearly empty"
 
     wheres = {r["where"] for r in rows}
-    assert wheres <= {"manifest", "table", "both"}
+    assert wheres <= {"manifest", "table", "both", "router"}
     assert "both" in wheres, "no id is shared? one of the two lists was not read"
     assert "manifest" in wheres
 
@@ -90,13 +90,9 @@ def no_network(monkeypatch):
 
 
 def _keys(monkeypatch, have: set[str]) -> None:
-    class _Auth:
-        def resolve_auth(self, pid):
-            return ("k", "test") if pid in have else (None, "not_found")
-
-    import navig.providers.auth as auth_mod
-
-    monkeypatch.setattr(auth_mod, "AuthProfileManager", lambda: _Auth())
+    """Which providers "hold a credential" — stubbed at the sweep's own seam, so
+    a real Claude subscription or vault key on the test machine cannot leak in."""
+    monkeypatch.setattr(liveness, "_has_dispatch_credential", lambda pid: pid in have)
 
 
 def test_a_provider_with_no_key_is_reported_unjudged_not_green(monkeypatch, no_network):
@@ -441,10 +437,112 @@ def test_a_dedicated_branch_still_wins_over_the_generic_tokens():
 
     for pid, tier, expected in [
         ("openai", "small", "gpt-4o-mini"),
-        ("anthropic", "small", "claude-3-5-haiku-20241022"),
+        # The dedicated branch picks by "haiku" — after the 2026-09-26 refresh
+        # that resolves to the live haiku, not the retired 3.5 one it used to.
+        ("anthropic", "small", "claude-haiku-4-5"),
         ("xai", "small", "grok-3-mini"),
     ]:
         picks = TelegramCommandsMixin._select_curated_tier_defaults(
             pid, list(get_provider(pid).models)
         )
         assert picks[tier] == expected, f"{pid}.{tier} drifted to {picks[tier]!r}"
+
+
+def test_the_credential_gate_asks_the_dispatch_resolver_not_the_key_store(monkeypatch):
+    """A Claude subscription is an OAuth CONNECTION with no API key. Gating on
+    the key store alone reported `anthropic` "not judged" while every real call
+    to it succeeded — and its whole manifest was retired underneath."""
+    import navig.providers.auth as auth_mod
+    import navig.providers.inference as inference_mod
+
+    class _NoKeys:
+        def resolve_auth(self, pid):
+            return (None, "not_found")
+
+    monkeypatch.setattr(auth_mod, "AuthProfileManager", lambda: _NoKeys())
+    monkeypatch.setattr(
+        inference_mod, "resolve_provider_credential",
+        lambda pid, *a, **k: (None, "oauth-token") if pid == "anthropic" else (None, None),
+    )
+
+    assert liveness._has_dispatch_credential("anthropic") is True
+    assert liveness._has_dispatch_credential("groq") is False
+
+
+def test_an_unreadable_credential_store_means_not_judged(monkeypatch):
+    import navig.providers.inference as inference_mod
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("vault locked")
+
+    monkeypatch.setattr(inference_mod, "resolve_provider_credential", _boom)
+
+    assert liveness._has_dispatch_credential("openai") is False
+
+
+# ── the router's fallback tables are part of what the sweep audits ─────────
+
+
+def test_router_fallback_ids_are_swept_and_keep_the_head(monkeypatch):
+    """The live router's fallback tables name models used only after a primary
+    failed. Nine were dead on 2026-09-26 and nothing looked there. They join the
+    sweep LAST per provider, so `models[0]` stays the first row the head check
+    probes."""
+    from navig.llm.routing import capabilities
+
+    monkeypatch.setitem(
+        capabilities.MODE_MODEL_PREFERENCE, "small_talk",
+        {**capabilities.MODE_MODEL_PREFERENCE["small_talk"], "xai": "grok-router-only"},
+    )
+    rows = catalog_entries("xai")
+
+    from navig.providers.registry import get_provider
+
+    assert rows[0]["model"] == get_provider("xai").models[0]
+    tail = [r for r in rows if r["where"] == "router"]
+    assert [r["model"] for r in tail] == ["grok-router-only"]
+    assert rows[-1]["model"] == "grok-router-only"
+
+
+def test_a_router_mention_of_a_catalog_id_is_not_a_second_row():
+    rows = catalog_entries("anthropic")
+    ids = [r["model"] for r in rows]
+    assert len(ids) == len(set(ids))
+    assert not any(r["where"] == "router" for r in rows), (
+        "every anthropic router id is also a catalog id — it must not duplicate"
+    )
+
+
+def test_a_local_providers_router_ids_are_not_swept():
+    """ollama's `llama3.2` is a download, not a retirement — and "add a key"
+    would be false advice for it."""
+    assert not [r for r in catalog_entries() if r["provider"] == "ollama"]
+
+
+@pytest.mark.parametrize("provider", ["groq", "nvidia"])
+def test_the_small_tier_is_the_measured_fast_model_not_a_token_accident(provider):
+    """groq: "7b" matched "qwen3.8-27b" as SMALL. nvidia: "30b" matched
+    nemotron-3.5-lightning, measured at 20–65 s per call, while gpt-oss-20b
+    answered in under 1.2 s. `_pick` returns the first MODEL matching ANY token,
+    so the preference has to be checked on its own."""
+    from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+    from navig.providers.registry import get_provider
+
+    models = list(get_provider(provider).models)
+    assert "openai/gpt-oss-20b" in models, "premise: the fast model is in the catalog"
+
+    picks = TelegramCommandsMixin._select_curated_tier_defaults(provider, models)
+
+    assert picks["small"] == "openai/gpt-oss-20b"
+    assert picks["big"] != picks["small"]
+
+
+def test_the_small_tier_still_degrades_when_the_preferred_model_is_absent():
+    from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+    picks = TelegramCommandsMixin._select_curated_tier_defaults(
+        "groq", ["vendor/big-120b", "vendor/tiny-8b"]
+    )
+
+    assert picks == {"small": "vendor/tiny-8b", "big": "vendor/big-120b",
+                     "coder_big": "vendor/big-120b"}

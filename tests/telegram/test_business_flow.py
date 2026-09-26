@@ -242,6 +242,13 @@ def biz(tmp_path, monkeypatch):
     monkeypatch.setattr(b, "_cfg", lambda: fake)
     monkeypatch.setattr(b.permissions, "_cfg", lambda: fake, raising=False)
     monkeypatch.setattr(b.permissions, "business_enabled", lambda: True)
+    # The policy module reads (and WRITES — set_mode) config through its own _cfg,
+    # and navig.core.Config is a process-wide singleton, so patching business's
+    # alone would leave this one reading whichever dir the singleton cached first.
+    monkeypatch.setattr(b.deletions, "_cfg", lambda: fake)
+    # These tests exercise the per-event report, so they ask for it explicitly.
+    # The shipped default is `digest`; its own tests below set it themselves.
+    fake.d[b.deletions.CFG_MODE] = "instant"
     # The enrichment hooks are real coroutines that want a live channel; stub them.
     import navig.telegram.music_actions as ma
     import navig.telegram.tiktok_actions as ta
@@ -328,14 +335,20 @@ def _seed(store, chat_id, mid, *, sender_id, sender_name, text="", media=None,
 
 
 def _capture_dispatch(monkeypatch, *, delivered=True):
-    from navig.notify import router as r
+    """Capture the delivered deletion report.
+
+    Delivery no longer goes through NotificationRouter: a router dispatch cannot
+    carry the digest's inline button, and a log chat is not the router's target by
+    definition. Every report now goes through the one function intercepted here, so
+    this stays the single seam. ``title`` is the report's first line, which is where
+    the header moved to."""
     calls: list[dict] = []
 
-    async def fake_dispatch(self, type_key, title, body="", **kw):
-        calls.append({"type": type_key, "title": title, "body": body, **kw})
-        return {"type": type_key, "channels": [{"channel": "telegram", "ok": delivered}]}
+    async def fake_send(channel, text, *, target=None, owner_id=None):
+        calls.append({"body": text, "title": text.split("\n", 1)[0], "target": target})
+        return delivered
 
-    monkeypatch.setattr(r.NotificationRouter, "dispatch", fake_dispatch)
+    monkeypatch.setattr(b.deletions, "send_detail", fake_send)
     import navig.messaging.notify_operator as no
     monkeypatch.setattr(no, "resolve_operator_chat_id", lambda: "777")
     return calls
@@ -401,7 +414,8 @@ async def test_one_alert_per_deletion_event_lists_every_message(biz, monkeypatch
     # …and for a chat NAVIG DOES hold, "not seen" explains itself rather than
     # reading as a failure: the message is simply older than the watch.
     assert "has watched this chat since" in body
-    assert calls[0]["data"]["message_ids"] == [1, 2, 3, 4]
+    # Every id is accounted for in the one report — 3 with content, 1 as not-seen.
+    assert body.count("\n• ") == 4
     methods = [c.args[0] for c in ch._api_call.call_args_list if c.args]
     assert methods == ["sendVoice"]
     assert all(store.get_message_by_ref(555, i)["deleted"] for i in (1, 2, 3))

@@ -4,6 +4,17 @@
 # Runs INSIDE WSL as root (the default WSL user on the maintainer box). Idempotent:
 # every step checks before it acts, so re-running is cheap and safe.
 #
+# ⚠ THIS CHANGES THE MACHINE IT RUNS ON. It is maintainer tooling, not part of installing or
+#   using navig — you never need it to run navig. Inside that WSL distro it will:
+#     · apt-get install ttyd, ffmpeg, openssh-server, fontconfig, an emoji font, jq, unzip, rsync
+#     · add Google's apt repo and install google-chrome-stable (VHS renders through headless Chrome)
+#     · install vhs and gifski into /usr/local/bin
+#     · create a local user `ops` and start an sshd on port 2222, key-only, loopback
+#     · append three `*.lab` aliases to /etc/hosts (127.0.0.11-13)
+#   Nothing leaves the WSL distro and nothing touches the Windows side. `--teardown` stops the
+#   sshd and removes the /etc/hosts aliases; the packages and the `ops` user stay (removing a
+#   package someone else may now depend on is not this script's call).
+#
 #   wsl -e bash core/tools/showcase/setup-wsl.sh            # install everything
 #   wsl -e bash core/tools/showcase/setup-wsl.sh --teardown # stop the lab sshd, drop /etc/hosts aliases
 #   wsl -e bash core/tools/showcase/setup-wsl.sh --sync     # only re-sync navig source + reinstall

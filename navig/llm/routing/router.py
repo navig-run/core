@@ -208,18 +208,23 @@ _MODE_TO_TIER: dict[str, str] = {
 # mode not explicitly listed.  These are conservative, widely-available choices and
 # will only fire if a provider was activated without any model being stored.
 _PROVIDER_DEFAULT_MODELS: dict[str, dict[str, str]] = {
+    # ⚠ Every nvidia / xai / anthropic / groq entry below was DEAD when called
+    # on 2026-09-26 (410 · 404 · 410 · 400-decommissioned) — "conservative,
+    # widely-available choices" rot like any other list. Replaced with ids that
+    # answered; the offline retired-model guard now scans this table.
+    # google is unchanged: no credential on the auditing machine, so unjudged.
     "nvidia": {
-        "small_talk": "meta/llama-3.1-8b-instruct",
-        "big_tasks": "meta/llama-3.1-70b-instruct",
-        "coding": "meta/llama-3.1-70b-instruct",
-        "summarize": "meta/llama-3.1-70b-instruct",
-        "research": "meta/llama-3.1-70b-instruct",
-        "_default": "meta/llama-3.1-8b-instruct",
+        "small_talk": "openai/gpt-oss-20b",
+        "big_tasks": "nvidia/nemotron-3-super-120b-a12b",
+        "coding": "nvidia/nemotron-3-super-120b-a12b",
+        "summarize": "nvidia/nemotron-3-super-120b-a12b",
+        "research": "nvidia/nemotron-3-super-120b-a12b",
+        "_default": "openai/gpt-oss-20b",
     },
-    "xai": {"_default": "grok-2-latest"},
-    "anthropic": {"_default": "claude-3-5-haiku-20241022"},
+    "xai": {"_default": "grok-3-mini"},
+    "anthropic": {"_default": "claude-haiku-4-5"},
     "google": {"_default": "gemini-1.5-flash"},
-    "groq": {"_default": "llama-3.1-70b-versatile"},
+    "groq": {"_default": "openai/gpt-oss-20b"},
     "mistral": {"_default": "mistral-small-latest"},
     "cerebras": {"_default": "llama3.1-8b"},
     "openai": {

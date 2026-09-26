@@ -215,19 +215,26 @@ def test_message_deleted_type_is_registered_and_dms_telegram(notify):
     assert "telegram" in prefs.enabled_channels("message_deleted")
 
 
-def test_the_deletion_alert_dispatches_a_registered_type():
-    """Cross-check the caller in telegram/business.py against the registry — the two
-    can't drift back into the silent-drop bug."""
+def test_the_deletion_alert_consults_a_registered_type():
+    """Cross-check the deletion path against the registry — the two can't drift back
+    into the silent-drop bug (an unregistered type resolves to no channels).
+
+    The path no longer *dispatches* through the router: the digest card carries an
+    inline button, which a router dispatch cannot, and a log chat is not the
+    router's target by definition. So it consults the same registry directly, in
+    ``deletions.should_notify`` — the protection this test exists for is that the
+    type it consults is REGISTERED, not which function does the consulting."""
     import inspect
+    import re
 
     from navig.notify.types import TYPE_KEYS
-    from navig.telegram import business
+    from navig.telegram import deletions
 
-    src = inspect.getsource(business.handle_deleted_business_messages)
-    import re
-    m = re.search(r"dispatch\(\s*[\"']([a-z_]+)[\"']", src)
-    assert m, "expected a literal dispatch type in the deletion alert"
-    assert m.group(1) in TYPE_KEYS, f"deletion alert dispatches unregistered type {m.group(1)!r}"
+    src = inspect.getsource(deletions.should_notify)
+    keys = set(re.findall(r"enabled_channels\(\s*[\"']([a-z_]+)[\"']", src))
+    assert keys, "expected a literal notify type in the deletion path's prefs check"
+    unknown = keys - set(TYPE_KEYS)
+    assert not unknown, f"deletion path consults unregistered type(s): {sorted(unknown)}"
 
 
 # ── router fail-safe: an unregistered type is delivered + warned, never dropped ─

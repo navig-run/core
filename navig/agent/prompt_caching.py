@@ -68,11 +68,14 @@ _CACHEABLE_MODELS: frozenset[str] = frozenset(
         "claude-opus-4-6",
         "claude-sonnet-4-6",
         "claude-haiku-4-5",
-        # Legacy (still active / pinnable)
+        # Legacy
         "claude-opus-4-5",
         "claude-opus-4",
         "claude-sonnet-4-5",
         "claude-sonnet-4",
+        # RETIRED at the provider (410/404 when called 2026-09-26; see
+        # liveness.RETIRED_MODELS). Kept only because this is a capability
+        # lookup — a removal would change nothing but how an old config reads.
         "claude-3-5-sonnet-20241022",
         "claude-3-5-haiku-20241022",
         "claude-3-opus-20240229",

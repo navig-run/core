@@ -486,7 +486,7 @@ def _load_fallback_chain() -> list[str]:
         agent:
           fallback_chain:
             - openai:gpt-4o
-            - anthropic:claude-3-5-sonnet-20241022
+            - anthropic:claude-sonnet-4-6
             - openrouter:google/gemini-2.5-flash
     """
     try:

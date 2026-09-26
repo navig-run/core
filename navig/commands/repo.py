@@ -542,6 +542,23 @@ def worktree_last_moved(path: Path) -> float | None:
         return None
 
 
+def _idle_verdict(path: Path, what: str) -> str | None:
+    """``None`` (removable) once the worktree's HEAD has not moved for ``LOCK_TTL_MINUTES``,
+    else why it is kept. Used where the behind-count caution does not apply — the worktree
+    is provably not fresh — but a live session may still be sitting in it.
+    """
+    moved = worktree_last_moved(path)
+    if moved is None:
+        return f"{what}; cannot tell when it was last used — remove by hand if finished"
+    idle_min = (time.time() - moved) / 60
+    if idle_min < LOCK_TTL_MINUTES:
+        return (
+            f"{what}, used {idle_min:.0f} min ago — a session may still be in it; "
+            f"removable after {LOCK_TTL_MINUTES} idle min"
+        )
+    return None
+
+
 def worktree_behind(root: Path, head_sha: str | None, base: str) -> int | None:
     """Commits on *base* that the worktree at *head_sha* has never seen.
 
@@ -1625,20 +1642,20 @@ def collect_sweep(root: Path, *, github: bool = True, fetch: bool = True) -> dic
         # between a live session and a gone one. The removal takes the WORKTREE only: the
         # branch is the default one and `delete_proven_branch` refuses it.
         holds_default = name == default
+        # The same holds for a tip GitHub records as a MERGED PR's head: a fresh worktree
+        # sits at the base tip and was never any PR's head, so "may be fresh" is false of
+        # it — yet it was the verdict (measured: #1557's worktree, merged at exactly its
+        # tip, clean, kept as "only 5 behind — may be a fresh worktree"). Squash-merging is
+        # the house default, so this is the COMMON finished shape, and the behind rule made
+        # each one wait for 50 more merges. Same idle gate: the session that just merged may
+        # still be in it. Without the GitHub index this never fires, so it can only keep more.
+        merged_pr_tip = bool(pr and pr.get("state") == "MERGED" and pr.get("head") == sha)
         if is_dirty:
             why_kept = "uncommitted changes — inspect, then: navig repo remove <slug> --force"
         elif holds_default:
-            moved = worktree_last_moved(Path(wt["path"]))
-            idle_min = (time.time() - moved) / 60 if moved is not None else None
-            if idle_min is None:
-                why_kept = f"holds {name}; cannot tell when it was last used — remove by hand if finished"
-            elif idle_min < LOCK_TTL_MINUTES:
-                why_kept = (
-                    f"holds {name}, used {idle_min:.0f} min ago — a session may still be in it; "
-                    f"removable after {LOCK_TTL_MINUTES} idle min"
-                )
-            else:
-                why_kept = None
+            why_kept = _idle_verdict(Path(wt["path"]), f"holds {name}")
+        elif merged_pr_tip:
+            why_kept = _idle_verdict(Path(wt["path"]), f"merged as {pr_label}")
         elif behind is None:
             why_kept = "cannot tell how far behind it is"
         elif behind >= WORKTREE_BEHIND_WARN:
@@ -1669,6 +1686,7 @@ def collect_sweep(root: Path, *, github: bool = True, fetch: bool = True) -> dic
                 "never_committed": never,
                 "age_days": round(age_days, 1) if age_days is not None else None,
                 "holds_default": holds_default,
+                "merged_pr_tip": merged_pr_tip,
                 "removable": why_kept is None,
                 "why_kept": why_kept,
             }
@@ -2414,6 +2432,14 @@ def collect_land(root: Path, branch: str, *, github: bool = True, fetch: bool = 
         == 0
     )
     wt = _worktree_for_branch(root, branch)
+    # Uncommitted work on top of a MERGED branch is still uncommitted work — merge, then
+    # start the next thing in the same folder, is an ordinary sequence. land used to remove
+    # the worktree with `--force` without looking. Fail CLOSED: a status git could not
+    # read counts as dirty, because the cost of a wrong "clean" here is someone's work.
+    worktree_dirty = False
+    if wt:
+        st = _git(["status", "--porcelain"], wt)
+        worktree_dirty = st.returncode != 0 or bool(st.stdout.strip())
     ahead = _git(["rev-list", "--count", f"{base}..{branch}"], root) if exists else None
 
     return {
@@ -2427,7 +2453,8 @@ def collect_land(root: Path, branch: str, *, github: bool = True, fetch: bool = 
         "pr": (f"#{pr['number']} {pr['state']}" if pr else None),
         "remote_exists": remote_exists,
         "worktree": str(wt) if wt else None,
-        "ahead": (int(ahead.stdout.strip() or 0) if ahead and ahead.returncode == 0 else None),
+        "worktree_dirty": worktree_dirty,
+        "ahead":(int(ahead.stdout.strip() or 0) if ahead and ahead.returncode == 0 else None),
         "github_note": github_note,
     }
 
@@ -2483,6 +2510,27 @@ def land_cmd(
 
     done: dict[str, str] = {}
     failed: dict[str, str] = {}
+    # Refused BEFORE step 1, so a dirty worktree never leaves a half-landed branch (remote
+    # ref gone, worktree and local branch kept). Checked in dry run too — the plan shown
+    # must be the plan that would run.
+    refused = (
+        f"its worktree ({_display_path(plan['worktree'], root)}) has uncommitted changes"
+        if plan["exists"] and plan["proof"] and plan["worktree_dirty"]
+        else None
+    )
+    if refused:
+        slug = Path(plan["worktree"]).name
+        if json_out:
+            typer.echo(json.dumps({**plan, "done": {}, "failed": {}, "dry_run": not yes,
+                                   "refused": refused}, indent=2))
+        else:
+            ch.error(
+                f"Refusing to land {branch}: {refused}.",
+                "land never discards work. Commit or move it first — or, if it is truly "
+                f"disposable: navig repo remove {slug} --force   then re-run land.",
+            )
+        raise typer.Exit(1)
+
     if yes and plan["exists"] and plan["proof"]:
         # 1. Remote ref (the step that leaks). refs/pull/N/head keeps it recoverable.
         if plan["remote_exists"]:
@@ -2491,12 +2539,14 @@ def land_cmd(
                 "deleted" if res.returncode == 0 else (res.stderr or res.stdout).strip()[:200]
             )
         # 2. Worktree (before the local branch — git won't delete a checked-out branch).
+        #    Through the SAME remover sweep uses, never forced: the dirty refusal above is
+        #    the first net, git's own refusal the second.
         if plan["worktree"]:
-            wt = Path(plan["worktree"])
-            _git(["worktree", "remove", "--force", str(wt)], root, timeout=_GIT_DELETE_TIMEOUT)
-            leftover = _rmtree_force(wt) if wt.exists() else None
-            _git(["worktree", "prune"], root)
-            (failed if wt.exists() else done)["worktree"] = leftover or "removed"
+            out = remove_worktree(root, Path(plan["worktree"]), force=False)
+            if out["removed"]:
+                done["worktree"] = "removed"
+            else:
+                failed["worktree"] = out["refused"] or out["leftover_error"] or "not removed"
         # 3. Local branch — through the SAME remover sweep uses, so land inherits the
         #    stale-upstream fix (#1492): `git branch -d` refuses a proven-ancestor branch
         #    whose origin/<branch> was left behind by a rebase, which is exactly the branch

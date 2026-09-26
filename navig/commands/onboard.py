@@ -160,7 +160,7 @@ PROVIDER_REGISTRY: list[ProviderDef] = [
         None,
         "https://console.anthropic.com/settings/keys",
         "",
-        "Claude 3.5 Sonnet / Haiku",
+        "Claude Sonnet 4.6 / Haiku 4.5",
     ),
     ProviderDef(
         "gemini",

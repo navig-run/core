@@ -154,6 +154,13 @@ navig telegram business rights                  # list all per-tool policies
 navig telegram business rights <tool> <who>     # who ∈ owner | both | off
 navig telegram business alerts on | off         # deleted message → DM you
 navig telegram business deleted                 # WHAT was deleted (table; --json, --chat, -n)
+navig telegram business deletions status         # record | mode | window | target | muted
+navig telegram business deletions mode digest    # digest (default) | instant | off
+navig telegram business deletions record off     # stop tracking entirely (leaves NO trace)
+navig telegram business deletions window 900     # digest batching window, seconds
+navig telegram business deletions target <id>    # a log channel instead of your DM ('dm' resets)
+navig telegram business deletions mute <chat>    # silence one chat (--off to unmute)
+navig telegram business deletions flush          # send the pending digest now
 navig telegram business emoji                   # list emoji → tool map
 navig telegram business emoji <emoji> <tool>    # remap a reaction (tool|off)
 navig telegram business ping <owner|both|off>   # who gets a /ping reply in business chats

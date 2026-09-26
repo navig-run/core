@@ -20,6 +20,12 @@
       "pip": "navig-audio",
       "description": "NAVIG Audio module — voice (TTS/STT/wake-word/pipeline) + AI audio generation (music/SFX/TTS). A first-party navig plugin (free, toggleable). Extracted from core navig.voice."
     },
+    "cabinet": {
+      "plugin": "navig-cabinet",
+      "module": null,
+      "pip": "navig-cabinet",
+      "description": "NAVIG Cabinet — an encrypted cabinet for your important files: ID and passport scans, medical records, contracts, photos, recordings, any type and any size. Searchable by the text inside them (local OCR), expiry reminders, portable passphrase backups. A first-party navig plugin (free, toggleable)."
+    },
     "calendar": {
       "plugin": "navig-calendar",
       "module": "calendar",

@@ -166,6 +166,37 @@ def _table_with_models():
     return out
 
 
+# ── The router's two fallback tables ─────────────────────────────────────
+#
+# A FOURTH and FIFTH list name models: `MODE_MODEL_PREFERENCE` and
+# `_PROVIDER_DEFAULT_MODELS`. The live router reads them when a primary provider
+# has ALREADY FAILED — the one moment a dead id has no second chance. Measured
+# 2026-09-26: 9 ids across the two were gone, four of them already on this very
+# denylist, because no guard scanned either table. Same lesson as the table
+# above: a guard protects the surface it scans.
+
+
+def _router_fallback_pairs():
+    from navig.llm.routing.capabilities import MODE_MODEL_PREFERENCE
+    from navig.llm.routing.router import _PROVIDER_DEFAULT_MODELS
+
+    out = []
+    for mode, prefs in MODE_MODEL_PREFERENCE.items():
+        out += [(f"MODE_MODEL_PREFERENCE[{mode!r}]", p, m) for p, m in prefs.items() if m]
+    for prov, prefs in _PROVIDER_DEFAULT_MODELS.items():
+        out += [(f"_PROVIDER_DEFAULT_MODELS[{prov!r}]", prov, m) for m in prefs.values() if m]
+    assert len(out) >= 40, f"router tables look empty ({len(out)}) — this guard would be vacuous"
+    return out
+
+
+def test_no_router_fallback_table_names_a_retired_model():
+    offenders = [f"{where}: {p}:{m}" for where, p, m in _router_fallback_pairs() if is_retired(m, p)]
+    assert not offenders, (
+        "a router fallback table names a model recorded as RETIRED — the fallback fires only "
+        "after the primary failed, so this is a guaranteed second failure: " + ", ".join(offenders)
+    )
+
+
 def test_no_builtin_provider_table_lists_a_retired_model():
     offenders = [
         f"{pid}: {m}" for pid, ms in _table_with_models() for m in ms if is_retired(m, pid)

@@ -6201,6 +6201,276 @@
     },
     {
       "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet add"
+      ],
+      "handler": "cmd_add",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet add",
+      "since": "",
+      "status": "stable",
+      "summary": "Encrypt files into the cabinet (originals are kept unless --move).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet backup"
+      ],
+      "handler": "cmd_backup",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet backup",
+      "since": "",
+      "status": "stable",
+      "summary": "Write one encrypted backup file that restores on any computer, with its own passphrase.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet close"
+      ],
+      "handler": "cmd_close",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet close",
+      "since": "",
+      "status": "stable",
+      "summary": "Remove every decrypted copy left by `open` right now.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet edit"
+      ],
+      "handler": "cmd_edit",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet edit",
+      "since": "",
+      "status": "stable",
+      "summary": "Change an item's title, category, tags, expiry, issuer or notes.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet expiring"
+      ],
+      "handler": "cmd_expiring",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet expiring",
+      "since": "",
+      "status": "stable",
+      "summary": "Documents that have expired or expire soon \u2014 passports, ID cards, insurance.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet export"
+      ],
+      "handler": "cmd_export",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet export",
+      "since": "",
+      "status": "stable",
+      "summary": "Write decrypted copies with their original names (verified; never overwrites).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet import-paperwork"
+      ],
+      "handler": "cmd_import_paperwork",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet import-paperwork",
+      "since": "",
+      "status": "stable",
+      "summary": "Encrypt the ID and medical documents a `navig paperwork` scan set aside (originals stay put).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet list"
+      ],
+      "handler": "cmd_list",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet list",
+      "since": "",
+      "status": "stable",
+      "summary": "Everything in the cabinet.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet open"
+      ],
+      "handler": "cmd_open",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet open",
+      "since": "",
+      "status": "stable",
+      "summary": "Open an item in its usual app (a temporary decrypted copy).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet passphrase clear"
+      ],
+      "handler": "cmd_passphrase_clear",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet passphrase clear",
+      "since": "",
+      "status": "stable",
+      "summary": "Go back to the machine key (no passphrase).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet passphrase set"
+      ],
+      "handler": "cmd_passphrase_set",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet passphrase set",
+      "since": "",
+      "status": "stable",
+      "summary": "Lock the cabinet with a passphrase (asked for on every command).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet remove"
+      ],
+      "handler": "cmd_remove",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet remove",
+      "since": "",
+      "status": "stable",
+      "summary": "Move an item to the trash (or --purge it for good).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet restore"
+      ],
+      "handler": "cmd_restore",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet restore",
+      "since": "",
+      "status": "stable",
+      "summary": "Add everything from a backup that the cabinet does not already hold.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet search"
+      ],
+      "handler": "cmd_search",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet search",
+      "since": "",
+      "status": "stable",
+      "summary": "Find items by title, tag, or any word inside the document.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet show"
+      ],
+      "handler": "cmd_show",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet show",
+      "since": "",
+      "status": "stable",
+      "summary": "Details of one item.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet status"
+      ],
+      "handler": "cmd_status",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet status",
+      "since": "",
+      "status": "stable",
+      "summary": "What is in the cabinet, how it is locked, and what needs attention.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet undelete"
+      ],
+      "handler": "cmd_undelete",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet undelete",
+      "since": "",
+      "status": "stable",
+      "summary": "Bring an item back from the trash.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet verify"
+      ],
+      "handler": "cmd_verify",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet verify",
+      "since": "",
+      "status": "stable",
+      "summary": "Decrypt every item and check it against its stored checksum.",
+      "tags": []
+    },
+    {
+      "aliases": [],
       "arguments": [
         {
           "name": "title",
@@ -37892,6 +38162,155 @@
       "aliases": [],
       "arguments": [],
       "examples": [
+        "navig telegram business deletions flush"
+      ],
+      "handler": "tg_del_flush",
+      "module": "navig.commands._telegram_mtproto",
+      "options": [],
+      "path": "navig telegram business deletions flush",
+      "since": "",
+      "status": "stable",
+      "summary": "Send the pending digest now, instead of waiting for the window.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "value",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig telegram business deletions mode"
+      ],
+      "handler": "tg_del_mode",
+      "module": "navig.commands._telegram_mtproto",
+      "options": [],
+      "path": "navig telegram business deletions mode",
+      "since": "",
+      "status": "stable",
+      "summary": "How you hear about deletions.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "chat",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig telegram business deletions mute"
+      ],
+      "handler": "tg_del_mute",
+      "module": "navig.commands._telegram_mtproto",
+      "options": [
+        {
+          "flags": [
+            "--off"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig telegram business deletions mute",
+      "since": "",
+      "status": "stable",
+      "summary": "Stop announcing deletions from ONE chat (still recorded).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "state",
+          "required": true,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig telegram business deletions record"
+      ],
+      "handler": "tg_del_record",
+      "module": "navig.commands._telegram_mtproto",
+      "options": [],
+      "path": "navig telegram business deletions record",
+      "since": "",
+      "status": "stable",
+      "summary": "Whether deletions are tracked at all.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig telegram business deletions status"
+      ],
+      "handler": "tg_del_status",
+      "module": "navig.commands._telegram_mtproto",
+      "options": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig telegram business deletions status",
+      "since": "",
+      "status": "stable",
+      "summary": "Show every deletion switch: record \u00b7 mode \u00b7 window \u00b7 target \u00b7 muted.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "chat",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig telegram business deletions target"
+      ],
+      "handler": "tg_del_target",
+      "module": "navig.commands._telegram_mtproto",
+      "options": [],
+      "path": "navig telegram business deletions target",
+      "since": "",
+      "status": "stable",
+      "summary": "Send deletion reports to a separate log chat instead of your DM.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [
+        {
+          "name": "seconds",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "examples": [
+        "navig telegram business deletions window"
+      ],
+      "handler": "tg_del_window",
+      "module": "navig.commands._telegram_mtproto",
+      "options": [],
+      "path": "navig telegram business deletions window",
+      "since": "",
+      "status": "stable",
+      "summary": "How long a digest collects before it is sent (default 900s / 15 min).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
         "navig telegram business disable"
       ],
       "handler": "tg_biz_disable",
@@ -43432,7 +43851,7 @@
       "tags": []
     }
   ],
-  "generated_at": "2026-09-26T17:42:22.076706+00:00",
+  "generated_at": "2026-09-26T19:15:20.852606+00:00",
   "schema_version": "1.0.0",
-  "total": 1486
+  "total": 1511
 }
