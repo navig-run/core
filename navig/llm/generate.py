@@ -1289,8 +1289,9 @@ def _call_provider(
     base_url: str | None = None,
 ) -> str:
     """Call an LLM provider using the providers system."""
-    _LOCAL_PROVIDERS = {"ollama", "llamacpp", "airllm", "mcp_bridge"}
-    if provider not in _LOCAL_PROVIDERS:
+    from navig.llm.guard import KEYLESS_PROVIDERS
+
+    if provider not in KEYLESS_PROVIDERS:
         _guard_key, _guard_oauth = _resolve_dispatch_credential(provider)
         if not _guard_key and not _guard_oauth:
             raise ValueError(

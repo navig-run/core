@@ -5,7 +5,7 @@ from the tapes in [`tools/showcase/tapes/`](../../tools/showcase/tapes). Nothing
 nothing is edited out — see [How these were recorded](#how-these-were-recorded).
 
 Videos (MP4 + WebM per scene, plus a 90-second trailer) are attached to the
-[`showcase-2026-09-26` release](https://github.com/navig-run/core/releases/tag/showcase-2026-09-26).
+[NAVIG 3.25.0 release](https://github.com/navig-run/core/releases/tag/v3.25.0).
 
 ## The 20-second pitch
 
@@ -13,11 +13,11 @@ Videos (MP4 + WebM per scene, plus a 90-second trailer) are attached to the
 
 ![navig host list showing three hosts, a real navig run over SSH printing uptime and disk, and navig apply safe-deployment --dry-run listing each step's risk](hero.gif)
 
-## Kraken dashboard
+## Live dashboard
 
-`navig dashboard` — services, hosts, tunnels and history in one live screen. `q` to leave.
+`navig dashboard` — this install's identity sigil, services, safety (ledger chain, approvals, host locks), SSH reachability and the latest operations on one live screen. `d` runs `navig doctor` in place; `q` to leave.
 
-![the navig dashboard: core services, remote hosts with live latency, SSH tunnels, the Kraken mascot and recent operations in one screen](dashboard.gif)
+![the navig dashboard: the install's identity sigil, a healthy gateway, an intact ledger chain, three reachable hosts with latency and recent operations, then the doctor overlay](dashboard.gif)
 
 ## Hosts, and what navig refuses to do
 

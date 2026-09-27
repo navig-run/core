@@ -18,6 +18,7 @@
   "deletions.button.show": "Afficher {n}",
   "deletions.digest.chats": " dans {n} discussions",
   "deletions.digest.head": "{n} supprimé(s)",
+  "deletions.digest.since": "depuis {when}",
   "deletions.digest.tail": "touchez pour voir ce que c'était",
   "deletions.off.note": "Alertes de suppression désactivées. L'enregistrement est conservé — listez-le avec `navig telegram business deleted`, ou réactivez-les avec `navig telegram business deletions mode digest`.",
   "deletions.toast.off": "Alertes de suppression désactivées",

@@ -25,7 +25,11 @@ import socket
 import sys
 import urllib.error
 import urllib.request
-import winreg
+
+try:  # Windows-only tool (schema.json: "os": ["windows"]) — fail cleanly elsewhere
+    import winreg
+except ImportError:  # pragma: no cover - exercised on Linux/macOS
+    winreg = None  # type: ignore[assignment]
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any

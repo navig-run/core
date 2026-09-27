@@ -292,15 +292,14 @@ class SessionCostTracker:
         if not pricing_table:
             return {"input": 0.0, "output": 0.0, "cache_read": 0.0}
 
-        # Exact match first, then prefix scan
-        if model in pricing_table:
-            return self._normalise_pricing(pricing_table[model])
+        # Same matching rule as the agent's per-turn tracker: exact, else the
+        # longest key the model is a VARIANT of. A bare `startswith` let an
+        # operator's "gpt-4" entry price the whole gpt-4.1 family.
+        from navig.agent.usage_tracker import model_price_key
 
-        for key in sorted(pricing_table, key=len, reverse=True):
-            if key == _DEFAULT_PRICING_KEY:
-                continue
-            if model.startswith(key):
-                return self._normalise_pricing(pricing_table[key])
+        key = model_price_key(model, [k for k in pricing_table if k != _DEFAULT_PRICING_KEY])
+        if key is not None:
+            return self._normalise_pricing(pricing_table[key])
 
         default = pricing_table.get(_DEFAULT_PRICING_KEY, {})
         return self._normalise_pricing(default)

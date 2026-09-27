@@ -5,6 +5,7 @@
 #
 #   record.sh                 # all tapes
 #   record.sh hero spaces     # only these scenes
+#   record.sh --plugins [blackbox …]   # plugin demos → plugins/navig-<name>/docs/demo.gif
 #   record.sh --check         # verify the committed assets against MANIFEST.json (no recording)
 #
 # Outputs
@@ -78,6 +79,7 @@ if [[ "${1:-}" == "--manifest" ]]; then MANIFEST_ONLY=1; shift; fi
 command -v vhs >/dev/null || die "vhs not installed — run setup-wsl.sh"
 command -v ffmpeg >/dev/null || die "ffmpeg not installed — run setup-wsl.sh"
 export VHS_NO_SANDBOX=true               # WSL runs as root; headless Chrome needs --no-sandbox
+export SHOWCASE_DIR="$HERE"              # plugin tapes call $SHOWCASE_DIR/plugin-fixtures.sh off-camera
 # shellcheck source=sandbox.sh
 source "$HERE/sandbox.sh" --reset        # fresh sandbox every run: the GIFs show ONLY the fixtures
 [[ -f "$HOME/navig-lab/sshd.pid" ]] && kill -0 "$(cat "$HOME/navig-lab/sshd.pid")" 2>/dev/null \
@@ -87,7 +89,13 @@ mkdir -p "$OUT_GIF" "$OUT_VIDEO" "$OUT_FRAMES" "$WORK"
 rm -rf "${WORK:?}"/*
 
 # ── which scenes ────────────────────────────────────────────────────────────
-if (( $# )); then
+# `--plugins [name…]` records the plugin demos (tapes/plugins/<name>.tape → plugins/navig-<name>/docs/demo.gif).
+PLUGINS_ONLY=0
+if [[ "${1:-}" == "--plugins" ]]; then
+  PLUGINS_ONLY=1; shift
+  if (( $# )); then scenes=("${@/#/plugins/}")
+  else mapfile -t scenes < <(cd "$TAPES/plugins" && ls -- *.tape | sed 's/\.tape$//; s#^#plugins/#'); fi
+elif (( $# )); then
   scenes=("$@")
 else
   mapfile -t scenes < <(cd "$TAPES" && ls -- *.tape | sed 's/\.tape$//' | grep -v -e "^common$" -e "^smoke$")
@@ -97,10 +105,17 @@ fi
 record_one() {
   local scene="$1" tape="$TAPES/$1.tape"
   [[ -f "$tape" ]] || die "no tape: $tape"
-  local dir="$WORK/$scene"; mkdir -p "$dir"
+  # A plugin scene (`plugins/<name>`) runs the same pipeline; only where its files land differs.
+  local name="${scene##*/}" gif_out="$OUT_GIF/${scene##*/}.gif" vid="${scene##*/}"
+  if [[ "$scene" == plugins/* ]]; then
+    gif_out="$CORE/../plugins/navig-$name/docs/demo.gif"; vid="plugin-$name"
+    mkdir -p "$(dirname "$gif_out")"
+  fi
+  local dir="$WORK/$vid"; mkdir -p "$dir"
   # The tape's `Output` lines are relative to the cwd VHS runs in; `Source` lines resolve
   # relative to the tape, so copy the common header next to it.
   cp "$tape" "$TAPES/common.tape" "$dir/"
+  scene="$name"
   log "recording $scene"
   # Every scene starts from the same fixtures: the ledger, active host and lab spaces of a
   # previous scene must not leak into this one (the hero would otherwise show a ledger of
@@ -120,22 +135,24 @@ record_one() {
     mv "$dir/$scene.opt.gif" "$dir/$scene.gif"
   fi
 
-  cp "$dir/$scene.gif" "$OUT_GIF/$scene.gif"
-  cp "$dir/$scene.mp4" "$OUT_VIDEO/$scene.mp4"
-  cp "$dir/$scene.webm" "$OUT_VIDEO/$scene.webm"
+  cp "$dir/$scene.gif" "$gif_out"
+  cp "$dir/$scene.mp4" "$OUT_VIDEO/$vid.mp4"
+  cp "$dir/$scene.webm" "$OUT_VIDEO/$vid.webm"
   # first/last frame for eyeballing — from the mp4 (seekable; a GIF has no reliable duration)
-  ffmpeg -loglevel error -y -i "$dir/$scene.mp4" -vf "select=eq(n\,0)" -vframes 1 "$OUT_FRAMES/$scene-first.png"
-  ffmpeg -loglevel error -y -sseof -0.3 -i "$dir/$scene.mp4" -update 1 -vframes 1 "$OUT_FRAMES/$scene-last.png"
+  ffmpeg -loglevel error -y -i "$dir/$scene.mp4" -vf "select=eq(n\,0)" -vframes 1 "$OUT_FRAMES/$vid-first.png"
+  ffmpeg -loglevel error -y -sseof -0.3 -i "$dir/$scene.mp4" -update 1 -vframes 1 "$OUT_FRAMES/$vid-last.png"
 
-  local bytes; bytes="$(fsize "$OUT_GIF/$scene.gif")"
+  local bytes; bytes="$(fsize "$gif_out")"
   local cap=$SCENE_MAX_BYTES; [[ "$scene" == hero ]] && cap=$HERO_MAX_BYTES
   (( bytes <= cap )) || die "$scene.gif is $((bytes/1024)) KB > $((cap/1024)) KB — shorten the tape or lower fps"
-  ok "$scene.gif $((bytes/1024)) KB · $(ffprobe -v error -show_entries format=duration -of csv=p=0 "$dir/$scene.mp4" | cut -d. -f1)s"
+  ok "$vid.gif $((bytes/1024)) KB · $(ffprobe -v error -show_entries format=duration -of csv=p=0 "$dir/$scene.mp4" | cut -d. -f1)s"
 }
 
 if (( ! MANIFEST_ONLY )); then
   for s in "${scenes[@]}"; do record_one "$s"; done
 fi
+# Plugin demos are not part of core's gallery manifest — leave it untouched.
+if (( PLUGINS_ONLY )); then ok "plugin demos → plugins/navig-*/docs/demo.gif"; exit 0; fi
 
 # ── manifest (provenance) ───────────────────────────────────────────────────
 navig_ver="$(navig --version 2>/dev/null | tail -1)"

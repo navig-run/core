@@ -23,6 +23,7 @@ def test_every_locale_carries_the_digest_copy():
 
     keys = {
         "deletions.digest.head", "deletions.digest.chats", "deletions.digest.tail",
+        "deletions.digest.since",
         "deletions.button.show", "deletions.button.quiet",
         "deletions.toast.off", "deletions.off.note",
     }
@@ -37,3 +38,6 @@ def test_every_locale_carries_the_digest_copy():
         # number — the one thing the button has to tell the operator.
         assert "{n}" in data["deletions.button.show"], f"{f.name}: show button lost {{n}}"
         assert "{n}" in data["deletions.digest.head"], f"{f.name}: digest head lost {{n}}"
+        # The WHEN is the point of that line; a translation that drops it prints
+        # a bare "since".
+        assert "{when}" in data["deletions.digest.since"], f"{f.name}: since lost {{when}}"

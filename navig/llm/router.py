@@ -1116,12 +1116,30 @@ def suggest_toolsets(
 # Anything not in this list falls through to the configured small_talk
 # mode (current behaviour). The override is a no-op if no fast-chat
 # provider key is set, so existing users see no behaviour change.
+#
+# It is ALSO a no-op when small_talk is configured to a provider that runs on
+# this machine. The whole reason this override exists is latency on a slow
+# remote free tier; a local model has no such problem, and sending chat to xAI
+# because a key happens to exist would silently undo a deliberate "keep it on
+# this machine" setting. Speeding up a cloud call is a convenience; overriding
+# a local one is a privacy regression.
 
 _FAST_CHAT_PROVIDERS: tuple[tuple[str, str], ...] = (
     ("xai", "grok-3-mini"),
     ("groq", "llama-3.1-8b-instant"),
     ("cerebras", "llama3.1-8b"),
 )
+
+
+def _provider_is_local(provider: str) -> bool:
+    """True when *provider* runs on this machine.
+
+    Imported from the guard so "local" has ONE definition: a second copy is exactly how
+    a privacy promise drifts away from the check that is supposed to enforce it.
+    """
+    from navig.llm.guard import LOCAL_PROVIDERS
+
+    return (provider or "").strip().lower() in LOCAL_PROVIDERS
 
 
 def _pick_fast_chat_provider(
@@ -1180,7 +1198,7 @@ def resolve_llm(
     # provider (xAI grok / Groq / Cerebras).
     if canonical == "small_talk" and not prefer_uncensored:
         mode_cfg = router.modes.get_mode("small_talk")
-        if mode_cfg is not None:
+        if mode_cfg is not None and not _provider_is_local(mode_cfg.provider):
             fast = _pick_fast_chat_provider(
                 temperature=mode_cfg.temperature,
                 max_tokens=mode_cfg.max_tokens,

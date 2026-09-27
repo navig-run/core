@@ -18,6 +18,7 @@
   "deletions.button.show": "Show {n}",
   "deletions.digest.chats": " in {n} chats",
   "deletions.digest.head": "{n} deleted",
+  "deletions.digest.since": "since {when}",
   "deletions.digest.tail": "tap to see what they were",
   "deletions.off.note": "Deletion alerts off. The record is still kept — list it with `navig telegram business deleted`, or switch them back on with `navig telegram business deletions mode digest`.",
   "deletions.toast.off": "Deletion alerts off",

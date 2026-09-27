@@ -53,8 +53,9 @@ class _Chan:
         return {"result": {"message_id": 555}}
 
     async def _api_call(self, method, payload):
-        self.sent.append({"text": payload.get("text"), "method": method,
-                          "markup": payload.get("reply_markup")})
+        self.sent.append(
+            {"text": payload.get("text"), "method": method, "markup": payload.get("reply_markup")}
+        )
         return {"result": {"message_id": 555}}
 
     @property
@@ -80,9 +81,7 @@ async def test_health_on_an_empty_record_says_nothing_recorded(metrics):
     assert "/weigh" in ch.last
 
 
-async def test_health_reports_an_unreadable_record_as_a_warning_not_a_zero(
-    metrics, monkeypatch
-):
+async def test_health_reports_an_unreadable_record_as_a_warning_not_a_zero(metrics, monkeypatch):
     """A green number over an unknown is worse than a red one — it says don't look."""
 
     def boom(*_a, **_k):
@@ -246,14 +245,25 @@ async def test_a_failure_BEFORE_the_prompt_matches_lets_the_message_through(monk
 
 
 class _Editable(_Chan):
-    """Records edits separately from sends, and can be made to refuse edits."""
+    """Records deletes and edits separately from sends, and can refuse either.
 
-    def __init__(self, edit_ok: bool = True):
+    ``delete_ok=False`` is the over-48h prompt Telegram will not let a bot
+    delete — the case the in-place rewrite still exists to cover.
+    """
+
+    def __init__(self, edit_ok: bool = True, delete_ok: bool = True):
         super().__init__()
         self.edit_ok = edit_ok
+        self.delete_ok = delete_ok
         self.edits: list[dict] = []
+        self.deletes: list[dict] = []
 
     async def _api_call(self, method, payload):
+        if method == "deleteMessage":
+            if not self.delete_ok:
+                return None  # how `_api_call` reports a refusal
+            self.deletes.append(payload)
+            return True
         if method == "editMessageText":
             if not self.edit_ok:
                 raise RuntimeError("message to edit not found")
@@ -284,6 +294,13 @@ async def test_answering_rewrites_the_prompt_and_still_confirms(metrics):
     only when the edit FAILED. It is just as true when the edit succeeds.
 
     Retiring the stale question is CLEANUP; telling the human is a MESSAGE.
+
+    ⚠ Updated 2026-09-27: the cleanup is now a DELETE, not a rewrite. Rewriting
+    changes the text the client quotes but leaves its force_reply box pointed at
+    the same message id, so the box re-arms on every app restart and the
+    operator keeps seeing the morning's question. Measured: not one edit was
+    rejected that day, and they still reported being "asked a couple of times a
+    day". The rewrite survives as the fallback for prompts too old to delete.
     """
     bm.set_prompt(CHAT, "weigh", date.today().isoformat(), 99)
     ch = _Editable()
@@ -293,43 +310,62 @@ async def test_answering_rewrites_the_prompt_and_still_confirms(metrics):
     )
 
     assert handled is True
-    # The cleanup still happens, exactly as before.
-    assert len(ch.edits) == 1
-    assert ch.edits[0]["message_id"] == 99
-    assert "87.4" in ch.edits[0]["text"]
+    # The cleanup still happens — now by removing the message outright.
+    assert len(ch.deletes) == 1
+    assert ch.deletes[0]["message_id"] == 99
+    assert ch.edits == [], "a deleted prompt must not also be edited"
     # ...and the operator is told, which is the part that was missing.
     receipts = [s for s in ch.sent if s.get("text", "").startswith("✅")]
     assert len(receipts) == 1, (
-        "a successful edit produced no visible acknowledgement — the operator "
+        "retiring the prompt produced no visible acknowledgement — the operator "
         "answers the weigh-in and sees nothing new"
     )
     assert "87.4" in receipts[0]["text"]
 
 
-async def test_the_settled_prompt_no_longer_reads_as_a_question(metrics):
+async def test_the_answered_question_is_gone_from_the_chat(metrics):
+    """The question must not survive as text a re-armed reply box can quote."""
     bm.set_prompt(CHAT, "weigh", date.today().isoformat(), 99)
     ch = _Editable()
     await TelegramChannel._handle_pending_body_input(
         ch, chat_id=CHAT, text="87.4", reply_to_message_id=99
     )
+    assert ch.deletes and ch.deletes[0]["message_id"] == 99
+    assert all("?" not in (s.get("text") or "") for s in ch.sent)
+
+
+async def test_a_prompt_too_old_to_delete_is_rewritten_instead(metrics):
+    """Telegram refuses a bot delete past 48 h. The rewrite still has to retire
+    the question then — it is strictly better than leaving it standing."""
+    bm.set_prompt(CHAT, "weigh", date.today().isoformat(), 99)
+    ch = _Editable(delete_ok=False)
+
+    await TelegramChannel._handle_pending_body_input(
+        ch, chat_id=CHAT, text="87.4", reply_to_message_id=99
+    )
+
+    assert len(ch.edits) == 1, "the fallback rewrite did not happen"
+    assert ch.edits[0]["message_id"] == 99
+    assert "87.4" in ch.edits[0]["text"]
     assert "?" not in ch.edits[0]["text"]
 
 
-async def test_the_settled_prompt_clears_any_keyboard(metrics):
+async def test_the_fallback_rewrite_clears_any_keyboard(metrics):
     """Omitting reply_markup leaves stale buttons live on a settled message."""
     bm.set_prompt(CHAT, "weigh", date.today().isoformat(), 99)
-    ch = _Editable()
+    ch = _Editable(delete_ok=False)
     await TelegramChannel._handle_pending_body_input(
         ch, chat_id=CHAT, text="87.4", reply_to_message_id=99
     )
     assert ch.edits[0]["reply_markup"] == {"inline_keyboard": []}
 
 
-async def test_a_failed_edit_still_confirms_by_message(metrics):
+async def test_a_failed_cleanup_still_confirms_by_message(metrics):
     """An answer that produces no visible acknowledgement is the exact failure
-    the disk-backed prompt exists to prevent."""
+    the disk-backed prompt exists to prevent — even when BOTH the delete and the
+    rewrite fail."""
     bm.set_prompt(CHAT, "weigh", date.today().isoformat(), 99)
-    ch = _Editable(edit_ok=False)
+    ch = _Editable(edit_ok=False, delete_ok=False)
 
     handled = await TelegramChannel._handle_pending_body_input(
         ch, chat_id=CHAT, text="87.4", reply_to_message_id=99
@@ -337,13 +373,15 @@ async def test_a_failed_edit_still_confirms_by_message(metrics):
 
     assert handled is True
     assert ch.edits == []
-    assert any("87.4" in s.get("text", "") for s in ch.sent)
-    # and the weight still landed despite the edit failing
+    assert any("87.4" in (s.get("text") or "") for s in ch.sent)
+    # and the weight still landed despite the cleanup failing
     row = next(r for r in bm.read_metrics(metrics)[1] if r["date"] == date.today().isoformat())
     assert row["weight_kg"] == "87.4"
 
 
-async def test_the_settled_text_carries_the_seven_day_average(metrics):
+async def test_the_seven_day_average_survives_the_delete(metrics):
+    """It used to live in the rewritten prompt. With the prompt deleted, the
+    receipt is the only message left to carry it."""
     from datetime import timedelta
 
     end = date.today()
@@ -351,6 +389,22 @@ async def test_the_settled_text_carries_the_seven_day_average(metrics):
         bm.upsert(metrics, (end - timedelta(days=6 - i)).isoformat(), {"weight_kg": "88"})
     bm.set_prompt(CHAT, "weigh", end.isoformat(), 99)
     ch = _Editable()
+    await TelegramChannel._handle_pending_body_input(
+        ch, chat_id=CHAT, text="88", reply_to_message_id=99
+    )
+    receipts = [s for s in ch.sent if (s.get("text") or "").startswith("✅")]
+    assert receipts, "no receipt at all"
+    assert "average" in receipts[0]["text"].lower()
+
+
+async def test_the_fallback_rewrite_still_carries_the_seven_day_average(metrics):
+    from datetime import timedelta
+
+    end = date.today()
+    for i in range(6):
+        bm.upsert(metrics, (end - timedelta(days=6 - i)).isoformat(), {"weight_kg": "88"})
+    bm.set_prompt(CHAT, "weigh", end.isoformat(), 99)
+    ch = _Editable(delete_ok=False)
     await TelegramChannel._handle_pending_body_input(
         ch, chat_id=CHAT, text="88", reply_to_message_id=99
     )

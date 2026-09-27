@@ -1,6 +1,6 @@
 # NAVIG Command Reference
 
-_Generated 2026-09-26T19:15:20.852606+00:00_
+_Generated 2026-09-27T14:54:15.640623+00:00_
 
 ## `navig action add`
 **Status:** `stable` · **Since:** 
@@ -1690,6 +1690,14 @@ Remove every decrypted copy left by `open` right now.
 navig cabinet close
 ```
 
+## `navig cabinet dates`
+**Status:** `stable` · **Since:** 
+Find expiry dates inside documents that have none — passports, ID cards, policies.
+**Examples:**
+```sh
+navig cabinet dates
+```
+
 ## `navig cabinet edit`
 **Status:** `stable` · **Since:** 
 Change an item's title, category, tags, expiry, issuer or notes.
@@ -1752,6 +1760,14 @@ Lock the cabinet with a passphrase (asked for on every command).
 **Examples:**
 ```sh
 navig cabinet passphrase set
+```
+
+## `navig cabinet remind`
+**Status:** `stable` · **Since:** 
+Send the expiry reminders that are due now (the daemon also does this daily).
+**Examples:**
+```sh
+navig cabinet remind
 ```
 
 ## `navig cabinet remove`
@@ -2812,7 +2828,7 @@ navig cron status
 
 ## `navig dashboard`
 **Status:** `stable` · **Since:** 
-Real-time operations dashboard with host status, Docker, and history.
+Live operator console: identity, services, safety, hosts and activity.
 **Examples:**
 ```sh
 navig dashboard
@@ -8243,6 +8259,22 @@ Show every notification type and the channels it currently routes to.
 navig notify types
 ```
 
+## `navig os serve`
+**Status:** `stable` · **Since:** 
+Serve NAVIG OS to a browser from this machine.
+**Examples:**
+```sh
+navig os serve
+```
+
+## `navig os status`
+**Status:** `stable` · **Since:** 
+Is the web server up, and is it set up?
+**Examples:**
+```sh
+navig os status
+```
+
 ## `navig output-style create`
 **Status:** `stable` · **Since:** 
 Scaffold a new output style file.
@@ -8301,7 +8333,7 @@ navig paperwork echeances
 
 ## `navig paperwork handoff`
 **Status:** `stable` · **Since:** 
-File the manifest's non-company documents into the spaces that own them.
+File the manifest's non-company documents where they belong.
 **Examples:**
 ```sh
 navig paperwork handoff

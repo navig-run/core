@@ -10014,8 +10014,11 @@ class TelegramCommandsMixin:
         else:
             logger.warning("Failed to register bot commands")
 
-        # Use the already-resolved deck_url (no second config read)
-        if deck_url:
+        # Use the already-resolved deck_url (no second config read). When the deck was
+        # deployed by `navig miniapp deploy`, that command owns the menu button (it
+        # carries the key AND the v= cache-bust, and re-points on rotation) — setting
+        # it again here on every boot would race it with a second writer.
+        if deck_url and not self._miniapp_deck_base():
             await self._api_call(
                 "setChatMenuButton",
                 {
@@ -10028,8 +10031,36 @@ class TelegramCommandsMixin:
             )
             logger.info("Registered Deck menu button: %s", deck_url)
 
+    def _miniapp_deck_base(self) -> str:
+        """``deck.public_url`` when the deck was deployed by ``navig miniapp deploy``."""
+        try:
+            from navig.config import ConfigManager
+
+            return str(ConfigManager().get("deck.public_url", "") or "").strip()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("Could not read deck.public_url: %s", e)
+            return ""
+
     def _get_deck_url(self) -> str | None:
-        """Resolve the Deck WebApp URL from config."""
+        """The URL a Telegram ``web_app`` button should open.
+
+        For a deck deployed with ``navig miniapp deploy`` this is the KEYED entry link
+        (``/connect?key=…&v=…``). A bare deck URL carries no key, so the Mini App sends
+        no Bearer and the Lighthouse edge answers a bare 401 before the brain ever sees
+        a request — "Session expired" on every launch. Falls back to the legacy
+        ``telegram.deck_url`` only when no Mini App deck is deployed.
+        """
+        base = self._miniapp_deck_base()
+        if base:
+            try:
+                from navig.commands.miniapp import _connect_url
+                from navig.config import ConfigManager
+
+                sig = str(ConfigManager().get("deck.bundle_sig", "") or "").strip()
+                return _connect_url(base, version=sig)
+            except Exception as e:  # noqa: BLE001
+                logger.debug("Could not build keyed deck URL: %s", e)
+
         import yaml
 
         for cfg_path in [

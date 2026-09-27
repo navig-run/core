@@ -62,7 +62,15 @@ EXTENDED_CACHE_BETA_HEADER: str = "prompt-caching-2024-07-31"
 # retained only for back-compat and is intentionally unused by AnthropicClient).
 _CACHEABLE_MODELS: frozenset[str] = frozenset(
     {
-        # Current models
+        # Current models. The Claude 5 family was missing, so `supports_caching`
+        # returned False and conv/agent.py sent no cache_control for them — every
+        # turn paid full input price for a prefix the API would have cached at
+        # 0.1x (0.05x on Opus 5.5). Per platform.claude.com pricing, 2026-09-27.
+        "claude-fable-5-1",
+        "claude-fable-5",
+        "claude-opus-5-5",
+        "claude-opus-5",
+        "claude-sonnet-5",
         "claude-opus-4-8",
         "claude-opus-4-7",
         "claude-opus-4-6",
@@ -86,15 +94,12 @@ _CACHEABLE_MODELS: frozenset[str] = frozenset(
 
 def supports_caching(model: str) -> bool:
     """Return True if *model* is known to support Anthropic prompt caching."""
-    model_lower = model.lower()
-    # Exact match first
-    if model_lower in _CACHEABLE_MODELS:
-        return True
-    # Prefix match for new model aliases
-    for m in _CACHEABLE_MODELS:
-        if model_lower.startswith(m) or m.startswith(model_lower):
-            return True
-    return False
+    # Same rule the cost trackers use: the model, or a VARIANT of a listed one
+    # (dated snapshot, "@" Vertex version). The old test also matched in REVERSE,
+    # so a bare "claude" or "claude-opus" read as cacheable.
+    from navig.agent.usage_tracker import model_price_key
+
+    return model_price_key(model.lower(), _CACHEABLE_MODELS) is not None
 
 
 def apply_anthropic_cache_control(

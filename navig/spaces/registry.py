@@ -265,6 +265,34 @@ def rename(path: str | Path, new_id: str) -> str | None:
     return old_id
 
 
+def repath(old_path: str | Path, new_path: str | Path) -> bool:
+    """Point the row for *old_path* at *new_path*, preserving every other field.
+
+    The registry keys on PATH, so a space whose FOLDER moves (``space rename
+    --move-folder``) needs its row carried across — and `forget` + `register` would
+    reset the columns that are decisions rather than derivations: ``enabled``,
+    ``trusted``, ``last_active``. Refuses (returns False) when *new_path* already has
+    a row, so two rows can never claim one folder. The ``active`` pointer is carried
+    too when it named the old path.
+    """
+    reg = _load_for_mutation()
+    if reg is None:
+        return False  # registry locked - move nothing rather than half of it
+    op, np = _norm(old_path), _norm(new_path)
+    if op == np:
+        return False
+    entry = next((e for e in reg["spaces"] if _norm(e.get("path", "")) == op), None)
+    if entry is None:
+        return False
+    if any(_norm(e.get("path", "")) == np for e in reg["spaces"]):
+        return False
+    entry["path"] = np
+    if _norm(reg.get("active") or "") == op:
+        reg["active"] = np
+    save_registry(reg)
+    return True
+
+
 def is_enabled(path: str | Path) -> bool:
     """Unknown spaces default to enabled (they get auto-registered on discovery)."""
     e = next((x for x in load_registry()["spaces"] if _norm(x.get("path", "")) == _norm(path)), None)

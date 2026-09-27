@@ -114,6 +114,20 @@ async def _loop(gateway) -> None:
         except Exception:
             logger.debug("notify: email tick skipped", exc_info=True)
 
+        # 4) Document expiry reminders (passports, ID cards, insurance) from the optional
+        # navig-cabinet plugin. Same soft-import contract as email: skipped when the
+        # plugin isn't installed or the "cabinet" module is off. Cheap when nothing is
+        # due — it reads a small index once a day and never opens the cabinet itself.
+        try:
+            from navig.modules.registry import get_registry
+
+            if get_registry().is_enabled("cabinet"):
+                from navig_cabinet.reminders import tick as cabinet_tick
+
+                await cabinet_tick(gateway)
+        except Exception:
+            logger.debug("notify: cabinet tick skipped", exc_info=True)
+
         await asyncio.sleep(_TICK_SECONDS)
 
 

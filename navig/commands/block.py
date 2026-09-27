@@ -203,9 +203,10 @@ def block_verify(target: str = typer.Argument(..., help="Block id or path to a B
     """Lint a block manifest (does NOT execute it)."""
     from navig.blocks import find_block, validate_block
     from navig.blocks.loader import BlockError, lint_block, parse_block_file
+    from navig.platform.paths import resolve_user_path
 
     block = None
-    p = Path(target)
+    p = resolve_user_path(target)
     try:
         if p.exists():
             bf = p / "BLOCK.md" if p.is_dir() else p
@@ -277,8 +278,9 @@ def block_sign(block_id: str = typer.Argument(..., help="Block id (or path to a 
     from navig.blocks import find_block
     from navig.blocks.loader import parse_block_file
     from navig.license.device_keys import sign_bytes
+    from navig.platform.paths import resolve_user_path
 
-    p = Path(block_id)
+    p = resolve_user_path(block_id)
     if p.exists():
         bf = p / "BLOCK.md" if p.is_dir() else p
         block = parse_block_file(bf)
@@ -307,8 +309,11 @@ def block_verify_receipt(
     verifiable as a whole and not only at its top level.
     """
     from navig.license.device_keys import verify_receipt_dict
+    from navig.platform.paths import resolve_user_path
 
-    p = Path(path)
+    # A receipt downloaded next to you (navig.run/proof: "download, then verify")
+    # is a relative path typed in YOUR directory — not inside the active space.
+    p = resolve_user_path(path)
     if not p.exists():
         if as_json:
             ch.raw_print(json.dumps({"error": "receipt not found", "path": str(path)}, indent=2))

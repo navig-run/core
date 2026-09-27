@@ -37,14 +37,18 @@ class TestIsSupported:
         with patch.object(svc_mod.sys, "platform", "linux"):
             assert svc_mod._is_supported() is True
 
-    def test_darwin_not_supported(self):
+    def test_darwin_supported_via_launchd(self):
         with patch.object(svc_mod.sys, "platform", "darwin"):
+            assert svc_mod._is_supported() is True
+
+    def test_other_platforms_not_supported(self):
+        with patch.object(svc_mod.sys, "platform", "freebsd13"):
             assert svc_mod._is_supported() is False
 
 
 class TestPlan:
     def test_returns_empty_on_unsupported_platform(self):
-        with patch.object(svc_mod.sys, "platform", "darwin"):
+        with patch.object(svc_mod.sys, "platform", "freebsd13"):
             assert svc_mod.plan(_ctx()) == []
 
     def test_returns_empty_when_service_installed(self):
@@ -68,7 +72,7 @@ class TestPlan:
 
 class TestApply:
     def test_skipped_on_unsupported_platform(self):
-        with patch.object(svc_mod.sys, "platform", "darwin"):
+        with patch.object(svc_mod.sys, "platform", "freebsd13"):
             result = svc_mod.apply(_action(), _ctx())
         assert result.state == ModuleState.SKIPPED
 

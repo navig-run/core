@@ -61,8 +61,12 @@ class TestIsSupported:
         with patch.object(sys, "platform", "linux"):
             assert svc._is_supported() is True
 
-    def test_false_on_darwin(self):
+    def test_true_on_darwin_via_launchd(self):
         with patch.object(sys, "platform", "darwin"):
+            assert svc._is_supported() is True
+
+    def test_false_on_other_platforms(self):
+        with patch.object(sys, "platform", "freebsd13"):
             assert svc._is_supported() is False
 
 

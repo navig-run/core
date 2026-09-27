@@ -29,6 +29,26 @@ This checklist is for NAVIG maintainers preparing an official release.
   ```
 - [ ] **Review security** considerations (credentials, input validation)
 
+## Before you release: first-party packages core cannot install without
+
+`navig doctor` → **Release · hard deps** checks every `navig-*` package in core's REQUIRED
+`dependencies`. When one is not on PyPI, the next core wheel cannot be installed by anyone,
+and `release.sh`'s install gate refuses to ship it. As of 2026-09-27 that is
+**`navig-contacts`** (a hard dependency since #1306, never uploaded).
+
+It cannot simply be published first: it imports core names the published 3.25.0 does not
+have (`scripts/check_plugin_core_floor.py` lists them), so its own floor must name the NEW
+core. The order, in one session:
+
+1. `python tools/version_bump.py bump minor --commit` — core becomes X.Y.Z.
+2. Raise `navig>=` in the hard dep's `pyproject.toml` to X.Y.Z, commit (PR to `main`).
+3. `node scripts/publish-plugins.mjs navig-contacts --publish` — for the minutes until
+   step 4 lands it asks for a core PyPI does not have yet; nothing depends on it standalone.
+4. `bash tools/release.sh X.Y.Z --publish` — the install gate now resolves it.
+
+The same floor rule applies to every plugin `check_plugin_core_floor.py` flags (cabinet,
+email, github, pipeline, audio): raise each floor to X.Y.Z after core ships, then publish.
+
 ## Build, tag, publish, release — one script
 
 ```bash

@@ -1,7 +1,7 @@
 """The guarded door to a language model — closed by default, local-first.
 
-Shared by the mailroom plugins (navig-email digests/follow-ups, navig-paperwork letter
-drafts) and available to any command that wants the same contract: opt-in only, print the
+Shared by the mailroom plugins (navig-email digests/follow-ups, `navig paperwork` letter drafts
+in navig-cabinet) and available to any command that wants the same contract: opt-in only, print the
 provider, refuse a non-local provider unless the caller passed ``--allow-cloud``.
 
 Three things make this more than a wrapper around ``llm_generate``:
@@ -28,7 +28,17 @@ from dataclasses import dataclass
 
 logger = logging.getLogger("navig.llm.guard")
 
-LOCAL_PROVIDERS = frozenset({"ollama", "llamacpp", "airllm", "mcp_bridge"})
+#: Providers whose inference runs on THIS machine — the set the privacy door uses.
+LOCAL_PROVIDERS = frozenset({"ollama", "llamacpp", "airllm"})
+
+#: Providers that need no navig-held credential.
+#:
+#: ``mcp_bridge`` reaches a model over a localhost WebSocket to the VS Code bridge, so
+#: navig holds no key for it — but the model on the other end is GitHub Copilot, and the
+#: text does leave the machine. A local transport is not local inference. It belongs
+#: here, and deliberately NOT in ``LOCAL_PROVIDERS``: counting it as local would let a
+#: caller that refused cloud send its document to Copilot anyway.
+KEYLESS_PROVIDERS = LOCAL_PROVIDERS | {"mcp_bridge"}
 
 #: How long to wait for a just-started Ollama to answer.
 SERVER_START_TIMEOUT = 25.0

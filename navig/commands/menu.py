@@ -135,7 +135,7 @@ def _exec(args: list[str]) -> int:
             "    (this message means Node/npx isn't on PATH).\n"
             "  • Install once, globally:   npm i -g navig-menu\n"
             "  • Point at a prebuilt binary:   set NAVIG_MENU_BIN=/path/to/menu\n"
-            "    (downloads: https://github.com/navig-run/menu/releases)",
+            "    (source: https://github.com/navig-run/plugins/tree/main/navig-menu)",
             fg=typer.colors.YELLOW,
         )
         return 1

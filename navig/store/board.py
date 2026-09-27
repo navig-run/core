@@ -971,6 +971,20 @@ class BoardStore(BaseStore):
             )
         ]
 
+    def reminder_is_todo(self, reminder_id: int) -> bool:
+        """Does this reminder row belong to a todo?
+
+        The reverse of `todo_reminder_ids`, for the delivery side: a reminder carries
+        no idea what created it, so this link table is the only way to tell a todo's
+        ping apart from a `/remindme` one — which is what lets the Todo extension
+        switch stop its own reminders without touching anybody else's.
+        """
+        row = self._read_one(
+            "SELECT 1 AS hit FROM board_todo_reminder WHERE reminder_id = ? LIMIT 1",
+            (int(reminder_id),),
+        )
+        return row is not None
+
     def unlink_reminders(self, card_id: str) -> list[int]:
         """Forget this todo's reminders and return their ids, so the caller can cancel
         them in the reminder table.

@@ -302,16 +302,16 @@ async def test_media_business_message_keeps_the_file_id(biz, monkeypatch):
     _no_actions(monkeypatch)
     ch = _ch("8490556839:ABC")
     msg = {
-        "chat": {"id": 429106811, "first_name": "Yck", "username": "a646f6e7474727974686174"},
+        "chat": {"id": 100200300, "first_name": "Sam", "username": "sam_example"},
         "message_id": 1123542, "business_connection_id": "bc1", "date": 1790037882,
-        "from": {"id": 777, "first_name": "subdose"},
+        "from": {"id": 777, "first_name": "operator"},
         "photo": [{"file_id": "small", "file_unique_id": "u-small", "file_size": 10},
                   {"file_id": "BIG-FILE-ID", "file_unique_id": "u-big", "file_size": 999}],
         # no caption — exactly the chars=0 message the 02:45 alert called "not cached"
     }
     await b.handle_business_message(ch, msg)
     store = _store()
-    row = store.get_message_by_ref(429106811, 1123542)
+    row = store.get_message_by_ref(100200300, 1123542)
     assert row is not None and row["media_ref"]
     media = store.get_media(row["media_ref"])
     assert media["kind"] == "photo" and media["file_id"] == "BIG-FILE-ID"
@@ -357,25 +357,25 @@ def _capture_dispatch(monkeypatch, *, delivered=True):
 async def test_deleted_captionless_photo_is_named_and_resent_not_called_uncached(biz, monkeypatch):
     calls = _capture_dispatch(monkeypatch)
     store = _store()
-    _seed(store, 429106811, 1123542, sender_id=777, sender_name="subdose",
+    _seed(store, 100200300, 1123542, sender_id=777, sender_name="operator",
           media={"file_id": "BIG-FILE-ID", "file_unique_id": "u-big", "kind": "photo"})
     ch = _ch("8490556839:ABC")
     payload = {"business_connection_id": "bc1", "message_ids": [1123542],
-               "chat": {"id": 429106811, "type": "private", "first_name": "Yck",
-                        "username": "a646f6e7474727974686174"}}
+               "chat": {"id": 100200300, "type": "private", "first_name": "Sam",
+                        "username": "sam_example"}}
     await b.handle_deleted_business_messages(ch, payload)
 
     assert len(calls) == 1
     body = calls[0]["body"]
     assert "not cached" not in body
-    assert "In Yck:" in body                   # the person's name, not the hex handle
+    assert "In Sam:" in body                   # the person's name, not the hex handle
     assert "• you · 09:05 · 📷 photo" in body   # WHO · WHEN · WHAT, on every line
     # The photo itself comes back to the owner's DM by file_id.
     sends = [c for c in ch._api_call.call_args_list if c.args and c.args[0] == "sendPhoto"]
     assert sends and sends[0].args[1]["photo"] == "BIG-FILE-ID"
     assert sends[0].args[1]["chat_id"] == "777"
-    assert sends[0].args[1]["caption"].startswith("🗑 Deleted in Yck")
-    assert store.get_message_by_ref(429106811, 1123542)["deleted"] is True
+    assert sends[0].args[1]["caption"].startswith("🗑 Deleted in Sam")
+    assert store.get_message_by_ref(100200300, 1123542)["deleted"] is True
 
 
 async def test_deleted_unknown_message_says_never_seen(biz, monkeypatch):
@@ -395,21 +395,21 @@ async def test_deleted_unknown_message_says_never_seen(biz, monkeypatch):
 async def test_one_alert_per_deletion_event_lists_every_message(biz, monkeypatch):
     calls = _capture_dispatch(monkeypatch)
     store = _store()
-    _seed(store, 555, 1, sender_id=777, sender_name="subdose", text="see you at 9")
-    _seed(store, 555, 2, sender_id=555, sender_name="Yck", text="ok 👍")
-    _seed(store, 555, 3, sender_id=555, sender_name="Yck",
+    _seed(store, 555, 1, sender_id=777, sender_name="operator", text="see you at 9")
+    _seed(store, 555, 2, sender_id=555, sender_name="Sam", text="ok 👍")
+    _seed(store, 555, 3, sender_id=555, sender_name="Sam",
           media={"file_id": "V1", "file_unique_id": "uv1", "kind": "voice"})
     ch = _ch("8490556839:ABC")
     payload = {"business_connection_id": "bc1", "message_ids": [1, 2, 3, 4],
-               "chat": {"id": 555, "type": "private", "first_name": "Yck"}}
+               "chat": {"id": 555, "type": "private", "first_name": "Sam"}}
     await b.handle_deleted_business_messages(ch, payload)
 
     assert len(calls) == 1                         # was: one DM per id
     assert calls[0]["title"] == "🗑 4 messages deleted"
     body = calls[0]["body"]
     assert "• you · 09:05 — see you at 9" in body
-    assert "• Yck · 09:05 — ok 👍" in body
-    assert "• Yck · 09:05 · 🎤 voice" in body
+    assert "• Sam · 09:05 — ok 👍" in body
+    assert "• Sam · 09:05 · 🎤 voice" in body
     assert body.count("· not seen") == 1           # id 4 was never cataloged
     # …and for a chat NAVIG DOES hold, "not seen" explains itself rather than
     # reading as a failure: the message is simply older than the watch.
@@ -426,7 +426,7 @@ async def test_media_is_not_resent_when_the_alert_was_not_delivered(biz, monkeyp
     media copies must not bypass them."""
     _capture_dispatch(monkeypatch, delivered=False)
     store = _store()
-    _seed(store, 555, 1, sender_id=777, sender_name="subdose",
+    _seed(store, 555, 1, sender_id=777, sender_name="operator",
           media={"file_id": "P1", "file_unique_id": "up1", "kind": "photo"})
     ch = _ch("8490556839:ABC")
     await b.handle_deleted_business_messages(
@@ -438,11 +438,11 @@ async def test_a_whole_chat_clear_is_capped_to_a_readable_list(biz, monkeypatch)
     calls = _capture_dispatch(monkeypatch)
     store = _store()
     for i in range(1, 61):
-        _seed(store, 555, i, sender_id=777, sender_name="subdose", text=f"line {i}")
+        _seed(store, 555, i, sender_id=777, sender_name="operator", text=f"line {i}")
     ch = _ch("8490556839:ABC")
     await b.handle_deleted_business_messages(
         ch, {"business_connection_id": "bc1", "message_ids": list(range(1, 61)),
-             "chat": {"id": 555, "first_name": "Yck"}})
+             "chat": {"id": 555, "first_name": "Sam"}})
     assert calls[0]["title"] == "🗑 60 messages deleted"
     body = calls[0]["body"]
     assert body.count("\n• ") == b._LINES_MAX + 1
@@ -451,7 +451,7 @@ async def test_a_whole_chat_clear_is_capped_to_a_readable_list(biz, monkeypatch)
 
 
 def test_chat_label_prefers_the_name_over_the_handle():
-    assert b._chat_label({"id": 1, "first_name": "Yck", "username": "a646f6e7474727974686174"}) == "Yck"
+    assert b._chat_label({"id": 1, "first_name": "Sam", "username": "sam_example"}) == "Sam"
     assert b._chat_label({"id": 1, "title": "Ops room"}) == "Ops room"
     assert b._chat_label({"id": 1, "username": "schematrix_bot"}, "SCHEMA") == "SCHEMA"
     assert b._chat_label({"id": 1, "username": "schematrix_bot"}) == "@schematrix_bot"
@@ -471,13 +471,13 @@ async def test_every_line_says_when_the_message_was_sent(biz, monkeypatch):
     calls = _capture_dispatch(monkeypatch)
     store = _store()
     old = datetime.now().replace(month=1, day=21, hour=17, minute=18, second=0, microsecond=0)
-    _seed(store, 555, 1, sender_id=777, sender_name="subdose", text="from january",
+    _seed(store, 555, 1, sender_id=777, sender_name="operator", text="from january",
           date=str(int(old.timestamp())))
-    _seed(store, 555, 2, sender_id=777, sender_name="subdose", text="from today")
+    _seed(store, 555, 2, sender_id=777, sender_name="operator", text="from today")
     ch = _ch("8490556839:ABC")
     await b.handle_deleted_business_messages(
         ch, {"business_connection_id": "bc1", "message_ids": [1, 2],
-             "chat": {"id": 555, "first_name": "Yck"}})
+             "chat": {"id": 555, "first_name": "Sam"}})
 
     body = calls[0]["body"]
     assert "21 Jan 17:18 — from january" in body   # older → day + time, never bare
@@ -485,23 +485,23 @@ async def test_every_line_says_when_the_message_was_sent(biz, monkeypatch):
 
 
 async def test_a_counterparty_is_named_not_handled(biz, monkeypatch):
-    """The DM called the chat "Yck 🧢" and its owner "a646f6e7474727974686174" in
+    """The DM called the chat "Sam 🧢" and its owner "sam_example" in
     the same two lines — the handle came from `sender_name`, which was stored
     username-first. A private chat's counterparty IS the chat, so the chat's own
     label wins, which also rescues every row already written the old way."""
     calls = _capture_dispatch(monkeypatch)
     store = _store()
-    _seed(store, 429106811, 5, sender_id=429106811,
-          sender_name="a646f6e7474727974686174", text="gridecho.blog")
+    _seed(store, 100200300, 5, sender_id=100200300,
+          sender_name="sam_example", text="example.blog")
     ch = _ch("8490556839:ABC")
     await b.handle_deleted_business_messages(
         ch, {"business_connection_id": "bc1", "message_ids": [5],
-             "chat": {"id": 429106811, "type": "private", "first_name": "Yck 🧢",
-                      "username": "a646f6e7474727974686174"}})
+             "chat": {"id": 100200300, "type": "private", "first_name": "Sam 🧢",
+                      "username": "sam_example"}})
 
     body = calls[0]["body"]
-    assert "a646f6e7474727974686174" not in body
-    assert "• Yck 🧢 · 09:05 — gridecho.blog" in body
+    assert "sam_example" not in body
+    assert "• Sam 🧢 · 09:05 — example.blog" in body
 
 
 async def test_a_group_keeps_per_sender_names(biz, monkeypatch):
@@ -520,7 +520,7 @@ async def test_a_group_keeps_per_sender_names(biz, monkeypatch):
 async def test_not_seen_distinguishes_an_older_message_from_an_unwatched_chat(biz, monkeypatch):
     calls = _capture_dispatch(monkeypatch)
     store = _store()
-    _seed(store, 555, 1, sender_id=777, sender_name="subdose", text="anything")
+    _seed(store, 555, 1, sender_id=777, sender_name="operator", text="anything")
     ch = _ch("8490556839:ABC")
 
     # A chat NAVIG holds → the deletion is simply older than the watch.
@@ -539,9 +539,9 @@ async def test_a_file_less_message_is_named_not_called_empty(biz, monkeypatch):
     "(no text)", which reads as a capture failure for a message NAVIG saw fine."""
     calls = _capture_dispatch(monkeypatch)
     store = _store()
-    _seed(store, 555, 1, sender_id=777, sender_name="subdose",
+    _seed(store, 555, 1, sender_id=777, sender_name="operator",
           raw={"business": True, "content": "poll"})
-    _seed(store, 555, 2, sender_id=777, sender_name="subdose",
+    _seed(store, 555, 2, sender_id=777, sender_name="operator",
           raw={"business": True, "content": "location"})
     ch = _ch("8490556839:ABC")
     await b.handle_deleted_business_messages(
@@ -555,7 +555,7 @@ async def test_a_file_less_message_is_named_not_called_empty(biz, monkeypatch):
 async def test_an_edited_message_is_marked(biz, monkeypatch):
     calls = _capture_dispatch(monkeypatch)
     store = _store()
-    _seed(store, 555, 1, sender_id=777, sender_name="subdose", text="final text",
+    _seed(store, 555, 1, sender_id=777, sender_name="operator", text="final text",
           edited_at="2026-09-22T09:06:00+02:00")
     ch = _ch("8490556839:ABC")
     await b.handle_deleted_business_messages(
@@ -569,7 +569,7 @@ async def test_a_failed_media_resend_is_reported_not_swallowed(biz, monkeypatch)
     teaches the operator to distrust the ones that work."""
     _capture_dispatch(monkeypatch)
     store = _store()
-    _seed(store, 555, 1, sender_id=777, sender_name="subdose",
+    _seed(store, 555, 1, sender_id=777, sender_name="operator",
           media={"file_id": "DEAD", "file_unique_id": "u1", "kind": "photo"})
     ch = _ch("8490556839:ABC")
     ch._api_call = AsyncMock(side_effect=lambda m, d=None: None if m == "sendPhoto" else {"message_id": 1})
@@ -585,7 +585,7 @@ async def test_a_failed_media_resend_is_reported_not_swallowed(biz, monkeypatch)
 async def test_a_successful_resend_sends_no_failure_note(biz, monkeypatch):
     _capture_dispatch(monkeypatch)
     store = _store()
-    _seed(store, 555, 1, sender_id=777, sender_name="subdose",
+    _seed(store, 555, 1, sender_id=777, sender_name="operator",
           media={"file_id": "OK", "file_unique_id": "u1", "kind": "photo"})
     ch = _ch("8490556839:ABC")
     await b.handle_deleted_business_messages(
@@ -602,7 +602,7 @@ async def test_a_file_less_message_keeps_its_content_kind(biz, monkeypatch):
     ch = _ch("8490556839:ABC")
     await b.handle_business_message(ch, {
         "chat": {"id": 555}, "message_id": 8, "business_connection_id": "bc1", "date": 1,
-        "from": {"id": 777, "first_name": "subdose"},
+        "from": {"id": 777, "first_name": "operator"},
         "location": {"latitude": 48.85, "longitude": 2.35},
     })
     assert _store().get_message_by_ref(555, 8)["content"] == "location"
@@ -615,7 +615,7 @@ async def test_a_media_message_is_not_relabelled_by_a_trailing_field(biz, monkey
     ch = _ch("8490556839:ABC")
     await b.handle_business_message(ch, {
         "chat": {"id": 555}, "message_id": 9, "business_connection_id": "bc1", "date": 1,
-        "from": {"id": 777, "first_name": "subdose"},
+        "from": {"id": 777, "first_name": "operator"},
         "photo": [{"file_id": "P", "file_unique_id": "up", "file_size": 9}],
         "story": {"id": 3},
     })
@@ -628,11 +628,11 @@ async def test_a_sender_is_stored_by_name_going_forward(biz, monkeypatch):
     ch = _ch("8490556839:ABC")
     await b.handle_business_message(ch, {
         "chat": {"id": 555}, "message_id": 10, "business_connection_id": "bc1", "date": 1,
-        "from": {"id": 555, "first_name": "Yck", "last_name": "🧢",
-                 "username": "a646f6e7474727974686174"},
+        "from": {"id": 555, "first_name": "Sam", "last_name": "🧢",
+                 "username": "sam_example"},
         "text": "hi",
     })
-    assert _store().get_message_by_ref(555, 10)["sender_name"] == "Yck 🧢"
+    assert _store().get_message_by_ref(555, 10)["sender_name"] == "Sam 🧢"
 
 
 async def test_a_later_update_cannot_erase_stored_text(biz, monkeypatch):
@@ -642,7 +642,7 @@ async def test_a_later_update_cannot_erase_stored_text(biz, monkeypatch):
     ch = _ch("8490556839:ABC")
     edited_at_ts = int(datetime.now().timestamp())
     base = {"chat": {"id": 555}, "message_id": 11, "business_connection_id": "bc1",
-            "date": edited_at_ts - 60, "from": {"id": 777, "first_name": "subdose"}}
+            "date": edited_at_ts - 60, "from": {"id": 777, "first_name": "operator"}}
     await b.handle_business_message(ch, {**base, "text": "the original words"})
     await b.handle_business_message(ch, {**base, "edit_date": edited_at_ts}, edited=True)
 

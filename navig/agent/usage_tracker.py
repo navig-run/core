@@ -35,29 +35,57 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────
 # Pricing table  (USD per 1,000,000 tokens)
 # Format: {model_name: (input_per_M, output_per_M, cache_read_per_M, cache_write_per_M)}
+#
+# ⚠ These are FACTS about someone else's price list, and they rot. Audited
+# 2026-09-27 against each provider's own pricing page (standard tier, shortest
+# context band): OpenAI developers.openai.com/api/docs/pricing · Anthropic
+# platform.claude.com/docs/en/about-claude/pricing · xAI docs.x.ai/docs/models ·
+# Google ai.google.dev/gemini-api/docs/pricing. That audit found o3 billed 5x
+# too high, Opus 4.5 3x, Gemini 2.5 Flash's output 8x too LOW, and the provider
+# defaults grok-4.6 and the Claude 5 family not priced at all (so $0.00).
+# Entries NOT on a current page (grok-3*, Mistral, gemini-1.5*) were left as
+# they were — unverified, not confirmed. Re-audit by opening those pages.
 # ─────────────────────────────────────────────────────────────
 
 PRICE_TABLE: dict[str, tuple[float, float, float, float]] = {
     # OpenAI
+    # GPT-4.1 family — OpenAI published pricing at launch (2025-04-14). These
+    # were priced as classic "gpt-4" by the old prefix scan; gpt-4.1 is
+    # OpenAI's catalog head (the credential probe and substitution default).
+    # GPT-5 base models — in the openai manifest, live, and unpriced until
+    # 2026-09-27 (developers.openai.com). gpt-5-nano is deliberately absent:
+    # the size-suffix rule keeps it from inheriting gpt-5's price.
+    "gpt-5":                     (1.25,  10.00, 0.125, 0.00),
+    "gpt-5-mini":                (0.25,   2.00, 0.025, 0.00),
+    "gpt-4.1":                   (2.00,   8.00, 0.50,  0.00),
+    "gpt-4.1-mini":              (0.40,   1.60, 0.10,  0.00),
+    "gpt-4.1-nano":              (0.10,   0.40, 0.025, 0.00),
     "gpt-4o":                    (2.50,  10.00, 1.25,  0.00),
     "gpt-4o-mini":               (0.15,   0.60, 0.075, 0.00),
     "gpt-4-turbo":               (10.00,  30.00, 0.00, 0.00),
     "gpt-4":                     (30.00,  60.00, 0.00, 0.00),
     "gpt-3.5-turbo":             (0.50,   1.50,  0.00, 0.00),
-    "o1":                        (15.00,  60.00, 0.00, 0.00),
+    "o1":                        (15.00,  60.00, 7.50, 0.00),
     "o1-mini":                   (3.00,   12.00, 0.00, 0.00),
-    "o3":                        (10.00,  40.00, 0.00, 0.00),
-    "o3-mini":                   (1.10,   4.40,  0.00, 0.00),
-    "o4-mini":                   (1.10,   4.40,  0.00, 0.00),
-    # Anthropic Claude — current (exact entries must precede the "claude-opus-4"
-    # prefix entry below, else _lookup_price's prefix match returns 4.5 pricing).
+    "o3":                        (2.00,    8.00, 0.50, 0.00),   # was 10/40 — the pre-cut price
+    "o3-mini":                   (1.10,   4.40,  0.55, 0.00),
+    "o4-mini":                   (1.10,   4.40,  0.275, 0.00),
+    # Anthropic Claude — current. (Order no longer matters: the longest priced
+    # key wins, so "claude-opus-4-8" can never fall through to "claude-opus-4".)
+    # Claude 5 family — none was priced, so every turn on them read $0.00.
+    # Opus 5.5's cache hit is 0.05x input, not the usual 0.1x (per the page).
+    "claude-fable-5-1":          (10.00,  50.00, 0.25, 12.50),
+    "claude-fable-5":            (10.00,  50.00, 1.00, 12.50),
+    "claude-opus-5-5":           (4.00,   20.00, 0.20,  5.00),
+    "claude-opus-5":             (5.00,   25.00, 0.50,  6.25),
+    "claude-sonnet-5":           (2.00,   10.00, 0.20,  2.50),
     "claude-opus-4-8":           (5.00,   25.00, 0.50,  6.25),
     "claude-opus-4-7":           (5.00,   25.00, 0.50,  6.25),
     "claude-opus-4-6":           (5.00,   25.00, 0.50,  6.25),
     "claude-sonnet-4-6":         (3.00,   15.00, 0.30,  3.75),
     "claude-haiku-4-5":          (1.00,    5.00, 0.10,  1.25),
     # Anthropic Claude — legacy
-    "claude-opus-4-5":           (15.00,  75.00, 1.50, 18.75),
+    "claude-opus-4-5":           (5.00,   25.00, 0.50,  6.25),   # was 15/75 — that is Opus 4 / 4.1
     "claude-opus-4":             (15.00,  75.00, 1.50, 18.75),
     "claude-sonnet-4-5":         (3.00,   15.00, 0.30,  3.75),
     "claude-sonnet-4":           (3.00,   15.00, 0.30,  3.75),
@@ -66,8 +94,8 @@ PRICE_TABLE: dict[str, tuple[float, float, float, float]] = {
     "claude-3-opus-20240229":    (15.00,  75.00, 1.50, 18.75),
     "claude-3-haiku-20240307":   (0.25,   1.25,  0.03,  0.30),
     # Google Gemini
-    "gemini-2.5-pro":            (1.25,   5.00,  0.00,  0.00),
-    "gemini-2.5-flash":          (0.075,  0.30,  0.00,  0.00),
+    "gemini-2.5-pro":            (1.25,  10.00,  0.125, 0.00),  # output was 5.00 (half)
+    "gemini-2.5-flash":          (0.30,   2.50,  0.03,  0.00),  # was 0.075/0.30 — 1.5-Flash's
     "gemini-1.5-pro":            (1.25,   5.00,  0.00,  0.00),
     "gemini-1.5-flash":          (0.075,  0.30,  0.00,  0.00),
     # Nous Research (via OpenRouter)
@@ -78,6 +106,11 @@ PRICE_TABLE: dict[str, tuple[float, float, float, float]] = {
     "mistral-small-latest":      (1.00,   3.00,  0.00,  0.00),
     # xAI Grok (published per-M pricing). grok-3-mini is the fast-chat /
     # heartbeat default, so it's worth tracking accurately instead of $0.00.
+    # grok-4.6 is xAI's catalog head (credential probe + substitution default)
+    # and was unpriced. Short-prompt tier; long prompts cost 2x.
+    "grok-4.6":                  (2.00,   6.00,  0.50,  0.00),
+    "grok-4.5":                  (2.00,   6.00,  0.30,  0.00),
+    "grok-4.3":                  (1.25,   2.50,  0.20,  0.00),
     "grok-3-mini":               (0.30,   0.50,  0.00,  0.00),
     "grok-3":                    (3.00,  15.00,  0.00,  0.00),
     "grok-2":                    (2.00,  10.00,  0.00,  0.00),
@@ -90,18 +123,62 @@ PRICE_TABLE: dict[str, tuple[float, float, float, float]] = {
 }
 
 
+#: What may follow a priced key for a model id to be a VARIANT of it — a dated
+#: snapshot (``-20241022``), a preview/speed suffix (``-preview-05-06``,
+#: ``-fast``), a Vertex version (``@20250514``), an ollama tag (``:8b``).
+#: ⚠ ``.`` is deliberately absent: it CONTINUES a version number, so ``gpt-4``
+#: must not price ``gpt-4.1``.
+_VARIANT_SEPARATORS = ("-", "@", ":")
+#: A SIZE suffix after a priced key names a different, cheaper model, not a
+#: variant: `gemini-2.5-flash-lite` is $0.10/$0.40 against Flash's $0.30/$2.50,
+#: `gpt-5-nano` is a fraction of `gpt-5`. Inheriting the bigger model's price
+#: over-bills it several times over, so these stay unpriced until listed.
+_SIZE_SUFFIXES = ("mini", "nano", "lite", "small", "tiny", "micro")
+
+
+def model_price_key(model: str, keys) -> str | None:
+    """The priced key that *model* is, or is a variant of — else None.
+
+    Exact match first; otherwise the LONGEST key such that *model* is that key
+    followed by a variant separator. Two rules the old scan broke:
+
+    * **Longest wins, not dict order.** A first-match scan made correctness
+      depend on declaration order — this table carried a comment warning that
+      exact entries "must precede" a shorter prefix, which is a rule written
+      down because nothing enforced it.
+    * **A version continues past ``.``.** ``"gpt-4.1".startswith("gpt-4")`` is
+      True, so the whole GPT-4.1 family — ``gpt-4.1-nano`` included, the
+      cheapest OpenAI model, and ``gpt-4.1`` itself, OpenAI's catalog head —
+      was billed at classic GPT-4's $30/$60 per M, roughly 15× too high.
+
+    The old REVERSE match (a key that starts with the model: ``"gpt-4"`` →
+    ``"gpt-4o"``) is gone too — it priced an unspecified model as some specific
+    other one.
+    """
+    if model in keys:
+        return model
+    best: str | None = None
+    for key in keys:
+        if len(key) < len(model) and model.startswith(key) and model[len(key)] in _VARIANT_SEPARATORS:
+            # ANY size token in the remainder, not just the first: otherwise a
+            # shorter key reclaims what a longer one refused — measured,
+            # `claude-opus-4-8-mini` fell through to `claude-opus-4` via "-8-mini".
+            if any(tok in _SIZE_SUFFIXES for tok in model[len(key) + 1:].split("-")):
+                continue
+            if best is None or len(key) > len(best):
+                best = key
+    return best
+
+
 def _lookup_price(model: str) -> tuple[float, float, float, float]:
     """Return (input_per_M, output_per_M, cache_read_per_M, cache_write_per_M) for *model*.
 
-    Tries exact match first, then prefix match.  Returns zeros for unknown models.
+    See :func:`model_price_key` for the matching rule. Returns zeros for unknown
+    models, and says so at debug level.
     """
-    if model in PRICE_TABLE:
-        return PRICE_TABLE[model]
-
-    # Prefix match (handles versioned names like "claude-3-5-sonnet-20241022" → "claude-3-5-sonnet")
-    for key, prices in PRICE_TABLE.items():
-        if model.startswith(key) or key.startswith(model):
-            return prices
+    key = model_price_key(model, PRICE_TABLE)
+    if key is not None:
+        return PRICE_TABLE[key]
 
     logger.debug("No pricing info for model %r — cost will show as $0.00", model)
     return (0.0, 0.0, 0.0, 0.0)

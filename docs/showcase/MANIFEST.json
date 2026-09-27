@@ -1,23 +1,23 @@
 {
-  "recorded_at": "2026-09-26T16:44:41Z",
+  "recorded_at": "2026-09-27T15:09:32Z",
   "navig_version": "3.25.0",
-  "commit": "1cf661cbd",
+  "commit": "2e34dcae1",
   "vhs": "vhs version v0.11.0 (c6af91a)",
   "ffmpeg": "8.0.1-3ubuntu2",
   "chrome": "Google Chrome 153.0.8010.36 ",
   "font": "JetBrainsMono Nerd Font",
   "sandbox": "sandbox.sh (isolated NAVIG_* dirs, three lab hosts on a local sshd)",
   "assets": [
-    {"file": "blocks.gif", "bytes": 403811, "sha256": "17cffe6fd21588c900b59bb9f73039de708a902a7db57dfd54c1ddfb553444d7"},
-    {"file": "dashboard.gif", "bytes": 490907, "sha256": "a6072366f8eb0ca6f60c0590cac84f8f159a5499bb9794f487ed3b94beb6528f"},
-    {"file": "gateway-boot.gif", "bytes": 683400, "sha256": "9aba8629158b5b1fe29885eec27712f3571ac7ca3f676bd89e86667ea355b406"},
-    {"file": "hero.gif", "bytes": 597943, "sha256": "b78234d13551c684954f0972237c6314430fdff6226b7a89b4aa75d293cbcd6b"},
-    {"file": "hosts-and-safety.gif", "bytes": 960147, "sha256": "f19a93f789bf758ffbabd40fa7c47cc85e4a9a0716a5870badf9ce385d8c8d74"},
-    {"file": "ledger-and-undo.gif", "bytes": 498336, "sha256": "40a749d186c670b8d0746879b42703f96cc5858373a49df83bac53c8c08424d6"},
-    {"file": "schema-for-agents.gif", "bytes": 685919, "sha256": "2888579637dfd4d241197118010df5dbe05c2accc0e1d8413e463b97e1bf3c25"},
-    {"file": "skills.gif", "bytes": 487383, "sha256": "19b4f5ceb7e263c1cc668edab7eab524071419f6756cc184918b0c09c56a771c"},
-    {"file": "spaces.gif", "bytes": 768845, "sha256": "a1113c56dd47d77274514ec01cf267f0b232e4dba9e8d2738bf4ed2c709e142e"},
-    {"file": "store-and-doctor.gif", "bytes": 334293, "sha256": "c72565ad5cc8e576700615a767e7b9bbfb0ca8199a5d93c9558d30810543d936"},
-    {"file": "whoami.gif", "bytes": 97616, "sha256": "941512803bc85b5b4388024da07393c10b82f467649d9650ff843c49d24c383b"}
+    {"file": "blocks.gif", "bytes": 423461, "sha256": "efeca365784fcaaa24988513e80ec9d4391baba57abc1186dbdf8597c952767a"},
+    {"file": "dashboard.gif", "bytes": 872404, "sha256": "9d731600d29b5f31678de8936f3df37002524886e24c3187d11409a295f9c3ed"},
+    {"file": "gateway-boot.gif", "bytes": 1569238, "sha256": "82ba6e359ed8f4d4c684bced1d923751c2198e47395799c8fc142e076308e430"},
+    {"file": "hero.gif", "bytes": 574188, "sha256": "ba8d049b941d4edcf35176491f3b274ceba32aca302802a33bf5abbe5fcf21cf"},
+    {"file": "hosts-and-safety.gif", "bytes": 849312, "sha256": "ae4ea37b1d54c6dd6407302c40c1cd8310c1b85e0d1dce49e5b07a48a6a6473b"},
+    {"file": "ledger-and-undo.gif", "bytes": 505158, "sha256": "bc6fead032e68ea4802efa5bacbd12d78013111bafeff3b3b6e2a303a9bc70ca"},
+    {"file": "schema-for-agents.gif", "bytes": 702050, "sha256": "8099a7131d7a883f2aa6af8611728d93cfd3c171b1011808fee3ac7cac4760c2"},
+    {"file": "skills.gif", "bytes": 396484, "sha256": "4be003ce4b0a52cc283f6213b89bc77ff4d2103157c7af07ac78599e41293376"},
+    {"file": "spaces.gif", "bytes": 990853, "sha256": "af51e8f422700258858ae18ea7ec45f686a1d29fe3fa2ffab4c042226a2d57b7"},
+    {"file": "store-and-doctor.gif", "bytes": 333175, "sha256": "4889c62fcd8cda766a1d6502b39859caabf4972d05672f106e2bafdfebe54889"},
+    {"file": "whoami.gif", "bytes": 80907, "sha256": "c88d54876c2b3e35b00c47ecf2a98847c2c944843d941f0a8c43885488ea5ce3"}
   ]
 }

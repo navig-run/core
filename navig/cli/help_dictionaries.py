@@ -40,9 +40,9 @@ HELP_REGISTRY: dict[str, dict[str, Any]] = {
         },
     },
     "dashboard": {
-        "desc": "Real-time TUI for infrastructure monitoring",
+        "desc": "Live operator console: identity, services, safety, hosts, activity",
         "commands": {
-            "(default)": "launch live dashboard with auto-refresh",
+            "(default)": "launch the live dashboard (q quit · r refresh · d doctor · g deck)",
             "--no-live": "single snapshot mode",
             "--refresh": "set refresh interval (seconds)",
         },

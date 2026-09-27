@@ -1,13 +1,13 @@
-"""The dashboard's data panels must get rows at every terminal height it supports.
+"""The dashboard's data panels must get rows at every terminal size it supports.
 
-`create_layout` showed the 14-row Kraken mascot from 28 rows up. Header 3 + footer 3 +
-kraken 14 + tip 5 are FIXED, so at 28–34 rows the two ratio panels beside it — Remote
-Hosts and Recent Ops, the ones carrying the operator's data — were squeezed to their
-borders and rendered empty. Seen in the first showcase recording at 32 rows: three
-configured hosts, an empty "Remote Hosts" box. The mascot now waits for 38 rows.
+The first dashboard showed a 14-row mascot that squeezed the data panels beside it
+to their borders at 28–34 rows — three configured hosts, an empty "Remote Hosts"
+box (seen in the first showcase recording). The rebuilt dashboard has no fixed-size
+decoration in the data column; this pins that every data panel keeps ≥ 6 rows at
+every size the layout claims to support, and that the identity column appears only
+when there is width for it.
 
-Assert on RENDERED regions, not on the threshold constant: the number is only right
-if every data panel actually gets rows.
+Assert on RENDERED regions, not on constants.
 """
 
 from __future__ import annotations
@@ -17,25 +17,31 @@ from rich.console import Console
 
 from navig.commands import dashboard
 
-DATA_PANELS = ("services", "tunnels", "hosts", "history")
-MIN_DATA_ROWS = 6  # border + header + at least three rows of content
+DATA_PANELS = ("services", "safety", "hosts", "activity")
+MIN_DATA_ROWS = 6  # border + at least four rows of content
 
 
-def _region_heights(rows: int, cols: int = 120) -> dict[str, int]:
+def _region_heights(rows: int, cols: int) -> dict[str, int]:
     layout = dashboard.create_layout(cols=cols, rows=rows)
     console = Console(width=cols, height=rows, force_terminal=True, file=None)
     regions = layout.render(console, console.options.update(height=rows))
     return {lay.name: r.region.height for lay, r in regions.items() if lay.name}
 
 
-@pytest.mark.parametrize("rows", [24, 28, 30, 32, 34, 36, 38, 40, 50])
-def test_every_data_panel_gets_rows_at_every_supported_height(rows: int) -> None:
-    heights = _region_heights(rows)
-    starved = {n: h for n, h in heights.items() if n in DATA_PANELS and h < MIN_DATA_ROWS}
-    assert not starved, f"at {rows} rows these panels collapsed to their borders: {starved}"
+@pytest.mark.parametrize("cols", [72, 80, 100, 120, 160])
+@pytest.mark.parametrize("rows", [24, 28, 30, 34, 40, 50])
+def test_every_data_panel_gets_rows_in_the_grid_layouts(rows: int, cols: int) -> None:
+    heights = _region_heights(rows, cols)
+    starved = {n: heights.get(n, 0) for n in DATA_PANELS if heights.get(n, 0) < MIN_DATA_ROWS}
+    assert not starved, f"at {cols}x{rows} these panels collapsed: {starved}"
 
 
-def test_the_mascot_appears_only_when_it_leaves_room_for_the_data() -> None:
-    assert "kraken" not in _region_heights(32)
-    assert "kraken" in _region_heights(dashboard.KRAKEN_MIN_ROWS)
-    assert dashboard.KRAKEN_MIN_ROWS >= 3 + 3 + 14 + 5 + 2 * MIN_DATA_ROWS
+@pytest.mark.parametrize("rows", [30, 40])
+def test_the_stacked_layout_keeps_every_panel_when_tall_enough(rows: int) -> None:
+    heights = _region_heights(rows, 60)
+    assert all(heights.get(n, 0) >= MIN_DATA_ROWS for n in DATA_PANELS), heights
+
+
+def test_the_identity_column_appears_only_when_there_is_width_for_it() -> None:
+    assert "identity" in _region_heights(30, dashboard.WIDE_COLS)
+    assert "identity" not in _region_heights(30, dashboard.WIDE_COLS - 1)

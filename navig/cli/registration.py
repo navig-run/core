@@ -227,6 +227,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "space": ("navig.commands.space", "space_app"),
     "blueprint": ("navig.commands.blueprint", "blueprint_app"),
     "deck": ("navig.commands.deck", "deck_app"),
+    "os": ("navig.commands.os_cmd", "app"),
     "portable": ("navig.commands.portable", "portable_app"),
     "migrate": ("navig.commands.migrate", "migrate_app"),
     "system": ("navig.commands.system_cmd", "system_app"),

@@ -36,6 +36,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CORE_SRC="$(cd "$HERE/../.." && pwd)"          # <checkout>/core
 SRC_DIR="$HOME/navig-src"
+# Plugins recorded by tapes/plugins/*.tape (their GIFs land in plugins/<p>/docs/demo.gif).
+SHOWCASE_PLUGINS=(navig-blackbox navig-dedupe navig-devhost navig-explore navig-games)
 VENV="$HOME/navig-venv"
 LAB="$HOME/navig-lab"
 FONT_DIR="$HOME/.local/share/fonts"
@@ -80,7 +82,7 @@ sync_navig() {
   rsync "${rsync_opts[@]}" "$CORE_SRC/" "$SRC_DIR/core/"
   # core's pyproject resolves its two HARD deps (navig-vault, navig-contacts) from
   # `../plugins/<name>` via [tool.uv.sources], so the editable install needs them beside it.
-  for plug in navig-vault navig-contacts; do
+  for plug in navig-vault navig-contacts "${SHOWCASE_PLUGINS[@]}"; do
     rsync "${rsync_opts[@]}" "$CORE_SRC/../plugins/$plug/" "$SRC_DIR/plugins/$plug/"
   done
   if ! command -v uv >/dev/null && [[ ! -x "$HOME/.local/bin/uv" ]]; then
@@ -96,15 +98,19 @@ sync_navig() {
   log "installing navig into the venv (editable, from the rsync copy)"
   uv pip install --python "$VENV/bin/python" -q -e "$SRC_DIR/core"
   "$VENV/bin/navig" --version >/dev/null || die "navig does not run from $VENV"
+  # The plugins the plugin demos (tapes/plugins/*.tape) record — editable, from this checkout.
+  for plug in "${SHOWCASE_PLUGINS[@]}"; do
+    uv pip install --python "$VENV/bin/python" -q -e "$SRC_DIR/plugins/$plug"
+  done
   ok "navig $("$VENV/bin/navig" --version 2>/dev/null | tail -1) in $VENV"
 }
 if [[ "${1:-}" == "--sync" ]]; then sync_navig; exit 0; fi
 
 # ── apt packages ────────────────────────────────────────────────────────────
 need_pkgs=()
-# fonts-noto-color-emoji: navig prints emoji (doctor's stethoscope, the dashboard's kraken)
+# fonts-noto-color-emoji: navig prints emoji (doctor's stethoscope, status glyphs)
 # and a WSL image ships no emoji face, so Chrome rendered every one as a tofu box in the GIFs.
-for p in ttyd ffmpeg openssh-server fontconfig fonts-noto-color-emoji rsync curl unzip jq git; do
+for p in ttyd ffmpeg openssh-server fontconfig fonts-noto-color-emoji rsync curl unzip jq git mkcert libnss3-tools; do
   dpkg -s "$p" >/dev/null 2>&1 || need_pkgs+=("$p")
 done
 if ((${#need_pkgs[@]})); then

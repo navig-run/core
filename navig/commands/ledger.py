@@ -4,7 +4,8 @@ Ledger Commands for NAVIG - Operations-History Integrity (T-067/T-068)
 `navig ledger verify` re-walks the hash chain that OperationRecorder embeds
 in every operations.jsonl entry (navig.ledger_chain) and reports intact /
 broken-at-line. Exit code contract: 0 = intact (including the honest
-non-failure states: missing, empty, legacy pre-chain files), 1 = broken.
+non-failure states: missing default ledger, empty, legacy pre-chain files),
+1 = broken, or an explicit ``--path`` that does not exist.
 
 `navig ledger show` is the chain-status-aware view of recent operations:
 per-entry chain state (verified / legacy / broken line), the green/yellow/red
@@ -43,7 +44,11 @@ def ledger_callback():
 def _resolve_ledger_path(path: str | None) -> Path:
     """The ledger to inspect — explicit ``--path`` or the active history file."""
     if path:
-        return Path(path)
+        # A typed --path resolves where the operator typed it, not in the space
+        # main.py chdir'd into (navig.run/proof: "download, then verify").
+        from navig.platform.paths import resolve_user_path
+
+        return resolve_user_path(path)
     from navig.operation_recorder import get_operation_recorder
 
     return get_operation_recorder().history_file
@@ -78,14 +83,23 @@ def ledger_verify(
     ledger_path = _resolve_ledger_path(path)
     result = verify_ledger(ledger_path)
 
+    # "Missing" is an honest non-failure only for the DEFAULT ledger (a fresh
+    # install has recorded nothing yet). A file the operator NAMED that is not
+    # there verified nothing — reporting success would be a green tick over a
+    # check that never ran.
+    named_but_missing = bool(path) and result.status == "missing"
+
     want_json = json_out or bool(ctx.obj and ctx.obj.get("json"))
     if want_json:
         emit_json(result.to_dict())
-        if not result.ok:
+        if not result.ok or named_but_missing:
             raise typer.Exit(1)
         return
 
     status = result.status
+    if named_but_missing:
+        ch.error(f"No ledger file at {result.path} — nothing was verified")
+        raise typer.Exit(1)
     if status == "missing":
         ch.info(f"No ledger at {result.path} — nothing recorded yet")
         return

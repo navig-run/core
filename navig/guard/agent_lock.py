@@ -68,7 +68,10 @@ _GIT_C_TARGET = re.compile(r"\bgit\b\s+(?:[^\s]+\s+)*?-C\s+([^\s\"']+|\"[^\"]+\"
 # A `-C` target we cannot expand: `$wt`, `${wt}`, `$env:wt`, `%WT%`.
 _SHELL_VAR = re.compile(r"[$%]")
 _CD_TARGET = re.compile(
-    r"(?:^|[;&|]\s*)(?:cd|pushd|Push-Location)\s+([^\s;&|\"']+|\"[^\"]+\"|'[^']+')",
+    # PowerShell's own verb is `Set-Location` (`cd`/`chdir` are its aliases); without it a
+    # `Set-Location <main>; git checkout main` from a worktree was judged by the worktree.
+    r"(?:^|[;&|]\s*)(?:cd|chdir|pushd|Push-Location|Set-Location)\s+"
+    r"([^\s;&|\"']+|\"[^\"]+\"|'[^']+')",
     re.IGNORECASE,
 )
 _WORKTREE_ADD = re.compile(r"\bgit\b[^\n|&;]*?\bworktree\s+add\s+([^\n|&;]+)")
@@ -283,6 +286,19 @@ def pathspec_message(discarded: list[str]) -> str:
     )
 
 
+def _unresolved_location(cmd: str, root: Path) -> str:
+    """Verdict when a mutating git verb runs somewhere we cannot resolve — a shell variable
+    in a `-C` target or a `cd`, or `cd -`.
+
+    The assignment is normally in the same block, so an ABSOLUTE path under
+    <root>/.dev/worktrees in the command text is taken as the sanctioned worktree path.
+    Absolute-only on purpose: a bare ".dev/worktrees" mention in a pathspec or a commit
+    message must NOT exempt — that was the original substring bypass. Anything else cannot
+    be proven to be a worktree, so the lock applies (fail safe).
+    """
+    return "exempt" if _mentions_worktree_path(cmd, root) else "enforce"
+
+
 def classify_tool(payload: dict, root: Path) -> str:
     """``"enforce"`` (lock applies), ``"block-sibling"`` (hard rule), or ``"exempt"``."""
     tool = payload.get("tool_name", "")
@@ -325,7 +341,8 @@ def classify_tool(payload: dict, root: Path) -> str:
         # `git commit -m "work in .dev/worktrees"` both bypassed the lock while mutating
         # the MAIN checkout — precisely the concurrent-checkout clobber this guard
         # exists to prevent.
-        base = Path(payload.get("cwd") or root)
+        # None = "we cannot tell where the shell is" (see the loop below).
+        base: Path | None = Path(payload.get("cwd") or root)
         # Honour a `cd`/`pushd` that happens BEFORE the git verb (e.g.
         # `cd .dev/worktrees/slug && git rebase origin/main`). A `cd` AFTER it cannot
         # move where that verb ran — treating it as if it could would just reopen the
@@ -333,28 +350,41 @@ def classify_tool(payload: dict, root: Path) -> str:
         for cd in _CD_TARGET.finditer(cmd):
             if cd.start() > danger.start():
                 break
-            hop = Path(cd.group(1).strip("\"'"))
-            base = hop if hop.is_absolute() else base / hop
+            raw = cd.group(1).strip("\"'")
+            if raw.startswith("~"):
+                raw = os.path.expanduser(raw)  # resolvable — not a variable
+            if raw == "-" or _SHELL_VAR.search(raw):
+                # `cd "$ROOT"`, `cd $env:ROOT`, `cd -`: where the shell went is unknown.
+                # Judging the verb by the directory it LEFT made `cd "$ROOT" && git checkout
+                # -b ...` from a worktree exempt — the same hole as the MSYS `cd` below.
+                base = None
+                continue
+            # `_from_msys` as for `-C`: git-bash writes E:\x as /e/x, and Path("/e/x") has a
+            # root but no drive, so `base / hop` kept only the drive -> E:\e\x -> "outside
+            # the repo" -> EXEMPT. That let `cd /e/<repo> && git checkout -b ...` through a
+            # live lock (2026-09-26) and moved HEAD under the lock holder's next commit.
+            hop = Path(_from_msys(raw))
+            if hop.is_absolute():
+                base = hop  # an absolute hop makes the location known again
+            elif base is not None:
+                base = base / hop
 
         m = _GIT_C_TARGET.search(cmd)
         if m:
             target = m.group(1).strip("\"'")
             if _SHELL_VAR.search(target):
-                # `git -C $wt ...` / `%WT%` — a shell variable we cannot expand. The
-                # assignment is normally in the same block, so look for an ABSOLUTE path
-                # under <root>/.dev/worktrees in the command text. Absolute-only on
-                # purpose: a bare ".dev/worktrees" mention in a pathspec or a commit
-                # message must NOT exempt — that was the original bypass, and those
-                # commands carry no `-C`, so they never reach this branch.
-                if _mentions_worktree_path(cmd, root):
-                    return "exempt"
-                return "enforce"  # cannot prove it is a worktree — fail safe
+                # `git -C $wt ...` / `%WT%` — a shell variable we cannot expand.
+                return _unresolved_location(cmd, root)
+            if base is None and not Path(_from_msys(target)).is_absolute():
+                return _unresolved_location(cmd, root)  # relative to an unknown dir
             if not _is_within(target, root, base=base):
                 return "exempt"  # explicitly targets another checkout
             if _is_within(target, root / ".dev" / "worktrees", base=base):
                 return "exempt"  # explicitly targets an isolated worktree
             return "enforce"  # -C targets THIS checkout — the lock applies
 
+        if base is None:
+            return _unresolved_location(cmd, root)
         if not _is_within(str(base), root):
             return "exempt"  # the shell is sitting in a different checkout entirely
         if _is_within(str(base), root / ".dev" / "worktrees"):

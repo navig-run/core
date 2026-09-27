@@ -497,7 +497,13 @@ _stop_navig_background() {
         kill "$pid" 2>/dev/null || true
     done
     if command -v systemctl > /dev/null 2>&1; then
-        for unit in navig-daemon navig-tunnel navig; do
+        # `navig service install` registers `navig-agent` in the USER scope (system scope
+        # when run as root). The names below were the only ones stopped before, and none
+        # of them is ever created — so the real unit kept running, and with
+        # Restart=on-failure systemd brought the daemon straight back after the kill above.
+        systemctl --user stop navig-agent.service 2>/dev/null || true
+        systemctl stop navig-agent.service 2>/dev/null || true
+        for unit in navig-daemon navig-tunnel navig; do  # legacy names, harmless if absent
             systemctl stop    "${unit}.service" 2>/dev/null || true
             systemctl disable "${unit}.service" 2>/dev/null || true
         done
@@ -531,7 +537,13 @@ uninstall_navig() {
     fi
     _uninstall_ok=1
 
-    # 1. Stop background processes and services
+    # 1. A full uninstall unregisters the daemon service while navig still exists to do
+    #    it — otherwise an enabled unit is left pointing at the venv deleted in step 2.
+    #    (install.ps1 does the same; a reinstall keeps the service, its venv path is stable.)
+    if [ "${preserve_data}" != "1" ] && [ -x "$RUNTIME_VENV/bin/navig" ]; then
+        "$RUNTIME_VENV/bin/navig" service uninstall > /dev/null 2>&1 || true
+    fi
+    # Stop background processes and services
     _stop_navig_background
     log_verbose "Stopped background processes / services"
 

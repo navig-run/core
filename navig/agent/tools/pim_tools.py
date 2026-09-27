@@ -136,6 +136,12 @@ class TaskAddTool(BaseTool):
                 origin="agent",
                 origin_ref=source,
             )
+            # An agent that adds "Dentist tomorrow 10:30" and schedules nothing has
+            # written a note, not a reminder. Delivery goes to the operator's own
+            # chat — the tool has none of its own.
+            from navig.pim.reminders import sync_for_operator  # noqa: PLC0415
+
+            sync_for_operator(store, todo, now=now)
         except Exception as exc:  # noqa: BLE001 — a tool must never raise into the agent loop
             logger.exception("task_add failed")
             return ToolResult(
@@ -240,6 +246,12 @@ class TaskDoneTool(BaseTool):
                     name=self.name, success=False, error=f"no task with id {task_id!r}"
                 )
             todo = store.complete_todo(task_id)
+            # Cancels the reminders for a finished task, and re-derives them for a
+            # recurring one (which comes back open on its next date). An agent
+            # ticking something off must not leave it pinging.
+            from navig.pim.reminders import sync_for_operator  # noqa: PLC0415
+
+            sync_for_operator(store, todo)
         except Exception as exc:  # noqa: BLE001
             logger.exception("task_done failed")
             return ToolResult(

@@ -6044,9 +6044,9 @@ actual = secret.reveal()  # Get real value
 
 ---
 
-## 23.5.1 Personal Document Cabinet (`navig cabinet`)
+## 23.5.1 Documents: Cabinet and Paperwork (`navig cabinet`, `navig paperwork`)
 
-The vault keeps **secrets**. The cabinet keeps **files**: ID and passport scans, medical records, contracts, diplomas, photos, recordings. It takes any type and any size, encrypts everything including titles, tags and OCR text, and makes text search local-only. Plugin: `navig-cabinet` (`pip install navig[cabinet]`).
+The vault keeps **secrets**. The cabinet keeps **files**: ID and passport scans, medical records, contracts, diplomas, photos, recordings. It takes any type and any size, encrypts everything including titles, tags and OCR text, and makes text search local-only. `navig paperwork` files business paperwork (invoices, quotes, contracts, tax) into a space as plain files for your accountant, and encrypts the ID and medical documents it finds into the cabinet. Both come from one plugin: `navig-cabinet` (`pip install navig[cabinet]`; `navig[paperwork]` is an alias).
 
 ```bash
 navig cabinet add passport.pdf --expires 2031-05-01   # encrypt + local OCR
@@ -6059,11 +6059,20 @@ navig cabinet backup -o <file>                        # portable .ncab, own pass
 navig cabinet restore <file.ncab>
 navig cabinet import-paperwork --space <space>        # ID/medical docs a paperwork scan set aside
 navig cabinet passphrase set | clear                  # machine key (default) ↔ passphrase
+navig cabinet dates [--apply]                         # read expiry dates from documents that lack one
+navig cabinet remind [--dry-run]                      # expiry reminders now (the daemon sends them daily)
 navig cabinet verify · status · edit · remove · undelete · close
+
+navig paperwork scan <folder>... --space <space>       # read + classify → a reviewable plan
+navig paperwork apply --yes --space <space>           # copy, verify, quarantine (undo-able)
+navig paperwork handoff --yes --space <space>         # ID/medical → cabinet; letters → their space
+navig paperwork echeances --space <space>             # deadlines from the letters
 ```
 
 - **Location:** `~/.navig/cabinet/` (override with `NAVIG_CABINET_DIR`).
 - **Passphrase in scripts:** `NAVIG_CABINET_PASSPHRASE`.
+- **Desktop app:** NAVIG OS → Apps → **Cabinet** (search, expiring, add, open). Its `/api/deck/cabinet/*` routes answer only this computer, never the tunnel or the Mini App.
+- **Expiry reminders:** the daemon sends them by itself, 90/30/7 days before a document expires and once it has, naming the category, never the title. Turn them off with `navig config set cabinet.reminders.enabled false`; `cabinet.reminders.hour` sets the daily hour.
 - **Machine-key caveat:** a machine-key cabinet does not survive an OS reinstall, so back it up.
 - **Recovering without navig:** `navig_cabinet/recover_backup.py` restores a backup with only Python and `cryptography`.
 
@@ -7869,7 +7878,9 @@ navig ledger verify --path ~/.navig/history/operations.jsonl.bak
 ```
 
 **Exit codes:** `0` = intact (including honest non-failure states: no ledger
-yet, empty ledger, legacy pre-chain file) · `1` = chain broken.
+yet, empty ledger, legacy pre-chain file) · `1` = chain broken, or a `--path`
+file that does not exist (nothing was verified). A relative `--path` resolves
+in the directory you ran the command from.
 
 **Honest scope:** the chain is *tamper-evident, not tamper-proof* — an
 attacker who can rewrite the whole file can recompute the whole chain. What
@@ -9557,7 +9568,7 @@ Manage *spaces* — contextual namespace bundles that group workspace settings, 
 | `navig space init [name]` | Create a new space. With no name it uses the folder you are standing in — for both the name and the location (`create`/`new` are aliases) |
 | `navig space use <name>` | Activate a space (`switch` is the canonical name; `use` is its alias) |
 | `navig space current` | Show the active space (`NAVIG_SPACE` override respected) |
-| `navig space rename <space> <new-id>` | Change a space's id everywhere it lives — manifest, registry row, active pointer; never moves the folder (`--dry-run` previews) |
+| `navig space rename <space> <new-id>` | Change a space's id everywhere it lives — manifest, registry row, active pointer. The folder stays unless you pass `--move-folder`, which matters under `~/.navig/spaces`: a folder there is addressed BY NAME, so the old name keeps resolving to the space until it is moved too (`--dry-run` previews) |
 | `navig space doctor [path]` | Check a space and report what's present vs missing, then offer the next step (`check` is an alias; `--fix` repairs) |
 | `navig space audit` | Audit the whole spaces collection for structural drift (`lint` is an alias) |
 | `navig space books [name]` | Show or set the finance BOOK this space keeps its ledger in (`--clear` for the default) |
@@ -9578,6 +9589,7 @@ navig space init devops-prod --path .     # A chosen name, in the current folder
 navig space use devops-prod     # Activate it
 navig space current             # Which space is active
 navig space rename devops-prod prod   # Re-id it; `navig space use prod` from now on
+navig space rename prod prod --move-folder   # also rename the folder under ~/.navig/spaces
 navig space doctor              # Is this folder a healthy space? (--fix repairs)
 ```
 
@@ -10021,3 +10033,60 @@ more worktrees exist, every new session starts with either
 `cross-worktree merge check: N pair(s), all clean` or a
 `merge conflict brewing: <a> <-> <b> (files...)` line per colliding pair —
 collisions surface at session start, not at merge time.
+
+---
+
+## 51. NAVIG OS in a browser (`navig os`)
+
+The desktop build is not released yet, but the same server already serves the whole NAVIG
+OS interface to a browser. `navig os serve` turns that into one command instead of four
+environment variables.
+
+**The server runs on your machine and the browser is a window onto it.** That is why it can
+open your files, spaces and sessions at all — and why nothing of yours travels through
+`navig.run`. The public site at `os.navig.run` is a front door: a landing page, a launcher
+that remembers your instances, and a screenshot tour. It never connects to your machine; its
+content policy (`connect-src 'none'`) does not permit it to open a connection at all.
+
+| Command | Description |
+|---------|-------------|
+| `navig os serve` | Build the interface and serve it, by default on `127.0.0.1:9100` |
+| `navig os serve --print-env` | Show exactly what would run, secrets redacted, and start nothing |
+| `navig os serve --password <pw>` | Set the web login password (stored in the vault) |
+| `navig os serve --new-password` | Generate and store a fresh password |
+| `navig os status [--json]` | Is it up, where is the source, are credentials stored |
+
+**First run:**
+
+```bash
+navig os serve          # prints a generated password ONCE, then starts
+# open http://127.0.0.1:9100 and log in
+```
+
+The token that signs your session cookie and the login password are kept in the **vault**,
+not in config, and are reused on every later start — so a bookmark keeps working. If the
+vault cannot be written, the command says so rather than starting with credentials that
+would silently change next time.
+
+**From your phone, or any other machine:**
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:9100
+```
+
+The server reads the proxy's forwarded host and protocol and hands the browser the right
+`wss://` URL by itself — no extra configuration. Prefer a tunnel to a self-signed
+certificate on the LAN: browsers offer no way to accept a bad certificate *for a WebSocket*,
+so the page loads and then fails to connect with nothing to click.
+
+⚠ **A tunnel is a public door.** The login password is the only thing in front of it. Note
+this exposes the *OS server* only — never bind the `navig` daemon itself to a network
+interface, because it grants loopback callers an auth bypass.
+
+**Requirements:** the `apps/os` source (this is the pre-release path — point at it with
+`--dir` or `$NAVIG_OS_DIR` if it is not above your working directory) and
+[bun](https://bun.sh). An explicitly named directory is authoritative: if it is not an
+`apps/os` checkout the command stops, rather than quietly running a different tree.
+
+Licensed features behave exactly as on the desktop — they are decided by your own daemon,
+offline. Your licence is never checked through the website.

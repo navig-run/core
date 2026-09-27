@@ -18,6 +18,7 @@
   "deletions.button.show": "Показать {n}",
   "deletions.digest.chats": " в {n} чатах",
   "deletions.digest.head": "удалено: {n}",
+  "deletions.digest.since": "с {when}",
   "deletions.digest.tail": "нажми, чтобы посмотреть",
   "deletions.off.note": "Оповещения об удалении выключены. Запись сохраняется — посмотреть: `navig telegram business deleted`, включить снова: `navig telegram business deletions mode digest`.",
   "deletions.toast.off": "Оповещения об удалении выключены",

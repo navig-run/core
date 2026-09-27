@@ -91,13 +91,15 @@ $settings | ConvertTo-Json | Set-Content $SettingsFile -Encoding UTF8
 Write-Host "[OK] Settings saved: $SettingsFile" -ForegroundColor Green
 
 # Create desktop shortcut
-$PywScript = Join-Path $ProjectRoot "scripts\navig_tray.pyw"
+# The tray runs as a module of the installed package (navig.desktop.tray_app), so the
+# shortcut works from a wheel install - the old <checkout>\scripts\navig_tray.pyw is gone.
+$TrayArgs = "-m navig.desktop.tray_app"
 $ShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "NAVIG Tray.lnk"
 $WshShell = New-Object -ComObject WScript.Shell
 $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
 $Shortcut.TargetPath = $PythonW
-$Shortcut.Arguments = "`"$PywScript`""
-$Shortcut.WorkingDirectory = $ProjectRoot
+$Shortcut.Arguments = $TrayArgs
+$Shortcut.WorkingDirectory = $HOME
 $Shortcut.Description = "NAVIG System Tray"
 
 # Use NAVIG icon if available
@@ -112,7 +114,7 @@ Write-Host "[OK] Desktop shortcut created" -ForegroundColor Green
 # Auto-start
 if ($AutoStart) {
     $RegPath = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
-    $RegValue = "`"$PythonW`" `"$PywScript`""
+    $RegValue = "`"$PythonW`" $TrayArgs"
     Set-ItemProperty -Path $RegPath -Name "NavigTray" -Value $RegValue
     Write-Host "[OK] Auto-start enabled (launches at Windows login)" -ForegroundColor Green
 }

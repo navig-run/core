@@ -94,11 +94,15 @@ def extension_is_off() -> bool:
 def extension_banner(*, as_html: bool = True) -> str:
     """One-line warning above any surface that reports todo state.
 
-    Switching the extension off stops DELIVERY, not scheduling: the reminders are
-    still in the table and the tasks are still due. Left unexplained that is the "is
-    it me or is it broken" ambiguity, so `navig todo` and the agent tools print this
-    above their own output. Returns "" when the extension is on, so a caller can
-    prepend unconditionally.
+    Switching the extension off keeps the TASKS and stops the REMINDERS — the same
+    bargain habits offer. `pim.reminders.reschedule` writes no new row while it is
+    off (the habit rule: nothing scheduled can ever be delivered) and the poller
+    holds back any row written before the switch was flipped. The tasks are all
+    still here and still due; nothing tells you about them.
+
+    Left unexplained that is the "is it me or is it broken" ambiguity, so
+    `navig todo` and the agent tools print this above their own output. Returns ""
+    when the extension is on, so a caller can prepend unconditionally.
     """
     if not extension_is_off():
         return ""

@@ -57,7 +57,7 @@ def _run_returning(stdout: str, returncode: int = 0):
 # a column LABEL; note the actual state fields both say Disabled.
 _REAL_VERBOSE_DUMP_OF_A_DISABLED_TASK = """\
 Folder: (root)
-HostName:                             SUBDOSE-PC
+HostName:                             DESKTOP-OPS01
 TaskName:                             NAVIG Daemon
 Status:                               Disabled
 Scheduled Task State:                 Disabled

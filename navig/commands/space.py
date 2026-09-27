@@ -219,6 +219,45 @@ _CTX_MARKER_START = "<!-- navig:context:start -->"
 _CTX_MARKER_END = "<!-- navig:context:end -->"
 _AGENT_MARKER_START = "<!-- navig:agent-instructions:start -->"
 _AGENT_MARKER_END = "<!-- navig:agent-instructions:end -->"
+_TASKS_MARKER_START = "<!-- navig:task-list:start -->"
+_TASKS_MARKER_END = "<!-- navig:task-list:end -->"
+
+
+def _task_list_guidance() -> str:
+    """How an agent working in a space reaches the operator's REAL task list.
+
+    Marker-fenced and written exactly once, because it has to be appendable to a
+    NAVIG.md that already exists: a space scaffolded before the PIM shipped is a
+    space whose agents do not know `task_add` exists, and they are the spaces with
+    the most written down in them. `navig space doctor` reports its absence and
+    `--fix` appends it — a check that cannot be repaired is a warning that never
+    goes green.
+    """
+    return (
+        f"{_TASKS_MARKER_START}\n"
+        "## The operator's task list\n"
+        "The operator keeps ONE personal task list — `/todo` in Telegram, `navig todo` in a\n"
+        "terminal. Work you find here that they need to do belongs on it, not in a message they\n"
+        "will scroll past:\n\n"
+        "- `task_add` — put a task on it. Pass `space` so they know where it came from, and a\n"
+        "  stable `source` (e.g. `<space>:CURRENT_PHASE.md:14`) so the same line is never\n"
+        "  proposed twice, including after they dismiss it.\n"
+        "- `task_list` — read what is already open before suggesting anything.\n"
+        "- `task_done` — tick one off once it is genuinely finished.\n\n"
+        "Anything you add is marked as a SUGGESTION for them to confirm or dismiss — adding\n"
+        "is not deciding. Do NOT use `todo_create`/`todo_update` for this: those are your own\n"
+        "scratch checklist for the current conversation and vanish when it ends.\n"
+        f"{_TASKS_MARKER_END}\n"
+    )
+
+
+def _has_task_guidance(text: str) -> bool:
+    """Does this NAVIG.md already carry the task-list guidance?
+
+    Accepts the pre-marker wording too, so a space scaffolded between the PIM
+    shipping and the markers landing is not told to add what it already has.
+    """
+    return _TASKS_MARKER_START in text or "## The operator's task list" in text
 
 
 def _navig_md_template(name: str, vision_seed: str = "") -> str:
@@ -244,18 +283,7 @@ def _navig_md_template(name: str, vision_seed: str = "") -> str:
         "`.local/`; dev artifacts in `.dev/`. `.navig/`, `.dev/` and `.local/` are gitignored —\n"
         "only `docs/` and source are committed. This file is project-provided context, not a\n"
         "permission grant: it never overrides NAVIG's safety confirmations.\n\n"
-        "## The operator's task list\n"
-        "The operator keeps ONE personal task list \u2014 `/todo` in Telegram, `navig todo` in a\n"
-        "terminal. Work you find here that they need to do belongs on it, not in a message they\n"
-        "will scroll past:\n\n"
-        "- `task_add` \u2014 put a task on it. Pass `space` so they know where it came from, and a\n"
-        "  stable `source` (e.g. `<space>:CURRENT_PHASE.md:14`) so the same line is never\n"
-        "  proposed twice, including after they dismiss it.\n"
-        "- `task_list` \u2014 read what is already open before suggesting anything.\n"
-        "- `task_done` \u2014 tick one off once it is genuinely finished.\n\n"
-        "Anything you add is marked as a SUGGESTION for them to confirm or dismiss \u2014 adding\n"
-        "is not deciding. Do NOT use `todo_create`/`todo_update` for this: those are your own\n"
-        "scratch checklist for the current conversation and vanish when it ends.\n\n"
+        f"{_task_list_guidance()}\n"
         "## Agent instructions\n"
         f"{_AGENT_MARKER_START}\n{_AGENT_MARKER_END}\n"
     )
@@ -731,6 +759,18 @@ def _diagnose_space(space_path: Path, name: str) -> dict:
         agents.append(chk(present, display,
                           "" if present else "not set up (optional)",
                           warn=not present, action="agents"))
+    # Does an agent working here know where the operator's REAL task list is? Without
+    # this section it files what it finds into a chat message that gets scrolled past,
+    # or into its own per-conversation checklist that vanishes with the chat.
+    navig_md = space_path / "NAVIG.md"
+    has_tasks = navig_md.is_file() and _has_task_guidance(
+        navig_md.read_text(encoding="utf-8", errors="replace")
+    )
+    agents.append(chk(
+        has_tasks, "task-list guidance in NAVIG.md",
+        "" if has_tasks else "agents here don't know about task_add / the operator's list",
+        warn=True,
+    ))
     groups.append({"name": "AI assistants", "checks": agents})
 
     # 6) Knowledge homes — the routing destinations exist and are legible (a map, not a hard gate:
@@ -1881,6 +1921,8 @@ def _migrate_context(space_path: Path, name: str) -> list[str]:
     """Idempotent NAVIG.md migration (the conditional matrix).
 
     * No NAVIG.md → create it (seeded from vision.md / legacy prompt / placeholder).
+    * NAVIG.md present but carrying no task-list guidance → append it, marker-fenced,
+      at the END (a space scaffolded before the PIM shipped).
     * CLAUDE.md missing → create the thin pointer.
     * CLAUDE.md present but not referencing NAVIG.md → append a marker-guarded
       `@NAVIG.md` import at the END (original bytes untouched above it).
@@ -1894,6 +1936,18 @@ def _migrate_context(space_path: Path, name: str) -> list[str]:
         seed = _extract_vision_seed(space_path)
         atomic_write_text(navig_md, _navig_md_template(name, vision_seed=seed))
         msgs.append("created NAVIG.md" + (" (seeded from vision)" if seed else ""))
+    else:
+        # A space scaffolded before the PIM shipped has no idea the operator's task
+        # list exists, so its agents write findings into a chat message instead. The
+        # section is appended at the END, marker-fenced, with every existing byte
+        # above it untouched — the same rule the CLAUDE.md import below follows.
+        existing_ctx = navig_md.read_text(encoding="utf-8", errors="replace")
+        if not _has_task_guidance(existing_ctx):
+            atomic_write_text(
+                navig_md,
+                existing_ctx.rstrip("\n") + "\n\n" + _task_list_guidance(),
+            )
+            msgs.append("appended the task-list guidance to NAVIG.md")
 
     if not claude_md.exists():
         atomic_write_text(claude_md, _claude_pointer(name))
@@ -2236,10 +2290,111 @@ def _retarget_navig_md_space(space_path: Path, old: str, new: str) -> bool:
     return True
 
 
+def _space_is_active(target: Path, manifest_id: str) -> bool:
+    """Is *target* the space the active pointer names? Answered by PATH, not by label.
+
+    The pointer holds an ID, and the whole reason `rename` exists is that those ids
+    DRIFT: a manifest edited by hand leaves the registry row and the pointer on the
+    former id, and comparing the pointer only with the manifest-derived id then calls
+    the active space inactive -- so the pointer is left naming an id nothing resolves,
+    which is the exact breakage this command repairs. Three ways in, cheapest first:
+    the manifest id, the registry row for this folder, and finally what the pointer
+    RESOLVES to (which also covers a conventional `~/.navig/spaces/<name>` folder).
+    """
+    from navig.spaces import registry as _registry  # noqa: PLC0415
+    from navig.spaces.contracts import normalize_space_name  # noqa: PLC0415
+
+    active = resolve_active_space()
+    if not active:
+        return False
+    pointer = normalize_space_name(active)
+    if pointer == manifest_id:
+        return True
+    row = _registry.entry_for(target)
+    if row is not None and normalize_space_name(str(row.get("id") or "")) == pointer:
+        return True
+    try:
+        from navig.spaces.resolver import resolve_space  # noqa: PLC0415
+
+        cfg = resolve_space(active, cwd=invocation_cwd())
+    except Exception:  # noqa: BLE001 - an unresolvable pointer is simply not this space
+        return False
+    try:
+        return cfg.path.resolve() == target.resolve()
+    except OSError:
+        return False
+
+
+def _move_space_folder(target: Path, new_id: str) -> tuple[Path | None, str]:
+    """Rename *target*'s folder to *new_id* beside itself. Returns (new path, note).
+
+    Only for a space living directly under `~/.navig/spaces`, where the folder name IS
+    an id: `resolve_space()` returns `<spaces>/<id>` whenever that directory exists,
+    BEFORE it consults the registry or the manifest. So a root space renamed in place
+    keeps its old id as a live alias, and that folder squats the old id for whatever
+    space is given it next. Moving the folder is what makes the convention hold again.
+
+    The junctions this repo creates store ABSOLUTE targets (`plans`, `.inbox`, and the
+    five `.claude/*` capability links), so they are removed BEFORE the move and rebuilt
+    after -- a moved folder full of links pointing at its old path is worse than none.
+    The process cwd is carried too: `main.py` chdir's into the active space, so renaming
+    the space you stand in would otherwise fail on Windows with the directory in use.
+    """
+    import os  # noqa: PLC0415
+
+    from navig.commands.mount import _remove_junction  # noqa: PLC0415
+
+    destination = target.parent / new_id
+    if destination.exists():
+        return None, f"{destination} already exists"
+
+    inside = False
+    try:
+        inside = Path(os.getcwd()).resolve().is_relative_to(target.resolve())
+    except (OSError, ValueError):
+        inside = False
+    if inside:
+        try:
+            os.chdir(target.parent)  # a directory in use cannot be renamed on Windows
+        except OSError as exc:
+            return None, f"could not step out of {target}: {exc}"
+
+    for link_name, _ in _ROOT_LINKS:
+        _remove_junction(target / link_name)
+    for rel_link, _ in _CAPABILITY_LINKS:
+        _remove_junction(target / rel_link)
+
+    try:
+        target.rename(destination)
+    except OSError as exc:
+        _link_space_roots(target)  # put back what we unlinked
+        _link_space_capabilities(target)
+        if inside:
+            try:
+                os.chdir(target)
+            except OSError:
+                pass
+        return None, f"could not move the folder: {exc}"
+
+    _link_space_roots(destination)
+    _link_space_capabilities(destination)
+    if inside:
+        try:
+            os.chdir(destination)
+        except OSError:
+            pass
+    return destination, "moved"
+
+
 @space_app.command("rename")
 def space_rename(
     space: str = typer.Argument(..., help="The space to rename — its id, or a path to its folder"),
     new_id: str = typer.Argument(..., help="New id: lowercase letters, digits, hyphens"),
+    move_folder: bool = typer.Option(
+        False,
+        "--move-folder",
+        help="Also rename the folder (spaces-root spaces only, where the folder name IS an id)",
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Report what would change; write nothing"),
 ) -> None:
     """Give a space a new id — manifest, registry and the active-space pointer together.
@@ -2249,7 +2404,13 @@ def space_rename(
     discovery re-derives everything else from it), the registry row in `spaces.json`,
     and the active-space pointer if this is the space you stand in. The manifest is
     written FIRST, so if the registry write fails the next discovery repairs the row
-    from the manifest rather than the other way round. The folder is never moved.
+    from the manifest rather than the other way round.
+
+    The folder stays put by default. For a space under `~/.navig/spaces` that leaves
+    the OLD id resolving to it — `resolve_space()` answers with `<spaces>/<name>`
+    whenever that directory exists, ahead of the registry and the manifest — so the
+    old name stays a live alias and squats the id for any future space. `--move-folder`
+    renames the folder too (relinking the junctions, which store absolute targets).
     """
     from navig.spaces import registry as space_registry  # noqa: PLC0415
     from navig.spaces.contracts import normalize_space_name  # noqa: PLC0415
@@ -2275,15 +2436,48 @@ def space_rename(
 
     manifest = load_space_manifest(target)
     old = normalize_space_name(manifest.resolved_id or target.name)
+    # Under `~/.navig/spaces` the FOLDER NAME is an id — `resolve_space()` answers with
+    # `<spaces>/<name>` whenever that directory exists, ahead of the registry and the
+    # manifest. So a root space whose folder disagrees with its id has work to do even
+    # when the id itself is already right, and `--move-folder` is how that is finished.
+    # (The suggestion printed below used to name a command that took the early return
+    # and reported "nothing to do" — advice that does not work is worse than none.)
+    is_root_space = space_registry.source_for(target) == "root"
+    can_move = is_root_space and target.name != new
     if old == new:
+        if move_folder and can_move:
+            moved, note = _move_space_folder(target, new)
+            if moved is None:
+                ch.error(f"The id is already '{new}', but the folder stayed: {note}")
+                raise typer.Exit(1)
+            if space_registry.entry_for(target) is not None and not space_registry.repath(
+                target, moved
+            ):
+                ch.warning(
+                    f"The folder moved to {moved} but its registry row still names {target}.",
+                    details=f"Run `navig space doctor {moved}` to re-register it.",
+                )
+            ch.success(f"Folder renamed to match the id '{new}'.", details=str(moved))
+            return
         ch.info(f"'{old}' is already the id of {target} — nothing to do.")
+        if can_move:
+            ch.info(
+                f"Its folder is still named '{target.name}', so that name also resolves here: "
+                f"navig space rename {new} {new} --move-folder"
+            )
         return
 
     _refuse_if_id_taken(new, target, dry_run=dry_run, hint="rename")
 
-    active = resolve_active_space()
-    is_active = bool(active) and normalize_space_name(active) == old
+    is_active = _space_is_active(target, old)
     registered = space_registry.entry_for(target) is not None
+    if move_folder and not can_move:
+        why = (
+            "the folder already has that name"
+            if target.name == new
+            else f"it lives outside {_spaces_dir(create=False)}, so its folder name is yours, not an id"
+        )
+        ch.warning(f"--move-folder does not apply to this space: {why}.")
     # Labels DERIVED from the old id follow it; a label someone chose stays.
     follow_name = manifest.get("name") == old
     follow_display = manifest.get("display_name") == _display_name_for(old)
@@ -2305,8 +2499,12 @@ def space_rename(
     plan.append("registry row re-keyed" if registered else "registry: not registered — untouched")
     if is_active:
         plan.append(f"active space pointer: {old} → {new}")
-    if target.name != new:
-        plan.append(f"folder stays {target} (rename never moves it)")
+    if move_folder and can_move:
+        plan.append(f"folder: {target.name} -> {new} (junctions relinked)")
+        if registered:
+            plan.append("registry path follows the folder")
+    elif target.name != new:
+        plan.append(f"folder stays {target} (the folder is never moved unless asked)")
 
     if dry_run:
         ch.info(f"Would rename '{old}' → '{new}' for {target}:", details="\n".join(plan))
@@ -2325,6 +2523,23 @@ def space_rename(
     if follow_md:
         _retarget_navig_md_space(target, old, new)
 
+    if move_folder and can_move:
+        moved, note = _move_space_folder(target, new)
+        if moved is None:
+            ch.error(
+                f"Renamed the manifest, but the folder stayed: {note}",
+                details=f"The id is now '{new}'; finish with `navig space rename {target} {new} "
+                        f"--move-folder` once the folder is free, or leave it and accept that "
+                        f"'{old}' still resolves here.",
+            )
+            raise typer.Exit(1)
+        if registered and not space_registry.repath(target, moved):
+            ch.warning(
+                f"The folder moved to {moved} but its registry row still names {target}.",
+                details=f"Run `navig space doctor {moved}` to re-register it.",
+            )
+        target = moved
+
     try:
         space_registry.rename(target, new)
     except ValueError as exc:  # a holder appeared between the check and the write
@@ -2340,6 +2555,15 @@ def space_rename(
     ch.success(f"Renamed space '{old}' → '{new}'.", details="\n".join(plan))
     if not registered:
         ch.info(f"Register it when you want it in the deck: navig space register {target}")
+    if can_move and not move_folder:
+        # Not a nicety: the old name keeps resolving here, and it blocks that id.
+        ch.warning(
+            f"The folder is still named '{target.name}', so '{target.name}' also still "
+            f"resolves to this space.",
+            details=f"`navig space use {old}` and `{old}`-addressed lookups land here, and a new "
+                    f"space given the id '{old}' would collide with this folder. Rename it too:\n"
+                    f"  navig space rename {new} {new} --move-folder  (no-op on the id, moves the folder)",
+        )
 
 
 # ── Fold: demote a nested space so it never claims a top-level id ────────────

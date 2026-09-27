@@ -211,3 +211,61 @@ def test_known_missing_entries_are_still_missing(root) -> None:
         if _resolve(root, [group, verb])[0] is not None:
             stale.append(f"`{group} {verb}` now EXISTS — drop it ({reason})")
     assert not stale, "KNOWN_MISSING is out of date:\n  " + "\n  ".join(stale)
+
+
+# ── Registry spaces: instructions an operator (and a space's agents) follow ──────
+#
+# Scoped to commands a PLUGIN provides (core/navig/data/command_providers.json) — the
+# references that break when a plugin is renamed, merged or reshaped, which is exactly
+# what folding `navig-paperwork` into `navig-cabinet` did. Measured when this was added
+# (2026-09-27): 60 such references across the tracked spaces, 1 dead (`navig contacts
+# --filter`, fixed). The spaces' references to CORE commands are a separate, larger
+# debt — 56 of 153 backticked refs were dead, mostly `skill run <id> --<flag>` and
+# planned `space agent`/`workflow`/`pack` surfaces — deliberately NOT gated here: a
+# 56-entry baseline is the "place to hide things" the call-arg guard's design rejects.
+
+_SPACE_LINE = re.compile(r'^\s*(?:[-*]\s+|\$\s+|"|- ")?navig ([^\n`"#]+)', re.M)
+
+
+def _space_plugin_refs():
+    import json
+    import subprocess
+
+    repo = Path(__file__).resolve().parents[3]
+    assert (repo / "registry" / "spaces").is_dir(), repo  # structural anchor
+    providers = json.loads(
+        (repo / "core" / "navig" / "data" / "command_providers.json").read_text(encoding="utf-8")
+    )["commands"]
+    files = subprocess.run(
+        ["git", "-C", str(repo), "ls-files", "--", "registry/spaces"],
+        capture_output=True, text=True, encoding="utf-8", check=True,
+    ).stdout.split()
+    for rel in files:
+        if not rel.endswith((".md", ".yaml", ".yml")):
+            continue
+        text = (repo / rel).read_text(encoding="utf-8", errors="replace")
+        raws = [m.group(1) for m in _BACKTICKED.finditer(text)]
+        raws += [m.group(1) for m in _SPACE_LINE.finditer(text)]  # fenced code blocks
+        for raw in raws:
+            words, flags = _parse(raw)
+            if words and words[0] in providers:
+                yield rel, raw.strip(), words, flags
+
+
+def test_space_plugin_refs_are_found():
+    """A vacuity floor: a scan that silently finds nothing would pass forever."""
+    refs = list(_space_plugin_refs())
+    assert len(refs) >= 40, f"only {len(refs)} plugin-command refs in registry/spaces — has the shape moved?"
+    assert any(words[0] == "cabinet" for _rel, _raw, words, _f in refs)
+
+
+def test_registry_spaces_use_real_plugin_commands(root) -> None:
+    broken = []
+    for rel, raw, words, flags in _space_plugin_refs():
+        why = _check(root, words, flags)
+        if why:
+            broken.append(f"{rel}: `navig {raw}` — {why}")
+    assert not broken, (
+        "registry spaces tell the operator to run plugin commands that do not exist:\n  "
+        + "\n  ".join(broken)
+    )

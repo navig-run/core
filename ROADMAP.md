@@ -1,63 +1,51 @@
 # NAVIG Roadmap
 
-> The canonical strategy document is [`.navig/plans/ROADMAP_MASTER.md`](.navig/plans/ROADMAP_MASTER.md).
-> This file is the community-facing summary. Timelines are estimates.
+The public summary of where NAVIG is and where it is heading. Timelines are estimates;
+[CHANGELOG.md](CHANGELOG.md) is the record of what actually shipped.
 
 ---
 
-## Shipped in v2.4.x
+## Shipped (3.x)
 
-- ✅ Python 3.10+ requirement enforced and documented
-- ✅ `tomli` dependency pinned for Python < 3.11 compatibility
-- ✅ `pydantic>=2.0` promoted to core dependency
-- ✅ Encrypted vault with per-host credential injection at runtime
-- ✅ SSH MITM prevention and credential security hardening
-- ✅ Self-healing daemon with exponential backoff restart
-- ✅ Telegram gateway — resilient reconnection, improved command parsing
-- ✅ MCP server — tool and resource exposure for AI editors
-- ✅ `NAVIG_CONFIG_DIR` environment variable override for config root
-- ✅ LAN mesh peer discovery — Phase 1 (UDP multicast, local-only)
-
----
+- ✅ **Spaces** — a folder with `.navig/` holding skills, agents, plans and memory; `navig space init / doctor`
+- ✅ **Blocks** — installable, verifiable outcomes: `navig apply <block>` proves the result with a verified receipt
+- ✅ **Operations ledger** — every action hash-chained (`navig ledger verify`), interrupted runs reaped, `navig undo` for reversible ones
+- ✅ **Safety rails** — per-host locks between agents, an approval gate for dangerous commands, destructive-command confirmation
+- ✅ **Lighthouse** — reach your machine from Telegram / the Deck through your own Cloudflare edge, no tunnel and no open port
+- ✅ **Telegram extensions** — one switch per bot feature, and "off" really means off
+- ✅ **Self-healing daemon** — supervised gateway and bot, heartbeat, scoped restarts that never touch another install
+- ✅ **Plugins** — first-party plugins that extend `navig` and also run standalone ([navig-run/plugins](https://github.com/navig-run/plugins))
+- ✅ **MCP server** — navig's tools and resources exposed to AI editors
+- ✅ **Identity** — every install derives its own sigil (`navig whoami`)
 
 ## Current focus
 
-- 🔄 **Mesh Phase 1 stabilisation** — peer registration, proxy routing, graceful degradation to local
-- 🔄 **Learning system** — improved error pattern detection, personalised recommendations
-- 🔄 **Matrix gateway** — bridge stability, better event handling
-- 🔄 **Packages system** — extensibility framework for custom commands and integrations
-- 🔄 **Store system** — community-contributed runbooks, checklists, skills, workflow templates
-- 🔄 **Test coverage** — maintain ≥65% coverage as surface area grows
-
----
+- 🔄 **Cross-platform parity** — launchd autostart on macOS, systemd routing on Linux, CI on all three OSes
+- 🔄 **Live dashboard** — `navig dashboard` rebuilt on the same readers as the CLI
+- 🔄 **Standalone plugins** — every plugin installable and documented on its own
+- 🔄 **Harbor Bay** — the marketplace for Skills, Personas, Spaces and Blocks
+- 🔄 **LAN mesh (phase 1)** — peer discovery and proxying, always degrading to local
 
 ## Next (3–6 months)
 
-- **Multi-user support** — shared configurations for small teams
-- **Backup improvements** — encrypted backups, remote storage backends (S3, Backblaze B2)
-- **Health dashboard** — lightweight UI for multi-server monitoring
-- **Enhanced AI context** — better project awareness, improved command suggestions
-- **Docker Compose management** — multi-container orchestration workflows
-- **Mesh Phase 2** — WAN-capable with secure mesh token auth
+- **Team spaces** — shared configuration and approvals for small teams
+- **Backups** — encrypted, with remote storage backends (S3, Backblaze B2)
+- **Container workflows** — Docker Compose operations as Blocks with receipts
+- **Mesh phase 2** — WAN-capable peers with mesh-token auth
 
----
+## Later
 
-## Future (6+ months)
-
-- **Cross-server orchestration** — coordinate deployments across multiple hosts
-- **Workflow automation triggers** — event-driven actions from health checks or schedules
-- **Integration marketplace** — community plugins and packs directory
-- **Metrics retention** — long-term storage and visualisation of system metrics
-- **Incident response automation** — automated runbook execution during detected outages
+- **Cross-server orchestration** — one outcome coordinated across many hosts
+- **Event-driven Blocks** — apply an outcome when a check or schedule fires
+- **Metrics retention** — long-term storage and visualisation
+- **Incident runbooks** — detected outage → proposed Block → approved fix, all on the ledger
 
 ---
 
 ## How to influence the roadmap
 
-- Open an issue or start a discussion on [GitHub](https://github.com/navig-run/core/discussions)
-- Sponsor development via [GitHub Sponsors](https://github.com/sponsors/navig-run) to accelerate specific areas
+- Open an issue or a discussion on [GitHub](https://github.com/navig-run/core/discussions)
+- Sponsor development via [GitHub Sponsors](https://github.com/sponsors/navig-run)
 - Contribute directly — see [CONTRIBUTING.md](CONTRIBUTING.md)
 
----
-
-<!-- Last updated: March 2026 · NAVIG v2.4.13 -->
+<!-- Last updated: September 2026 · NAVIG 3.25 -->

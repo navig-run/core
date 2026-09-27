@@ -115,3 +115,72 @@ def test_plugin_toggle_keeps_a_concurrent_write(cfg) -> None:
     c.enable_plugin("weather")
     on_disk = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert on_disk["plugins"]["disabled_plugins"] == []
+
+
+# ── Review follow-ups (#1543 P2 findings) ────────────────────────────────────
+
+
+def test_pending_writes_are_scoped_to_the_config_they_were_made_for(cfg, tmp_path: Path) -> None:
+    """A ledger replayed onto ANOTHER install's file is a cross-directory leak.
+
+    The singleton resolves `global_config_path` live, so `NAVIG_CONFIG_DIR` can move for
+    good (it does, constantly, under test isolation). Replaying writes made for the old
+    directory would expose them through `get()` and PERSIST them through `save()` into a
+    config they never belonged to.
+    """
+    import os
+
+    c, _ = cfg
+    elsewhere = tmp_path / "b"
+    elsewhere.mkdir()
+    (elsewhere / "config.yaml").write_text("telegram:\n  x: 99\n", encoding="utf-8")
+
+    c.set("modules.overrides", {"finance": "false"}, scope="global")
+    os.environ["NAVIG_CONFIG_DIR"] = str(elsewhere)  # the dir moves for good
+    try:
+        assert c.get("telegram.x") == 99, "the new install is what we read"
+        assert c.get("modules.overrides") is None, "the other install's unsaved write is gone"
+        c.save(scope="global")
+        on_disk = yaml.safe_load((elsewhere / "config.yaml").read_text(encoding="utf-8"))
+        assert "modules" not in on_disk, "and it was never written here"
+    finally:
+        os.environ["NAVIG_CONFIG_DIR"] = str(tmp_path / "a")
+
+
+def test_a_reset_parent_is_not_undone_by_an_older_child_write(cfg) -> None:
+    """Re-setting a key must move it to the END of the replay, not keep its old slot.
+
+    A dict does not reorder on reassignment, so `set("a", {})`, `set("a.b", 1)`,
+    `set("a", {})` replayed in insertion order re-applied `a.b` and RESURRECTED a value
+    the final parent reset had removed.
+    """
+    c, path = cfg
+    c.set("modules.overrides", {}, scope="global")
+    c.set("modules.overrides.finance", "false", scope="global")
+    c.set("modules.overrides", {}, scope="global")  # the last word
+    in_memory = c.get("modules.overrides")
+    _bump_mtime(path, "telegram:\n  x: 1\n  y: 2\n")  # forces a refresh + replay
+    assert in_memory == {}
+    assert c.get("modules.overrides") == {}, "the replay reproduced the in-memory state"
+    assert c.get("telegram.y") == 2
+
+
+def test_a_parent_write_supersedes_pending_children(cfg) -> None:
+    c, path = cfg
+    c.set("modules.overrides.finance", "false", scope="global")
+    c.set("modules.overrides.devops", True, scope="global")
+    c.set("modules.overrides", {"goals": True}, scope="global")
+    _bump_mtime(path, "telegram:\n  x: 1\n  y: 2\n")
+    assert c.get("modules.overrides") == {"goals": True}
+    c.save(scope="global")
+    on_disk = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert on_disk["modules"]["overrides"] == {"goals": True}, "saved the same thing it showed"
+
+
+def test_a_child_write_after_its_parent_still_lands(cfg) -> None:
+    """The mirror of the case above: order is preserved, not simply pruned."""
+    c, path = cfg
+    c.set("modules.overrides", {}, scope="global")
+    c.set("modules.overrides.finance", "false", scope="global")
+    _bump_mtime(path, "telegram:\n  x: 1\n  y: 2\n")
+    assert c.get("modules.overrides") == {"finance": "false"}

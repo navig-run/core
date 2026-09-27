@@ -9,7 +9,7 @@ operator's real ``%LOCALAPPDATA%/navig/logs/daemon.log`` contained::
 ``pid=7`` is a value that exists only inside a test stub, and 56800 was the
 operator's LIVE supervisor -- killed three seconds later, which an independent
 process-watcher recorded at 09:23:07. The same log carried lines naming pytest
-tmp dirs (``.../pytest-of-subdose/popen-gw3/test_add_telegram_bot0/...``)
+tmp dirs (``.../pytest-of-<user>/popen-gw3/test_add_telegram_bot0/...``)
 interleaved with genuine boot records.
 
 The mechanism, end to end:

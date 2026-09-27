@@ -194,6 +194,34 @@ def _resolve_public_url(explicit: str = "") -> str:
     return ""
 
 
+def _sweep_chat_overrides(token: str, *, quiet: bool = False) -> list[int]:
+    """Reset per-chat Mini App buttons that shadow the default without the live key.
+
+    Registering only the DEFAULT button repairs nothing for a user whose chat carries
+    its own override — see ``rotation.clear_stale_chat_menu_buttons``. Best-effort:
+    the default is already set, so a failure here is reported, never raised.
+    """
+    try:
+        from navig.cloud.rotation import clear_stale_chat_menu_buttons
+
+        cleared = clear_stale_chat_menu_buttons(token=token)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("per-chat menu button sweep failed: %r", exc)
+        if not quiet:
+            from navig import console_helper as ch
+
+            ch.warning(f"Could not check per-chat Mini App buttons ({exc}).")
+        return []
+    if cleared and not quiet:
+        from navig import console_helper as ch
+
+        ch.success(
+            f"Reset {len(cleared)} per-chat button override(s) that opened the deck "
+            f"without its key (chat {', '.join(str(c) for c in cleared)})."
+        )
+    return cleared
+
+
 def _tg_call(token: str, method: str, body: dict | None = None, *, timeout: float = 10.0) -> dict:
     """POST JSON to a Telegram Bot API method. Raises on transport error;
     callers should check the ``ok`` field on the response."""
@@ -371,6 +399,30 @@ def miniapp_button_health(*, timeout: float = 6.0) -> tuple[bool, str, bool] | N
             "so Telegram clients are on an older deck — run `navig miniapp register`",
             False,
         )
+    # Everything above inspects the DEFAULT button. A per-chat override wins over it for
+    # that one chat, and none of the checks above can see one — which is how the
+    # operator's own chat kept opening a keyless deck ("Session expired" on every
+    # launch) while this row, rotation and `register` all reported the default correct.
+    try:
+        from navig.cloud.rotation import stale_chat_menu_buttons
+
+        stale = stale_chat_menu_buttons(cm, token=token)
+    except Exception as exc:  # noqa: BLE001 — a health check must never crash its caller
+        return (
+            False,
+            f"default button is current, but per-chat overrides COULD NOT BE VERIFIED ({exc})",
+            True,
+        )
+    if stale:
+        chats = ", ".join(f"chat {cid} → {origin}" for cid, origin in stale)
+        return (
+            False,
+            f"a per-chat button override opens the deck WITHOUT its key ({chats}) — it "
+            "shadows the correct default, so that user gets 'Session expired' on every "
+            "launch — run `navig miniapp register`",
+            False,
+        )
+
     return (True, f"current bundle (v={want_sig})", False)
 
 
@@ -796,6 +848,8 @@ def run_miniapp_deploy(
                 result["registered"] = bool(r.get("ok"))
                 if not r.get("ok"):
                     result["register_error"] = r.get("description")
+                else:
+                    result["chat_overrides_reset"] = _sweep_chat_overrides(token, quiet=True)
         return result
     finally:
         if staging is not None:
@@ -1024,6 +1078,7 @@ def miniapp_register(
         raise typer.Exit(code=1)
 
     ch.success("Mini App menu button registered.")
+    _sweep_chat_overrides(token)
 
     if description:
         desc = "NAVIG Deck — tap the menu button for your dashboard."

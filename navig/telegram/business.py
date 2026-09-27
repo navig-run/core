@@ -140,7 +140,7 @@ def _edit_stamp(msg: dict) -> str:
 def _chat_label(chat: dict, cached_title: str | None = None) -> str:
     """Human name for the alert: a group title or the person's name — never the
     bare ``username`` first (a private chat has no ``title``, so the old
-    ``title or username`` rendered a hex-looking handle instead of "Yck 🧢")."""
+    ``title or username`` rendered a hex-looking handle instead of "Sam 🧢")."""
     name = chat.get("title") or " ".join(
         p for p in (chat.get("first_name"), chat.get("last_name")) if p
     ).strip()
@@ -548,8 +548,8 @@ async def handle_business_message(channel, msg: dict, *, edited: bool = False) -
             sender_id=sender_id,
             # Person first, handle last — the SAME order the chat label uses. The
             # username came first here, so a deletion alert introduced the
-            # counterparty by their raw handle ("a646f6e747472…") while the very
-            # next line of the same DM called the chat "Yck 🧢".
+            # counterparty by their raw handle ("sam_exam…") while the very
+            # next line of the same DM called the chat "Sam 🧢".
             sender_name=_person_name(frm),
             date=str(msg.get("date") or ""),
             # `or None`: an empty string OVERWRITES via upsert's COALESCE, so a

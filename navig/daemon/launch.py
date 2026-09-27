@@ -93,6 +93,8 @@ def service_is_installed() -> bool:
         if sys.platform == "win32":
             _enabled, installed, _detail = sm.task_scheduler_enabled_state()
             return installed is True
+        if sm.has_launchd():
+            return sm._launchd_plist_path().exists()
         if sm.has_systemd():
             return sm._systemd_unit_path(user=True).exists() or sm._systemd_unit_path().exists()
     except Exception:  # noqa: BLE001

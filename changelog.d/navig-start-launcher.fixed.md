@@ -1,0 +1,1 @@
+- **`navig start` starts the gateway + bot again, as every guide says.** It was intercepted before the CLI parsed it and opened the dashboard instead, so the documented quick launcher (`--foreground`, `--no-bot`, `--port`) was unreachable. The dashboard is `navig dashboard`; the old `navig start --fast/--simple` forms still reach it with a note.

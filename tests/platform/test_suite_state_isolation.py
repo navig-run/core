@@ -104,3 +104,24 @@ def test_app_root_still_works_outside_the_checkout(tmp_path, monkeypatch) -> Non
     found = paths.find_app_root()
     assert found is not None, "a real project outside the checkout must still be found"
     assert Path(found).resolve() == project.resolve()
+
+
+def test_the_os_cache_dir_is_isolated_too() -> None:
+    """The FOURTH root: ``paths.cache_dir()`` reads NAVIG_CACHE_DIR and otherwise the OS
+    cache (%LOCALAPPDATA%/navig/cache on Windows) — derived from none of the three above.
+
+    Measured before the conftest fix: tests/telegram/test_deletion_policy.py wrote four
+    deletion-digest claim files into the operator's REAL cache. A stray claim there can
+    block a real digest card for its TTL, so a leak is not cosmetic."""
+    from navig.platform import paths
+
+    cache = paths.cache_dir().resolve()
+    assert os.environ.get("NAVIG_CACHE_DIR"), "the session fixture did not set NAVIG_CACHE_DIR"
+    real = os.environ.get("LOCALAPPDATA")
+    if real:
+        real_cache = (Path(real) / "navig" / "cache").resolve()
+        assert cache != real_cache, f"cache_dir() is the operator's real cache: {cache}"
+    home_cache = (Path.home() / ".cache" / "navig").resolve()
+    assert cache != home_cache, f"cache_dir() is the operator's real cache: {cache}"
+    # …and it lives with the other isolated roots, so it is discarded with them.
+    assert Path(os.environ["NAVIG_CONFIG_DIR"]).resolve() in cache.parents

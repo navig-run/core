@@ -138,7 +138,105 @@ def repoint_menu_button(cfg=None) -> bool:
         "setChatMenuButton",
         {"menu_button": {"type": "web_app", "text": "NAVIG Deck", "web_app": {"url": url}}},
     )
-    return bool(result.get("ok"))
+    ok = bool(result.get("ok"))
+    if ok:
+        # The default is only what a chat WITHOUT its own override sees. Re-pointing it
+        # while a per-chat override still shadows it repairs nothing for that user.
+        try:
+            clear_stale_chat_menu_buttons(cfg, token=token)
+        except Exception:  # noqa: BLE001 — the default is fixed; this is best-effort
+            logger.debug("per-chat menu button sweep failed", exc_info=True)
+    return ok
+
+
+# ── per-chat overrides: the button a user actually taps ──────────────────────
+#
+# ``setChatMenuButton`` with a ``chat_id`` sets a PER-CHAT button that wins over the
+# bot default for that one chat. Nothing current writes one, but an old deploy did
+# (``deck.navig.run/``, keyless), and it survived every re-point because all of them
+# — rotation, ``miniapp register``, the doctor check — only ever read or wrote the
+# DEFAULT. The operator's own chat therefore opened a keyless deck, sent no Bearer,
+# and the edge answered a bare 401 before the brain ever saw a request: "session
+# expired" on every launch, while every check reported the (correct) default button.
+
+
+def _known_private_chats(cfg) -> set[int]:
+    """Private chats whose button matters: the configured Telegram allowlist.
+
+    Groups (negative ids) have no menu button of their own, so they are skipped.
+    """
+    from navig.core.coerce import coerce_id_set
+
+    ids, _ = coerce_id_set(cfg.get("telegram.allowed_users", None))
+    return {i for i in ids if i > 0}
+
+
+def _url_carries_key(url: str, key: str) -> bool:
+    from urllib.parse import parse_qs, urlsplit
+
+    have = (parse_qs(urlsplit(url).query).get("key") or [""])[0].strip()
+    return bool(have) and bool(key) and have == key
+
+
+def stale_chat_menu_buttons(cfg=None, *, token: str | None = None) -> list[tuple[int, str]]:
+    """``[(chat_id, origin)]`` for per-chat buttons that shadow the default WITHOUT the
+    live key. ``origin`` is scheme+host only — the URL carries the raw key, so it is
+    never returned or logged. Empty when there is no token, no key, or nothing stale.
+    """
+    cfg = _cfg(cfg)
+    key = str(cfg.get("deck.api_key", "") or "").strip()
+    if not key:
+        return []
+
+    from urllib.parse import urlsplit
+
+    from navig.commands.miniapp import _bot_token, _tg_call
+
+    token = token or _bot_token()
+    if not token:
+        return []
+
+    stale: list[tuple[int, str]] = []
+    for chat_id in sorted(_known_private_chats(cfg)):
+        resp = _tg_call(token, "getChatMenuButton", {"chat_id": chat_id})
+        info = (resp.get("result") or {}) if resp.get("ok") else {}
+        # "default" = inherits the bot default (correct); "commands" = a deliberate
+        # non-app button. Only a web_app override can shadow the deck.
+        if str(info.get("type") or "") != "web_app":
+            continue
+        url = str((info.get("web_app") or {}).get("url") or "")
+        if not _url_carries_key(url, key):
+            parts = urlsplit(url)
+            stale.append((chat_id, f"{parts.scheme}://{parts.netloc}" if parts.netloc else "?"))
+    return stale
+
+
+def clear_stale_chat_menu_buttons(cfg=None, *, token: str | None = None) -> list[int]:
+    """Reset every stale per-chat override to ``default`` so that chat inherits the
+    live, keyed bot button. Returns the chat ids actually reset.
+    """
+    cfg = _cfg(cfg)
+    from navig.commands.miniapp import _bot_token, _tg_call
+
+    token = token or _bot_token()
+    if not token:
+        return []
+
+    cleared: list[int] = []
+    for chat_id, origin in stale_chat_menu_buttons(cfg, token=token):
+        resp = _tg_call(
+            token, "setChatMenuButton", {"chat_id": chat_id, "menu_button": {"type": "default"}}
+        )
+        if resp.get("ok"):
+            cleared.append(chat_id)
+            logger.info("Reset stale per-chat Mini App button (chat %s, was %s).", chat_id, origin)
+        else:
+            logger.warning(
+                "Could not reset stale per-chat Mini App button for chat %s: %s",
+                chat_id,
+                resp.get("description"),
+            )
+    return cleared
 
 
 # ── things we do NOT own: tell the operator, precisely ───────────────────────

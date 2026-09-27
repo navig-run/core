@@ -68,7 +68,7 @@ def _store():
 
 
 def _seed(chat_id, mid, *, text="hello", sender_id=777):
-    _store().upsert_message(chat_id, mid, sender_id=sender_id, sender_name="subdose",
+    _store().upsert_message(chat_id, mid, sender_id=sender_id, sender_name="operator",
                             date="1", text=text, kind="business", raw={"business": True})
 
 
@@ -207,11 +207,11 @@ async def test_quiet_hours_hold_the_window_instead_of_eating_it(env, monkeypatch
 
 async def test_the_show_button_renders_the_same_detail_the_instant_alert_would(env):
     env.d[d.CFG_MODE] = "digest"
-    _store().upsert_room(555, type="business", title="Yck")
+    _store().upsert_room(555, type="business", title="Sam")
     _seed(555, 1, text="see you at 9")
     _seed(555, 2, text="ok", sender_id=555)
     ch = _ch()
-    await b.handle_deleted_business_messages(ch, _payload(555, [1, 2], first_name="Yck"))
+    await b.handle_deleted_business_messages(ch, _payload(555, [1, 2], first_name="Sam"))
     await d.flush_digest(ch)
     token = _sends(ch)[0]["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
 
@@ -219,7 +219,7 @@ async def test_the_show_button_renders_the_same_detail_the_instant_alert_would(e
     toast = await d.handle_callback(ch, token, chat_id=777, message_id=5, user_id=777)
     assert toast == "Showed 2"
     detail = _sends(ch)[0]["text"]
-    assert "In Yck:" in detail
+    assert "In Sam:" in detail
     assert "see you at 9" in detail and "ok" in detail
 
 

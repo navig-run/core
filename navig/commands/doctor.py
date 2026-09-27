@@ -163,11 +163,19 @@ def _daemon_autostart() -> tuple[bool, str]:
                 capture_output=True, timeout=5,
             )
             return r.returncode == 0, "Task Scheduler"
-        r = subprocess.run(
-            ["systemctl", "--user", "is-enabled", "navig-agent"],
-            capture_output=True, text=True, timeout=5,
-        )
-        return r.returncode == 0, "systemd"
+        if sys.platform == "darwin":
+            # macOS has no systemd: the old probe here always read "not registered".
+            from navig.daemon.service_manager import _launchd_plist_path
+
+            return _launchd_plist_path().exists(), "launchd"
+        for scope in (["--user"], []):  # a root install registers the system-scope unit
+            r = subprocess.run(
+                ["systemctl", *scope, "is-enabled", "navig-agent"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if r.returncode == 0:
+                return True, "systemd"
+        return False, "systemd"
     except Exception:  # noqa: BLE001
         return False, ""  # tool missing/timeout — treat as not registered
 
@@ -1483,23 +1491,93 @@ def _judge_release(
     return rows
 
 
-def _pypi_latest(timeout: float = 3.0) -> tuple[str | None, str | None]:
-    """``(version, None)`` from PyPI's JSON, or ``(None, why)``. Offline is a reason, not a version."""
+_NOT_ON_PYPI = "not on PyPI"
+
+
+def _pypi_latest(package: str = "navig", timeout: float = 3.0) -> tuple[str | None, str | None]:
+    """``(version, None)`` from PyPI's JSON, or ``(None, why)``. Offline is a reason, not a version.
+
+    A 404 is reported as ``_NOT_ON_PYPI`` — a FACT (the package was never uploaded), unlike
+    a timeout, which is an unknown. The hard-deps row judges the two differently.
+    """
     if os.environ.get("NAVIG_VERSION_SYNC_OFFLINE"):
         return None, "NAVIG_VERSION_SYNC_OFFLINE"
     import json  # noqa: PLC0415
+    import urllib.error  # noqa: PLC0415
     import urllib.request  # noqa: PLC0415
 
     req = urllib.request.Request(
-        "https://pypi.org/pypi/navig/json", headers={"User-Agent": "navig-doctor"}
+        f"https://pypi.org/pypi/{package}/json", headers={"User-Agent": "navig-doctor"}
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - fixed https host
             data = json.loads(resp.read().decode("utf-8"))
         version = str(data["info"]["version"])
         return (version, None) if _TAG_VERSION_RE.match(f"v{version}") else (None, f"unexpected version {version!r}")
-    except Exception as exc:  # noqa: BLE001 - offline, timeout, HTTP error: all "not checked"
+    except urllib.error.HTTPError as exc:
+        return None, _NOT_ON_PYPI if exc.code == 404 else f"HTTP {exc.code}"
+    except Exception as exc:  # noqa: BLE001 - offline, timeout: "not checked"
         return None, type(exc).__name__
+
+
+_DEPS_BLOCK_RE = re.compile(r"(?ms)^dependencies\s*=\s*\[(.*?)^\]")
+_FIRST_PARTY_DEP_RE = re.compile(r'"(navig-[a-z0-9-]+)\s*>=\s*(\d+\.\d+\.\d+)')
+
+
+def _hard_first_party_deps(pyproject_text: str) -> list[tuple[str, str]]:
+    """``(name, floor)`` for every ``navig-*`` package in core's REQUIRED dependencies.
+
+    Extras are deliberately out of scope: a missing extra breaks ``pip install navig[x]``,
+    a missing HARD dependency breaks ``pip install navig`` itself. Comment lines are skipped
+    so prose naming a package cannot count as a dependency.
+    """
+    m = _DEPS_BLOCK_RE.search(pyproject_text)
+    if not m:
+        return []
+    out: list[tuple[str, str]] = []
+    for line in m.group(1).splitlines():
+        if line.strip().startswith("#"):
+            continue
+        dep = _FIRST_PARTY_DEP_RE.search(line)
+        if dep:
+            out.append((dep.group(1), dep.group(2)))
+    return out
+
+
+def _judge_hard_deps(
+    deps: list[tuple[str, str, str | None, str | None]],
+) -> CheckResult | None:
+    """One row from ``(name, floor, published_version, error)`` per hard first-party dep.
+
+    Measured 2026-09-27: core has required ``navig-contacts>=0.1.0`` since #1306 and that
+    package was never uploaded (404) — so the NEXT core wheel cannot be installed by anyone,
+    while every Release row stayed green. ``release.sh``'s install gate refuses to ship it,
+    but only at release time; this says so on every doctor run.
+    """
+    if not deps:
+        return None
+    missing = [n for n, _f, _v, e in deps if e == _NOT_ON_PYPI]
+    behind = [
+        f"{n} {v} < {f}"
+        for n, f, v, _e in deps
+        if v is not None and _semver_key(v) < _semver_key(f)
+    ]
+    unknown = [f"{n} ({e})" for n, _f, v, e in deps if v is None and e != _NOT_ON_PYPI]
+    if missing or behind:
+        parts = [f"{n} not on PyPI" for n in missing] + [f"PyPI has {b}" for b in behind]
+        names = " ".join(n for n in missing) or " ".join(b.split()[0] for b in behind)
+        return _check(
+            "Release · hard deps",
+            False,
+            "; ".join(parts)
+            + " — the next core wheel is uninstallable (the release gate will refuse it). "
+            + f"Publish in the same session as core: node scripts/publish-plugins.mjs {names} --publish",
+        )
+    if unknown:
+        return _check("Release · hard deps", False, "not checked: " + ", ".join(unknown), warn=True)
+    return _check(
+        "Release · hard deps", True, " · ".join(f"{n} {v} published" for n, _f, v, _e in deps)
+    )
 
 
 def _newest_local_tag(root: Path) -> str | None:
@@ -1575,10 +1653,15 @@ def check_release() -> list[tuple[str, bool, str]]:
     tag = _newest_local_tag(root)
     pypi, pypi_error = _pypi_latest()
     entries, fragments = _pending_changelog(core_dir)
-    return _judge_release(
+    rows: list[tuple[str, bool, str]] = list(_judge_release(
         tree, manifest, tag, pypi,
         pending_entries=entries, pending_fragments=fragments, pypi_error=pypi_error,
-    )
+    ))
+    deps = [(n, f, *_pypi_latest(n)) for n, f in _hard_first_party_deps(text)]
+    deps_row = _judge_hard_deps(deps)
+    if deps_row is not None:
+        rows.append(deps_row)
+    return rows
 
 
 def check_browsers() -> list[tuple[str, bool, str]]:

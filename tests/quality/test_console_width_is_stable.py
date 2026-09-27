@@ -31,7 +31,7 @@ _PHRASE = "nothing recorded yet"
 _LONG_MESSAGE = (
     "no ledger at "
     "E:/projects/apps/navig/.dev/worktrees/truth/core/.dev/tmp/"
-    "pytest-of-subdose/pytest-9/popen-gw6/test_missing_ledger0/nope.jsonl"
+    "pytest-of-operatr/pytest-9/popen-gw6/test_missing_ledger0/nope.jsonl"
     f" \u2014 {_PHRASE}"
 )
 

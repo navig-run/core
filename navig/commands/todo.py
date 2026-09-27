@@ -48,6 +48,37 @@ def _banner() -> None:
         ch.warning("Reminders are not being delivered", text)
 
 
+def _sync_reminders(todo: dict[str, Any] | None, now) -> int:
+    """Re-derive this task's reminders after the CLI changed its schedule.
+
+    The CLI has no chat of its own, so delivery is resolved to the operator's own
+    Telegram chat — the same row the bot would have scheduled. Without this, a task
+    scheduled in Telegram and then finished, moved or deleted here keeps its old
+    reminders and pings about a task that has changed or gone.
+    """
+    from navig.pim.reminders import sync_for_operator  # noqa: PLC0415
+
+    return sync_for_operator(_store(), todo, now=now)
+
+
+def _report_reminders(scheduled: int, *, wanted: bool) -> None:
+    """Say what actually happened to the reminders — including "nothing".
+
+    `wanted` is whether this task could have had any (a date, or lead times). Silence
+    on a task with a date is the ambiguity that makes an operator wonder for a week
+    whether reminders work at all.
+    """
+    if scheduled:
+        ch.dim(f"{scheduled} reminder{'s' if scheduled != 1 else ''} scheduled")
+        return
+    if not wanted:
+        return
+    from navig.pim.reminders import operator_delivery  # noqa: PLC0415
+
+    if operator_delivery() is None:
+        ch.dim("no reminders — no Telegram chat is configured to deliver them to")
+
+
 def _rows(todos: list[dict[str, Any]], now) -> list[tuple[str, ...]]:
     from navig.pim.clock import from_utc_iso, to_local  # noqa: PLC0415
     from navig.pim.dates import format_local, humanize_delta  # noqa: PLC0415
@@ -156,8 +187,13 @@ def add_cmd(
         space=space,
     )
 
+    # A task captured here is the same row the bot reads, so its reminders belong on
+    # the same one delivery path — otherwise `-r 3d` is a flag that quietly does
+    # nothing outside Telegram.
+    scheduled = _sync_reminders(todo, now)
+
     if as_json:
-        ch.emit_json(todo)
+        ch.emit_json({**todo, "reminders_scheduled": scheduled})
         return
 
     from navig.pim.dates import format_local  # noqa: PLC0415
@@ -168,6 +204,7 @@ def add_cmd(
         ch.success(f"Added to the inbox: {todo['title']}", "give it a date: navig todo when <id> <when>")
     if recur:
         ch.dim(f"repeats {recur}")
+    _report_reminders(scheduled, wanted=bool(remind) or bool(due))
     _banner()
 
 
@@ -194,8 +231,11 @@ def when_cmd(
         raise typer.Exit(1)
 
     updated = store.update_todo(todo["id"], {"due_at": to_utc_iso(due)})
+    # Moving the date without re-deriving the reminders is the ghost ping: the old
+    # rows keep their old moments and announce a task that has since moved.
+    scheduled = _sync_reminders(updated, now)
     ch.success(f"{updated['title']}", f"due {format_local(due, now)}")
-    ch.dim("reminders are delivered through Telegram — set them there or with /todo")
+    _report_reminders(scheduled, wanted=True)
 
 
 @todo_app.command("done")
@@ -207,6 +247,11 @@ def done_cmd(todo_id: str = typer.Argument(..., help="Task id.")) -> None:
     if updated is None:
         ch.error("That task is gone.")
         raise typer.Exit(1)
+
+    # Covers both outcomes in one call: a finished task has its reminders cancelled,
+    # and a recurring one — which comes back OPEN on a new date — gets them re-derived
+    # for that date. Ticking something off must never be the thing that pings you.
+    _sync_reminders(updated, _now())
 
     if updated.get("completed_at"):
         ch.success(f"Done: {updated['title']}")
@@ -233,6 +278,11 @@ def rm_cmd(
     if not yes and not typer.confirm(f"Delete {todo['title']!r}?"):
         ch.info("Left alone.")
         return
+    # BEFORE the delete: the reminder links cascade away with the card, so deleting
+    # first takes the only record of what still needs cancelling with it.
+    from navig.pim.reminders import cancel_for_operator  # noqa: PLC0415
+
+    cancel_for_operator(store, todo["id"])
     if not store.delete_todo(todo["id"]):
         ch.error("That task is gone.")
         raise typer.Exit(1)

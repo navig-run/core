@@ -190,35 +190,37 @@ def _maybe_handle_fast_path(argv: list[str]) -> bool:
         sys.stdout.write(__version__ + "\n")
         return True
 
-    # `navig start` — alias for `navig dashboard` (Kraken TUI)
-    # Let normal CLI parsing handle help forms.
+    # `navig start` is the documented quick launcher (gateway + bot — HANDBOOK,
+    # INSTALL_GUIDE, TELEGRAM). It used to be intercepted HERE and opened the
+    # dashboard instead, so the registered `start` command was unreachable while
+    # every doc and `navig status` told users to run it. Only the old dashboard
+    # flags (`--fast`, `--simple`), which `start` itself never accepted, still
+    # route to the dashboard — with a pointer to its real name.
     if command_tokens and command_tokens[0] == "start":
-        if len(command_tokens) > 1 and any(flag in command_tokens[1:] for flag in ("--help", "-h", "help")):
-            return False
-        return _handle_start_command(command_tokens[1:])
+        # Read the RAW args: extract_non_global_tokens() drops every flag, so these two
+        # never reached the old handler either (`--simple` silently ran the live view).
+        legacy = [a for a in args if a in ("--fast", "--simple")]
+        if legacy:
+            return _handle_start_command(legacy)
 
     return False
 
 
 def _handle_start_command(extra_args: list[str]) -> bool:
-    """Launch the NAVIG Kraken Dashboard (Rich TUI).
-
-    `navig start` is a convenient alias for `navig dashboard`.
-    Accepts optional flags: --fast (skip boot animation).
-    """
+    """Legacy `navig start --fast|--simple` → the dashboard (now `navig dashboard`)."""
     try:
         from navig.commands.dashboard import run_dashboard, run_dashboard_simple
     except Exception as exc:
         _log.debug("Dashboard unavailable: %s — falling back to full CLI", exc)
         return False
 
-    skip_boot = "--fast" in extra_args
-    simple = "--simple" in extra_args
-
-    if simple:
+    sys.stderr.write(
+        "note: the dashboard is `navig dashboard`; `navig start` starts the gateway + bot.\n"
+    )
+    if "--simple" in extra_args:
         run_dashboard_simple()
     else:
-        run_dashboard(skip_boot=skip_boot)
+        run_dashboard(skip_boot="--fast" in extra_args)
     return True
 
 
@@ -551,6 +553,7 @@ _BUILTIN_COMMANDS: frozenset[str] = frozenset({
     "space",
     "blueprint",
     "deck",
+    "os",
     "portable",
     "system",
     "mount",

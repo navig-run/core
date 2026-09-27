@@ -1,14 +1,13 @@
 # Funding NAVIG
 
-NAVIG is **free and open-source software** licensed under MPL-2.0. Development is sustained by community donations and sponsors.
+NAVIG is **free and open-source software** licensed under Apache-2.0. Development is sustained by community donations and sponsors.
 
 ## How to Support
 
 Support NAVIG development through:
 
-- **Buy Me a Coffee**: [buymeacoffee.com/navig-run](https://buymeacoffee.com/navig-run)
-- **Chip in for Caffeine**: [donationalerts.com/r/navig-run](https://donationalerts.com/r/navig-run)
-- **Alchemist Lab (Patreon)**: [patreon.com/c/navig-run](https://patreon.com/c/navig-run)
+- **GitHub Sponsors**: [github.com/sponsors/navig-run](https://github.com/sponsors/navig-run)
+- **Buy Me a Coffee**: [buymeacoffee.com/miztizm](https://buymeacoffee.com/miztizm)
 
 ## What Your Support Funds
 

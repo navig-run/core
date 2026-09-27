@@ -259,19 +259,33 @@ _flush_task: asyncio.Task | None = None
 _flush_lock = asyncio.Lock()
 
 
+def _digest_scope() -> dict[str, Any]:
+    """What a digest reports: BUSINESS deletions in chats the operator has not muted.
+
+    Every digest read goes through this — the card's count, resume's check, and
+    the Show button's list — so the number on the card and the rows under Show
+    cannot disagree. Without it, a muted chat still landed in the count and under
+    Show, and a message the operator deleted in a group via the deck was counted
+    as a business deletion."""
+    return {"kind": "business", "exclude_chats": muted_chats()}
+
+
 def _store():
     from navig.store.telegram_catalog import TelegramCatalogStore
 
     return TelegramCatalogStore()
 
 
-def arm_digest(channel: Any) -> None:
+def arm_digest(channel: Any, *, delay: int | None = None) -> None:
     """Ensure a flush is scheduled. Idempotent while one is pending, so a burst of
-    deletions produces ONE card rather than one per event."""
+    deletions produces ONE card rather than one per event.
+
+    ``delay`` overrides the window — resume uses a short one, because the
+    deletions it finds already waited out (part of) a window before the restart."""
     global _flush_task
     if _flush_task is not None and not _flush_task.done():
         return
-    delay = window_sec()
+    delay = window_sec() if delay is None else max(0, int(delay))
 
     async def _later() -> None:
         try:
@@ -287,6 +301,132 @@ def arm_digest(channel: Any) -> None:
     _flush_task = spawn(_later())
 
 
+#: How soon a digest left pending by a restart is sent once the channel is back.
+#: Not a full window: those deletions already waited before the process died.
+RESUME_DELAY_SEC = 60
+
+
+async def resume_pending(channel: Any) -> dict[str, Any]:
+    """Re-arm a digest that a restart left pending.
+
+    ``arm_digest`` is only ever called when a deletion ARRIVES, so a window that
+    was pending when the process stopped used to sit unsent until the next
+    deletion — hours, on a quiet account. The operator restarts often (five times
+    in two days, measured), so this was not an edge case.
+
+    Runs in every process that starts a Telegram channel — the supervisor starts
+    two — which is safe because :func:`flush_digest` claims its window
+    cross-process before sending."""
+    try:
+        from navig.telegram import permissions
+
+        if not permissions.business_enabled():
+            return {"armed": False, "reason": "business inbox off"}
+    except Exception:  # noqa: BLE001
+        pass
+    if not record_enabled():
+        return {"armed": False, "reason": "recording off"}
+    if mode() != "digest":
+        return {"armed": False, "reason": f"mode={mode()}"}
+    try:
+        counts = _store().count_deleted_since(_watermark(), **_digest_scope())
+    except Exception:  # noqa: BLE001
+        logger.debug("deletion digest resume: count failed", exc_info=True)
+        return {"armed": False, "reason": "count_failed"}
+    if not counts["messages"]:
+        return {"armed": False, "reason": "nothing_pending"}
+    arm_digest(channel, delay=RESUME_DELAY_SEC)
+    logger.info("deletion digest resumed: %d pending across %d chat(s)",
+                counts["messages"], counts["chats"])
+    return {"armed": True, "pending": counts["messages"], "chats": counts["chats"]}
+
+
+# ── Cross-process window claim ───────────────────────────────────────────────
+#
+# The supervisor runs a gateway AND a telegram_worker, each with its own channel.
+# A per-process lock is honoured by both — which is exactly how a per-process
+# "announce once" flag produced two boot greetings per restart. Resume runs in
+# both, so two processes can flush the SAME window. The claim is an atomic file
+# create, so whichever gets there first sends and the other stands down.
+
+#: A send takes seconds. A claim older than this belongs to a process that died
+#: mid-send, and holding it would strand that window forever.
+CLAIM_TTL_SEC = 120
+
+
+def _claim_path(since: str):
+    from navig.platform import paths
+
+    return paths.cache_dir() / "deletion_digest" / f"{_token_for(since)}.claim"
+
+
+def _claim_window(since: str, *, now: float | None = None) -> bool:
+    """True if this process owns the card for the window starting at *since*.
+
+    Atomic ``open(..., "x")``, never read-then-write: the two processes resume in
+    the same second. Fails OPEN — if the claim cannot be recorded, sending one
+    card too many beats a digest that is never sent."""
+    import os
+    import time
+
+    ts = time.time() if now is None else now
+    path = _claim_path(since)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(path, "x", encoding="utf-8") as fh:
+                fh.write(str(ts))
+            return True
+        except FileExistsError:
+            try:
+                age = ts - float(path.read_text(encoding="utf-8").strip() or 0)
+            except (OSError, ValueError):
+                age = float("inf")
+            if age < CLAIM_TTL_SEC:
+                return False
+            tmp = path.with_suffix(".claim.tmp")
+            tmp.write_text(str(ts), encoding="utf-8")
+            os.replace(tmp, path)
+            return True
+    except OSError:
+        logger.debug("deletion digest claim not recorded; sending anyway", exc_info=True)
+        return True
+
+
+def _release_window(since: str) -> None:
+    """Give a window back after a FAILED send, so a retry can take it. Without this
+    a rejected card would leave the window claimed and never reported."""
+    try:
+        _claim_path(since).unlink(missing_ok=True)
+    except OSError:
+        logger.debug("deletion digest claim not released", exc_info=True)
+
+
+def _prune_claims(*, older_than_sec: int = 86_400, now: float | None = None) -> int:
+    """Delete claims for windows long since reported. One file per sent card would
+    otherwise accumulate forever in the cache dir."""
+    import time
+
+    ts = time.time() if now is None else now
+    removed = 0
+    try:
+        from navig.platform import paths
+
+        folder = paths.cache_dir() / "deletion_digest"
+        if not folder.is_dir():
+            return 0
+        for f in folder.glob("*.claim"):
+            try:
+                if ts - f.stat().st_mtime > older_than_sec:
+                    f.unlink()
+                    removed += 1
+            except OSError:
+                continue
+    except Exception:  # noqa: BLE001
+        logger.debug("deletion digest claim prune failed", exc_info=True)
+    return removed
+
+
 async def flush_digest(channel: Any, *, force: bool = False) -> dict[str, Any]:
     """Send one digest card for everything deleted since the watermark.
 
@@ -296,7 +436,7 @@ async def flush_digest(channel: Any, *, force: bool = False) -> dict[str, Any]:
     async with _flush_lock:
         since = _watermark()
         try:
-            counts = _store().count_deleted_since(since)
+            counts = _store().count_deleted_since(since, **_digest_scope())
         except Exception:  # noqa: BLE001
             logger.warning("deletion digest count failed", exc_info=True)
             return {"sent": False, "reason": "count_failed"}
@@ -310,12 +450,34 @@ async def flush_digest(channel: Any, *, force: bool = False) -> dict[str, Any]:
             # lift, instead of being consumed in silence.
             return {"sent": False, "reason": why, "since": since}
 
+        # Claimed AFTER every "don't send" check and BEFORE sending: a claim taken
+        # for a window we then decline would block the sibling from sending it.
+        # Honoured even under `force` — a duplicate card is never what anyone
+        # asked for, and the TTL keeps a crashed sender from stranding it.
+        #
+        # Keyed on the BATCH (its newest deleted_at), never on `since`. With no
+        # watermark stored, each process computes since = now - window itself, a
+        # few ms apart, so a since-keyed claim gave the two processes different
+        # keys and BOTH sent — caught by the race test, on exactly the first-run
+        # path. The rows are the one thing both processes see identically.
+        batch_key = counts.get("latest") or since
+        if not _claim_window(batch_key):
+            return {"sent": False, "reason": "claimed_by_sibling", "since": since}
+
         n, chats = counts["messages"], counts["chats"]
         head = _t("deletions.digest.head", n=n) or f"{n} message{'s' if n != 1 else ''} deleted"
         if chats > 1:
             head += _t("deletions.digest.chats", n=chats) or f" in {chats} chats"
         tail = _t("deletions.digest.tail") or "tap to see what they were"
-        body = f"🗑 {head}\n{since[:16].replace('T', ' ')} UTC · {tail}."
+        # Local time, like every other deletion surface (`format_when`). The card
+        # printed the raw UTC window start ("19:31 UTC"), so an operator at UTC+2
+        # read a time two hours off their own clock — on the one message whose job
+        # is to say WHEN. Lazy import: `business` already imports this module.
+        from navig.telegram.business import format_when
+
+        when = format_when(since) or f"{since[:16].replace('T', ' ')} UTC"
+        since_line = _t("deletions.digest.since", when=when) or f"since {when}"
+        body = f"🗑 {head}\n{since_line} · {tail}."
         token = _token_for(since)
         show = _t("deletions.button.show", n=n) or f"Show {n}"
         quiet = _t("deletions.button.quiet") or "Quiet"
@@ -330,6 +492,11 @@ async def flush_digest(channel: Any, *, force: bool = False) -> dict[str, Any]:
             # Advance ONLY on a delivered card. A failed send that moved the
             # watermark would silently drop the window it was reporting.
             _set_watermark(_iso(_now()))
+            _prune_claims()
+        else:
+            # Hand the batch back so the next attempt — ours or the sibling's —
+            # can take it. Keeping the claim would strand it until the TTL.
+            _release_window(batch_key)
         return {"sent": bool(ok), "count": n, "chats": chats, "since": since}
 
 
@@ -491,7 +658,7 @@ async def handle_callback(channel: Any, cb_data: str, chat_id: Any, message_id: 
     if payload.startswith("show:"):
         since = since_from_token(payload[len("show:"):])
         try:
-            rows = _store().list_deleted(since=since, limit=200)
+            rows = _store().list_deleted(since=since, limit=200, **_digest_scope())
         except Exception:  # noqa: BLE001
             logger.warning("deletion digest detail read failed", exc_info=True)
             return "⚠️ Could not read the deletions"

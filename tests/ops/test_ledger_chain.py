@@ -431,10 +431,24 @@ class TestLedgerVerifyCli:
         assert result.exit_code == 1
         assert "line 3" in result.output
 
-    def test_missing_ledger_exits_zero(self, tmp_path):
-        result = self._invoke(["verify", "--path", str(tmp_path / "nope.jsonl")])
+    def test_missing_default_ledger_exits_zero(self, tmp_path, monkeypatch):
+        # A fresh install has recorded nothing yet — an honest non-failure.
+        import types
+
+        import navig.operation_recorder as recorder_mod
+
+        fake = types.SimpleNamespace(history_file=tmp_path / "nope.jsonl")
+        monkeypatch.setattr(recorder_mod, "get_operation_recorder", lambda: fake)
+        result = self._invoke(["verify"])
         assert result.exit_code == 0
         assert "nothing recorded" in _flat(result.output)
+
+    def test_missing_named_ledger_exits_one(self, tmp_path):
+        # A file the operator NAMED that is not there verified nothing — exit 0
+        # would be a green tick over a check that never ran.
+        result = self._invoke(["verify", "--path", str(tmp_path / "nope.jsonl")])
+        assert result.exit_code == 1
+        assert "nothing was verified" in _flat(result.output)
 
     def test_json_output_is_one_pure_document(self, tmp_path):
         rec = _make_recorder(tmp_path)

@@ -227,3 +227,44 @@ async def test_a_normal_forward_sequence_still_fires(monkeypatch):
         times=("07:30",),
     )
     assert fires == 1
+
+
+# ── the cabinet's document-expiry tick (navig-cabinet, soft import) ──────────
+
+
+@pytest.mark.parametrize("enabled,expected", [(True, 1), (False, 0)])
+async def test_the_loop_ticks_cabinet_reminders_only_when_the_module_is_on(
+    monkeypatch, enabled, expected
+):
+    """The soft import is the whole contract: a missing plugin or a disabled module must
+    cost nothing, and an enabled one must actually be called — a hook nothing reaches is
+    the "written, tested, never wired" shape."""
+    import asyncio
+    import sys
+    import types
+    from unittest.mock import AsyncMock, MagicMock
+
+    from navig.modules import registry as modules_registry
+    from navig.notify import prefs, scheduler, sms_webhook_config
+
+    calls: list[object] = []
+
+    async def fake_tick(gateway=None):
+        calls.append(gateway)
+
+    fake = types.ModuleType("navig_cabinet.reminders")
+    fake.tick = fake_tick
+    monkeypatch.setitem(sys.modules, "navig_cabinet.reminders", fake)
+    start = datetime(2026, 9, 27, 12, 0)
+    monkeypatch.setattr(scheduler, "datetime", _ScriptedDatetime([start, start]))
+    monkeypatch.setattr(scheduler, "_TICK_SECONDS", 0)
+    monkeypatch.setattr(prefs, "get_settings", lambda: {"briefing_enabled": False})
+    monkeypatch.setattr(sms_webhook_config, "auto_configure", AsyncMock())
+    monkeypatch.setattr(
+        modules_registry, "get_registry",
+        lambda: MagicMock(is_enabled=lambda name: enabled and name == "cabinet"),
+    )
+
+    with pytest.raises(_ClockExhausted):
+        await asyncio.wait_for(scheduler._loop("gw"), timeout=5)
+    assert calls == ["gw"] * expected

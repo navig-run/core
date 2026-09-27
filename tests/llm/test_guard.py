@@ -79,7 +79,7 @@ class TestLocalServer:
     def test_a_remote_ollama_is_never_started_here(self, monkeypatch):
         monkeypatch.setattr(guard, "_ollama_reachable", lambda base, timeout=2.0: False)
         monkeypatch.setattr(
-            "navig.providers._local_defaults.ollama_base_url", lambda: "http://10.10.10.2:11434"
+            "navig.providers._local_defaults.ollama_base_url", lambda: "http://10.0.0.42:11434"
         )
         monkeypatch.setattr("navig.providers._local_defaults.ollama_is_local", lambda: False)
         monkeypatch.setattr(
@@ -87,7 +87,7 @@ class TestLocalServer:
         )
         with pytest.raises(guard.LocalServerUnavailable) as exc:
             guard.ensure_local_server(guard.Resolved("ollama", "m"))
-        assert "10.10.10.2" in str(exc.value) and "ai.ollama_host" in str(exc.value)
+        assert "10.0.0.42" in str(exc.value) and "ai.ollama_host" in str(exc.value)
 
     def test_non_ollama_local_providers_are_not_probed(self, monkeypatch):
         monkeypatch.setattr(

@@ -705,6 +705,20 @@ class TelegramChannel:
 
         spawn(_deferred_setup())  # GC-safe: a dropped task here means the bot never sets up
 
+        # A deletion digest pending when the process stopped used to wait for the
+        # NEXT deletion to re-arm it — hours on a quiet account, and the operator
+        # restarts often. Safe to run in both supervisor processes: the flush
+        # claims its window cross-process before sending.
+        async def _resume_deletion_digest() -> None:
+            try:
+                from navig.telegram import deletions
+
+                await deletions.resume_pending(self)
+            except Exception as exc:  # noqa: BLE001 — never block channel start
+                logger.debug("deletion digest resume skipped: %s", exc)
+
+        spawn(_resume_deletion_digest())
+
         # Proactively bind allowed Telegram users to this daemon on the broker
         # so the Mini App resolves by telegram_id WITHOUT the user needing to
         # send /start first. Retries a few times to let the cloud tunnel finish
@@ -1087,6 +1101,24 @@ class TelegramChannel:
         retry_count = int(reminder.get("retry_count") or 0)
         remind_at_str = str(reminder.get("remind_at") or "")
 
+        # A todo's reminder belongs to an extension the operator can switch off, and
+        # switching it off has to stop the pings — the same rule habits follow, where
+        # the cron job declines to write the row at all. New rows are already refused
+        # (`pim.reminders.reschedule`); this holds back the ones scheduled before the
+        # switch was flipped. Held, not failed: the row stays due, so turning the
+        # extension back on today still delivers it.
+        if reminder_id:
+            try:
+                from navig.pim.reminders import delivery_suppressed
+
+                if delivery_suppressed(reminder_id):
+                    logger.debug(
+                        "Reminder id=%s held: the Todo extension is off", reminder_id
+                    )
+                    return
+            except Exception:  # noqa: BLE001 — never let the gate stop a delivery
+                logger.debug("reminder id=%s: todo gate unreadable", reminder_id, exc_info=True)
+
         if not msg:
             # Genuinely malformed (no message) — close it. A reminder with NO Telegram chat
             # (chat_id 0/None — e.g. a deck-app reminder created with chat_id=0) is NOT
@@ -1272,6 +1304,13 @@ class TelegramChannel:
                 },
             )
             logger.info("Mini App menu button re-pointed at the live key.")
+            # A per-chat override still shadows the default we just fixed for that
+            # chat — sweep them too (blocking Telegram calls → off the event loop).
+            import asyncio
+
+            from navig.cloud.rotation import clear_stale_chat_menu_buttons
+
+            await asyncio.to_thread(clear_stale_chat_menu_buttons, None, token=self.bot_token)
         except Exception:  # noqa: BLE001 — never block startup on this
             logger.debug("menu button self-heal skipped", exc_info=True)
 
@@ -5436,9 +5475,12 @@ class TelegramChannel:
         #
         # The prompt is sent with force_reply, and Telegram clients re-arm that
         # reply box after a restart, quoting the original text — so while that
-        # text is still a question, an already-answered check-in looks like it is
-        # being asked again. Rewriting it in place removes that ambiguity, and
-        # that is the ONLY job it has.
+        # message EXISTS, an already-answered check-in looks like it is being
+        # asked again. Deleting it is the only thing that disarms the box;
+        # rewriting it, which is all this used to do, changes the text the client
+        # quotes but leaves the box pointed at the same message id. Measured
+        # 2026-09-27: not one edit was rejected in the log, and the operator was
+        # still looking at the morning's question that afternoon.
         #
         # ⚠ It cannot double as the acknowledgement, because an edit is invisible
         # in every client that matters: it raises no notification and does not
@@ -5448,25 +5490,32 @@ class TelegramChannel:
         # read as discarded. Their weight WAS recorded. The same silence occurs
         # when the edit SUCCEEDS and anything arrives afterwards, which #1318 did
         # not cover: it only rescued the failing edit.
+        receipt = f"✅ {confirmation}"
         try:
             from navig.spaces import body_metrics as _bm  # noqa: PLC0415
             from navig.telegram import body_actions as _ba  # noqa: PLC0415
 
             latest = _bm.latest(_bm.resolve_target(chat_id))
             if _kind == "weigh" and latest is not None:
-                await _ba.settle_prompt(
-                    self,
-                    chat_id,
-                    prompt_id,
-                    _ba.settled_text(_bm.resolve_target(chat_id), _day, latest[1]),
-                )
+                settled = _ba.settled_text(_bm.resolve_target(chat_id), _day, latest[1])
+                # Delete first; only rewrite the ones too old to delete (Telegram
+                # refuses a bot delete past 48 h), because a rewritten prompt is
+                # still an armed reply box.
+                if await _ba.dismiss_prompt(self, chat_id, prompt_id):
+                    # The rewritten prompt used to be where the 7-day average was
+                    # shown. Deleting it would drop that, so the receipt — the one
+                    # message that survives — carries it instead. `settled_text`
+                    # already leads with the ✅.
+                    receipt = settled
+                else:
+                    await _ba.settle_prompt(self, chat_id, prompt_id, settled)
         except Exception as exc:  # noqa: BLE001
             logger.debug("settling the weigh-in prompt failed: %s", exc)
 
-        # ALWAYS acknowledge, whatever the edit did. One new message per answer —
-        # the same receipt the "note" branch has always produced, since it never
-        # had an edit to hide behind.
-        await self.send_message(chat_id, f"✅ {confirmation}")
+        # ALWAYS acknowledge, whatever happened to the prompt. One new message per
+        # answer — the same receipt the "note" branch has always produced, since it
+        # never had an edit to hide behind.
+        await self.send_message(chat_id, receipt)
         return True
 
     async def _handle_eve_pending_reply(
@@ -5897,6 +5946,14 @@ class TelegramChannel:
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
         return TelegramCommandsMixin._get_deck_url(self)
+
+    def _miniapp_deck_base(self) -> str:
+        """Delegate to TelegramCommandsMixin — `_get_deck_url` and `_register_commands`
+        call it as `self._miniapp_deck_base()`, and inside a delegated mixin method
+        `self` is THIS channel, which does not inherit the mixin at runtime."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._miniapp_deck_base(self)
 
     async def send_command_output(  # noqa: PLR0913 — a send surface, not a model
         self,

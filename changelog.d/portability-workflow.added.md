@@ -1,0 +1,1 @@
+- **A Portability workflow on the public repo.** `.github/workflows/portability.yml` (manual trigger) runs the platform-subject suites — daemon/service lifecycle, installers, paths, the tray, the dashboard's key reader, the Linux/macOS parity pins — plus `install.sh --dry-run` / `install.ps1 -DryRun` on Ubuntu, macOS and Windows. It is how macOS behaviour gets verified at all.

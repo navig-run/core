@@ -27,6 +27,12 @@ from navig.commands import space as space_cmd
 from navig.spaces import registry
 from navig.spaces.space_manifest import load_space_manifest
 
+#: The real link helpers, captured before the `isolated` fixture stubs them out.
+#: A test that has to watch a MOVED folder get relinked needs the real thing:
+#: junctions store absolute targets, so the relink is the behaviour under test.
+_REAL_LINK_ROOTS = space_cmd._link_space_roots
+_REAL_LINK_CAPABILITIES = space_cmd._link_space_capabilities
+
 
 @pytest.fixture
 def isolated(tmp_path: Path, monkeypatch) -> Path:
@@ -286,3 +292,144 @@ def test_register_files_a_spaces_root_resident_as_root_not_external(
     r = CliRunner().invoke(space_cmd.space_app, ["register", str(ext)])
     assert r.exit_code == 0, r.output
     assert _row(ext)["source"] == "external"
+
+
+# ── Review follow-ups (#1543 P2 findings) ────────────────────────────────────
+
+
+def test_rename_moves_the_pointer_when_the_ids_have_DRIFTED(isolated: Path) -> None:
+    """The pointer holds an id, and the drift this command repairs is that ids differ.
+
+    A manifest edited by hand leaves the registry row and the active pointer on the
+    FORMER id. Comparing the pointer only against the manifest-derived id called the
+    active space inactive, so the registry was re-keyed and `active_space.txt` was left
+    naming an id nothing resolves — the exact breakage `rename` exists to fix.
+    """
+    p = _space(isolated, "homelab")
+    registry.register(p, id="homelab-old", name="homelab-old", source="external")
+    space_cmd._set_active_space("homelab-old")  # the pointer followed the OLD id
+
+    r = _run(str(p), "lab")
+    assert r.exit_code == 0, r.output
+    assert space_cmd.resolve_active_space() == "lab", "the drifted pointer was carried"
+    assert _row(p)["id"] == "lab"
+
+
+def test_rename_moves_the_pointer_named_by_the_CONVENTIONAL_FOLDER(isolated: Path) -> None:
+    """A pointer naming the FOLDER of a spaces-root space is that space too.
+
+    `resolve_space()` answers with `<spaces>/<name>` whenever that directory exists, so
+    `rack` here IS this space even though its manifest calls it `shelving` — and only a
+    PATH comparison can see that. Comparing the pointer with the manifest id left
+    `active_space.txt` naming `rack`, a folder the rename had just re-identified.
+    """
+    from navig.platform import paths
+
+    p = _space(paths.spaces_dir(), "shelving", folder="rack", register=False)
+    space_cmd._set_active_space("rack")  # the pointer names the FOLDER
+    r = _run(str(p), "attic")
+    assert r.exit_code == 0, r.output
+    assert space_cmd.resolve_active_space() == "attic", "the pointer followed the rename"
+
+
+def test_a_root_space_renamed_in_place_warns_that_the_old_id_still_resolves(
+    isolated: Path,
+) -> None:
+    """`resolve_space()` answers with `<spaces>/<name>` whenever that dir exists, ahead
+    of the registry and the manifest — so the old name stays a live alias."""
+    from navig.platform import paths
+    from navig.spaces.resolver import resolve_space
+
+    p = _space(paths.spaces_dir(), "homelab", folder="homelab")
+    r = _run(str(p), "lab")
+    assert r.exit_code == 0, r.output
+    assert _squash("also still resolves to this space") in _squash(r.output)
+    assert "--move-folder" in r.output
+    # …and the warning is TRUE: the old id resolves here, which is why it is warned about.
+    assert resolve_space("homelab", cwd=isolated).path.resolve() == p.resolve()
+
+
+def test_move_folder_renames_the_folder_registry_row_and_links(isolated: Path, monkeypatch) -> None:
+    from navig.platform import paths
+    from navig.spaces.resolver import resolve_space
+
+    monkeypatch.setattr(space_cmd, "_link_space_roots", _REAL_LINK_ROOTS)
+    monkeypatch.setattr(space_cmd, "_link_space_capabilities", _REAL_LINK_CAPABILITIES)
+    p = _space(paths.spaces_dir(), "homelab", folder="homelab")
+    for source in (".navig/plans", ".navig/inbox"):  # a root link needs its source on disk
+        (p / source).mkdir(parents=True, exist_ok=True)
+    _REAL_LINK_ROOTS(p)
+    _REAL_LINK_CAPABILITIES(p)
+    space_cmd._set_active_space("homelab")
+    registry.set_trusted(str(p), True)
+
+    r = _run(str(p), "lab", "--move-folder")
+    assert r.exit_code == 0, r.output
+    moved = paths.spaces_dir() / "lab"
+    assert moved.is_dir() and not p.exists(), r.output
+    row = registry.entry_for(moved)
+    assert row is not None and row["id"] == "lab"
+    assert row["trusted"] is True, "a decision column survives the move"
+    assert registry.entry_for(p) is None, "no row is left naming the old folder"
+    assert space_cmd.resolve_active_space() == "lab"
+    assert resolve_space("lab", cwd=isolated).path.resolve() == moved.resolve()
+    assert not (paths.spaces_dir() / "homelab").exists(), "the old id no longer resolves by folder"
+    for link in ("plans", ".inbox", ".claude/skills"):
+        assert (moved / link).exists(), f"{link} was not relinked after the move"
+
+
+def test_move_folder_refuses_when_the_destination_exists(isolated: Path) -> None:
+    from navig.platform import paths
+
+    p = _space(paths.spaces_dir(), "homelab", folder="homelab")
+    (paths.spaces_dir() / "lab").mkdir()
+    r = _run(str(p), "lab", "--move-folder")
+    assert r.exit_code == 1, r.output
+    assert "already exists" in r.output
+    assert p.is_dir(), "the source folder is untouched"
+    assert load_space_manifest(p).resolved_id == "lab", "the manifest half had already landed"
+    assert "--move-folder" in r.output, "the message says how to finish the half that did not land"
+
+
+def test_move_folder_does_not_apply_to_a_space_outside_the_spaces_root(isolated: Path) -> None:
+    p = _space(isolated, "homelab")  # an ordinary project folder
+    r = _run(str(p), "lab", "--move-folder")
+    assert r.exit_code == 0, r.output
+    assert "does not apply" in r.output
+    assert p.is_dir() and not (isolated / "lab").exists(), "somebody's project folder is not an id"
+    assert load_space_manifest(p).resolved_id == "lab"
+
+
+def test_move_folder_dry_run_writes_nothing(isolated: Path) -> None:
+    from navig.platform import paths
+
+    p = _space(paths.spaces_dir(), "homelab", folder="homelab")
+    r = _run(str(p), "lab", "--move-folder", "--dry-run")
+    assert r.exit_code == 0, r.output
+    assert "folder: homelab" in r.output
+    assert p.is_dir() and not (paths.spaces_dir() / "lab").exists()
+    assert load_space_manifest(p).resolved_id == "homelab"
+
+
+def test_registry_repath_carries_the_row_and_the_active_pointer(isolated: Path) -> None:
+    a = _space(isolated, "homelab")
+    b = isolated / "moved"
+    registry.set_trusted(str(a), True)
+    registry.set_enabled(str(a), False)
+    registry.mark_active(a)
+
+    assert registry.repath(a, b) is True
+    row = registry.entry_for(b)
+    assert row is not None and row["id"] == "homelab"
+    assert row["trusted"] is True and row["enabled"] is False, "decisions are not derivations"
+    assert registry.load_registry()["active"] == str(b.resolve())
+    assert len(registry.load_registry()["spaces"]) == 1, "carried, not duplicated"
+
+
+def test_registry_repath_refuses_an_occupied_destination(isolated: Path) -> None:
+    a = _space(isolated, "homelab")
+    b = _space(isolated, "office")
+    assert registry.repath(a, b) is False
+    assert registry.entry_for(a)["id"] == "homelab"
+    assert registry.entry_for(b)["id"] == "office"
+    assert registry.repath(isolated / "nothing-here", isolated / "x") is False

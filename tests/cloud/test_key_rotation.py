@@ -166,3 +166,89 @@ def test_menu_button_url_is_empty_without_a_deck(monkeypatch):
     not a crash or a bogus URL."""
     assert rotation.menu_button_url(_cfg(**{"deck.public_url": "", "cloud.public_url": ""})) == ""
     assert rotation.repoint_menu_button(_cfg(**{"deck.public_url": ""})) is False
+
+
+# ── per-chat overrides: the button a user actually taps ──────────────────────
+#
+# A PER-CHAT menu button wins over the bot default for that one chat. The operator's
+# own chat carried a stale keyless one (`deck.navig.run/`), so every launch sent no
+# Bearer and the edge 401'd before the brain saw a request — "Session expired" on
+# every launch — while every repair and check only ever touched the DEFAULT.
+
+
+def _chat_buttons(monkeypatch, per_chat: dict[int, dict]):
+    """Stub Telegram: getChatMenuButton answers per chat; record every set call."""
+    from navig.commands import miniapp
+
+    calls: list[tuple[str, dict]] = []
+
+    def _call(token, method, body=None, *, timeout=10.0):
+        body = body or {}
+        calls.append((method, body))
+        if method == "getChatMenuButton":
+            return {"ok": True, "result": per_chat.get(body.get("chat_id"), {"type": "default"})}
+        return {"ok": True, "result": True}
+
+    monkeypatch.setattr(miniapp, "_tg_call", _call)
+    monkeypatch.setattr(miniapp, "_bot_token", lambda: "TOKEN")
+    return calls
+
+
+def _webapp(url: str) -> dict:
+    return {"type": "web_app", "text": "x", "web_app": {"url": url}}
+
+
+def test_keyless_per_chat_override_is_found_and_reset(monkeypatch):
+    calls = _chat_buttons(monkeypatch, {111: _webapp("https://deck.navig.run/")})
+    cfg = _cfg(**{"telegram.allowed_users": [111]})
+
+    stale = rotation.stale_chat_menu_buttons(cfg)
+    assert stale == [(111, "https://deck.navig.run")]
+
+    assert rotation.clear_stale_chat_menu_buttons(cfg) == [111]
+    resets = [b for m, b in calls if m == "setChatMenuButton"]
+    assert resets == [{"chat_id": 111, "menu_button": {"type": "default"}}]
+
+
+def test_retired_key_per_chat_override_is_stale(monkeypatch):
+    _chat_buttons(monkeypatch, {111: _webapp("https://d.example/connect?key=OLD_KEY&v=1")})
+    assert rotation.stale_chat_menu_buttons(_cfg(**{"telegram.allowed_users": [111]})) == [
+        (111, "https://d.example")
+    ]
+
+
+def test_healthy_overrides_and_non_webapp_buttons_are_left_alone(monkeypatch):
+    calls = _chat_buttons(
+        monkeypatch,
+        {
+            111: _webapp(f"https://d.example/connect?key={KEY}&v=1"),  # carries the live key
+            222: {"type": "default"},                                  # inherits the default
+            333: {"type": "commands"},                                 # deliberate non-app button
+        },
+    )
+    cfg = _cfg(**{"telegram.allowed_users": "111, 222, 333"})  # config-set string spelling
+
+    assert rotation.stale_chat_menu_buttons(cfg) == []
+    assert rotation.clear_stale_chat_menu_buttons(cfg) == []
+    assert not [m for m, _ in calls if m == "setChatMenuButton"]
+    # all three chats were actually inspected — the "nothing stale" is not vacuous
+    assert sorted({b["chat_id"] for m, b in calls if m == "getChatMenuButton"}) == [111, 222, 333]
+
+
+def test_groups_are_skipped_and_the_key_never_leaks_into_the_report(monkeypatch):
+    calls = _chat_buttons(monkeypatch, {111: _webapp("https://d.example/connect?key=OLD_KEY")})
+    stale = rotation.stale_chat_menu_buttons(_cfg(**{"telegram.allowed_users": [111, -100123]}))
+    assert [c for c, _ in stale] == [111]
+    assert all("OLD_KEY" not in origin and "key=" not in origin for _, origin in stale)
+    assert all(b.get("chat_id") != -100123 for _, b in calls)
+
+
+def test_repoint_menu_button_also_sweeps_per_chat_overrides(monkeypatch):
+    """Re-pointing only the DEFAULT repairs nothing for a user whose chat overrides it."""
+    calls = _chat_buttons(monkeypatch, {111: _webapp("https://deck.navig.run/")})
+    cfg = _cfg(**{"deck.public_url": "https://d.example", "telegram.allowed_users": [111]})
+
+    assert rotation.repoint_menu_button(cfg) is True
+    sets = [b for m, b in calls if m == "setChatMenuButton"]
+    assert "chat_id" not in sets[0]                     # the default, first
+    assert {"chat_id": 111, "menu_button": {"type": "default"}} in sets

@@ -6248,6 +6248,21 @@
       "aliases": [],
       "arguments": [],
       "examples": [
+        "navig cabinet dates"
+      ],
+      "handler": "cmd_dates",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet dates",
+      "since": "",
+      "status": "stable",
+      "summary": "Find expiry dates inside documents that have none \u2014 passports, ID cards, policies.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
         "navig cabinet edit"
       ],
       "handler": "cmd_edit",
@@ -6362,6 +6377,21 @@
       "since": "",
       "status": "stable",
       "summary": "Lock the cabinet with a passphrase (asked for on every command).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig cabinet remind"
+      ],
+      "handler": "cmd_remind",
+      "module": "navig_cabinet.commands.cabinet",
+      "options": [],
+      "path": "navig cabinet remind",
+      "since": "",
+      "status": "stable",
+      "summary": "Send the expiry reminders that are due now (the daemon also does this daily).",
       "tags": []
     },
     {
@@ -10711,7 +10741,7 @@
       "path": "navig dashboard",
       "since": "",
       "status": "stable",
-      "summary": "Real-time operations dashboard with host status, Docker, and history.",
+      "summary": "Live operator console: identity, services, safety, hosts and activity.",
       "tags": []
     },
     {
@@ -29639,6 +29669,88 @@
       "aliases": [],
       "arguments": [],
       "examples": [
+        "navig os serve"
+      ],
+      "handler": "serve",
+      "module": "navig.commands.os_cmd",
+      "options": [
+        {
+          "flags": [
+            "--port",
+            "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--host"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--password"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--new-password"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--dir"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--print-env"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig os serve",
+      "since": "",
+      "status": "stable",
+      "summary": "Serve NAVIG OS to a browser from this machine.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
+        "navig os status"
+      ],
+      "handler": "status",
+      "module": "navig.commands.os_cmd",
+      "options": [
+        {
+          "flags": [
+            "--port",
+            "-p"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "takes_value": true
+        }
+      ],
+      "path": "navig os status",
+      "since": "",
+      "status": "stable",
+      "summary": "Is the web server up, and is it set up?",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "arguments": [],
+      "examples": [
         "navig output-style create"
       ],
       "handler": "style_create",
@@ -29717,7 +29829,7 @@
         "navig paperwork apply"
       ],
       "handler": "cmd_apply",
-      "module": "navig_paperwork.commands.paperwork",
+      "module": "navig_cabinet.paperwork.commands.paperwork",
       "options": [],
       "path": "navig paperwork apply",
       "since": "",
@@ -29732,7 +29844,7 @@
         "navig paperwork echeances"
       ],
       "handler": "cmd_echeances",
-      "module": "navig_paperwork.commands.paperwork",
+      "module": "navig_cabinet.paperwork.commands.paperwork",
       "options": [],
       "path": "navig paperwork echeances",
       "since": "",
@@ -29747,12 +29859,12 @@
         "navig paperwork handoff"
       ],
       "handler": "cmd_handoff",
-      "module": "navig_paperwork.commands.paperwork",
+      "module": "navig_cabinet.paperwork.commands.paperwork",
       "options": [],
       "path": "navig paperwork handoff",
       "since": "",
       "status": "stable",
-      "summary": "File the manifest's non-company documents into the spaces that own them.",
+      "summary": "File the manifest's non-company documents where they belong.",
       "tags": []
     },
     {
@@ -29762,7 +29874,7 @@
         "navig paperwork index"
       ],
       "handler": "cmd_index",
-      "module": "navig_paperwork.commands.paperwork",
+      "module": "navig_cabinet.paperwork.commands.paperwork",
       "options": [],
       "path": "navig paperwork index",
       "since": "",
@@ -29777,7 +29889,7 @@
         "navig paperwork reply"
       ],
       "handler": "cmd_reply",
-      "module": "navig_paperwork.commands.paperwork",
+      "module": "navig_cabinet.paperwork.commands.paperwork",
       "options": [],
       "path": "navig paperwork reply",
       "since": "",
@@ -29792,7 +29904,7 @@
         "navig paperwork review"
       ],
       "handler": "cmd_review",
-      "module": "navig_paperwork.commands.paperwork",
+      "module": "navig_cabinet.paperwork.commands.paperwork",
       "options": [],
       "path": "navig paperwork review",
       "since": "",
@@ -29807,7 +29919,7 @@
         "navig paperwork scan"
       ],
       "handler": "cmd_scan",
-      "module": "navig_paperwork.commands.paperwork",
+      "module": "navig_cabinet.paperwork.commands.paperwork",
       "options": [],
       "path": "navig paperwork scan",
       "since": "",
@@ -29822,7 +29934,7 @@
         "navig paperwork undo"
       ],
       "handler": "cmd_undo",
-      "module": "navig_paperwork.commands.paperwork",
+      "module": "navig_cabinet.paperwork.commands.paperwork",
       "options": [],
       "path": "navig paperwork undo",
       "since": "",
@@ -36238,6 +36350,12 @@
       "options": [
         {
           "flags": [
+            "--move-folder"
+          ],
+          "takes_value": true
+        },
+        {
+          "flags": [
             "--dry-run"
           ],
           "takes_value": true
@@ -37098,6 +37216,12 @@
       "handler": "space_rename",
       "module": "navig.commands.space",
       "options": [
+        {
+          "flags": [
+            "--move-folder"
+          ],
+          "takes_value": true
+        },
         {
           "flags": [
             "--dry-run"
@@ -43851,7 +43975,174 @@
       "tags": []
     }
   ],
-  "generated_at": "2026-09-26T19:15:20.852606+00:00",
+  "generated_at": "2026-09-27T14:54:15.640623+00:00",
+  "groups": {
+    "action": "Manage quick actions (stored shortcuts)",
+    "agent": "Manage autonomous agent mode",
+    "agents": "Manage NAVIG sub-agents",
+    "ahk": "AutoHotkey v2 automation (Windows)",
+    "ai": "AI-powered assistance for diagnostics, optimization, and knowledge",
+    "android": "\ud83e\udd16 Android-only ops (logcat, connect, fastboot, sideload\u2026).",
+    "app": "Manage apps on hosts",
+    "approve": "Human approval system for agent actions",
+    "audio": "\ud83c\udfb5 AI audio generation \u2014 music, sound effects, and text-to-speech.",
+    "audit": "Privileged-action audit trail \u2014 gateway policy/approval decisions",
+    "auto": "Cross-platform desktop automation",
+    "backup": "Backup and export NAVIG configuration",
+    "bb": "Blackbox flight recorder \u2014 events, crash reports, and .navbox bundles",
+    "benchmark": "Run NAVIG performance benchmarks",
+    "blackbox": "Blackbox flight recorder \u2014 events, crash reports, and .navbox bundles",
+    "block": "Author, inspect, and manage NAVIG blocks (installable, verifiable outcomes).",
+    "blueprint": "Manage project blueprints and templates",
+    "body": "Track body metrics \u2014 weight, sleep, mood \u2014 and see the trend",
+    "boot": "Configure NAVIG boot sequence and startup hooks",
+    "bot": "Telegram bot and multi-channel agent launcher",
+    "brain": "Brain \u2014 system prompts, soul context, agent configuration.",
+    "bridge": "VS Code extension \u2194 daemon connection management",
+    "browser": "Browser automation via the NAVIG gateway",
+    "cabinet": "\ud83d\uddc4\ufe0f An encrypted cabinet for your important files \u2014 ID and passport scans, medical records, contracts, photos, recordings. Searchable by the text inside them, with expiry reminders and portable backups. Local OCR only.",
+    "calendar": "Calendar operations",
+    "cdp": "Drive Chrome/Edge/Brave + Electron apps (Discord, Notion) over CDP.",
+    "cloud": "NAVIG cloud (Cloudflare quick-tunnel broker)",
+    "config": "Manage NAVIG configuration and settings",
+    "connect": "Connect & manage AI providers (Claude Code, Codex, Copilot, API keys, local). Service integrations \u2192 `navig connector`.",
+    "connector": "Manage service connectors (Gmail, Calendar, \u2026). AI providers \u2192 `navig connect`.",
+    "contacts": "\ud83d\udc65  Your address book: import, merge, search, and route messages.",
+    "context": "Manage host/app context for current project",
+    "continuation": "Manage autonomous continuation policy",
+    "contribute": "Self-Heal & Hive Mind Protocol \u2014 scan, review, and contribute fixes to navig-run/core.",
+    "copilot": "Chat with VS Code Copilot via the MCP Bridge",
+    "cortex": "\ud83e\udde0 Execute an autonomous goal using the Hybrid Visual Brain Loop (Cortex).",
+    "cost": "Show LLM token usage and USD cost for the current and past sessions.",
+    "council": "Multi-agent council deliberation",
+    "crash": "Manage crash reports and logs",
+    "cron": "Persistent job scheduling",
+    "db": "Database operations (query, backup, restore, list, shell)",
+    "debug": "Debug mode and observability tools",
+    "deck": "The NAVIG control UI \u2014 open \u00b7 dev \u00b7 deploy",
+    "dedupe": "\ud83e\uddf9 Find, quarantine & restore duplicate photos, video, audio & files \u2014 non-destructive.",
+    "deploy": "Deploy apps to configured hosts with backup, health check, and rollback.",
+    "desktop": "Windows Desktop Automation \u2014 UI control via UIA and AHK.",
+    "devhost": "\ud83c\udf10 Dev Host: local .test domains with trusted HTTPS for any dev server.",
+    "dispatch": "Multi-network message dispatch",
+    "dl": "\ud83c\udfb5 TikTok \u2014 download (videos/profiles/images), metadata + AI briefings",
+    "docker": "Docker container management",
+    "doctor": "Run NAVIG self-diagnostics and report installation health.",
+    "download": "\ud83c\udfb5 TikTok \u2014 download (videos/profiles/images), metadata + AI briefings",
+    "ebay": "\ud83d\uded2 eBay: draft \u00b7 publish \u00b7 price \u00b7 orders (official Sell APIs, vault-wired)",
+    "email": "\ud83d\udce7 Gmail mailroom: list/search/read, labels, rules \u2192 watch, stats, digests, spam-reply ledger. Local-first; models only on explicit opt-in.",
+    "eval": "Evaluate Python expressions in the NAVIG context",
+    "evolve": "Auto-evolve skills, workflows, and more",
+    "explore": "\ud83d\udd0e Universal explorer for ANY folder \u2014 filter by type, preview, organize, extract, delete.",
+    "facebook": "\ud83d\udcd8 Manage a Facebook Page \u2014 backup / edit / delete photos + page info",
+    "fb": "\ud83d\udcd8 Manage a Facebook Page \u2014 backup / edit / delete photos + page info",
+    "file": "File operations (upload, download, list, edit, remove)",
+    "finance": "Beancount / double-entry accounting tools",
+    "flow": "Manage and execute reusable command flows (workflows)",
+    "flux": "Mesh topology management \u2014 peers, targets, LAN discovery, remote install.",
+    "formation": "Manage profile-based agent formations",
+    "games": "\ud83c\udfae Free games: Epic (auto-claimed) \u00b7 Steam free-to-keep \u00b7 cross-store giveaways. FREE-ONLY, never buys.",
+    "gateway": "Manage the autonomous agent gateway",
+    "generate": "AI media \u2014 analyse (video\u2192briefing) + generate (image/video/audio).",
+    "github": "\ud83d\udc19 GitHub: backup \u00b7 mirror \u00b7 export \u00b7 manage (full GitHub engine, vault-wired)",
+    "gmail": "Compose & send Gmail in your logged-in browser profile (deep-link, no LLM).",
+    "habit": "Manage daily health habits (workout, hydration, stand breaks, wind-down)",
+    "heartbeat": "Periodic health check system",
+    "history": "Command history, replay, and audit trail",
+    "host": "Manage remote hosts",
+    "hosts": "System hosts file management (view, edit, add entries)",
+    "import": "Universal data import from external sources",
+    "inbox": "Inbox Router \u2014 classify and route .navig/plans/inbox/ files",
+    "index": "Project source code indexer (BM25 search over workspace files)",
+    "insights": "Operations analytics and insights",
+    "install": "Install community assets (skills, playbooks, workflows, \u2026) from GitHub.",
+    "ios": "\ud83c\udf4e iOS-only ops (crash logs, syslog, DFU/recovery, instruments\u2026).",
+    "kg": "Knowledge graph \u2014 remember facts, routines, and habits",
+    "knowledge": "Knowledge graph \u2014 remember facts, routines, and habits",
+    "ledger": "Operations ledger \u2014 tamper-evident hash chain: verify + show",
+    "license": "Show, paste, or remove the NAVIG Deck license.",
+    "life": "Unified life + ops dashboard (alias: navig day)",
+    "lighthouse": "NAVIG Lighthouse \u2014 your own always-on Cloudflare edge (no tunnel).",
+    "links": "Manage browser bookmarks with vault auto-login",
+    "local": "Local machine management (system info, security, network)",
+    "log": "Log viewing and management",
+    "logs": "Log viewing and management",
+    "matrix": "Matrix messaging operations (login, send, rooms, admin)",
+    "mcp": "Manage MCP (Model Context Protocol) servers",
+    "media": "AI media \u2014 analyse (video\u2192briefing) + generate (image/video/audio).",
+    "memory": "Manage conversation memory and knowledge base",
+    "menu": "AI-first project menu \u2014 auto-detect the stack and build an interactive menu.",
+    "mesh": "Mesh topology management",
+    "migrate": "Run configuration and data migrations.",
+    "miniapp": "Telegram Mini App menu button management.",
+    "mobile": "\ud83d\udcf1 Mobile: Android + iOS device ops \u2014 connect \u00b7 info \u00b7 apps \u00b7 files \u00b7 screenshots \u00b7 backups \u00b7 forensics \u00b7 spyware scan \u00b7 root/jailbreak assist.",
+    "mode": "LLM mode routing \u2014 view, configure, and test multi-mode AI routing",
+    "module": "[deprecated \u2192 navig store] List and toggle operator modules.",
+    "modules": "[deprecated \u2192 navig store] List and toggle operator modules.",
+    "mount": "Manage drive junctions (Windows NTFS) via a persistent registry",
+    "mstore": "Publish apps to the Microsoft Store (thin wrapper over the msstore-publish block).",
+    "net": "Network diagnostics: speed tests, latency, bandwidth.",
+    "node": "Manage compute nodes in the NAVIG formation",
+    "notify": "Send a typed notification; inspect how each type is routed",
+    "os": "Run NAVIG OS in a browser, served by this machine",
+    "output-style": "Manage user-defined AI response format profiles.",
+    "paperwork": "\ud83d\udcc4 File paperwork into a space \u2014 business (invoices, quotes, contracts, tax) or personal mail (CAF, CPAM, bail, pr\u00e9fecture, EDF\u2026). Content-classified, deduped, hash-verified, reversible. Local OCR only.",
+    "pipeline": "\ud83c\udfed The content assembly line \u2014 download \u2192 transcribe \u2192 script \u2192 narrate \u2192 fan-out.",
+    "plan": "AI-guided planning mode \u2014 draft, review, and execute plans",
+    "plans": "Plans and progress across global + project spaces",
+    "plugin": "Manage NAVIG plugins \u2014 list, add, enable/disable, inspect, scaffold.",
+    "plugins": "Manage NAVIG plugins \u2014 list, add, enable/disable, inspect, scaffold.",
+    "portable": "Manage portable NAVIG installations (USB / offline)",
+    "proactive": "Proactive assistance (calendar, email)",
+    "profile": "Operating profiles: node | builder | operator | architect",
+    "prompts": "Manage agent system prompts",
+    "queue": "Task queue for async operations",
+    "quick": "Quick action shortcuts for frequent operations",
+    "radar": "Track mentions and keywords across channels",
+    "replay": "Replay recorded NAVIG command sessions",
+    "repo": "Multi-agent repo coordination: cross-worktree conflict radar, stale-work report, main-checkout agent lock",
+    "scaffold": "Scaffold project structures from templates",
+    "script": "Manage and run automation scripts",
+    "server": "[DEPRECATED: Use 'navig host'] Server operations",
+    "server-template": "Manage per-server template configurations",
+    "service": "Manage NAVIG as a persistent background service (daemon)",
+    "signal": "Inbound Signals \u2014 signed webhooks from your own apps \u2192 deck + Telegram.",
+    "signals": "Inbound Signals \u2014 signed webhooks from your own apps \u2192 deck + Telegram.",
+    "skill": "Manage AI skill definitions",
+    "skills": "Manage AI skill definitions",
+    "snapshot": "File version history and NAVIG config snapshots",
+    "social": "\ud83d\udd17 Connect social accounts (LinkedIn \u00b7 YouTube \u00b7 Threads \u00b7 Pinterest \u00b7 Meta \u00b7 dev.to)",
+    "software": "Local software package management (list, search)",
+    "space": "Manage NAVIG spaces (multi-context environments).",
+    "spaces": "Manage NAVIG spaces (multi-context environments).",
+    "stack": "Manage the local NAVIG infrastructure stack (Postgres, Redis, Ollama)",
+    "store": "The Store \u2014 see and wire everything connectable (plugins, skills, MCP, connectors).",
+    "sync": "Sync NAVIG configuration and state across nodes",
+    "system": "System information and maintenance",
+    "tailscale": "Tailscale network integration.",
+    "task": "Task/workflow management \u2014 retired, superseded by Blocks (see `navig apply`).",
+    "telegram": "Telegram bot management",
+    "telegram-exports": "\ud83d\udcc1 Organize Telegram export folders (ChatExport_*) into a tidy, audited archive.",
+    "telemetry": "Manage NAVIG telemetry / analytics opt-in",
+    "text": "\ud83d\udcdd AI text generation \u2014 drafts, articles, captions, and fan-out briefs.",
+    "tiktok": "\ud83c\udfb5 TikTok \u2014 download (videos/profiles/images), metadata + AI briefings",
+    "todo": "Your personal task list \u2014 capture, schedule, remind, tick off.",
+    "tools": "Inspect registered tools.",
+    "tray": "Windows system tray launcher for NAVIG services",
+    "trigger": "Event-driven automation triggers",
+    "tt": "\ud83c\udfb5 TikTok \u2014 download (videos/profiles/images), metadata + AI briefings",
+    "tunnel": "Manage SSH tunnels",
+    "update": "Upgrade NAVIG across local and remote nodes.",
+    "user": "Manage user identity and profile",
+    "vault": "Manage the NAVIG credentials vault (add, list, info, test, profile, login, set, get, validate)",
+    "voice": "Voice synthesis and recognition commands",
+    "watch": "Observe and react to filesystem and system events",
+    "web": "Web server management (Nginx/Apache vhosts, sites, modules)",
+    "webhook": "Manage NAVIG inbound/outbound webhooks",
+    "webhooks": "Manage NAVIG inbound/outbound webhooks",
+    "wiki": "\ud83d\udcda Wiki & Knowledge Base Management",
+    "work": "Track work items (leads, projects, tasks, \u2026) across stages."
+  },
   "schema_version": "1.0.0",
-  "total": 1511
+  "total": 1515
 }

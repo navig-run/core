@@ -1064,7 +1064,11 @@ def register(telegram_app: "typer.Typer") -> None:
             ch.error("--chat must be a numeric chat id")
             raise typer.Exit(1) from None
 
-        rows = TelegramCatalogStore().list_deleted(chat_id=chat_id, limit=limit)
+        # Business rows only — the deck's own delete route marks catalog rows
+        # deleted too, and a message YOU deleted in a group is not a business
+        # deletion. Muted chats stay: mute stops the announcing, not the record.
+        rows = TelegramCatalogStore().list_deleted(
+            chat_id=chat_id, limit=limit, kind="business")
         if as_json:
             ch.console.print_json(json.dumps(rows, default=str))
             return

@@ -1,0 +1,1 @@
+- **`navig status` reported a running gateway as "stopped".** It called the authenticated `/status` route without the bearer token, so a healthy gateway answered 401 — while `navig gateway status` said running. The token is now sent, and a rejected token is reported as "running, token rejected" instead of "stopped".

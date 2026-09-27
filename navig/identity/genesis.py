@@ -107,21 +107,19 @@ async def _act_sigil_assembly(entity: NaviEntity, primary: str, accent: str) -> 
         from rich.live import Live
         from rich.text import Text
 
-        from navig.identity.renderer import _glyph_style, sigil_fits
+        from navig.identity.renderer import sigil_fits, sigil_text
     except ImportError:
         return
 
-    matrix = entity.sigil_matrix if sigil_fits(entity.sigil_matrix) else entity.sigil_compact
+    compact = not sigil_fits(entity.sigil_matrix)
+    matrix = entity.sigil_compact if compact else entity.sigil_matrix
     console = get_console()
 
     with Live(console=console, refresh_per_second=14, transient=True) as live:
         for reveal in range(1, len(matrix) + 1):
             partial = Text(justify="center")
             partial.append("\n")
-            for r in range(reveal):
-                partial.append("  ")
-                for glyph in matrix[r]:
-                    partial.append(glyph, style=_glyph_style(glyph, primary, accent))
-                partial.append("\n")
+            partial.append_text(sigil_text(entity, compact=compact, reveal=reveal))
+            partial.append("\n")
             live.update(Align.center(partial))
             await asyncio.sleep(0.09)

@@ -172,3 +172,37 @@ def test_no_api_key_in_config_is_could_not_verify_not_a_pass(monkeypatch):
     ok, detail, warn = m.miniapp_button_health()
     assert ok is False
     assert warn is True, "unknown must not render as a green tick"
+
+
+def test_a_per_chat_override_shadowing_a_correct_default_is_not_green(monkeypatch):
+    """The live defect: the DEFAULT button was perfect (key + v=), so this row said ✓,
+    while the operator's OWN chat carried a keyless per-chat override that wins over
+    the default — every launch opened a keyless deck and hit 'Session expired'."""
+    values = {
+        "deck.public_url": "https://deck.example.dev",
+        "deck.bundle_sig": "abc123",
+        "deck.api_key": "K",
+        "telegram.allowed_users": [111],
+    }
+
+    class _CM:
+        def get(self, key, default=None):
+            return values.get(key, default)
+
+    monkeypatch.setattr("navig.config.ConfigManager", lambda *a, **k: _CM())
+    monkeypatch.setattr(m, "_bot_token", lambda: "TOKEN")
+
+    def _call(token, method, body=None, *, timeout=10.0):
+        assert method == "getChatMenuButton"
+        body = body or {}
+        if body.get("chat_id") == 111:
+            return {"ok": True, "result": {"type": "web_app", "web_app": {"url": "https://deck.navig.run/"}}}
+        return {"ok": True, "result": {"type": "web_app", "web_app": {
+            "url": "https://deck.example.dev/connect?key=K&v=abc123"}}}
+
+    monkeypatch.setattr(m, "_tg_call", _call)
+    ok, detail, warn = m.miniapp_button_health()
+    assert ok is False
+    assert warn is False  # a real defect, not a could-not-verify
+    assert "per-chat" in detail and "chat 111" in detail
+    assert "key=" not in detail  # the raw key never reaches a doctor row

@@ -32,7 +32,7 @@ _CHROME_HEADER = "#1B5EAF"
 
 # Glyph density tiers for depth-shaded sigil rendering
 _DENSE = frozenset("▓⣿⣾⣻⣛╋╬")
-_MID = frozenset("▒⣶⣤┼╪╫")
+_MID = frozenset("▒⣶⣤┼╪┿╫")
 _LIGHT = frozenset("░⣀⠿⠶⠤⠁")
 
 
@@ -137,6 +137,37 @@ def _glyph_style(glyph: str, primary: str, accent: str) -> str:
     return ""  # space / void — unstyled
 
 
+def sigil_text(
+    entity: NaviEntity,
+    *,
+    compact: bool = False,
+    reveal: int | None = None,
+    indent: str = "  ",
+):
+    """The entity's sigil as a depth-shaded Rich ``Text`` — no printing, no probes.
+
+    The one grid builder: ``render_sigil_card``, the genesis reveal and the live
+    dashboard all draw through it. ``reveal`` limits output to the first N rows
+    (the row-by-row assembly animation); ``compact`` picks the 5×5 grid.
+    """
+    from rich.text import Text
+
+    from navig.identity.entity import PALETTES
+
+    palette = PALETTES[entity.palette_key]
+    primary, accent = palette[1], palette[2]
+    matrix = entity.sigil_compact if compact else entity.sigil_matrix
+    rows = matrix if reveal is None else matrix[: max(0, reveal)]
+    text = Text(justify="center")
+    for i, row in enumerate(rows):
+        if i:
+            text.append("\n")
+        text.append(indent)
+        for glyph in row:
+            text.append(glyph, style=_glyph_style(glyph, primary, accent))
+    return text
+
+
 # ── Main card renderer ────────────────────────────────────────────────────────
 
 
@@ -158,16 +189,13 @@ def render_sigil_card(entity: NaviEntity) -> None:
     primary = palette[1]  # entity's signature color (changes per entity)
     accent = palette[2]  # entity's secondary color
 
-    matrix = entity.sigil_matrix if sigil_fits(entity.sigil_matrix) else entity.sigil_compact
+    compact = not sigil_fits(entity.sigil_matrix)
 
     # ── Depth-shaded sigil ────────────────────────────────────────────────
     sigil = Text(justify="center")
     sigil.append("\n")  # top breather
-    for row in matrix:
-        sigil.append("  ")
-        for glyph in row:
-            sigil.append(glyph, style=_glyph_style(glyph, primary, accent))
-        sigil.append("\n")
+    sigil.append_text(sigil_text(entity, compact=compact))
+    sigil.append("\n")
     # no trailing \n — rule provides the only gap below
 
     # ── Node ID — spaced for visual weight ────────────────────────────────

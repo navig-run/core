@@ -2303,7 +2303,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   registered CLI verb, so the advice cannot rot into a wild goose chase.
   the real health surface rather than the test output: Config Health showed two ⚠ incidents about a
   space whose manifest "could not be parsed", pointing at
-  `…/Temp/pytest-of-subdose/pytest-1166/test_broken_manifest_never_bri0/space/.navig/space.json` —
+  `…/Temp/pytest-of-<user>/pytest-1166/test_broken_manifest_never_bri0/space/.navig/space.json` —
   `test_broken_manifest_never_bricks_the_ledger` writing a deliberately-corrupt manifest, whose
   degradation correctly fires `incidents.record()` … into the operator's real
   `<config_dir>/perf/config_incidents.jsonl`. Nothing was broken; **the report was**, and it is the

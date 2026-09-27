@@ -344,7 +344,7 @@ async def test_route_deleted_lists_across_rooms_with_titles(store):
     from navig.gateway.deck.routes import telegram_manager as tm
 
     store.upsert_room(-100, type="group", title="Ops room")
-    store.upsert_room(555, type="business", title="Yck")
+    store.upsert_room(555, type="business", title="Sam")
     store.upsert_message(-100, 1, text="gone from ops", kind="text")
     store.upsert_message(555, 1, text="gone from dm", kind="business")
     store.upsert_message(555, 2, text="still here", kind="business")
@@ -353,7 +353,7 @@ async def test_route_deleted_lists_across_rooms_with_titles(store):
 
     body = _payload(await tm.handle_deleted(FakeRequest()))
     assert body["ok"] and body["data"]["count"] == 2
-    assert {m["room_title"] for m in body["data"]["messages"]} == {"Ops room", "Yck"}
+    assert {m["room_title"] for m in body["data"]["messages"]} == {"Ops room", "Sam"}
     assert "still here" not in [m["text"] for m in body["data"]["messages"]]
 
 

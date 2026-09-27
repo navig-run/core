@@ -418,18 +418,54 @@ def settled_text(path: Path, day: str, value: float) -> str:
     return t("weigh.settled_avg", value=f"{value:g}", avg=f"{average:g}")
 
 
+async def dismiss_prompt(channel: Any, chat_id: int, message_id: int) -> bool:
+    """Delete the answered prompt. True when the delete landed.
+
+    **This is the only thing that disarms ``force_reply``.** Editing the message
+    rewrites its TEXT; the client's reply box stays pointed at that message id and
+    re-arms itself whenever the app restarts, rendering its own cached copy of the
+    original question. Measured on the operator's chat 2026-09-27: the weight was
+    recorded at 14:10, `editMessageText` was never rejected once in the log — and
+    at 14:52 the compose box still read "⚖️ Вес сегодня утром? Прошлый раз: 125 кг,
+    26.09", a question they had already answered, quoting a value already
+    superseded. From their side the bot had asked again.
+
+    There is no API for clearing a ``force_reply``: ``editMessageReplyMarkup``
+    takes an inline keyboard only. Removing the message removes the reply target,
+    and with it the box. The ✅ receipt the caller always sends is what remains in
+    the chat, so the answer is still visible — the question is not.
+
+    Bots may only delete messages younger than 48 hours, so this can legitimately
+    fail on a prompt answered days late; :func:`settle_prompt` is the fallback.
+    """
+    try:
+        result = await channel._api_call(
+            "deleteMessage", {"chat_id": chat_id, "message_id": message_id}
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("could not dismiss the weigh-in prompt: %s", exc)
+        return False
+    # `_api_call` reports a REJECTED call by returning None rather than raising —
+    # the same trap documented in `settle_prompt` below.
+    if result is None:
+        logger.warning(
+            "weigh-in prompt %s in chat %s could not be deleted — falling back to "
+            "rewriting it in place",
+            message_id,
+            chat_id,
+        )
+        return False
+    return True
+
+
 async def settle_prompt(channel: Any, chat_id: int, message_id: int, text: str) -> bool:
     """Rewrite the answered prompt in place. True when the edit landed.
 
-    The prompt is sent with ``force_reply``, and Telegram clients keep that reply
-    box armed — after an app restart it reappears QUOTING the original message.
-    While that message still reads "⚖️ Вес сегодня утром?", the operator sees
-    what looks like the same question being asked again, hours after they
-    answered it. Rewriting the message to state the recorded value removes the
-    ambiguity at its source: the quote becomes an answer, not a question.
-
-    It also collapses two messages into one — the question and its separate ✅
-    confirmation were always the same event.
+    The FALLBACK for when the prompt cannot be deleted (see
+    :func:`dismiss_prompt`, which is tried first because it is the only thing that
+    disarms the reply box). Rewriting at least makes the quoted text an answer
+    rather than a question, which is strictly better than leaving it — but the box
+    itself stays armed, so this is a mitigation, not the cure.
     """
     try:
         result = await channel._api_call(

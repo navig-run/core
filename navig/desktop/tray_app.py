@@ -402,12 +402,15 @@ class NavigTray:
         if self.daemon.process and self.daemon.is_alive:
             daemon_pid = self.daemon.process.pid
         else:
+            # Identity-checked, never the raw integer: after a reboot the number in the
+            # pidfile can belong to ANY process, and this path ends in a force-kill of
+            # that pid's whole tree.
             try:
-                pid_file = paths.config_dir() / "daemon" / "supervisor.pid"
-                if pid_file.exists():
-                    daemon_pid = int(pid_file.read_text(encoding="utf-8").strip())
+                from navig.daemon.supervisor import NavigDaemon
+
+                daemon_pid = NavigDaemon.read_pid()
             except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+                daemon_pid = None
 
         if daemon_pid:
             log.info("Stopping daemon PID %s gracefully...", daemon_pid)
@@ -434,15 +437,16 @@ class NavigTray:
             else:
                 # Force kill if graceful failed
                 log.warning("Force-killing daemon PID %s", daemon_pid)
+                # One tree-kill for every OS. This was a bare `taskkill` with
+                # `subprocess.CREATE_NO_WINDOW` — an attribute that does not exist off
+                # Windows, so on Linux/macOS it raised, was swallowed, the daemon was
+                # never killed, and the pid/state files below were deleted anyway.
                 try:
-                    subprocess.run(
-                        ["taskkill", "/F", "/PID", str(daemon_pid), "/T"],
-                        capture_output=True,
-                        timeout=_PROC_GRACEFUL_TIMEOUT,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                    )
-                except Exception:  # noqa: BLE001
-                    pass  # best-effort; failure is non-critical
+                    from navig.daemon.supervisor import NavigDaemon
+
+                    NavigDaemon._force_kill_pid(daemon_pid)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("Force-kill failed for PID %s: %s", daemon_pid, exc)
 
         # Clean up tracked state
         self.daemon.process = None
@@ -482,22 +486,15 @@ class NavigTray:
         """Check if daemon is running (locally spawned or externally)."""
         if self.daemon.is_alive:
             return True
-        # Check PID file for externally started daemon
+        # An externally started daemon: the canonical, identity-checked pidfile read.
+        # This had no POSIX branch, so on Linux/macOS an external daemon always read
+        # "stopped" and the tray offered to start a duplicate.
         try:
-            daemon_pid_file = paths.config_dir() / "daemon" / "supervisor.pid"
-            if daemon_pid_file.exists():
-                pid = int(daemon_pid_file.read_text(encoding="utf-8").strip())
-                if sys.platform == "win32":
-                    import ctypes
+            from navig.daemon.supervisor import NavigDaemon
 
-                    kernel32 = ctypes.windll.kernel32
-                    handle = kernel32.OpenProcess(0x100000, False, pid)
-                    if handle:
-                        kernel32.CloseHandle(handle)
-                        return True
+            return NavigDaemon.read_pid() is not None
         except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
-        return False
+            return False
 
     # --- Auto-start ---
 

@@ -77,10 +77,6 @@ ALLOWED_ESCAPES: dict[str, str] = {
         "deploy/synapse — Matrix/Synapse deployment templates. Explicitly source-checkout/VPS "
         "only: prints 'Deploy dir not found — run from the repo root' and exits."
     ),
-    "commands/tray.py": (
-        "scripts/navig_tray.py — the tray scripts are not in the repo at all; every entry point "
-        "checks .exists() and reports 'Tray script not found'. Dead feature, honest failure."
-    ),
     "cli/registry.py": (
         "generated/commands.json — a build-time CLI-schema cache. Absent when installed, and "
         "_load_generated_manifest() returns None so get_schema() falls back to runtime "

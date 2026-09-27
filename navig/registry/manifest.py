@@ -279,7 +279,32 @@ def _build_manifest(include_hidden: bool) -> dict[str, Any]:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "total": len(commands),
         "commands": commands,
+        "groups": _group_help(app, {c["path"].split()[1] for c in commands if len(c["path"].split()) > 1}),
     }
+
+
+def _group_help(app: Any, present: set[str]) -> dict[str, str]:
+    """``navig <group>`` → the group's OWN one-line help (additive key, schema 1.0.0).
+
+    Every command carries a summary, but a group's description lived only in its
+    ``typer.Typer(help=…)`` — so every consumer that lists groups (navig.run/commands)
+    fell back to "the first command's summary": `navig blackbox` read "Record and replay
+    an operations session" and `navig vault` read "Set a credential as the active…".
+    Only groups that contribute public commands are listed; aliases never are.
+    """
+    from navig.cli.registration import _ALIAS_COMMANDS  # noqa: PLC0415 — avoid a cycle
+
+    out: dict[str, str] = {}
+    for info in getattr(app, "registered_groups", []):
+        name = getattr(info, "name", None)
+        if not name or name not in present or name in _ALIAS_COMMANDS:
+            continue
+        typer_instance = getattr(info, "typer_instance", None)
+        inner = getattr(getattr(typer_instance, "info", None), "help", None)
+        text = _first_line(getattr(info, "help", None)) or _first_line(inner)
+        if text and name not in out:
+            out[name] = text
+    return dict(sorted(out.items()))
 
 
 def build_public_manifest(validate: bool = False) -> dict[str, Any]:

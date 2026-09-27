@@ -5,8 +5,8 @@
   today's photo going missing rendered identically. Lines are now **who · when · what**
   (`• you · 21 Sep 17:18 · 📷 photo — caption`), and "not seen" distinguishes *"NAVIG has
   watched this chat since 14 Sep, so this one is older"* from *"never cataloged this chat"*.
-- **A counterparty was introduced by their raw handle.** The same DM called a chat "Yck 🧢" and
-  its only other participant "a646f6e7474727974686174", because `sender_name` was stored
+- **A counterparty was introduced by their raw handle.** The same DM called a chat "Sam 🧢" and
+  its only other participant "sam_example", because `sender_name` was stored
   username-first while the chat label was name-first. Senders are stored name-first
   (`_person_name`), and in a private chat the chat's own label wins — which also rescues every
   row already written the old way. A group still shows per-sender names.

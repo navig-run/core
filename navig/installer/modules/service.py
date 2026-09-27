@@ -3,7 +3,7 @@
 Delegates entirely to ``navig.daemon.service_manager``:
 - On Windows: nssm → task-scheduler fallback
 - On Linux: systemd unit
-- On macOS: not yet supported (SKIPPED)
+- On macOS: a per-user LaunchAgent (launchd)
 
 Included in: system_standard, system_deep profiles.
 """
@@ -25,26 +25,29 @@ _SERVICE_CMD_TIMEOUT: int = 5
 
 
 def _is_supported() -> bool:
-    return sys.platform in ("win32", "linux")
+    return sys.platform in ("win32", "linux", "darwin")
 
 
 def _service_installed() -> bool:
-    """Best-effort check — True if the service appears registered."""
+    """True if the daemon's service is registered — asked of the code that registers it.
+
+    This probed names nothing creates: ``sc query NavigDaemon`` (the default Windows
+    method is the "NAVIG Daemon" scheduled task, not an nssm service) and
+    ``systemctl is-enabled navig`` (the unit is ``navig-agent``, in the USER scope).
+    So on Linux it always read "not installed" and re-planned an install every run.
+    """
     try:
-        if sys.platform == "win32":
+        from navig.daemon.launch import service_is_installed
+
+        if service_is_installed():
+            return True
+        if sys.platform == "win32":  # an nssm-method install is a real service
             import subprocess
 
-            r = subprocess.run(
-                ["sc", "query", "NavigDaemon"],
-                capture_output=True,
-                timeout=_SERVICE_CMD_TIMEOUT,
-            )
-            return r.returncode == 0
-        elif sys.platform == "linux":
-            import subprocess
+            from navig.daemon.service_manager import SERVICE_NAME
 
             r = subprocess.run(
-                ["systemctl", "is-enabled", "navig"],
+                ["sc", "query", SERVICE_NAME],
                 capture_output=True,
                 timeout=_SERVICE_CMD_TIMEOUT,
             )

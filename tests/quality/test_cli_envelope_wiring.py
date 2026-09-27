@@ -49,7 +49,18 @@ _COMMANDS = _CORE / "commands"
 
 # Command modules that reference an enveloped route path but legitimately never unwrap.
 # Each entry needs a reason; test_allowlist_has_no_stale_entries keeps the list honest.
-_ALLOWLIST: dict[str, str] = {}
+#
+# An entry here asserts "this module does not talk to the daemon on that path" — it is not a
+# place to park a module that simply has not been fixed. The detector matches a PATH, so the
+# only honest reason to be listed is that the same path belongs to a DIFFERENT server.
+_ALLOWLIST: dict[str, str] = {
+    # `navig os` probes the NAVIG OS web server on port 9100 — a separate Bun process, not
+    # the daemon. Its /health is `Response.json({status})` from
+    # apps/os/packages/server-core/src/webui/http-server.ts, a bare object with no envelope,
+    # and unwrapping it would read `data` off something that has no `data`. The module makes
+    # no daemon call at all; the collision is that both servers named the endpoint /health.
+    "os_cmd.py": "probes the OS web server's own /health on :9100, not a gateway route",
+}
 
 _HTTP_CALL = re.compile(r"httpx\.(get|post)|requests\.(get|post|delete)|urllib\.request")
 

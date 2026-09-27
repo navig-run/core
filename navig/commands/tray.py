@@ -24,9 +24,14 @@ tray_app = typer.Typer(
     no_args_is_help=True,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-TRAY_SCRIPT = PROJECT_ROOT / "scripts" / "navig_tray.py"
-TRAY_PYW = PROJECT_ROOT / "scripts" / "navig_tray.pyw"
+# The tray app ships INSIDE the package (navig/desktop/). These used to point at
+# <checkout>/scripts/navig_tray.py(w) and <checkout>/scripts/install-tray.ps1 — files
+# that no longer exist anywhere and were never in the wheel — so `navig tray start`
+# and `navig tray install` failed with "script not found" on every OS and install.
+_DESKTOP = Path(__file__).resolve().parent.parent / "desktop"
+TRAY_MODULE = "navig.desktop.tray_app"
+TRAY_SCRIPT = _DESKTOP / "tray_app.py"
+TRAY_PYW = _DESKTOP / "tray_app.pyw"
 # Test seam — when ``None`` (the normal state), the resolver below evaluates
 # at CALL time so NAVIG_CONFIG_DIR isolation set after import still applies
 # (see navig/vault/migrate.py:_legacy_db_path).
@@ -37,7 +42,7 @@ def _lock_file() -> Path:
     return LOCK_FILE if LOCK_FILE is not None else config_dir() / "tray.lock"
 
 
-INSTALL_SCRIPT = PROJECT_ROOT / "scripts" / "install-tray.ps1"
+INSTALL_SCRIPT = _DESKTOP / "install-tray.ps1"
 
 
 def _is_tray_running() -> tuple[bool, int | None]:
@@ -96,25 +101,28 @@ def tray_start(
     if foreground:
         ch.info("Starting NAVIG Tray (foreground)...")
         try:
-            subprocess.run([python, str(TRAY_SCRIPT)], check=True)
+            subprocess.run([python, "-m", TRAY_MODULE], check=True)
         except KeyboardInterrupt:
             ch.info("Tray stopped")
     else:
-        # Launch silently using pythonw.exe if available
-        pythonw = Path(python).parent / "pythonw.exe"
-        launcher = str(pythonw) if pythonw.exists() else python
-        script = str(TRAY_PYW) if TRAY_PYW.exists() else str(TRAY_SCRIPT)
-
-        flags = 0
+        # Windowless on Windows (pythonw); on Linux/macOS a new session so closing
+        # the terminal does not take the tray with it.
+        popen_kwargs: dict = {}
+        launcher = python
         if sys.platform == "win32":
-            flags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+            pythonw = Path(python).parent / "pythonw.exe"
+            launcher = str(pythonw) if pythonw.exists() else python
+            popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+        else:
+            popen_kwargs["start_new_session"] = True
 
         subprocess.Popen(
-            [launcher, script],
-            creationflags=flags,
+            [launcher, "-m", TRAY_MODULE],
             close_fds=True,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            **popen_kwargs,
         )
         ch.success("NAVIG Tray launched in background")
         ch.info("Right-click the tray icon (near clock) for the menu")

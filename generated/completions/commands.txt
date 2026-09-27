@@ -209,6 +209,7 @@ navig browser stop
 navig cabinet add
 navig cabinet backup
 navig cabinet close
+navig cabinet dates
 navig cabinet edit
 navig cabinet expiring
 navig cabinet export
@@ -217,6 +218,7 @@ navig cabinet list
 navig cabinet open
 navig cabinet passphrase clear
 navig cabinet passphrase set
+navig cabinet remind
 navig cabinet remove
 navig cabinet restore
 navig cabinet search
@@ -1027,6 +1029,8 @@ navig node list
 navig node remove
 navig notify send
 navig notify types
+navig os serve
+navig os status
 navig output-style create
 navig output-style list
 navig output-style off

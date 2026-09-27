@@ -546,3 +546,64 @@ def test_the_small_tier_still_degrades_when_the_preferred_model_is_absent():
 
     assert picks == {"small": "vendor/tiny-8b", "big": "vendor/big-120b",
                      "coder_big": "vendor/big-120b"}
+
+
+# ── the audit names LIVE models whose cost would read $0.00 ────────────────
+
+
+def _audit(monkeypatch, provider, keyed, verdict=("live", "ok")):
+    from typer.testing import CliRunner
+
+    from navig.commands import ai as ai_cmd
+
+    _keys(monkeypatch, keyed)
+    monkeypatch.setattr(liveness, "probe_model", lambda p, m, **_kw: verdict)
+    args = ["models", "--check"] + (["-p", provider] if provider else [])
+    return CliRunner().invoke(ai_cmd.ai_app, args, env={"COLUMNS": "400"})
+
+
+def test_a_live_unpriced_model_of_a_priced_provider_is_named(monkeypatch):
+    """grok-4.6 — xAI's default — read $0.00 per turn until it was priced. The
+    audit now says which live ids have no price."""
+    from navig.agent import usage_tracker
+
+    table = dict(usage_tracker.PRICE_TABLE)
+    table.pop("grok-4.6")
+    monkeypatch.setattr(usage_tracker, "PRICE_TABLE", table)
+
+    r = _audit(monkeypatch, "xai", {"xai"})
+
+    assert r.exit_code == 0, "a missing price is accounting, never a failed audit"
+    assert "no price" in r.output and "xai:grok-4.6" in r.output
+    assert "xai:grok-3," not in r.output and "xai:grok-3 " not in r.output, "grok-3 IS priced"
+
+
+def test_an_unmodelled_provider_is_named_once_not_per_id(monkeypatch):
+    """groq's ids have no entries by design; listing each would bury the ones
+    that matter. It is named once."""
+    r = _audit(monkeypatch, None, {"groq"})
+
+    assert "not modelled by the price table" in r.output and "groq" in r.output
+    assert "groq:openai/gpt-oss-120b" not in r.output
+
+
+def test_a_retired_or_unjudged_model_is_not_reported_as_unpriced(monkeypatch):
+    r = _audit(monkeypatch, "groq", {"groq"}, verdict=("dead", "404"))
+
+    assert "have no price" not in r.output and "not modelled" not in r.output
+
+
+def test_json_rows_carry_whether_the_model_is_priced(monkeypatch):
+    import json
+
+    from typer.testing import CliRunner
+
+    from navig.commands import ai as ai_cmd
+
+    _keys(monkeypatch, {"xai"})
+    monkeypatch.setattr(liveness, "probe_model", lambda p, m, **_kw: ("live", "ok"))
+    r = CliRunner().invoke(ai_cmd.ai_app, ["models", "--check", "-p", "xai", "--json"])
+
+    rows = {row["model"]: row for row in json.loads(r.output)}
+    assert rows["grok-4.6"]["priced"] is True
+    assert rows["grok-3-fast"]["priced"] is True  # a variant of grok-3

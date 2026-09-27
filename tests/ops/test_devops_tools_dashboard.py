@@ -89,9 +89,9 @@ class TestDashboardState:
         ds = DashboardState()
         assert ds.op_state == {}
 
-    def test_kraken_frame_zero_on_init(self):
+    def test_no_overlay_on_init(self):
         ds = DashboardState()
-        assert ds.kraken_frame == 0
+        assert ds.overlay is None
 
     def test_events_zero_on_init(self):
         ds = DashboardState()

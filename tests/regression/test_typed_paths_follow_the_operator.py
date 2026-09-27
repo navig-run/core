@@ -7,7 +7,7 @@ relative path, or defaulted to "the current directory", therefore answered a DIF
 directory, silently::
 
     E:\\projects\\apps\\getbossed> navig space init getbossed --path . --dry-run
-    DRY RUN: Would create 102 item(s) in C:\\Users\\subdose\\.navig-os\\workspaces\\my-workspace
+    DRY RUN: Would create 102 item(s) in C:\\Users\\<you>\\.navig-os\\workspaces\\my-workspace
 
 Nothing errored. Without ``--dry-run`` that scaffolds 102 items into the active space.
 ``navig space doctor`` — whose own help promises "(default: current directory)" —

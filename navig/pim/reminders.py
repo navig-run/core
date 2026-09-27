@@ -31,7 +31,16 @@ from navig.pim.dates import describe_lead, format_local, parse_lead
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["cancel_for", "planned_fires", "reminder_text", "reschedule"]
+__all__ = [
+    "cancel_for",
+    "cancel_for_operator",
+    "delivery_suppressed",
+    "operator_delivery",
+    "planned_fires",
+    "reminder_text",
+    "reschedule",
+    "sync_for_operator",
+]
 
 
 def planned_fires(
@@ -84,9 +93,15 @@ def cancel_for(store: Any, card_id: str, *, user_id: int) -> int:
 
     Best-effort per row: one reminder that will not cancel must not strand the others,
     because the alternative is that a single bad row keeps the whole set alive.
+
+    The links are read first and dropped LAST, and not at all when the reminder table
+    could not be opened. A link is the only record that a reminder row belongs to a
+    todo, so deleting it before the row is gone turns a retryable failure into a ping
+    nobody can trace back to anything. `board_todo_reminder.card_id` cascades on
+    delete, so links kept here still disappear with the card itself.
     """
     try:
-        ids = store.unlink_reminders(card_id)
+        ids = store.todo_reminder_ids(card_id)
     except Exception:  # noqa: BLE001 — cancellation must never break the calling action
         logger.exception("todo reminders: could not read links for %s", card_id)
         return 0
@@ -95,23 +110,46 @@ def cancel_for(store: Any, card_id: str, *, user_id: int) -> int:
 
     runtime = _runtime_store()
     if runtime is None:
-        # The links are already gone, so the caller cannot retry. Say so loudly: this
-        # is exactly the state that produces a ping for a task that no longer exists.
+        # Keep the links: the rows are still out there, and the links are how a later
+        # edit or delete finds them. Unlinking here would strand them permanently.
         logger.error(
-            "todo reminders: unlinked %d row(s) for %s but the runtime store is "
-            "unavailable — those reminders will still fire",
+            "todo reminders: %d row(s) for %s could not be cancelled — the runtime "
+            "store is unavailable, so they will still fire",
             len(ids),
             card_id,
         )
         return 0
 
     cancelled = 0
+    survivors: list[int] = []
     for rid in ids:
         try:
             if runtime.cancel_reminder(int(rid), int(user_id)):
                 cancelled += 1
+            else:
+                survivors.append(int(rid))
         except Exception:  # noqa: BLE001
             logger.exception("todo reminders: could not cancel %s", rid)
+            survivors.append(int(rid))
+
+    if survivors:
+        # `cancel_reminder` is scoped by user_id, so "no such row" and "that row is
+        # someone else's" look identical from here. Either way these will fire for a
+        # task that has moved or gone, and a silent 0 is how that becomes unfindable.
+        logger.warning(
+            "todo reminders: %d of %d row(s) for %s did not cancel under user %s "
+            "(ids: %s) — they may still fire",
+            len(survivors),
+            len(ids),
+            card_id,
+            user_id,
+            ", ".join(str(r) for r in survivors),
+        )
+
+    try:
+        store.unlink_reminders(card_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("todo reminders: could not drop links for %s", card_id)
     return cancelled
 
 
@@ -141,6 +179,17 @@ def reschedule(
     if todo.get("completed_at"):
         return 0  # a finished task has nothing to remind anyone about
 
+    if _extension_is_off():
+        # The same rule habits follow (`cron_service` skips writing the row while the
+        # habits extension is off): an extension you switched off goes quiet. Doing it
+        # HERE rather than at delivery means no row is created at all, so there is
+        # nothing to leak — and the cancel above has already cleared what was there.
+        logger.info(
+            "todo reminders: the Todo extension is off — %s keeps its date but schedules nothing",
+            card_id,
+        )
+        return 0
+
     fires = planned_fires(todo.get("due_at"), list(todo.get("remind_before") or []), now)
     if not fires:
         return 0
@@ -161,6 +210,123 @@ def reschedule(
         except Exception:  # noqa: BLE001 — one bad lead must not lose the rest
             logger.exception("todo reminders: could not schedule %s for %s", lead or "due", card_id)
     return scheduled
+
+
+def operator_delivery() -> tuple[int, int] | None:
+    """``(user_id, chat_id)`` for the operator's own Telegram chat, or None.
+
+    The CLI and the agent tools have no chat of their own, but the reminders they
+    must cancel were created with one — and `RuntimeStore.cancel_reminder` is scoped
+    by `user_id`, so a surface that cannot name the operator cannot cancel anything.
+
+    Resolved through :func:`navig.messaging.notify_operator.resolve_operator_chat_id`
+    — the same `telegram.allowed_users[0]` rule the gateway's own boot message and the
+    habit check-ins use, so every process agrees on who the operator is. In a private
+    chat the user id and the chat id are the same number, which is exactly what the
+    `/todo` command assumes when it schedules.
+    """
+    try:
+        from navig.messaging.notify_operator import resolve_operator_chat_id  # noqa: PLC0415
+
+        raw = resolve_operator_chat_id()
+    except Exception:  # noqa: BLE001 — no Telegram is a normal state, not an error
+        logger.debug("todo reminders: operator chat could not be resolved", exc_info=True)
+        return None
+    if not raw:
+        return None
+    try:
+        ident = int(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning("todo reminders: operator chat id %r is not a number", raw)
+        return None
+    return ident, ident
+
+
+def sync_for_operator(store: Any, todo: dict[str, Any] | None, *, now: datetime | None = None) -> int:
+    """:func:`reschedule` for a surface with no chat of its own (CLI, agent tools).
+
+    Returns how many reminders are now scheduled; 0 when no Telegram is configured,
+    which is an ordinary state on a machine that only uses the CLI — there is nowhere
+    to deliver a ping, so there is nothing to schedule and nothing that can be ghosted.
+
+    Never raises. A reminder is a side effect of the edit, and losing the edit because
+    the reminder table hiccupped would be a strictly worse outcome than a missed ping.
+    """
+    if todo is None:
+        return 0
+    delivery = operator_delivery()
+    if delivery is None:
+        logger.debug(
+            "todo reminders: no Telegram configured — %s keeps its schedule but pings nowhere",
+            todo.get("id"),
+        )
+        return 0
+    user_id, chat_id = delivery
+    try:
+        from navig.pim.clock import local_now  # noqa: PLC0415
+
+        return reschedule(
+            store, todo, user_id=user_id, chat_id=chat_id, now=now or local_now()
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("todo reminders: could not resync %s", todo.get("id"))
+        return 0
+
+
+def cancel_for_operator(store: Any, card_id: str) -> int:
+    """:func:`cancel_for` for a surface with no chat of its own. Never raises.
+
+    Call it BEFORE deleting the todo: the links cascade away with the card, so a
+    delete that runs first takes the only record of what to cancel with it.
+    """
+    delivery = operator_delivery()
+    if delivery is None:
+        return 0
+    try:
+        return cancel_for(store, card_id, user_id=delivery[0])
+    except Exception:  # noqa: BLE001
+        logger.exception("todo reminders: could not cancel for %s", card_id)
+        return 0
+
+
+def delivery_suppressed(reminder_id: int) -> bool:
+    """Should this due reminder be held back because the Todo extension is off?
+
+    True only for a reminder that belongs to a TODO, and only while the extension is
+    off. :func:`reschedule` already refuses to write new rows in that state; this
+    covers the ones written BEFORE the switch was flipped, which would otherwise keep
+    arriving from an extension the operator had just turned off.
+
+    Held, not discarded: the row stays due, so switching the extension back on the
+    same day still delivers it (the poller's own 24-hour staleness rule retires
+    anything older). Fails OPEN — a reminder whose provenance cannot be read is
+    delivered, because a missed ping is worse than one from a disabled surface.
+    """
+    if not _extension_is_off():
+        return False
+    try:
+        from navig.store.board import get_board_store  # noqa: PLC0415
+
+        return bool(get_board_store().reminder_is_todo(int(reminder_id)))
+    except Exception:  # noqa: BLE001
+        logger.debug("todo reminders: could not classify reminder %s", reminder_id, exc_info=True)
+        return False
+
+
+def _extension_is_off() -> bool:
+    """True when the Todo extension is switched off. Fails OPEN (False).
+
+    A gate that cannot be read must not silently stop the operator's reminders — the
+    failure mode of guessing "off" here is the exact ghost this module exists to
+    prevent, in reverse: a task that was supposed to ping and never did.
+    """
+    try:
+        from navig.telegram.todo_actions import extension_is_off  # noqa: PLC0415
+
+        return bool(extension_is_off())
+    except Exception:  # noqa: BLE001
+        logger.debug("todo reminders: extension gate unreadable — scheduling anyway", exc_info=True)
+        return False
 
 
 def _runtime_store() -> Any | None:

@@ -277,6 +277,13 @@ def _request_is_local(request: "web.Request") -> bool:
     return remote in _LOOPBACK_REMOTES
 
 
+def is_local_request(request: "web.Request") -> bool:
+    """Public name for :func:`_request_is_local`, for plugin routes that must never be
+    reachable through the tunnel / Lighthouse / Mini App (e.g. navig-cabinet's routes,
+    which list someone's ID and medical documents). Same rule, one implementation."""
+    return _request_is_local(request)
+
+
 def _local_desktop_bypass(request: "web.Request") -> bool:
     """True when a genuinely-local request qualifies for the desktop bypass.
 

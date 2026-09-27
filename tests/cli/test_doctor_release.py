@@ -133,7 +133,7 @@ def test_check_release_reads_the_tree_the_tags_and_the_pending_work(tmp_path: Pa
     _git("tag", "-a", "v3.25.0", "-m", "x", cwd=root)
     _git("tag", "not-a-version", cwd=root)
     monkeypatch.setattr(doctor, "_invocation_repo_root", lambda: root)
-    monkeypatch.setattr(doctor, "_pypi_latest", lambda: ("3.25.0", None))
+    monkeypatch.setattr(doctor, "_pypi_latest", lambda *a, **k: ("3.25.0", None))
 
     rows = _by_label(doctor.check_release())
     assert rows["Release · tree"][1] is True
@@ -145,3 +145,87 @@ def test_check_release_reads_the_tree_the_tags_and_the_pending_work(tmp_path: Pa
 def test_pypi_offline_switch_is_honoured(monkeypatch) -> None:
     monkeypatch.setenv("NAVIG_VERSION_SYNC_OFFLINE", "1")
     assert doctor._pypi_latest() == (None, "NAVIG_VERSION_SYNC_OFFLINE")
+
+
+# ── hard first-party deps: the next wheel must be installable (2026-09-27) ──
+#
+# Core has required navig-contacts>=0.1.0 since #1306; it was never uploaded (404), so the
+# next core wheel could not be installed by anyone while every Release row stayed green.
+
+PYPROJECT = '''[project]
+name = "navig"
+version = "3.25.0"
+dependencies = [
+  "rich>=13",
+  # navig-audio is an extra, and this comment names navig-fake>=9.9.9 in prose
+  "navig-vault>=0.6.0",
+  "navig-contacts>=0.1.0",
+]
+
+[project.optional-dependencies]
+audio = ["navig-audio>=0.2.0"]
+'''
+
+
+def test_hard_deps_are_read_from_required_dependencies_only() -> None:
+    assert doctor._hard_first_party_deps(PYPROJECT) == [
+        ("navig-vault", "0.6.0"), ("navig-contacts", "0.1.0"),
+    ], "extras and comment prose are not hard dependencies"
+    assert doctor._hard_first_party_deps('[project]\nname = "navig"\n') == []
+
+
+def test_a_hard_dep_missing_from_pypi_is_an_error_naming_the_fix() -> None:
+    row = doctor._judge_hard_deps([
+        ("navig-vault", "0.6.0", "0.6.2", None),
+        ("navig-contacts", "0.1.0", None, doctor._NOT_ON_PYPI),
+    ])
+    assert row[0] == doctor._ERR and row[1] is False
+    assert "navig-contacts not on PyPI" in row.detail
+    assert "uninstallable" in row.detail
+    assert "publish-plugins.mjs navig-contacts --publish" in row.detail
+
+
+def test_a_hard_dep_behind_its_floor_is_an_error() -> None:
+    row = doctor._judge_hard_deps([("navig-vault", "0.6.0", "0.5.9", None)])
+    assert row[0] == doctor._ERR and "PyPI has navig-vault 0.5.9 < 0.6.0" in row.detail
+
+
+def test_an_unreachable_pypi_is_a_warn_not_an_accusation() -> None:
+    row = doctor._judge_hard_deps([("navig-contacts", "0.1.0", None, "URLError")])
+    assert row[0] == doctor._WARN and "not checked: navig-contacts (URLError)" in row.detail
+    assert "uninstallable" not in row.detail
+
+
+def test_all_hard_deps_published_is_green_and_none_is_silent() -> None:
+    row = doctor._judge_hard_deps([("navig-vault", "0.6.0", "0.6.2", None)])
+    assert row[0] == doctor._OK and "navig-vault 0.6.2 published" in row.detail
+    assert doctor._judge_hard_deps([]) is None
+
+
+def test_a_pypi_404_is_reported_as_not_on_pypi(monkeypatch) -> None:
+    import io
+    import urllib.error
+    import urllib.request
+
+    def raise_404(*_a, **_k):
+        raise urllib.error.HTTPError("u", 404, "Not Found", {}, io.BytesIO())
+
+    monkeypatch.delenv("NAVIG_VERSION_SYNC_OFFLINE", raising=False)
+    monkeypatch.setattr(urllib.request, "urlopen", raise_404)
+    assert doctor._pypi_latest("navig-contacts") == (None, doctor._NOT_ON_PYPI)
+
+
+def test_check_release_appends_the_hard_deps_row(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "navig"
+    (root / "core").mkdir(parents=True)
+    (root / "core" / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
+    (root / "core" / "latest.json").write_text('{"version": "3.25.0"}\n', encoding="utf-8")
+    monkeypatch.setattr(doctor, "_invocation_repo_root", lambda: root)
+    monkeypatch.setattr(doctor, "_newest_local_tag", lambda _r: "3.25.0")
+    published = {"navig": "3.25.0", "navig-vault": "0.6.2"}
+    monkeypatch.setattr(
+        doctor, "_pypi_latest",
+        lambda pkg="navig", **_k: (published[pkg], None) if pkg in published else (None, doctor._NOT_ON_PYPI),
+    )
+    rows = _by_label(doctor.check_release())
+    assert "navig-contacts not on PyPI" in rows["Release · hard deps"].detail

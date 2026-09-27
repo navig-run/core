@@ -538,3 +538,138 @@ def test_from_a_worktree_session_a_sibling_worktree_add_in_the_main_tree_is_not_
     # and a genuinely outside path is still caught, from the same session
     outside = (tmp_path / "elsewhere").as_posix()
     assert mod.classify_tool(_bash(f"git worktree add {outside} -b feat/z", cwd=str(wt)), root) == "block-sibling"
+
+
+# -- a `cd` hop in git-bash / PowerShell form ----------------------------------
+# The `-C` target was converted from MSYS form (regression test above), but the `cd`
+# hop that decides the same thing was not: Path("/e/...") has a root and no drive, so
+# `base / hop` kept only the drive and produced E:\e\projects\..., "outside the repo",
+# and the command was EXEMPT. Live incident 2026-09-26: another session ran
+#   cd /e/projects/apps/navig && git checkout -b fix/deck-initdata-signature-field
+# from the repo's core/ dir while this session held a fresh lock; the checkout went
+# through, and this session's next commit landed on that foreign branch.
+
+
+def _msys(p: Path) -> str:
+    drive, rest = os.path.splitdrive(str(p))
+    return "/" + drive[0].lower() + rest.replace("\\", "/")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="MSYS /e/ drive paths are a Windows git-bash form")
+def test_cd_into_the_main_checkout_via_msys_path_is_enforced(hook, root: Path) -> None:
+    (root / "core").mkdir()
+    cmd = f"cd {_msys(root)} && git checkout -b fix/x 2>&1 | tail -2"
+    # The exact incident shape: from a subdirectory, and from inside a worktree.
+    assert hook.classify_tool(_bash(cmd, cwd=str(root / "core")), root) == "enforce"
+    wt = root / ".dev" / "worktrees" / "slug"
+    wt.mkdir(parents=True)
+    assert hook.classify_tool(_bash(cmd, cwd=str(wt)), root) == "enforce"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="MSYS /e/ drive paths are a Windows git-bash form")
+def test_cd_into_a_worktree_via_msys_path_stays_exempt(hook, root: Path) -> None:
+    wt = root / ".dev" / "worktrees" / "slug"
+    wt.mkdir(parents=True)
+    cmd = f"cd {_msys(wt)} && git rebase origin/main"
+    assert hook.classify_tool(_bash(cmd, cwd=str(root)), root) == "exempt"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="MSYS /e/ drive paths are a Windows git-bash form")
+def test_cd_via_msys_path_outside_the_repo_stays_exempt(hook, root: Path) -> None:
+    other = root.parent / "elsewhere"
+    other.mkdir(exist_ok=True)
+    cmd = f"cd {_msys(other)} && git checkout main"
+    assert hook.classify_tool(_bash(cmd, cwd=str(root)), root) == "exempt"
+
+
+def test_powershell_set_location_into_the_main_checkout_is_enforced(hook, root: Path) -> None:
+    wt = root / ".dev" / "worktrees" / "slug"
+    wt.mkdir(parents=True)
+    payload = {
+        "tool_name": "PowerShell",
+        "tool_input": {"command": f"Set-Location '{root}'; git checkout main"},
+        "cwd": str(wt),
+    }
+    assert hook.classify_tool(payload, root) == "enforce"
+
+
+def test_powershell_set_location_into_a_worktree_stays_exempt(hook, root: Path) -> None:
+    wt = root / ".dev" / "worktrees" / "slug"
+    wt.mkdir(parents=True)
+    payload = {
+        "tool_name": "PowerShell",
+        "tool_input": {"command": f"Set-Location '{wt}'; git rebase origin/main"},
+        "cwd": str(root),
+    }
+    assert hook.classify_tool(payload, root) == "exempt"
+
+
+# -- a `cd` whose target cannot be resolved ------------------------------------
+# `cd "$ROOT"`, `cd $env:ROOT`, `cd -` leave the shell somewhere the hook cannot know,
+# yet the verb was judged by the directory it LEFT — so from inside a worktree,
+# `cd "$ROOT" && git checkout -b x` was EXEMPT (it can move the main checkout's HEAD under
+# a live lock). Now: the same rule as a `-C` target that is a shell variable — exempt only
+# when the command itself carries an absolute .dev/worktrees path, else the lock applies.
+
+
+def _wt(root: Path) -> Path:
+    wt = root / ".dev" / "worktrees" / "slug"
+    wt.mkdir(parents=True, exist_ok=True)
+    return wt
+
+
+def test_cd_to_a_variable_from_a_worktree_is_enforced(hook, root: Path) -> None:
+    wt = _wt(root)
+    cmd = f'ROOT="{root}"; cd "$ROOT" && git checkout -b fix/y'
+    assert hook.classify_tool(_bash(cmd, cwd=str(wt)), root) == "enforce"
+
+
+def test_powershell_cd_to_an_env_variable_is_enforced(hook, root: Path) -> None:
+    wt = _wt(root)
+    payload = {
+        "tool_name": "PowerShell",
+        "tool_input": {"command": "cd $env:ROOT; git checkout main"},
+        "cwd": str(wt),
+    }
+    assert hook.classify_tool(payload, root) == "enforce"
+
+
+def test_cd_dash_is_an_unknown_location(hook, root: Path) -> None:
+    wt = _wt(root)
+    assert hook.classify_tool(_bash("cd - && git checkout main", cwd=str(wt)), root) == "enforce"
+
+
+def test_cd_to_a_variable_naming_an_absolute_worktree_is_exempt(hook, root: Path) -> None:
+    # Parity with a `-C "$WT"` target: the assignment names the sanctioned path.
+    wt = _wt(root)
+    cmd = f'WT="{wt}"; cd "$WT" && git rebase origin/main'
+    assert hook.classify_tool(_bash(cmd, cwd=str(root)), root) == "exempt"
+
+
+def test_an_absolute_cd_after_an_unknown_one_makes_the_location_known(hook, root: Path) -> None:
+    wt = _wt(root)
+    cmd = f'cd "$X" && cd "{wt}" && git rebase origin/main'
+    assert hook.classify_tool(_bash(cmd, cwd=str(root)), root) == "exempt"
+    cmd = f'cd "$X" && cd "{root}" && git checkout main'
+    assert hook.classify_tool(_bash(cmd, cwd=str(wt)), root) == "enforce"
+
+
+def test_a_relative_dash_c_after_an_unknown_cd_is_enforced(hook, root: Path) -> None:
+    wt = _wt(root)
+    cmd = 'cd "$X" && git -C sub checkout main'
+    assert hook.classify_tool(_bash(cmd, cwd=str(wt)), root) == "enforce"
+
+
+def test_cd_tilde_is_expanded_not_treated_as_unknown(hook, root: Path, monkeypatch) -> None:
+    wt = _wt(root)
+    for var in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(var, str(root))
+    assert hook.classify_tool(_bash("cd ~ && git checkout main", cwd=str(wt)), root) == "enforce"
+    for var in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(var, str(wt))
+    assert hook.classify_tool(_bash("cd ~ && git rebase origin/main", cwd=str(root)), root) == "exempt"
+
+
+def test_a_read_only_command_after_an_unknown_cd_stays_exempt(hook, root: Path) -> None:
+    wt = _wt(root)
+    assert hook.classify_tool(_bash('cd "$ROOT" && git status', cwd=str(wt)), root) == "exempt"

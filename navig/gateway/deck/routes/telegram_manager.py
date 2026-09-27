@@ -161,12 +161,17 @@ async def handle_deleted(request: "web.Request") -> "web.Response":
 
     The deletion DM is a push the operator may miss, mute, or scroll past; this
     is the pull that makes the same record browsable, with the room title and the
-    media descriptor already joined in."""
+    media descriptor already joined in.
+
+    ``?kind=business`` narrows it to business-chat rows — what the Business tab's
+    panel shows. The unfiltered default is the whole catalog record, which also
+    holds messages the operator deleted in groups through this deck."""
     try:
         raw_chat = request.query.get("chat_id")
         chat_id = int(raw_chat) if raw_chat else None
         limit = int(request.query.get("limit", 100))
-        rows = _store().list_deleted(chat_id=chat_id, limit=limit)
+        kind = (request.query.get("kind") or "").strip() or None
+        rows = _store().list_deleted(chat_id=chat_id, limit=limit, kind=kind)
         return _ok({"messages": rows, "count": len(rows)})
     except ValueError:
         return _err("chat_id and limit must be integers", status=400)

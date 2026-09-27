@@ -165,14 +165,14 @@ mobile = ["navig-mobile>=0.1.0"]
 # (numpy/Pillow) was extracted here from core; `navig.media.*_dedupe` are now
 # thin shims, and `navig dedupe` / `navig media dedupe-*` need this extra.
 dedupe = ["navig-dedupe>=0.1.0"]
-# Business-paperwork filer: reads invoices/quotes/contracts/tax PDFs and files them
-# into a space by content. Optional because it pulls PDF/OCR readers; `navig
-# paperwork` is the only surface that needs them.
-paperwork = ["navig-paperwork>=0.1.0"]
-# Encrypted personal document cabinet (ID/passport scans, medical records, photos,
-# recordings — any type/size) with local-OCR search, expiry and portable backups.
-# `navig cabinet` is the only surface; its OCR needs the `ocr` extra below too.
-cabinet = ["navig-cabinet>=0.1.0"]
+# Documents, one plugin (navig-cabinet): `navig cabinet` — an encrypted cabinet for
+# important files (ID/passport scans, medical records, photos, recordings; local-OCR
+# search, expiry reminders, portable backups) — and `navig paperwork`, the business
+# paperwork filer (invoices/quotes/contracts/tax into a space by content). Scanned
+# documents need the `ocr` extra below too. `paperwork` is kept as an alias: the filer
+# used to be its own package (navig-paperwork, never published) and was folded in.
+cabinet = ["navig-cabinet>=0.2.0"]
+paperwork = ["navig-cabinet>=0.2.0"]
 # Flight-recorder & crash black-box (event log + sealed .navbox bundles). The engine
 # was extracted here from core; `navig.blackbox.*` are now thin shims, and both
 # `navig blackbox` and the standalone `navig-blackbox` CLI need this extra.
@@ -223,7 +223,6 @@ navig-mobile = { path = "../plugins/navig-mobile", editable = true }
 navig-dedupe = { path = "../plugins/navig-dedupe", editable = true }
 navig-blackbox = { path = "../plugins/navig-blackbox", editable = true }
 navig-contacts = { path = "../plugins/navig-contacts", editable = true }
-navig-paperwork = { path = "../plugins/navig-paperwork", editable = true }
 navig-cabinet = { path = "../plugins/navig-cabinet", editable = true }
 
 [project.urls]

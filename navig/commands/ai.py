@@ -593,6 +593,12 @@ def _ai_models_check(
             "[dim]— 1 token per id, manifest + provider table[/dim]"
         )
     rows = probe_catalog(provider, timeout=timeout)
+    # Would a turn on this model be COSTED? An unpriced model reads $0.00 in the
+    # agent's per-turn tracker — grok-4.6, xAI's default, did until 2026-09-27.
+    from navig.agent.usage_tracker import PRICE_TABLE, model_price_key
+
+    for r in rows:
+        r["priced"] = model_price_key(r["model"], PRICE_TABLE) is not None
     if not rows:
         console.print(
             f"[yellow]No catalog models to check{f' for {provider}' if provider else ''}.[/yellow]"
@@ -647,6 +653,7 @@ def _ai_models_check(
             console.print(
                 f"[dim]no credential, so not judged: {', '.join(skipped)}[/dim]"
             )
+        _report_unpriced(console, rows)
         if retired:
             console.print()
             console.print(
@@ -660,6 +667,35 @@ def _ai_models_check(
             )
     if retired:
         raise typer.Exit(1)
+
+
+def _report_unpriced(console, rows: list[dict]) -> None:
+    """Name the LIVE models whose cost would read $0.00.
+
+    Only for providers the price table models at all (it prices at least one of
+    their ids): an open-weight host or an aggregator (groq, nvidia, openrouter)
+    has no entries by design, and listing all 34 of its ids would bury the two
+    that matter. Those are named once instead. Never an exit failure — a missing
+    price is wrong accounting, not a broken model.
+    """
+    live = [r for r in rows if r["status"] in ("live", "slow", "transient")]
+    modelled = {r["provider"] for r in rows if r.get("priced")}
+    gaps = [f"{r['provider']}:{r['model']}" for r in live
+            if not r.get("priced") and r["provider"] in modelled]
+    unmodelled = sorted({r["provider"] for r in live} - modelled)
+    if gaps:
+        console.print(
+            f"[yellow]{len(gaps)} live model(s) have no price — their cost reads $0.00: "
+            f"{', '.join(gaps)}[/yellow]"
+        )
+        console.print(
+            "[dim]  add them to navig/agent/usage_tracker.py::PRICE_TABLE from the provider's "
+            "pricing page[/dim]"
+        )
+    if unmodelled:
+        console.print(
+            f"[dim]not modelled by the price table (costs read $0.00): {', '.join(unmodelled)}[/dim]"
+        )
 
 
 @ai_app.command("providers")

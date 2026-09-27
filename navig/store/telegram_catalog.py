@@ -392,19 +392,33 @@ class TelegramCatalogStore(BaseStore):
         )
         return cur.rowcount > 0
 
-    def count_deleted_since(self, since: str) -> dict[str, int]:
-        """``{"messages": n, "chats": m}`` deleted at or after *since*.
+    def count_deleted_since(
+        self, since: str, *, kind: str | None = None,
+        exclude_chats: set[int] | frozenset[int] | None = None,
+    ) -> dict[str, int]:
+        """``{"messages": n, "chats": m, "latest": iso|None}`` deleted at or after *since*.
 
         The digest's headline. A COUNT rather than a fetch because the summary
-        needs two numbers and the rows are only read if the operator asks."""
+        needs two numbers and the rows are only read if the operator asks.
+
+        ``latest`` is the newest ``deleted_at`` in the batch — the identity two
+        processes can AGREE on. They cannot agree on *since*: with no watermark
+        stored, each computes ``now - window`` itself, milliseconds apart.
+
+        ``kind`` / ``exclude_chats`` take the SAME meaning as in
+        :meth:`list_deleted`, so a caller can make the count and the list agree —
+        the digest card's number and what its Show button reveals must match."""
+        where, params = _deleted_filters(since=since, kind=kind, exclude_chats=exclude_chats)
         row = self._read_one(
-            "SELECT COUNT(*) AS messages, COUNT(DISTINCT chat_id) AS chats "
-            "FROM tg_messages WHERE deleted = 1 AND deleted_at >= ?",
-            (since,),
+            "SELECT COUNT(*) AS messages, COUNT(DISTINCT m.chat_id) AS chats, "
+            "MAX(m.deleted_at) AS latest "
+            f"FROM tg_messages m WHERE {where}",
+            tuple(params),
         )
         return {
             "messages": int((row["messages"] if row else 0) or 0),
             "chats": int((row["chats"] if row else 0) or 0),
+            "latest": (row["latest"] if row else None) or None,
         }
 
     def list_messages(
@@ -452,7 +466,8 @@ class TelegramCatalogStore(BaseStore):
         return [_message_dict(r) for r in rows]
 
     def list_deleted(
-        self, *, chat_id: int | None = None, limit: int = 100, since: str | None = None
+        self, *, chat_id: int | None = None, limit: int = 100, since: str | None = None,
+        kind: str | None = None, exclude_chats: set[int] | frozenset[int] | None = None,
     ) -> list[dict[str, Any]]:
         """Deleted messages across every room, newest first, with the room title.
 
@@ -465,16 +480,17 @@ class TelegramCatalogStore(BaseStore):
         before ``deleted_at`` existed. NOT by ``message_id``: ids are per-chat
         counters, so ordering a cross-room list by them interleaves chats
         arbitrarily. Soft-deleted rows are the only record that a message ever
-        existed, which is what makes this the answer to "what was deleted"."""
-        clauses = ["m.deleted = 1"]
-        params: list[Any] = []
-        if chat_id is not None:
-            clauses.append("m.chat_id = ?")
-            params.append(chat_id)
-        if since:
-            clauses.append("m.deleted_at >= ?")
-            params.append(since)
+        existed, which is what makes this the answer to "what was deleted".
+
+        ``kind="business"`` keeps only business-chat rows — the deck's own delete
+        route marks catalog rows deleted too, and a message the operator deleted
+        in a group is not a "business deletion". ``exclude_chats`` drops chats
+        (the digest passes the muted set; the browse surfaces do not, because mute
+        stops the announcing, not the record)."""
+        where, params = _deleted_filters(
+            since=since, kind=kind, exclude_chats=exclude_chats, chat_id=chat_id)
         params.append(max(1, min(500, limit)))
+        clauses = [where]
         rows = self._read_all(
             f"""
             SELECT m.*, r.title AS room_title, r.type AS room_type,
@@ -681,6 +697,36 @@ class TelegramCatalogStore(BaseStore):
             "snippet": snippet or (msg.get("text") or "")[:200],
             "message": msg,
         }
+
+
+def _deleted_filters(
+    *, since: str | None = None, kind: str | None = None,
+    exclude_chats: set[int] | frozenset[int] | None = None, chat_id: int | None = None,
+) -> tuple[str, list[Any]]:
+    """WHERE clause + params for "deleted rows", shared by the count and the list.
+
+    One builder rather than two copies because the digest shows a number on the
+    card (the count) and reveals rows under Show (the list): if the two filters
+    ever drift, the card says "3 deleted" and the button shows 2.
+
+    Chat ids are bound as parameters, never formatted in — they arrive from config,
+    where `navig config set` stores raw strings."""
+    clauses = ["m.deleted = 1"]
+    params: list[Any] = []
+    if chat_id is not None:
+        clauses.append("m.chat_id = ?")
+        params.append(chat_id)
+    if since:
+        clauses.append("m.deleted_at >= ?")
+        params.append(since)
+    if kind:
+        clauses.append("m.kind = ?")
+        params.append(kind)
+    if exclude_chats:
+        ids = sorted(int(c) for c in exclude_chats)
+        clauses.append(f"m.chat_id NOT IN ({', '.join('?' for _ in ids)})")
+        params.extend(ids)
+    return " AND ".join(clauses), params
 
 
 # ── Row → dict converters ─────────────────────────────────────

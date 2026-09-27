@@ -723,6 +723,18 @@ def _isolate_navig_config_dir(tmp_path_factory):
     isolated_data.mkdir(parents=True, exist_ok=True)
     os.environ["NAVIG_DATA_DIR"] = str(isolated_data)
 
+    # The FOURTH root: `paths.cache_dir()` reads NAVIG_CACHE_DIR and otherwise the OS
+    # cache (%LOCALAPPDATA%\navig\cache on Windows) — derived from neither of the two
+    # above. Measured, not assumed: a run of tests/telegram/test_deletion_policy.py
+    # wrote four deletion-digest claim files into the operator's REAL cache, and a stray
+    # claim there can block a real digest card for its TTL. The same rule the data dir
+    # taught: "config is isolated" says nothing about the cache. A floor, not an
+    # override — a test that sets NAVIG_CACHE_DIR itself still wins.
+    old_cache = os.environ.get("NAVIG_CACHE_DIR")
+    isolated_cache = isolated / "cache"
+    isolated_cache.mkdir(parents=True, exist_ok=True)
+    os.environ["NAVIG_CACHE_DIR"] = str(isolated_cache)
+
     # The THIRD leg, and the one no env var can reach: app-root detection.
     #
     # `base_dir` — the parent of hosts_dir / apps_dir / cache_dir — is NOT
@@ -834,6 +846,10 @@ def _isolate_navig_config_dir(tmp_path_factory):
         os.environ.pop("NAVIG_DATA_DIR", None)
     else:
         os.environ["NAVIG_DATA_DIR"] = old_data
+    if old_cache is None:
+        os.environ.pop("NAVIG_CACHE_DIR", None)
+    else:
+        os.environ["NAVIG_CACHE_DIR"] = old_cache
 
 
 @pytest.fixture(autouse=True)

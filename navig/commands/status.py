@@ -15,9 +15,17 @@ def get_gateway_status() -> dict[str, Any]:
     try:
         import requests
 
-        from navig.gateway_client import gateway_base_url
+        from navig.gateway_client import gateway_base_url, gateway_request_headers
 
-        response = requests.get(f"{gateway_base_url()}/status", timeout=2)
+        # /status is an authenticated route. Without the bearer token a RUNNING
+        # gateway answers 401, and this reported "Gateway: stopped" for it — while
+        # `navig gateway status` (which sends the token) said running.
+        response = requests.get(
+            f"{gateway_base_url()}/status", headers=gateway_request_headers(), timeout=2
+        )
+        if response.status_code in (401, 403):
+            # Up, but this client's token is not accepted — alive is still the truth.
+            return {"running": True, "auth_error": True}
         if response.status_code == 200:
             # /status answers json_ok(...), so the payload is under ["data"] — reading
             # these fields off the raw body made `navig status` report a running daemon
@@ -122,7 +130,12 @@ def show_status(options: dict[str, Any]) -> None:
 
     # Gateway status
     gw = payload["gateway"]
-    if gw["running"]:
+    if gw["running"] and gw.get("auth_error"):
+        ch.warning(
+            "Gateway: running, but it rejected this client's token "
+            "(check: navig config get gateway.auth.token)"
+        )
+    elif gw["running"]:
         uptime = format_uptime(gw.get("uptime"))
         sessions = gw.get("sessions", 0)
         ch.success(f"Gateway: running (uptime {uptime}, {sessions} sessions)")
@@ -174,6 +187,7 @@ def _print_cloud_status_section(*, show_all: bool) -> None:
 
     from navig.core import Config
     from navig.core.coerce import coerce_bool
+
     cfg = Config()
     # coerce_bool so a stored "false" string (navig config set) reads as disabled.
     enabled = coerce_bool(cfg.get("cloud.enabled", False))

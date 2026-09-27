@@ -1080,23 +1080,23 @@ def status_command(
 def dashboard_command(
     ctx: typer.Context,
     live: bool = typer.Option(True, "--live/--no-live", help="Live auto-refresh mode"),
-    refresh: int = typer.Option(5, "--refresh", "-r", help="Refresh interval in seconds"),
+    refresh: int = typer.Option(5, "--refresh", "-r", help="Seconds between service re-reads"),
 ):
     """
-    Real-time operations dashboard with host status, Docker, and history.
+    Live operator console: identity, services, safety, hosts and activity.
 
     The dashboard shows:
-    - Host connectivity status with latency
-    - Docker container overview
-    - Recent operations from history
-    - System resource overview
+    - Your install's sigil, active space and plan progress
+    - Daemon, gateway, bot, cron, reach and default AI
+    - Ledger chain, pending approvals, host locks, in-flight operations
+    - SSH reachability of every host, and the latest operations
 
     Examples:
-        navig dashboard           # Full live dashboard
-        navig dashboard --no-live # Single snapshot
-        navig dashboard -r 10     # Refresh every 10 seconds
+        navig dashboard           # Live view
+        navig dashboard --no-live # Single snapshot (also used when piped)
+        navig dashboard -r 10     # Re-read services every 10 seconds
 
-    Press Q to quit, R to force refresh.
+    Keys: q quit · r refresh · d doctor · g open deck · ? help.
     """
     from navig.commands.dashboard import run_dashboard, run_dashboard_simple
 

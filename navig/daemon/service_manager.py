@@ -40,6 +40,7 @@ TASK_NAME = "NAVIG Daemon"
 #: died mid-stop, after disabling autostart and before re-enabling it.
 TASK_RESTART_NAME = "NAVIG Daemon Restart"
 SYSTEMD_UNIT = "navig-agent"  # Linux systemd unit name
+LAUNCHD_LABEL = "run.navig.daemon"  # macOS LaunchAgent label (and plist file name)
 
 
 # Paths are resolved at CALL time (config_dir() honours NAVIG_CONFIG_DIR) —
@@ -1214,14 +1215,134 @@ def systemd_status() -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
+# launchd backend (macOS)
+# ---------------------------------------------------------------------------
+#
+# macOS had NO autostart at all: detect_best_method() returned "manual" there, so
+# `navig service install` failed and install.sh's "launchd on macOS" comment
+# described a backend that did not exist. A per-user LaunchAgent is the macOS
+# equivalent of the systemd --user unit: no admin rights, starts at login,
+# restarted by launchd if it dies (KeepAlive SuccessfulExit=false — a clean
+# `navig service stop` exit is NOT restarted).
+#
+# Verified only by the pure tests here and the public Portability workflow
+# (macos-latest); there is no Apple hardware on the maintainer's machine.
+
+
+def has_launchd() -> bool:
+    """launchd is the service manager on every macOS."""
+    return sys.platform == "darwin" and shutil.which("launchctl") is not None
+
+
+def _launchd_plist_path() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
+
+
+def _launchd_domain() -> str:
+    """The per-user GUI domain `launchctl bootstrap` targets (gui/<uid>)."""
+    return f"gui/{os.getuid()}" if hasattr(os, "getuid") else "gui/501"
+
+
+def _launchd_plist_content() -> str:
+    """The LaunchAgent plist — same command, env and log as the systemd unit."""
+    from xml.sax.saxutils import escape
+
+    python = escape(_python_exe())
+    home = escape(str(_navig_home()))
+    log_path = escape(str(_log_dir() / "daemon.log"))
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>{LAUNCHD_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{python}</string>
+    <string>-m</string>
+    <string>navig.daemon.entry</string>
+  </array>
+  <key>WorkingDirectory</key><string>{home}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NAVIG_SERVICE</key><string>1</string>
+    <key>NAVIG_CONFIG_DIR</key><string>{home}</string>
+    <key>NAVIG_HOME</key><string>{home}</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key><false/>
+  </dict>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>{log_path}</string>
+  <key>StandardErrorPath</key><string>{log_path}</string>
+  <key>ProcessType</key><string>Background</string>
+</dict>
+</plist>
+"""
+
+
+def _launchctl(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["launchctl", *args], capture_output=True, text=True)
+
+
+def launchd_install(start_now: bool = True) -> tuple[bool, str]:
+    """Install the daemon as a per-user LaunchAgent."""
+    _ensure_dirs()
+    plist = _launchd_plist_path()
+    try:
+        plist.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(plist, _launchd_plist_content())
+        domain = _launchd_domain()
+        # Re-install is idempotent: boot out any previous load first (ignore "not loaded").
+        _launchctl("bootout", f"{domain}/{LAUNCHD_LABEL}")
+        if start_now:
+            r = _launchctl("bootstrap", domain, str(plist))
+            if r.returncode != 0:
+                return False, f"launchctl bootstrap failed: {(r.stderr or r.stdout).strip()}"
+            return True, f"LaunchAgent '{LAUNCHD_LABEL}' installed and started"
+        return True, f"LaunchAgent '{LAUNCHD_LABEL}' installed (starts at next login)"
+    except Exception as e:  # noqa: BLE001
+        return False, f"launchd install failed: {e}"
+
+
+def launchd_uninstall() -> tuple[bool, str]:
+    """Stop and remove the LaunchAgent."""
+    plist = _launchd_plist_path()
+    if not plist.exists():
+        return False, f"No LaunchAgent found for '{LAUNCHD_LABEL}'"
+    try:
+        _launchctl("bootout", f"{_launchd_domain()}/{LAUNCHD_LABEL}")
+        plist.unlink(missing_ok=True)
+        return True, f"LaunchAgent '{LAUNCHD_LABEL}' removed"
+    except Exception as e:  # noqa: BLE001
+        return False, f"launchd uninstall failed: {e}"
+
+
+def launchd_status() -> tuple[bool, str]:
+    """(loaded-and-running, detail) from `launchctl print`."""
+    if not _launchd_plist_path().exists():
+        return False, "LaunchAgent not installed"
+    r = _launchctl("print", f"{_launchd_domain()}/{LAUNCHD_LABEL}")
+    if r.returncode != 0:
+        return False, "LaunchAgent installed but not loaded"
+    running = any(line.strip().startswith("state = running") for line in r.stdout.splitlines())
+    pid = next((line.split("=", 1)[1].strip() for line in r.stdout.splitlines()
+                if line.strip().startswith("pid =")), None)
+    return running, f"state: {'running' if running else 'not running'}" + (f" (pid {pid})" if pid else "")
+
+
+# ---------------------------------------------------------------------------
 # Unified API
 # ---------------------------------------------------------------------------
 
 
 def detect_best_method() -> str:
     """Pick the best available installation method for the current platform."""
+    if sys.platform == "darwin":
+        return "launchd" if has_launchd() else "manual"
     if sys.platform != "win32":
-        # Linux / macOS
+        # Linux
         if has_systemd():
             return "systemd"
         return "manual"
@@ -1257,6 +1378,10 @@ def install(method: str | None = None, start_now: bool = True) -> tuple[bool, st
         if not has_systemd():
             return False, "systemd not found on this system"
         return systemd_install(start_now)
+    elif method == "launchd":
+        if not has_launchd():
+            return False, "launchd is only available on macOS"
+        return launchd_install(start_now)
     elif method == "manual":
         return False, (
             "No supported service manager found.\n"
@@ -1264,7 +1389,7 @@ def install(method: str | None = None, start_now: bool = True) -> tuple[bool, st
             "Or create a systemd/supervisor unit pointing at that command."
         )
     else:
-        return False, f"Unknown method: {method}. Use 'nssm', 'task', or 'systemd'"
+        return False, f"Unknown method: {method}. Use 'nssm', 'task', 'systemd' or 'launchd'"
 
 
 def uninstall(method: str | None = None) -> tuple[bool, str]:
@@ -1278,6 +1403,8 @@ def uninstall(method: str | None = None) -> tuple[bool, str]:
         return task_scheduler_uninstall()
     if method == "systemd":
         return systemd_uninstall()
+    if method == "launchd":
+        return launchd_uninstall()
 
     # Auto mode: uninstall any known backend that might be installed,
     # instead of relying on a single best-method detection.
@@ -1289,6 +1416,8 @@ def uninstall(method: str | None = None) -> tuple[bool, str]:
     else:
         if has_systemd():
             attempts.append(("systemd", systemd_uninstall()))
+        if has_launchd():
+            attempts.append(("launchd", launchd_uninstall()))
 
     successes = [f"{backend}: {msg}" for backend, (ok, msg) in attempts if ok]
     if successes:
@@ -1490,5 +1619,9 @@ def status(method: str | None = None) -> tuple[bool, str]:
             summary = _summary_line(detail_sd)
             if summary:
                 lines.append(f"  Detail: {summary}")
+        if method in (None, "launchd") and has_launchd():
+            running_ld, detail_ld = launchd_status()
+            lines.append(f"LaunchAgent ({LAUNCHD_LABEL}): {'Running' if running_ld else 'Not running'}")
+            lines.append(f"  Detail: {detail_ld}")
 
     return daemon_running, "\n".join(lines)

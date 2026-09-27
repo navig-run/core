@@ -213,7 +213,7 @@ def _resolve_log_dir() -> Path:
     * **Under pytest.** ``NavigDaemon.__init__`` opens ``daemon.log`` before any test
       body runs, so a test cannot opt out by isolating late. The operator's real
       ``daemon.log`` carried lines naming pytest tmp dirs
-      (``.../pytest-of-subdose/popen-gw3/test_add_telegram_bot0/...``) interleaved
+      (``.../pytest-of-<user>/popen-gw3/test_add_telegram_bot0/...``) interleaved
       with genuine boot records -- the one file you would read to find out why the
       daemon died, filled with noise by the test suite.
 
@@ -883,7 +883,39 @@ class NavigDaemon:
 
     @staticmethod
     def _verify_daemon_pid(pid: int) -> bool:
-        """Check if the PID actually belongs to a navig daemon process."""
+        """Check if the PID actually belongs to a navig daemon process.
+
+        The caller has already identity-checked the pid (``is_running``). This is the
+        second opinion from the command line, so "could not read it" must answer
+        True: answering False deletes the live daemon's pidfile and boots a SECOND
+        supervisor. That is exactly what happened on macOS, which has no ``/proc`` —
+        the POSIX branch read ``/proc/<pid>/cmdline``, found nothing, and returned
+        False for every live daemon.
+        """
+        cmdline = NavigDaemon._read_cmdline(pid)
+        if cmdline is None:
+            return True  # unreadable — trust the identity check that got us here
+        low = cmdline.lower()
+        return "navig" in low and "daemon" in low
+
+    @staticmethod
+    def _read_cmdline(pid: int) -> str | None:
+        """The process's command line, or None when it cannot be read on this OS."""
+        try:
+            import psutil  # type: ignore[import-untyped]
+
+            try:
+                return " ".join(psutil.Process(pid).cmdline())
+            except psutil.NoSuchProcess:
+                return ""  # gone: definitely not our daemon
+            except (psutil.Error, OSError):
+                pass  # AccessDenied etc. — fall through to the OS tools
+        except ImportError:
+            pass
+        return NavigDaemon._read_cmdline_os(pid)
+
+    @staticmethod
+    def _read_cmdline_os(pid: int) -> str | None:
         try:
             if sys.platform == "win32":
                 result = subprocess.run(
@@ -898,16 +930,21 @@ class NavigDaemon:
                     timeout=_PROC_GRACEFUL_TIMEOUT,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
-                cmdline = result.stdout.strip()
-                return "navig" in cmdline.lower() and "daemon" in cmdline.lower()
-            else:
-                cmdline_path = Path(f"/proc/{pid}/cmdline")
-                if cmdline_path.exists():
-                    cmdline = cmdline_path.read_text(encoding="utf-8")
-                    return "navig" in cmdline and "daemon" in cmdline
-                return False
-        except Exception:
-            return False
+                return result.stdout.strip() if result.returncode == 0 else None
+            cmdline_path = Path(f"/proc/{pid}/cmdline")
+            if cmdline_path.exists():  # Linux
+                return cmdline_path.read_text(encoding="utf-8").replace("\0", " ")
+            # macOS / BSD: no /proc — ps knows the full command line.
+            result = subprocess.run(
+                ["ps", "-o", "command=", "-p", str(pid)],
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=_PROC_GRACEFUL_TIMEOUT,
+            )
+            return result.stdout.strip() if result.returncode == 0 else ""
+        except (OSError, subprocess.SubprocessError):
+            return None
 
     # -- state persistence -------------------------------------------------
 
@@ -1250,10 +1287,21 @@ class NavigDaemon:
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
         else:
+            # The docstring promised "+ its tree" and POSIX killed only the pid: the
+            # gateway/bot children survived as orphans holding their ports. Snapshot the
+            # descendants FIRST — once the parent is dead the tree cannot be walked.
+            from navig.core.aio_subprocess import _snapshot_descendants
+
+            descendants = _snapshot_descendants(pid)
             try:
                 os.kill(pid, signal.SIGKILL)
             except OSError:
                 pass
+            for child in descendants:
+                try:
+                    child.kill()
+                except Exception:  # noqa: BLE001 — a vanished child is the good case
+                    pass
 
     #: A supervisor-shaped sibling that started within this many seconds before us
     #: is treated as a concurrent boot, not a stale generation. The boot sweep is

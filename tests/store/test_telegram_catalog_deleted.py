@@ -27,8 +27,8 @@ def _seed(store, chat_id, message_id, **kw):
 
 
 def test_list_deleted_spans_rooms_and_carries_their_titles(store):
-    store.upsert_room(1, type="business", title="Yck")
-    store.upsert_room(2, type="business", title="Elvira")
+    store.upsert_room(1, type="business", title="Sam")
+    store.upsert_room(2, type="business", title="Nora")
     _seed(store, 1, 10, text="see you at 9")
     _seed(store, 2, 10, text="ok")          # same message_id, different room
     _seed(store, 1, 11, text="still here")  # not deleted
@@ -39,7 +39,7 @@ def test_list_deleted_spans_rooms_and_carries_their_titles(store):
     assert [r["message_id"] for r in rows] == [10, 10]
     # The room title has to ride along: this list spans rooms, so a row that
     # cannot name its own chat is unreadable.
-    assert {r["room_title"] for r in rows} == {"Yck", "Elvira"}
+    assert {r["room_title"] for r in rows} == {"Sam", "Nora"}
     assert all(r["deleted"] is True for r in rows)
     assert 11 not in [r["message_id"] for r in rows]   # a live message is not "deleted"
 

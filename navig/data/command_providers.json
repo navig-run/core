@@ -24,7 +24,7 @@
       "plugin": "navig-cabinet",
       "module": null,
       "pip": "navig-cabinet",
-      "description": "NAVIG Cabinet — an encrypted cabinet for your important files: ID and passport scans, medical records, contracts, photos, recordings, any type and any size. Searchable by the text inside them (local OCR), expiry reminders, portable passphrase backups. A first-party navig plugin (free, toggleable)."
+      "description": "NAVIG Cabinet — your documents in one plugin: an encrypted cabinet for important files (ID and passport scans, medical records, contracts, photos, recordings — any type, any size; local-OCR search, expiry reminders, portable backups) plus `navig paperwork`, which files business paperwork (invoices, quotes, contracts, tax) into a space. A first-party navig plugin (free, toggleable)."
     },
     "calendar": {
       "plugin": "navig-calendar",
@@ -129,10 +129,10 @@
       "description": "navig mstore -- Microsoft Store publishing verbs for NAVIG, wrapping the msstore-publish block."
     },
     "paperwork": {
-      "plugin": "navig-paperwork",
+      "plugin": "navig-cabinet",
       "module": null,
-      "pip": "navig-paperwork",
-      "description": "NAVIG Paperwork module — file business paperwork (invoices, quotes, contracts, tax) into a navig space. Content-classified, deduped, hash-verified, reversible. A first-party navig plugin (free, toggleable)."
+      "pip": "navig-cabinet",
+      "description": "NAVIG Cabinet — your documents in one plugin: an encrypted cabinet for important files (ID and passport scans, medical records, contracts, photos, recordings — any type, any size; local-OCR search, expiry reminders, portable backups) plus `navig paperwork`, which files business paperwork (invoices, quotes, contracts, tax) into a space. A first-party navig plugin (free, toggleable)."
     },
     "pipeline": {
       "plugin": "navig-pipeline",

@@ -88,6 +88,13 @@ class ConfigSingleton:
                 # is refresh → re-apply → write, so neither a read nor a save can lose
                 # what this process set — or what another one wrote meanwhile.
                 self._pending_global: dict[str, Any] = {}
+                # Which config.yaml the pending writes were made against. They are
+                # REPLAYED onto a freshly read copy, and this singleton resolves its
+                # path live -- so a `NAVIG_CONFIG_DIR` that moves for good would
+                # otherwise lay one directory's unsaved values over another's file,
+                # and `save()` would persist them there. A write belongs to the path
+                # that was current when it was made; a different path discards it.
+                self._pending_global_path: Path | None = None
 
                 # Load configuration
                 self._load()
@@ -227,8 +234,36 @@ class ConfigSingleton:
         in the order they were made, so ``set("a.b", …)`` after ``set("a", {})``
         lands the same way it did the first time.
         """
+        if not self._pending_global:
+            return
+        if self._pending_global_path != self.global_config_path:
+            # The config dir moved for good: these values describe another install.
+            self._pending_global.clear()
+            self._pending_global_path = None
+            return
         for key, value in self._pending_global.items():
             self._set_nested(self._global_data, key, value)
+
+    def _remember_pending_global(self, key: str, value: Any) -> None:
+        """Record one unsaved global write so a later refresh can replay it in ORDER.
+
+        A dict does not move an existing key when its value is reassigned, and dotted
+        keys overlap -- so insertion order alone replays the wrong thing in two ways:
+
+        * ``set("a", {})`` then ``set("a.b", 1)`` then ``set("a", {})`` keeps the order
+          ``a, a.b``, so a replay re-applies ``a.b`` and RESURRECTS a value the final
+          parent reset removed. Re-setting a key moves it to the end.
+        * a write to a parent supersedes every pending write BENEATH it (``a`` after
+          ``a.b`` makes ``a.b`` meaningless), so those are dropped.
+
+        The result is the state ``_set_nested`` would have produced from the same calls
+        against the same base, which is the whole contract of the replay.
+        """
+        prefix = f"{key}."
+        for stale in [k for k in self._pending_global if k == key or k.startswith(prefix)]:
+            del self._pending_global[stale]
+        self._pending_global[key] = value
+        self._pending_global_path = self.global_config_path
 
     def _refresh_project_data(self, force: bool = False) -> None:
         """Reload project-local config when current project path changes.
@@ -327,6 +362,7 @@ class ConfigSingleton:
         self._ensure_dirs()
         atomic_write_yaml(self._global_data, self.global_config_path, allow_unicode=True)
         self._pending_global.clear()
+        self._pending_global_path = None
         # What was just written IS the disk state; without this the next get() paid
         # for a reload of a file that matches memory byte for byte.
         self._remember_global_stat()
@@ -436,7 +472,7 @@ class ConfigSingleton:
                 # branch skipped it, which is why a set could sit on a stale copy.
                 self._refresh_global_data()
                 self._set_nested(self._global_data, key, value)
-                self._pending_global[key] = value
+                self._remember_pending_global(key, value)
 
     def save(self, scope: str = "global") -> None:
         """
@@ -467,6 +503,7 @@ class ConfigSingleton:
             except Exception:
                 pass
             self._pending_global.clear()
+            self._pending_global_path = None
             self._load()
 
     # =========================================================================
@@ -606,7 +643,7 @@ class ConfigSingleton:
             if plugin_name not in disabled:
                 disabled.append(plugin_name)
                 self._set_nested(self._global_data, "plugins.disabled_plugins", disabled)
-                self._pending_global["plugins.disabled_plugins"] = disabled
+                self._remember_pending_global("plugins.disabled_plugins", disabled)
                 self._save_global()
 
     def enable_plugin(self, plugin_name: str) -> None:
@@ -617,7 +654,7 @@ class ConfigSingleton:
             if plugin_name in disabled:
                 disabled.remove(plugin_name)
                 self._set_nested(self._global_data, "plugins.disabled_plugins", disabled)
-                self._pending_global["plugins.disabled_plugins"] = disabled
+                self._remember_pending_global("plugins.disabled_plugins", disabled)
                 self._save_global()
 
     # =========================================================================
