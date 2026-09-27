@@ -47,6 +47,11 @@ def _inside_checkout(p: Path | str) -> bool:
     return True
 
 
+@pytest.mark.skipif(
+    not (CHECKOUT / "core").is_dir(),
+    reason="not the labs monorepo layout (the public navig-run/core mirror IS core/, and its "
+    ".navig/ is withheld) — the premise is checked where it exists",
+)
 def test_the_checkout_really_is_a_navig_project() -> None:
     """Anti-vacuity: if this stops holding, every assertion below passes for free.
 

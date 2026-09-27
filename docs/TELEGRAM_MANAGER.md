@@ -108,7 +108,9 @@ navig telegram business alerts on|off                  # deleted-message → DM 
    auto-replied to).
 
    **By default this is a DIGEST, not a message per deletion.** One card per window
-   says *"🗑 4 deleted in 2 chats"* with a **Show** button; the detail (and the files)
+   says *"🗑 4 deleted in 2 chats"*, names each chat and whose messages went
+   (`• Yck 🧢 — 1 (from you)`, names only — never message text, since it shows on a
+   lock screen), with a **Show** button; the detail (and the files)
    arrive only when you tap it, and a **Quiet** button turns alerts off from the card
    itself. Instant per-deletion reports flooded a live account, which is why digest is
    the default.

@@ -24,6 +24,8 @@ def test_every_locale_carries_the_digest_copy():
     keys = {
         "deletions.digest.head", "deletions.digest.chats", "deletions.digest.tail",
         "deletions.digest.since",
+        "deletions.digest.row", "deletions.digest.row_mine_all",
+        "deletions.digest.row_mine_some", "deletions.digest.more",
         "deletions.button.show", "deletions.button.quiet",
         "deletions.toast.off", "deletions.off.note",
     }
@@ -41,3 +43,6 @@ def test_every_locale_carries_the_digest_copy():
         # The WHEN is the point of that line; a translation that drops it prints
         # a bare "since".
         assert "{when}" in data["deletions.digest.since"], f"{f.name}: since lost {{when}}"
+        # The per-chat preview exists to say WHO: a row that lost its name says nothing.
+        assert "{name}" in data["deletions.digest.row"], f"{f.name}: row lost {{name}}"
+        assert "{k}" in data["deletions.digest.row_mine_some"], f"{f.name}: row lost {{k}}"

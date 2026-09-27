@@ -19,7 +19,6 @@ import os
 import secrets
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import typer
@@ -376,11 +375,3 @@ def status(
 
     if not result.get("reachable"):
         ch.dim("Start it with: navig os serve")
-
-
-def main() -> None:  # pragma: no cover — parity with the other command modules
-    app()
-
-
-if __name__ == "__main__":  # pragma: no cover
-    sys.exit(app())

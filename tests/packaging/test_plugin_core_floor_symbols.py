@@ -172,3 +172,64 @@ def test_a_submodule_imported_by_name_is_not_a_missing_symbol(guard):
     assert package == set()
     # The caller's guard: `navig.store.contacts` IS in the module list, so this
     # never reaches the "name missing" branch.
+
+
+# ---------------------------------------------------------------------------
+# An import guarded by `except ImportError` is optional, not a false floor
+# ---------------------------------------------------------------------------
+
+
+def _write(tmp_path, source: str) -> None:
+    import textwrap
+
+    (tmp_path / "mod.py").write_text(textwrap.dedent(source), encoding="utf-8")
+
+
+@pytest.mark.parametrize("handler", ["ImportError", "ModuleNotFoundError", "(ImportError, OSError)"])
+def test_an_import_with_an_absence_fallback_is_not_a_finding(guard, tmp_path, handler):
+    _write(tmp_path, f"""
+        try:
+            from navig.brand_new import helper
+        except {handler}:
+            def helper(): ...
+        """)
+    assert guard._imported_core_symbols(tmp_path) == {}
+    assert guard._imported_core_modules(tmp_path) == {}
+
+
+def test_a_broad_except_still_counts(guard, tmp_path):
+    """`except Exception` swallows the ImportError AND everything else — the shape that
+    makes a missing core feature silently dead. It stays a finding."""
+    _write(tmp_path, """
+        try:
+            from navig.brand_new import helper
+        except Exception:
+            pass
+        """)
+    assert ("navig.brand_new", "helper") in guard._imported_core_symbols(tmp_path)
+
+
+def test_only_the_try_body_is_guarded(guard, tmp_path):
+    """An import in the handler or the else-branch is not protected by that handler."""
+    _write(tmp_path, """
+        try:
+            import json
+        except ImportError:
+            from navig.fallback import a
+        else:
+            from navig.other import b
+        """)
+    found = guard._imported_core_symbols(tmp_path)
+    assert ("navig.fallback", "a") in found and ("navig.other", "b") in found
+
+
+def test_a_lazy_guarded_import_inside_a_function_counts_as_guarded(guard, tmp_path):
+    _write(tmp_path, """
+        def f():
+            try:
+                from navig.brand_new import helper
+            except ImportError:
+                return None
+            return helper
+        """)
+    assert guard._imported_core_symbols(tmp_path) == {}

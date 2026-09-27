@@ -421,6 +421,33 @@ class TelegramCatalogStore(BaseStore):
             "latest": (row["latest"] if row else None) or None,
         }
 
+    def deleted_by_chat_since(
+        self, since: str, *, owner_id: int | None = None, kind: str | None = None,
+        exclude_chats: set[int] | frozenset[int] | None = None, limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Deleted rows since *since*, grouped per chat, biggest first.
+
+        ``[{"chat_id", "title", "count", "mine"}]`` — ``mine`` is how many were the
+        owner's own messages, so a digest can say WHOSE messages went, not just how
+        many. Same filters as :meth:`count_deleted_since` (the shared builder), so the
+        per-chat lines always add up to the number on the card."""
+        where, params = _deleted_filters(since=since, kind=kind, exclude_chats=exclude_chats)
+        rows = self._read_all(
+            "SELECT m.chat_id AS chat_id, r.title AS title, COUNT(*) AS n, "
+            "SUM(CASE WHEN m.sender_id = ? THEN 1 ELSE 0 END) AS mine "
+            "FROM tg_messages m LEFT JOIN tg_rooms r ON r.chat_id = m.chat_id "
+            f"WHERE {where} GROUP BY m.chat_id "
+            "ORDER BY n DESC, MAX(m.deleted_at) DESC LIMIT ?",
+            # The owner id binds FIRST: it belongs to the SELECT, ahead of WHERE.
+            # -1 is never a Telegram user id, so an unknown owner counts nothing as mine.
+            (owner_id if owner_id is not None else -1, *params, max(1, min(200, limit))),
+        )
+        return [
+            {"chat_id": r["chat_id"], "title": r["title"],
+             "count": int(r["n"] or 0), "mine": int(r["mine"] or 0)}
+            for r in rows
+        ]
+
     def list_messages(
         self,
         chat_id: int,

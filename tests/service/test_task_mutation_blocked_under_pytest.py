@@ -90,6 +90,8 @@ def test_with_the_opt_in_the_call_actually_proceeds(monkeypatch: pytest.MonkeyPa
     this file's own hazard while testing the fix for it is not the assertion to keep.
     """
     monkeypatch.setenv("NAVIG_ALLOW_TASK_MUTATION", "1")
+    # schtasks is Windows-only; the flag it passes exists only in Windows' subprocess
+    monkeypatch.setattr(sm.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
     reached: list = []
 
     class _Completed:

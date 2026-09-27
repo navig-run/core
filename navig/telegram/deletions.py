@@ -477,7 +477,8 @@ async def flush_digest(channel: Any, *, force: bool = False) -> dict[str, Any]:
 
         when = format_when(since) or f"{since[:16].replace('T', ' ')} UTC"
         since_line = _t("deletions.digest.since", when=when) or f"since {when}"
-        body = f"🗑 {head}\n{since_line} · {tail}."
+        who = _who_lines(since)
+        body = f"🗑 {head}\n" + (f"{who}\n" if who else "") + f"{since_line} · {tail}."
         token = _token_for(since)
         show = _t("deletions.button.show", n=n) or f"Show {n}"
         quiet = _t("deletions.button.quiet") or "Quiet"
@@ -498,6 +499,51 @@ async def flush_digest(channel: Any, *, force: bool = False) -> dict[str, Any]:
             # can take it. Keeping the claim would strand it until the TTL.
             _release_window(batch_key)
         return {"sent": bool(ok), "count": n, "chats": chats, "since": since}
+
+
+#: Chats named on the card before it folds the rest into "+N more". The card is a
+#: notification; past a handful of names it stops being glanceable.
+WHO_MAX_CHATS = 5
+
+
+def _who_lines(since: str) -> str:
+    """One line per chat: who the deletions were in, and whose messages they were.
+
+    The card used to say only "удалено: 2 в 2 чатах" — the operator had to tap Show
+    to learn even WHICH conversations. It now names them. Names and counts only,
+    never message text: this card is a notification preview (it shows on a lock
+    screen), and the content deliberately stays behind the Show button.
+
+    "Whose" is the SENDER. Telegram's deletion update does not say who deleted, but
+    a deleted message is almost always removed by the person who sent it, so
+    "from you" vs them is the honest proxy for "who deleted it"."""
+    try:
+        from navig.telegram import business
+
+        owner_id = business.primary_owner()
+    except Exception:  # noqa: BLE001
+        owner_id = None
+    try:
+        rows = _store().deleted_by_chat_since(since, owner_id=owner_id, **_digest_scope())
+    except Exception:  # noqa: BLE001
+        # The preview is a courtesy on top of a card that already has its count and
+        # its Show button; failing to build it must never cost the card.
+        logger.debug("deletion digest: per-chat preview unavailable", exc_info=True)
+        return ""
+    lines: list[str] = []
+    for row in rows[:WHO_MAX_CHATS]:
+        name = (row.get("title") or "").strip() or str(row["chat_id"])
+        n, mine = row["count"], row["mine"]
+        line = _t("deletions.digest.row", name=name, n=n) or f"{name} — {n}"
+        if mine and mine == n:
+            line += " " + (_t("deletions.digest.row_mine_all") or "(from you)")
+        elif mine:
+            line += " " + (_t("deletions.digest.row_mine_some", k=mine) or f"({mine} from you)")
+        lines.append(f"• {line}")
+    if len(rows) > WHO_MAX_CHATS:
+        extra = len(rows) - WHO_MAX_CHATS
+        lines.append("• " + (_t("deletions.digest.more", n=extra) or f"+{extra} more"))
+    return "\n".join(lines)
 
 
 def _token_for(since: str) -> str:

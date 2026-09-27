@@ -593,12 +593,28 @@ def _ai_models_check(
             "[dim]— 1 token per id, manifest + provider table[/dim]"
         )
     rows = probe_catalog(provider, timeout=timeout)
+    # OpenRouter prices come from its own public list; this command already goes
+    # online, so it keeps that cache fresh. A failed fetch leaves the old cache.
+    if any(r["provider"] == "openrouter" and r["status"] != "nokey" for r in rows):
+        from navig.agent import openrouter_prices
+
+        try:
+            n = openrouter_prices.refresh()
+            if not json_output:
+                console.print(f"[dim]OpenRouter prices refreshed ({n} models).[/dim]")
+        except Exception as exc:  # noqa: BLE001 — pricing is secondary to the audit
+            if not json_output:
+                console.print(f"[yellow]OpenRouter prices not refreshed: {exc}[/yellow]")
     # Would a turn on this model be COSTED? An unpriced model reads $0.00 in the
     # agent's per-turn tracker — grok-4.6, xAI's default, did until 2026-09-27.
+    # "Priced" means an entry EXISTS — a deliberate $0 (a free tier) is a price.
+    from navig.agent import openrouter_prices
     from navig.agent.usage_tracker import PRICE_TABLE, model_price_key
 
     for r in rows:
-        r["priced"] = model_price_key(r["model"], PRICE_TABLE) is not None
+        r["priced"] = (
+            r["provider"] == "openrouter" and openrouter_prices.lookup(r["model"]) is not None
+        ) or model_price_key(r["model"], PRICE_TABLE) is not None
     if not rows:
         console.print(
             f"[yellow]No catalog models to check{f' for {provider}' if provider else ''}.[/yellow]"

@@ -168,7 +168,9 @@ ALL_PROVIDERS: list[ProviderManifest] = [
             "openai/gpt-4o-mini",
             "openai/o3-mini",
             # Google
-            "google/gemini-2.5-pro-preview-05-06",
+            # Was the 05-06 PREVIEW id: it still answers, but OpenRouter no longer
+            # lists it, so it has no published price (found 2026-09-27 by the audit).
+            "google/gemini-2.5-pro",
             "google/gemini-2.5-flash",
             # Meta Llama
             "meta-llama/llama-3.3-70b-instruct",

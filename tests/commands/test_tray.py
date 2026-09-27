@@ -68,7 +68,9 @@ class TestTrayStart:
         script.write_text("# fake")
         with patch("navig.commands.tray._is_tray_running", return_value=(False, None)):
             with patch("navig.commands.tray.TRAY_SCRIPT", script):
-                with patch("builtins.__import__", side_effect=ImportError("no pystray")):
+                # Block only pystray: patching builtins.__import__ failed EVERY import,
+                # which on Linux/macOS broke unrelated code before the check ran.
+                with patch.dict("sys.modules", {"pystray": None}):
                     result = runner.invoke(tray_app, ["start"])
         # ImportError triggers exit 1
         assert result.exit_code == 1 or "dep" in result.output.lower() or "pip" in result.output.lower()

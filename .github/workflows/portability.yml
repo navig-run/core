@@ -44,6 +44,8 @@ jobs:
           python -m pip install "git+https://github.com/navig-run/plugins#subdirectory=navig-contacts"
           python -m pip install -e ".[dev]" || python -m pip install -e .
           python -m pip install pytest pytest-asyncio pytest-timeout pytest-mock psutil
+          # optional features some platform tests exercise (the tray, the blackbox seal)
+          python -m pip install navig-blackbox pystray pillow
       - name: Platform suites
         shell: bash
         env:

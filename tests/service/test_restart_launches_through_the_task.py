@@ -16,6 +16,8 @@ refused, or IgnoreNew swallowed it).
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from typer.testing import CliRunner
 
@@ -56,8 +58,32 @@ def fast(monkeypatch):
 # ── the launcher ─────────────────────────────────────────────────────────────
 
 
+
+class _WindowsOs:
+    """`os` as service.py sees it on Windows, without touching the real module.
+
+    Patching `svc.os.name` rewrote the GLOBAL `os.name`, so on Linux/macOS pathlib then
+    tried to build `WindowsPath` objects and every command crashed before the code under
+    test ran — these tests could only ever pass on Windows.
+    """
+
+    name = "nt"
+
+    def __getattr__(self, attr):
+        return getattr(os, attr)
+
+
+
+class _PosixOs(_WindowsOs):
+    name = "posix"
+
+def _pretend_windows(monkeypatch) -> None:
+    monkeypatch.setattr(svc, "os", _WindowsOs())
+    monkeypatch.setattr(svc.sys, "platform", "win32")  # the task path is gated on both
+    monkeypatch.setattr(sm.sys, "platform", "win32")
+
 def test_windows_launch_goes_through_the_task_and_never_spawns_directly(monkeypatch, fast):
-    monkeypatch.setattr(svc.os, "name", "nt")
+    _pretend_windows(monkeypatch)
     monkeypatch.setattr(sm, "task_scheduler_run", lambda: (True, "started"))
 
     started, how = svc._launch_daemon(_Daemon(appears_after=2))
@@ -69,7 +95,7 @@ def test_windows_launch_goes_through_the_task_and_never_spawns_directly(monkeypa
 def test_a_run_the_scheduler_swallowed_falls_back_to_the_direct_spawn(monkeypatch, fast):
     """IgnoreNew: `schtasks /run` returns 0 and starts nothing. The CLI must notice
     (no daemon within the poll window) and spawn directly, as before."""
-    monkeypatch.setattr(svc.os, "name", "nt")
+    _pretend_windows(monkeypatch)
     monkeypatch.setattr(sm, "task_scheduler_run", lambda: (True, "started"))
     monkeypatch.setattr(svc, "_wait_for_daemon", lambda d, **kw: bool(fast))  # only after a spawn
 
@@ -80,7 +106,7 @@ def test_a_run_the_scheduler_swallowed_falls_back_to_the_direct_spawn(monkeypatc
 
 
 def test_no_task_installed_falls_back_to_the_direct_spawn(monkeypatch, fast):
-    monkeypatch.setattr(svc.os, "name", "nt")
+    _pretend_windows(monkeypatch)
     monkeypatch.setattr(
         sm,
         "task_scheduler_run",
@@ -94,7 +120,7 @@ def test_no_task_installed_falls_back_to_the_direct_spawn(monkeypatch, fast):
 
 
 def test_posix_never_touches_task_scheduler(monkeypatch, fast):
-    monkeypatch.setattr(svc.os, "name", "posix")
+    monkeypatch.setattr(svc, "os", _PosixOs())
 
     def boom():
         raise AssertionError("task_scheduler_run must not be called off Windows")
@@ -108,7 +134,7 @@ def test_posix_never_touches_task_scheduler(monkeypatch, fast):
 
 def test_a_stubbed_run_returning_none_is_not_a_success(monkeypatch, fast):
     """Older test doubles stub scheduler helpers with `lambda: None`."""
-    monkeypatch.setattr(svc.os, "name", "nt")
+    _pretend_windows(monkeypatch)
     monkeypatch.setattr(sm, "task_scheduler_run", lambda: None)
 
     _, how = svc._launch_daemon(_Daemon())
@@ -124,7 +150,7 @@ def test_restart_enables_the_task_before_launching(monkeypatch):
     disabled task, so the enable must come first or the task path is dead on
     exactly the flow it exists for."""
     order: list[str] = []
-    monkeypatch.setattr(svc.os, "name", "nt")
+    _pretend_windows(monkeypatch)
     monkeypatch.setattr("navig.daemon.supervisor.NavigDaemon", _Daemon())
     monkeypatch.setattr("time.sleep", lambda *_a, **_kw: None)
     monkeypatch.setattr(sm, "task_scheduler_disable", lambda: order.append("disable"))
@@ -145,7 +171,7 @@ def test_restart_enables_the_task_before_launching(monkeypatch):
 
 def test_start_enables_the_task_before_launching(monkeypatch):
     order: list[str] = []
-    monkeypatch.setattr(svc.os, "name", "nt")
+    _pretend_windows(monkeypatch)
     daemon = _Daemon()
     daemon.polls = -10  # "not running" for the first checks that gate the start
     monkeypatch.setattr("navig.daemon.supervisor.NavigDaemon", daemon)

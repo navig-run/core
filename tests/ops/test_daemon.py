@@ -148,6 +148,8 @@ class TestNavigDaemon:
         from navig.daemon.supervisor import NavigDaemon
 
         monkeypatch.setattr("navig.daemon.supervisor.sys.platform", "win32")
+        # the Windows branch passes this flag; it only exists in Windows' subprocess
+        monkeypatch.setattr("navig.daemon.supervisor.subprocess.CREATE_NO_WINDOW", 0x08000000, raising=False)
         monkeypatch.setattr(NavigDaemon, "read_pid", staticmethod(lambda: 4242))
 
         class _R:
@@ -350,14 +352,18 @@ class TestDaemonConfig:
 class TestServiceManager:
     """Test service manager detection."""
 
-    def test_detect_best_method_no_nssm(self):
+    def test_detect_best_method_no_nssm(self, monkeypatch):
         from navig.daemon import service_manager as sm
+
+        monkeypatch.setattr(sm.sys, "platform", "win32")  # the nssm/task choice is Windows-only
 
         with patch.object(sm, "has_nssm", return_value=False):
             assert sm.detect_best_method() == "task"
 
-    def test_detect_best_method_nssm_admin(self):
+    def test_detect_best_method_nssm_admin(self, monkeypatch):
         from navig.daemon import service_manager as sm
+
+        monkeypatch.setattr(sm.sys, "platform", "win32")  # the nssm/task choice is Windows-only
 
         with (
             patch.object(sm, "has_nssm", return_value=True),
@@ -365,8 +371,10 @@ class TestServiceManager:
         ):
             assert sm.detect_best_method() == "nssm"
 
-    def test_detect_best_method_nssm_no_admin(self):
+    def test_detect_best_method_nssm_no_admin(self, monkeypatch):
         from navig.daemon import service_manager as sm
+
+        monkeypatch.setattr(sm.sys, "platform", "win32")  # the nssm/task choice is Windows-only
 
         with (
             patch.object(sm, "has_nssm", return_value=True),

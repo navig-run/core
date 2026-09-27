@@ -48,6 +48,11 @@ def _runner(monkeypatch, probe_rows, tiers=(), heads=()):
     # providers this machine happens to hold a key for. Stubbed by default;
     # the tests that exercise it pass `heads=`.
     monkeypatch.setattr(liveness, "probe_catalog_heads", lambda **_kw: list(heads))
+    # The daily beat also refreshes OpenRouter's price list — a real GET plus a
+    # cache write. Stubbed: this harness must never touch the network.
+    import navig.agent.openrouter_prices as orp
+
+    monkeypatch.setattr(orp, "refresh", lambda **_kw: 0)
 
     def _no_network(provider, model, **_kw):
         raise AssertionError(f"probed {provider}:{model} — this test is not hermetic")

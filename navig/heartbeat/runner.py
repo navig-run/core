@@ -327,6 +327,15 @@ class HeartbeatRunner:
             return
 
         self._last_mode_probe_day = today
+
+        # OpenRouter's prices, once a day in the same beat — the cost tracker
+        # reads them from a local cache and never goes online itself.
+        try:
+            from navig.agent import openrouter_prices
+
+            await asyncio.to_thread(openrouter_prices.refresh)
+        except Exception as exc:  # noqa: BLE001 — never break the beat over pricing
+            logger.debug("openrouter price refresh skipped: %s", exc)
         bad = dead_modes(results)
         if not bad:
             return

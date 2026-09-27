@@ -170,12 +170,27 @@ def model_price_key(model: str, keys) -> str | None:
     return best
 
 
-def _lookup_price(model: str) -> tuple[float, float, float, float]:
+def _lookup_price(model: str, provider: str | None = None) -> tuple[float, float, float, float]:
     """Return (input_per_M, output_per_M, cache_read_per_M, cache_write_per_M) for *model*.
 
-    See :func:`model_price_key` for the matching rule. Returns zeros for unknown
-    models, and says so at debug level.
+    On OpenRouter the price comes from OpenRouter's own published list (cached
+    by ``navig.agent.openrouter_prices``) — its ids (``anthropic/claude-sonnet-4.5``)
+    match no table entry, so every OpenRouter turn used to read $0.00. The
+    PROVIDER decides it, not the id's shape: ``openai/gpt-oss-20b`` is also an
+    NVIDIA and a groq id, and those are free tiers.
+
+    Otherwise see :func:`model_price_key`. Returns zeros for unknown models, and
+    says so at debug level.
     """
+    if (provider or "").lower() == "openrouter":
+        try:
+            from navig.agent import openrouter_prices
+
+            hit = openrouter_prices.lookup(model)
+        except Exception:  # noqa: BLE001 — a cost lookup must never break a turn
+            hit = None
+        if hit is not None:
+            return hit
     key = model_price_key(model, PRICE_TABLE)
     if key is not None:
         return PRICE_TABLE[key]
@@ -222,7 +237,7 @@ class UsageEvent:
 
     def cost_usd(self) -> float:
         """Estimated USD cost for this event."""
-        inp, out, cache_r, cache_w = _lookup_price(self.model)
+        inp, out, cache_r, cache_w = _lookup_price(self.model, self.provider)
         cost = (
             self.prompt_tokens * inp / 1_000_000
             + self.completion_tokens * out / 1_000_000

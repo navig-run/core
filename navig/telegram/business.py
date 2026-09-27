@@ -346,6 +346,24 @@ def _owner_from_allowed() -> int | None:
         return None
 
 
+def primary_owner() -> int | None:
+    """The install's business owner, when there is no connection id in hand.
+
+    ``resolve_owner(None)`` skipped the connection registry entirely (it looks up
+    by id) and fell back to ``telegram.allowed_users`` alone — so code with no
+    update to read a connection id from (the deletion digest) found no owner on an
+    install whose owner is recorded only in the registry. A NAVIG install has one
+    owner, so any registered connection names them."""
+    try:
+        conns = _cfg().get(CFG_CONNECTIONS, {}) or {}
+        for rec in conns.values():
+            if isinstance(rec, dict) and rec.get("owner_id") is not None:
+                return int(rec["owner_id"])
+    except Exception:  # noqa: BLE001
+        pass
+    return _owner_from_allowed()
+
+
 def resolve_owner(connection_id: str | None) -> int | None:
     """Owner id for a business connection — registry first, else the configured
     owner. On fallback we cache the connection so future lookups + reply targeting
