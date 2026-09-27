@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
+from navig.platform.paths import resolve_user_path
 
 
 @dataclass(frozen=True)
@@ -1546,7 +1547,6 @@ def skills_auto(
     Installs **project-local** into ``<project>/.navig/skills/`` by default (scoped
     to this project + committable for the team); pass ``--global`` for user-wide.
     """
-    from pathlib import Path
 
     from navig.skills import auto_ui as ui
     from navig.skills.autodetect import detect_stack, resolve_skills
@@ -1565,7 +1565,7 @@ def skills_auto(
     ui.print_detected(rules)
 
     # Install target: project-local .navig/skills by default, else the global store.
-    project = Path(path).resolve()
+    project = resolve_user_path(path).resolve()
     install_root = None if global_ else (project / ".navig" / "skills")
     where = "[bold]globally[/] [dim](~/.navig/store/skills — every project)[/]" if global_ \
         else f"[bold]this project[/] [dim]({install_root})[/]"

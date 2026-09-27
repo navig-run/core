@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 import typer
 
@@ -9,6 +8,7 @@ from navig.console_helper import get_console
 from navig.importers.core import UniversalImporter
 from navig.importers.core import flatten_results as _flatten
 from navig.lazy_loader import lazy_import
+from navig.platform.paths import resolve_user_path
 
 ch = lazy_import("navig.console_helper")
 links_db_mod = lazy_import("navig.memory.links_db")
@@ -103,7 +103,7 @@ def _run_import(
         ch.error("--path cannot be used with --source all. Choose one source or remove --path.")
         raise typer.Exit(1)
 
-    if path and not Path(path).exists():
+    if path and not resolve_user_path(path).exists():
         ch.error(f"Import path does not exist: {path}")
         raise typer.Exit(1)
 
@@ -120,7 +120,7 @@ def _run_import(
     if output:
         from navig.core.yaml_io import atomic_write_text
 
-        atomic_write_text(Path(output), payload)
+        atomic_write_text(resolve_user_path(output), payload)
         ch.success(f"Wrote import output: {output}")
 
     if persist_bookmarks:

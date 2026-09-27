@@ -469,9 +469,12 @@ class ConfigManager:
                     ch.error("Please check permissions on your home directory.")
                     raise
 
-        # Create default AI system prompt if it doesn't exist
+        # Create the default AI system prompt — in the GLOBAL config only. A project's
+        # `.navig/ai_system_prompt.txt` is an optional per-project OVERRIDE the operator
+        # creates on purpose; materialising the default there on every command left an
+        # untracked copy in every repo folder that happened to hold a `.navig/`.
         try:
-            if not self.ai_prompt_file.exists():
+            if self.app_config_dir is None and not self.ai_prompt_file.exists():
                 self._create_default_ai_prompt()
         except (PermissionError, OSError) as e:
             if self.verbose:
@@ -1217,17 +1220,29 @@ class ConfigManager:
         informative only and never grants permissions or bypasses safety
         confirmations. Project context is capped at 16 KB to bound injection size.
         """
-        if not self.ai_prompt_file.exists():
-            self._create_default_ai_prompt()
-        personality = self.ai_prompt_file.read_text(encoding="utf-8")
+        # A project override wins; otherwise the global file. Only the global file is
+        # ever created — never write a default into a project's `.navig/`.
+        prompt_file = self.ai_prompt_file
+        if not prompt_file.exists() and self.app_config_dir is not None:
+            prompt_file = self.global_config_dir / "ai_system_prompt.txt"
+        if not prompt_file.exists():
+            try:
+                atomic_write_text(prompt_file, _DEFAULT_AI_PROMPT.strip())
+            except OSError:
+                pass  # read-only home: fall back to the in-memory default below
+        personality = (
+            prompt_file.read_text(encoding="utf-8")
+            if prompt_file.exists()
+            else _DEFAULT_AI_PROMPT.strip()
+        )
 
         # Self-heal a superseded default: if the file is byte-identical to a
         # known stale default (auto-generated, never edited), upgrade it to the
         # current one. A file the operator customised is NOT in the set, so their
         # text is left untouched.
         if personality.strip() in _STALE_DEFAULT_AI_PROMPTS:
-            self._create_default_ai_prompt()
-            personality = self.ai_prompt_file.read_text(encoding="utf-8")
+            atomic_write_text(prompt_file, _DEFAULT_AI_PROMPT.strip())
+            personality = prompt_file.read_text(encoding="utf-8")
 
         root = self._app_root
         if root is None:

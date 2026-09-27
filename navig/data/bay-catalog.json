@@ -2108,6 +2108,35 @@
       "readme": "## Install\n\n```\npip install navig-blackbox\n```"
     },
     {
+      "slug": "navig-cabinet",
+      "name": "Cabinet",
+      "kind": "plugin",
+      "discoveryMode": "marketplace",
+      "acquisitionType": "installable",
+      "surfaces": [
+        "cli"
+      ],
+      "tagline": "NAVIG Cabinet — your documents in one plugin: an encrypted cabinet for important files (ID and passport scans, medical records, contracts…",
+      "description": "NAVIG Cabinet — your documents in one plugin: an encrypted cabinet for important files (ID and passport scans, medical records, contracts, photos, recordings — any type, any size; local-OCR search, expiry reminders, portable backups) plus `navig paperwork`, which files business paperwork (invoices, quotes, contracts, tax) into a space. A first-party navig plugin (free, toggleable).",
+      "tags": [
+        "pip",
+        "cabinet",
+        "paperwork"
+      ],
+      "pricing": {
+        "model": "free"
+      },
+      "status": "active",
+      "repository": "https://github.com/navig-run/plugins/tree/main/navig-cabinet",
+      "install": "pip install navig-cabinet",
+      "version": "0.2.0",
+      "commands": [
+        "navig cabinet",
+        "navig paperwork"
+      ],
+      "readme": "## Commands\n\n- `navig cabinet`\n- `navig paperwork`\n\n## Install\n\n```\npip install navig-cabinet\n```"
+    },
+    {
       "slug": "navig-calendar",
       "name": "Calendar",
       "kind": "plugin",
@@ -5539,6 +5568,35 @@
             "social-media"
           ],
           "install": "navig plugin install telegram"
+        },
+        {
+          "slug": "navig-cabinet",
+          "name": "Cabinet",
+          "kind": "plugin",
+          "discoveryMode": "marketplace",
+          "acquisitionType": "installable",
+          "surfaces": [
+            "cli"
+          ],
+          "tagline": "NAVIG Cabinet — your documents in one plugin: an encrypted cabinet for important files (ID and passport scans, medical records, contracts…",
+          "description": "NAVIG Cabinet — your documents in one plugin: an encrypted cabinet for important files (ID and passport scans, medical records, contracts, photos, recordings — any type, any size; local-OCR search, expiry reminders, portable backups) plus `navig paperwork`, which files business paperwork (invoices, quotes, contracts, tax) into a space. A first-party navig plugin (free, toggleable).",
+          "tags": [
+            "pip",
+            "cabinet",
+            "paperwork"
+          ],
+          "pricing": {
+            "model": "free"
+          },
+          "status": "active",
+          "repository": "https://github.com/navig-run/plugins/tree/main/navig-cabinet",
+          "install": "pip install navig-cabinet",
+          "version": "0.2.0",
+          "commands": [
+            "navig cabinet",
+            "navig paperwork"
+          ],
+          "readme": "## Commands\n\n- `navig cabinet`\n- `navig paperwork`\n\n## Install\n\n```\npip install navig-cabinet\n```"
         }
       ]
     },

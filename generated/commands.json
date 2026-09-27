@@ -38243,7 +38243,7 @@
       "path": "navig telegram business alerts",
       "since": "",
       "status": "stable",
-      "summary": "Toggle the deleted-message -> DM-you alert.",
+      "summary": "Turn deletion alerts on or off (on = digest, unless you chose instant).",
       "tags": []
     },
     {
@@ -43975,7 +43975,7 @@
       "tags": []
     }
   ],
-  "generated_at": "2026-09-27T14:54:15.640623+00:00",
+  "generated_at": "2026-09-27T16:11:55.375852+00:00",
   "groups": {
     "action": "Manage quick actions (stored shortcuts)",
     "agent": "Manage autonomous agent mode",

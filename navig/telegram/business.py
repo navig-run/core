@@ -383,16 +383,30 @@ def resolve_owner(connection_id: str | None) -> int | None:
 
 
 def deletion_alert_enabled() -> bool:
-    try:
-        return bool(_cfg().get(CFG_DELETION_ALERT, True))
-    except Exception:  # noqa: BLE001
-        return True
+    """Whether deletions are announced at all — i.e. the mode is not ``off``.
+
+    Answered by :func:`deletions.mode`, the one source of truth. This read
+    ``bool(cfg.get(...))`` on its own, which broke twice: ``navig config set …
+    deletion_alert false`` stores the STRING "false", which ``bool()`` calls True,
+    so status reported ON for an operator who had switched it off; and once a mode
+    was set explicitly, the boolean no longer decided anything at all."""
+    return deletions.mode() != "off"
 
 
 def set_deletion_alert(value: bool) -> None:
-    cfg = _cfg()
-    cfg.set(CFG_DELETION_ALERT, bool(value), scope="global")
-    cfg.save(scope="global")
+    """The original on/off switch (``navig telegram business alerts on|off``).
+
+    It used to write only the legacy boolean — and once ``mode`` had been set
+    explicitly (``deletions mode …``, or the digest card's Quiet button) the mode
+    wins, so ``alerts off`` silently did nothing. It now drives the mode: off means
+    ``off``; on restores the default ``digest`` if alerts were off, and otherwise
+    keeps an explicit choice (an operator on ``instant`` stays on ``instant``)."""
+    if not value:
+        deletions.set_mode("off")
+    elif deletions.mode() == "off":
+        deletions.set_mode(deletions.DEFAULT_MODE)
+    else:
+        deletions.set_mode(deletions.mode())   # keeps the legacy boolean in step
 
 
 # ── Ping (the one safe canned reply in business chats) ───────────────────────

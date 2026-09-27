@@ -11,6 +11,7 @@ from navig import console_helper as ch
 from navig.cli._callbacks import show_subcommand_help
 from navig.config import get_config_manager
 from navig.core.scaffolder import Scaffolder
+from navig.platform.paths import resolve_user_path
 from navig.remote import RemoteOperations
 
 scaffold_app = typer.Typer(
@@ -110,7 +111,7 @@ def apply(
     # 4. Handle Execution
     if not host:
         # Local Generation
-        target_path = Path(target_dir).resolve()
+        target_path = resolve_user_path(target_dir).resolve()
 
         if dry_run:
             ch.info(f"[DRY RUN] Would generate to: {target_path}")

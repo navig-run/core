@@ -17,6 +17,7 @@ from pathlib import Path
 import typer
 
 from navig import console_helper as ch
+from navig.platform.paths import resolve_user_path
 
 media_app = typer.Typer(
     name="generate",
@@ -80,7 +81,7 @@ def media_analyze(
     max_frames: int = typer.Option(40, "--max-frames", help="Cap on extracted video frames."),
 ) -> None:
     """Extract a **briefing.md** from a video/audio/doc: frames + transcript + links + AI summary."""
-    src = Path(source).expanduser()
+    src = resolve_user_path(source).expanduser()
     if not src.is_file():
         ch.error(f"Not a file: {src}")
         raise typer.Exit(1)
@@ -116,7 +117,7 @@ def media_frames(
     if not ffmpeg_available():
         ch.error("ffmpeg not installed.", details="Install ffmpeg to extract frames.")
         raise typer.Exit(1)
-    frames = extract_frames(Path(video).expanduser(), out, mode=mode, max_frames=max_frames)
+    frames = extract_frames(resolve_user_path(video).expanduser(), out, mode=mode, max_frames=max_frames)
     ch.success(f"{len(frames)} frame(s) → {out}")
 
 
@@ -124,7 +125,7 @@ def media_frames(
 def media_probe(video: str = typer.Argument(..., help="Video file.")) -> None:
     """Print video metadata (duration / resolution / fps) via ffprobe."""
     from navig.media.frames import probe  # noqa: PLC0415
-    meta = probe(Path(video).expanduser())
+    meta = probe(resolve_user_path(video).expanduser())
     if not meta:
         ch.error("ffprobe unavailable or unreadable file.")
         raise typer.Exit(1)
@@ -151,7 +152,7 @@ def media_dedupe_audio(
     """
     from navig.media import audio_dedupe as ad  # noqa: PLC0415
 
-    root = Path(directory).expanduser()
+    root = resolve_user_path(directory).expanduser()
     if not root.is_dir():
         ch.error(f"Not a directory: {root}")
         raise typer.Exit(1)
@@ -214,7 +215,7 @@ def media_dedupe_files(
     """Exact byte-identical duplicates (content SHA-256). Keeps one, quarantines the rest."""
     from navig.media import file_dedupe as fd  # noqa: PLC0415
     from navig.media import image_dedupe as im
-    root = Path(directory).expanduser()
+    root = resolve_user_path(directory).expanduser()
     if not root.is_dir():
         ch.error(f"Not a directory: {root}")
         raise typer.Exit(1)
@@ -238,7 +239,7 @@ def media_dedupe_images(
 ) -> None:
     """Perceptual image near-dups (256-bit dHash) + redundant thumbnails. Keeps highest-res."""
     from navig.media import image_dedupe as im  # noqa: PLC0415
-    root = Path(directory).expanduser()
+    root = resolve_user_path(directory).expanduser()
     if not root.is_dir():
         ch.error(f"Not a directory: {root}")
         raise typer.Exit(1)
@@ -264,7 +265,7 @@ def media_dedupe_video(
     """Perceptual video near-dups via keyframe signatures (catches re-encodes/re-uploads)."""
     from navig.media import image_dedupe as im
     from navig.media import video_dedupe as vd  # noqa: PLC0415
-    root = Path(directory).expanduser()
+    root = resolve_user_path(directory).expanduser()
     if not root.is_dir():
         ch.error(f"Not a directory: {root}")
         raise typer.Exit(1)
@@ -286,7 +287,7 @@ def media_browse(
     """Launch a local web gallery for any media folder (grid + preview, streams video)."""
     from navig.http_bind import PortBindError  # noqa: PLC0415
     from navig.media.browse import serve  # noqa: PLC0415
-    root = Path(directory).expanduser()
+    root = resolve_user_path(directory).expanduser()
     if not root.is_dir():
         ch.error(f"Not a directory: {root}")
         raise typer.Exit(1)

@@ -249,8 +249,8 @@ def tray_uninstall():
     # The key path and value name come from `desktop/tray_constants.py`, which owns
     # them (install-tray.ps1 writes the same pair). They were re-typed as literals
     # here, so renaming either would have silently orphaned this removal a second
-    # time. They are NOT imported from `tray_app`, which replaces sys.stdout at
-    # import time — a CLI command must not inherit that.
+    # time. They are NOT imported from `tray_app`, which pulls in the whole tray
+    # runtime — a CLI command should not pay for that.
     from navig.desktop.tray_constants import REGISTRY_KEY, REGISTRY_VALUE
 
     autostart_removed = True

@@ -15,12 +15,11 @@ Subcommands:
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 import typer
 
 from navig.console_helper import get_console
-from navig.platform.paths import config_dir
+from navig.platform.paths import config_dir, resolve_user_path
 
 console = get_console()
 
@@ -182,7 +181,7 @@ def store_backup(
     from navig.store.audit import get_audit_store
     from navig.store.runtime import get_runtime_store
 
-    dest_path = Path(dest)
+    dest_path = resolve_user_path(dest)
     dest_path.mkdir(parents=True, exist_ok=True)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
 

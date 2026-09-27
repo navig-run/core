@@ -34,7 +34,7 @@ import typer
 
 from navig.core.json_io import JsonReadError, load_json_for_update, load_json_safe
 from navig.core.proc_text import console_encoding
-from navig.platform.paths import config_dir, scripts_dir
+from navig.platform.paths import config_dir, resolve_user_path, scripts_dir
 
 mount_app = typer.Typer(
     name="mount",
@@ -216,13 +216,13 @@ def cmd_add(
     ),
 ) -> None:
     """Register a drive junction and create it immediately."""
-    source_path = Path(source).expanduser().resolve()
+    source_path = resolve_user_path(source).expanduser().resolve()
     if not source_path.exists():
         typer.secho(f"Source does not exist: {source_path}", fg=typer.colors.RED)
         raise typer.Exit(1)
 
     if target:
-        target_path = Path(target).expanduser().resolve()
+        target_path = resolve_user_path(target).expanduser().resolve()
     else:
         mnt_root = Path.home() / "mnt"
         target_path = mnt_root / label

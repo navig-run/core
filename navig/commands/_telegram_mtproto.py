@@ -866,10 +866,17 @@ def register(telegram_app: "typer.Typer") -> None:
 
     @business_app.command("alerts")
     def tg_biz_alerts(state: str = typer.Argument(..., help="on | off")) -> None:
-        """Toggle the deleted-message -> DM-you alert."""
+        """Turn deletion alerts on or off (on = digest, unless you chose instant).
+
+        Shorthand for `deletions mode`. Deletions are still recorded either way —
+        to stop recording, use `deletions record off`.
+        """
+        from navig.core.coerce import coerce_bool
         from navig.telegram import business as biz
-        biz.set_deletion_alert(state.lower() in ("on", "true", "1", "yes"))
-        ch.success(f"Deletion alert {'ON' if biz.deletion_alert_enabled() else 'OFF'}")
+        from navig.telegram import deletions as dl
+
+        biz.set_deletion_alert(coerce_bool(state, default=True))
+        ch.success(f"Deletion alerts: {dl.mode()}")
 
     deletions_app = typer.Typer(
         help="Deletion watching: record it or not, how loudly, and where")

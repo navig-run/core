@@ -12,10 +12,12 @@ All actions share one implementation with the ``cdp_*`` MCP tools
 from __future__ import annotations
 
 import json as _json
+from pathlib import Path
 
 import typer
 
 from navig.lazy_loader import lazy_import
+from navig.platform.paths import resolve_user_path
 
 ch = lazy_import("navig.console_helper")
 
@@ -445,6 +447,12 @@ def cdp_screenshot(
     from navig.browser import cdp_actions
 
     port = _resolve_port(None, port)
+    # A bare filename keeps its documented home (~/.navig/screenshots). A path with a
+    # folder in it is a place the operator TYPED: resolve it where they typed it, not
+    # under the screenshots dir (``-o .dev/x.png`` used to land in
+    # ~/.navig/screenshots/.dev/x.png) and not inside the active space.
+    if out and (Path(out).name != out or Path(out).is_absolute()):
+        out = str(resolve_user_path(out))
     result = _run(cdp_actions.screenshot(port, out=out, full_page=full_page, tab=tab, url=url))
     # The OS fallback is documented, but a desktop capture returned as "the page" with a
     # green tick is how a pixel gate baked a 7282x4320 desktop shot in as a baseline. Say it
@@ -488,6 +496,9 @@ def cdp_record(
         raise typer.Exit(2)
 
     port = _resolve_port(None, port)
+    if out:
+        # `-o shot.mp4` means "here", not inside the active space navig chdir'd into.
+        out = str(resolve_user_path(out))
     _emit(
         _run(cdp_actions.record(
             port, out=out, secs=secs, width=width, height=height,
@@ -1086,12 +1097,11 @@ def profile_import_cmd(file: str = typer.Argument(..., help="Persona capsule fil
                        no_session: bool = typer.Option(False, "--no-session", help="Don't restore an embedded session."),
                        ):
     """Import a persona capsule → (re)create the profile, its proxy, and its session."""
-    from pathlib import Path
 
     from navig.browser import persona as _persona
     from navig.browser import profiles as _p
 
-    blob = Path(file).read_bytes()
+    blob = resolve_user_path(file).read_bytes()
     try:
         per, session = _persona.import_capsule(blob, passphrase=passphrase)
     except _persona.CapsuleError as exc:

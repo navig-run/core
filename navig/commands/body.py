@@ -24,6 +24,7 @@ from pathlib import Path
 import typer
 
 from navig import console_helper as ch
+from navig.platform.paths import resolve_user_path
 from navig.spaces import body_metrics as bm
 
 body_app = typer.Typer(
@@ -310,7 +311,7 @@ def body_export(
         raise typer.Exit(1) from exc
 
     today = date.today().isoformat()
-    destination = Path(out) if out else path.parent / "out" / f"body-{today}.md"
+    destination = resolve_user_path(out) if out else path.parent / "out" / f"body-{today}.md"
 
     points = summary.get("points") or []
     lines = [

@@ -21,7 +21,7 @@ import typer
 
 from navig.console_helper import get_console
 from navig.lazy_loader import lazy_import
-from navig.platform.paths import scripts_dir
+from navig.platform.paths import resolve_user_path, scripts_dir
 
 ch = lazy_import("navig.console_helper")
 
@@ -292,7 +292,7 @@ def ahk_run(
         ch.error("AutoHotkey is not available")
         raise typer.Exit(1)
 
-    path = Path(script_path)
+    path = resolve_user_path(script_path)
     if not path.exists():
         ch.error(f"Script file not found: {script_path}")
         raise typer.Exit(1)

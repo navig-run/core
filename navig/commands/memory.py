@@ -8,6 +8,7 @@ from __future__ import annotations
 import typer
 
 from navig.lazy_loader import lazy_import
+from navig.platform.paths import resolve_user_path
 
 ch = lazy_import("navig.console_helper")
 
@@ -1178,9 +1179,7 @@ def memory_export(
             else store.export_json(approved_only=not include_pending)
         )
         if output:
-            from pathlib import Path
-
-            Path(output).write_text(text, encoding="utf-8")
+            resolve_user_path(output).write_text(text, encoding="utf-8")
             ch.success(f"Exported memory to {output}")
         else:
             print(text)
@@ -1203,11 +1202,9 @@ def memory_import(
         navig memory import shared.json --pending
     """
     try:
-        from pathlib import Path
-
         from navig.memory.key_facts import get_key_fact_store
 
-        text = Path(path).read_text(encoding="utf-8")
+        text = resolve_user_path(path).read_text(encoding="utf-8")
         store = get_key_fact_store()
         added, merged = store.import_json(text, default_approved=None if pending else 1)
         ch.success(f"Imported memory: {added} new, {merged} merged into existing.")

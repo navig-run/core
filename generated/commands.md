@@ -1,6 +1,6 @@
 # NAVIG Command Reference
 
-_Generated 2026-09-27T14:54:15.640623+00:00_
+_Generated 2026-09-27T16:11:55.375852+00:00_
 
 ## `navig action add`
 **Status:** `stable` · **Since:** 
@@ -10517,7 +10517,7 @@ navig task test
 
 ## `navig telegram business alerts`
 **Status:** `stable` · **Since:** 
-Toggle the deleted-message -> DM-you alert.
+Turn deletion alerts on or off (on = digest, unless you chose instant).
 **Examples:**
 ```sh
 navig telegram business alerts

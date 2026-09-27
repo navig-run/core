@@ -2147,7 +2147,7 @@ def space_books(
         if cfg is not None:
             space_dir = Path(cfg.path)
         else:
-            candidate = Path(space).expanduser()
+            candidate = resolve_user_path(space).expanduser()
             if not candidate.is_dir():
                 ch.error(
                     f"Space not found: {space}",

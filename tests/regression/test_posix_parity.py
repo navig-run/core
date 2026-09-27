@@ -140,7 +140,8 @@ def test_tray_start_background_runs_the_module_detached_on_posix(monkeypatch) ->
 
 
 def test_the_tray_asks_the_identity_checked_pidfile(monkeypatch) -> None:
-    pytest.importorskip("pystray")
+    # No pystray: tray_app imports it lazily, and on a display-less Linux runner the
+    # import raises Xlib.DisplayNameError — not ImportError, so importorskip fails.
     from navig.desktop import tray_app
 
     app = tray_app.NavigTray.__new__(tray_app.NavigTray)
@@ -177,3 +178,30 @@ def test_install_sh_uninstall_stops_and_removes_the_real_unit() -> None:
     src = (CORE / "install.sh").read_text(encoding="utf-8")
     assert "systemctl --user stop navig-agent.service" in src
     assert '"$RUNTIME_VENV/bin/navig" service uninstall' in src
+
+
+def test_importing_the_tray_leaves_the_process_alone(tmp_path) -> None:
+    """Importing tray_app used to rewrap sys.stdout/stderr, create the log dir and
+    configure the root logger. The discarded wrappers closed the streams they wrapped,
+    so under pytest one import errored every later test (1563 errors on Windows CI),
+    and under pythonw (stdout is None) the rewrap raised before the tray started.
+    That setup belongs to main(); an import must not touch the process.
+    """
+    import os
+    import sys
+
+    probe = (
+        "import logging, sys\n"
+        "out, err, handlers = sys.stdout, sys.stderr, list(logging.getLogger().handlers)\n"
+        "import navig.desktop.tray_app as t\n"
+        "assert sys.stdout is out, 'stdout was replaced'\n"
+        "assert sys.stderr is err, 'stderr was replaced'\n"
+        "assert logging.getLogger().handlers == handlers, 'root logger was configured'\n"
+        "assert not t.LOG_DIR.exists(), 'log dir was created'\n"
+        "print('clean')\n"
+    )
+    env = {**os.environ, "NAVIG_CONFIG_DIR": str(tmp_path / "cfg")}
+    r = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, env=env, timeout=120
+    )
+    assert r.returncode == 0 and "clean" in r.stdout, r.stderr[-2000:]

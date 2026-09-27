@@ -19,6 +19,7 @@ from pathlib import Path
 import typer
 
 from navig.commands.plans import _find_project_root
+from navig.platform.paths import resolve_user_path
 
 logger = logging.getLogger("navig.commands.inbox")
 
@@ -164,7 +165,7 @@ def process_current(
     """Process a single inbox file — classify, transform, and route."""
     from navig.agents.inbox_router import InboxRouterAgent, execute_plan
 
-    file_path = Path(file).resolve()
+    file_path = resolve_user_path(file).resolve()
     if not file_path.exists():
         typer.secho(f"File not found: {file}", fg=typer.colors.RED)
         raise typer.Exit(1)
@@ -324,7 +325,7 @@ def filter_cmd(
     """
     from navig.agents.filtering_engine import FilteringEngine
 
-    project_root = Path(path).resolve() if path else _find_project_root()
+    project_root = resolve_user_path(path).resolve() if path else _find_project_root()
 
     if not (project_root / ".navig").is_dir():
         typer.secho(
@@ -421,7 +422,7 @@ def watch_cmd(
     """
     from navig.agents.filtering_engine import FilteringEngine
 
-    project_root = Path(path).resolve() if path else _find_project_root()
+    project_root = resolve_user_path(path).resolve() if path else _find_project_root()
 
     if not (project_root / ".navig").is_dir():
         typer.secho(
@@ -634,7 +635,7 @@ def ui_cmd(
     from navig.inbox.router import InboxRouter, RouteMode
     from navig.inbox.store import InboxEvent, InboxStore, RoutingDecision
 
-    project_root = Path(path).resolve() if path else _find_project_root()
+    project_root = resolve_user_path(path).resolve() if path else _find_project_root()
     inbox_dir = project_root / ".navig" / "wiki" / "inbox"
     inbox_dir.mkdir(parents=True, exist_ok=True)
 
@@ -792,7 +793,7 @@ def reroute_cmd(
 
     # ── Resolve space root ────────────────────────────────────
     if space:
-        space_root = Path(space).resolve()
+        space_root = resolve_user_path(space).resolve()
     else:
         # Walk up from cwd until we find a directory that contains .navig/
         cwd = Path.cwd()

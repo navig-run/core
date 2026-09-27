@@ -19,7 +19,7 @@ from navig import console_helper as ch
 from navig.cli._callbacks import show_subcommand_help
 from navig.console_helper import get_console
 from navig.core.proc_text import decode_console_output
-from navig.platform.paths import config_dir
+from navig.platform.paths import config_dir, resolve_user_path
 
 logger = logging.getLogger(__name__)
 
@@ -378,8 +378,7 @@ def ai_explain(
     _dw("navig ai explain <file>", "navig ask 'explain <file>'")
 
     # Try to read as a file; fall back to treating as a command/concept string
-    from pathlib import Path
-    file_path = Path(log_file)
+    file_path = resolve_user_path(log_file)
     if file_path.exists() and file_path.is_file():
         try:
             content = file_path.read_text(encoding="utf-8", errors="replace")

@@ -48,7 +48,10 @@ def _inside_checkout(p: Path | str) -> bool:
 
 
 @pytest.mark.skipif(
-    not (CHECKOUT / "core").is_dir(),
+    # CI checks the public mirror out at work/core/core, so `CHECKOUT / "core"` exists
+    # there too. What differs is where the repo root is: in the mirror, core/ itself is
+    # the git root (core/.git exists); in labs it never is.
+    not (CHECKOUT / "core").is_dir() or (CHECKOUT / "core" / ".git").exists(),
     reason="not the labs monorepo layout (the public navig-run/core mirror IS core/, and its "
     ".navig/ is withheld) — the premise is checked where it exists",
 )

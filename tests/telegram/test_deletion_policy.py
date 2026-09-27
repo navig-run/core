@@ -378,3 +378,52 @@ def test_record_off_warns_that_it_leaves_no_trace_and_names_the_quiet_option(env
     assert "no trace" in res.output
     assert "deletions mode off" in res.output      # the option they probably wanted
     assert d.record_enabled() is False
+
+
+# ── the original on/off switch must still mean what it says ───────────────────
+
+
+def test_alerts_off_works_after_a_mode_was_set_explicitly(env):
+    """The bug: `business alerts off` wrote only the legacy boolean, and an explicit
+    mode (set by `deletions mode …` or the card's Quiet button) wins over it — so
+    `alerts off` silently did nothing once anyone had touched the new switches."""
+    d.set_mode("digest")                 # an explicit mode is now in config
+    b.set_deletion_alert(False)
+    assert d.mode() == "off"
+    assert b.deletion_alert_enabled() is False
+
+
+def test_alerts_on_restores_the_default_only_from_off(env):
+    d.set_mode("off")
+    b.set_deletion_alert(True)
+    assert d.mode() == d.DEFAULT_MODE    # digest
+
+
+def test_alerts_on_keeps_an_explicit_instant_choice(env):
+    d.set_mode("instant")
+    b.set_deletion_alert(True)
+    assert d.mode() == "instant"
+
+
+def test_the_legacy_flag_is_read_through_coerce_bool(env):
+    """`navig config set …deletion_alert false` stores the STRING "false"; the old
+    `bool()` read reported that as ON."""
+    env.d[d.CFG_LEGACY_ALERT] = "false"
+    assert b.deletion_alert_enabled() is False
+
+
+def test_the_alerts_cli_drives_the_mode(env):
+    import typer
+    from typer.testing import CliRunner
+
+    from navig.commands._telegram_mtproto import register
+
+    app = typer.Typer()
+    register(app)
+    business = next(g.typer_instance for g in app.registered_groups if g.name == "business")
+    d.set_mode("digest")
+    res = CliRunner().invoke(business, ["alerts", "off"])
+    assert res.exit_code == 0, res.output
+    assert "off" in res.output and d.mode() == "off"
+    res = CliRunner().invoke(business, ["alerts", "on"])
+    assert res.exit_code == 0 and d.mode() == "digest"

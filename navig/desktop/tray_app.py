@@ -42,34 +42,43 @@ from navig._daemon_defaults import _DAEMON_PORT
 from navig.platform import paths
 from navig.platform.opener import open_path
 
-# Fix console encoding on Windows
-if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
-
 # ---------------------------------------------------------------------------
-# Logging setup — write to ~/.navig/logs/tray.log
+# Logging — ~/.navig/logs/tray.log, configured by main(), never at import
 # ---------------------------------------------------------------------------
 LOG_DIR = paths.config_dir() / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "tray.log"
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding="utf-8"),
-    ],
-)
 log = logging.getLogger("navig-tray")
+
+
+def _configure_process() -> None:
+    """Process-wide setup that belongs to the tray PROCESS, not to whoever imports it.
+
+    This used to run at import time: importing the module rewrapped sys.stdout/stderr
+    (the discarded wrappers then closed the streams they wrapped — under pytest that is
+    the capture file, so one import errored every later test), created the log dir and
+    configured the root logger. Under pythonw sys.stdout is None, so the rewrap raised
+    before the tray could start.
+    """
+    if sys.platform == "win32":
+        for name in ("stdout", "stderr"):
+            stream = getattr(sys, name)
+            buffer = getattr(stream, "buffer", None)
+            if buffer is not None:
+                setattr(sys, name, io.TextIOWrapper(buffer, encoding="utf-8", errors="replace"))
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[logging.FileHandler(LOG_FILE, encoding="utf-8")],
+    )
 
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-# Re-exported from tray_constants so the CLI can read them WITHOUT importing this
-# module, which replaces sys.stdout/sys.stderr above. Existing readers of
-# `tray_app.REGISTRY_KEY` are unaffected.
+# Re-exported from tray_constants, which stays the light import for the CLI (this
+# module pulls in the tray runtime). Existing readers of `tray_app.REGISTRY_KEY` are
+# unaffected.
 from navig.desktop.tray_constants import (  # noqa: E402
     REGISTRY_KEY,
     REGISTRY_VALUE,
@@ -913,6 +922,8 @@ class NavigTray:
 
 def main():
     """Entry point."""
+    _configure_process()
+
     # The tray runs under pythonw.exe (commands/tray.py launches it with
     # CREATE_NO_WINDOW | DETACHED_PROCESS), so it has NO console — and a console child
     # spawned from a parent without one gets a brand-new console that flashes on screen.

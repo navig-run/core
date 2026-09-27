@@ -6,6 +6,7 @@ from pathlib import Path
 import typer
 
 from navig.lazy_loader import lazy_import
+from navig.platform.paths import resolve_user_path
 
 ch = lazy_import("navig.console_helper")
 
@@ -62,7 +63,7 @@ def run_script(
 
     if not script_path.exists():
         # Try local path?
-        local_path = Path(name)
+        local_path = resolve_user_path(name)
         if local_path.exists() and local_path.suffix == ".py":
             script_path = local_path
         else:

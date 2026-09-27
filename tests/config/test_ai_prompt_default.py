@@ -107,3 +107,42 @@ def test_stale_default_self_heals_despite_crlf_line_endings(cfg):
     assert "Browse and operate real websites" in prompt
     assert "three domains" not in prompt
     assert cfg.ai_prompt_file.read_text(encoding="utf-8").strip() == _DEFAULT_AI_PROMPT.strip()
+
+
+# ── never write the default into a project's .navig/ ──────────────────
+
+
+@pytest.fixture
+def in_project(tmp_path, monkeypatch):
+    """A project folder holding a `.navig/`, with the global config isolated elsewhere."""
+    global_dir = tmp_path / "global"
+    project = tmp_path / "project"
+    (project / ".navig").mkdir(parents=True)
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(global_dir))
+    monkeypatch.chdir(project)
+    return project, global_dir
+
+
+def test_running_in_a_project_leaves_no_prompt_file_there(in_project):
+    # Every navig command inside a repo folder with a `.navig/` used to drop an
+    # untracked ai_system_prompt.txt into it.
+    project, global_dir = in_project
+    cfg = ConfigManager()
+    assert cfg.app_config_dir is not None, "sanity: the project .navig was detected"
+    prompt = cfg.get_ai_system_prompt()
+    assert not (project / ".navig" / "ai_system_prompt.txt").exists()
+    assert (global_dir / "ai_system_prompt.txt").is_file(), "the global default is created"
+    assert prompt.startswith(_DEFAULT_AI_PROMPT.strip()[:40])
+
+
+def test_a_project_override_still_wins(in_project):
+    project, _ = in_project
+    (project / ".navig" / "ai_system_prompt.txt").write_text("PROJECT PERSONA", encoding="utf-8")
+    assert ConfigManager().get_ai_system_prompt().startswith("PROJECT PERSONA")
+
+
+def test_the_global_prompt_is_used_when_the_project_has_none(in_project):
+    _, global_dir = in_project
+    global_dir.mkdir(parents=True, exist_ok=True)
+    (global_dir / "ai_system_prompt.txt").write_text("GLOBAL PERSONA", encoding="utf-8")
+    assert ConfigManager().get_ai_system_prompt().startswith("GLOBAL PERSONA")

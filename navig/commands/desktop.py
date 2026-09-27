@@ -24,6 +24,8 @@ from pathlib import Path
 
 import typer
 
+from navig.platform.paths import resolve_user_path
+
 desktop_app = typer.Typer(
     name="desktop",
     help="Windows Desktop Automation — UI control via UIA and AHK.",
@@ -405,7 +407,7 @@ def desktop_ahk(
 
     # Resolve file vs inline script
     script = script_or_path
-    candidate = Path(script_or_path)
+    candidate = resolve_user_path(script_or_path)
     if candidate.is_file():
         try:
             script = candidate.read_text(encoding="utf-8")

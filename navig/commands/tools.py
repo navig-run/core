@@ -21,6 +21,7 @@ import typer
 
 from navig.console_helper import get_console
 from navig.core.yaml_io import atomic_write_text
+from navig.platform.paths import resolve_user_path
 
 tools_app = typer.Typer(
     name="tools",
@@ -152,9 +153,7 @@ def tools_schema(
     text = json.dumps(schema, indent=2)
 
     if output:
-        from pathlib import Path
-
-        atomic_write_text(Path(output), text)
+        atomic_write_text(resolve_user_path(output), text)
         typer.echo(f"Schema written to {output}")
     else:
         typer.echo(text)

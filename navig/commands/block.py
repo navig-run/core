@@ -478,7 +478,7 @@ def block_new(
     if not valid_block_id(block_id):
         ch.error(f"invalid block id '{block_id}' — use kebab-case (a-z, 0-9, -).")
         raise typer.Exit(1)
-    dest = Path(into) / block_id
+    dest = resolve_user_path(into) / block_id
     if (dest / "BLOCK.md").exists():
         ch.warning(f"{dest / 'BLOCK.md'} already exists.")
         raise typer.Exit(1)
